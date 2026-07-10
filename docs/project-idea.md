@@ -2,7 +2,7 @@
 
 ## Concept
 
-VisCSS is a browser-accessible tool that lets users visually design a web page's HTML/CSS without writing code, then optionally export the generated source.
+Layerix is a browser-accessible tool that lets users visually design a web page's HTML/CSS without writing code, then optionally export the generated source.
 
 ## Core Interaction Pattern
 
@@ -12,7 +12,7 @@ VisCSS is a browser-accessible tool that lets users visually design a web page's
 4. The user adjusts values (scales, pixels, colors, indexes, etc.) through the panel.
 5. Changes are applied to the live page in real time, immediately after each adjustment.
 
-Conceptually, this mirrors a drawing tool: instead of a canvas with a drawing toolbar, VisCSS presents a live page with an HTML/CSS control toolbar.
+Conceptually, this mirrors a drawing tool: instead of a canvas with a drawing toolbar, Layerix presents a live page with an HTML/CSS control toolbar.
 
 ## Target User
 
