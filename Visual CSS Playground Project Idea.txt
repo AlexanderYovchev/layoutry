@@ -1,0 +1,17 @@
+PROJECT IDEA
+
+A tool that would be accessible through browser. The point is simple.. To let the users view a precoded UI how it will look and if they want then they can copy the source code for the HTML/CSS they generated (If they have
+a subscription plan ofcourse). The pattern is this:
+
+1. A user open the tool.
+2. He selects for example a text or container or a button (He can select multiple html items)
+3. Then whatever Html part he selected from his page there would be a CSS tab above with most if not all of the CSS commands and he can adjust the scales, pixels, colors, indexes and so on.
+4. The changes will happen in real time immidietly after he select any CSS command.
+
+From user point of view its gonna be like a drawing tool with different options but instead of canvas and drawing navbar, the navbar will be with html css commands.
+
+This is for everyone who dont know what website page style to do and wanna improvize on their own before they code it.
+
+Development pattern:
+ChatGpt would be used for project managing,brainstorming, reviewing for better optimizing and generating Claude prompts for every project update. Claude Code would take a part of the actual coder who writes the source
+code in the best possible way.
