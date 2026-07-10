@@ -27,7 +27,90 @@ Layoutry is aimed at anyone who wants to explore and refine a page's look and fe
 
 ## Status
 
-Layoutry is in early planning. This repository currently contains project documentation and setup scaffolding; application development has not yet begun.
+Layoutry has a working technical foundation: a Next.js App Router application with TypeScript, Tailwind CSS, linting, formatting, and a test suite are all in place and passing. **The editor itself — canvas, element selection, style inspector, drag-and-drop, and export — has not yet been implemented.** The current UI is a minimal placeholder shell that confirms the foundation is operational, nothing more.
+
+## Technology Stack
+
+- **Framework:** Next.js (App Router, Turbopack)
+- **Language:** TypeScript (strict mode)
+- **UI:** React
+- **Styling:** Tailwind CSS
+- **State management:** Zustand (installed, not yet wired to any editor state)
+- **Drag & drop:** @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities (installed for future canvas interactions)
+- **Validation:** Zod (installed for future project/schema validation)
+- **Icons:** lucide-react
+- **Class composition:** clsx + tailwind-merge
+- **Linting/formatting:** ESLint (Next.js recommended config), Prettier (with prettier-plugin-tailwindcss)
+- **Testing:** Vitest + React Testing Library (unit/component), Playwright (end-to-end)
+- **Package manager:** npm
+
+## Prerequisites
+
+- Node.js (a current LTS or newer release)
+- npm
+
+## Installation
+
+```bash
+npm install
+```
+
+## Development
+
+```bash
+npm run dev
+```
+
+Starts the local dev server at `http://localhost:3000`.
+
+## Testing
+
+```bash
+npm run test        # unit/component tests (Vitest + React Testing Library)
+npm run test:watch  # unit/component tests in watch mode
+npm run test:e2e     # end-to-end smoke test (Playwright; downloads a browser binary on first run)
+```
+
+## Other commands
+
+```bash
+npm run build          # production build
+npm run start           # run the production build
+npm run lint             # ESLint
+npm run typecheck         # TypeScript, no emit
+npm run format             # Prettier, write
+npm run format:check        # Prettier, check only
+```
+
+## Initial Architecture
+
+```
+src/
+  app/                    Next.js App Router entry (layout, page, global styles)
+  components/
+    ui/                   Shared UI primitives (empty — none needed yet)
+    layout/               Structural layout components (AppHeader)
+  features/
+    editor/                Editor state/logic (not yet implemented)
+    canvas/                 Canvas rendering (not yet implemented)
+    inspector/               Style inspector (placeholder only)
+    components-library/       Reusable element library (not yet implemented)
+    export/                     HTML/CSS export logic (not yet implemented)
+  lib/                          Shared utilities (e.g. cn() class helper)
+  styles/                        Reserved for future design tokens
+test/                              Vitest setup
+e2e/                                 Playwright specs
+```
+
+The `features/` directories are organized so the eventual editor engine can be introduced cleanly. The long-term plan is for the canvas to render a **typed, serializable document model** as its source of truth — not an iframe, raw HTML string, uncontrolled `contentEditable` region, or direct DOM mutation. That engine is intentionally not implemented yet; only the directory structure and placeholder UI exist at this stage.
+
+## Repository Architecture
+
+Layoutry uses a feature-based architecture: product functionality lives under `src/features/*` (editor, canvas, inspector, components-library, export), each owning its own components, hooks, stores, types, and tests, with explicit rules for what may depend on what.
+
+- [CLAUDE.md](./CLAUDE.md) — the operating manual for Claude Code sessions working in this repo: ownership boundaries, dependency direction, file placement, and safety rules.
+- [docs/architecture/README.md](./docs/architecture/README.md) — full architecture documentation: repository structure, dependency rules, the editor's document-model principle, and testing strategy.
+- [docs/roadmap/milestones.md](./docs/roadmap/milestones.md) — the milestone sequence this project is working through.
 
 ## License
 

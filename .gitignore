@@ -7,12 +7,9 @@ node_modules/
 .yarn/build-state.yml
 .yarn/install-state.gz
 
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# Environment variables (keep .env.example trackable)
+.env*
+!.env.example
 
 # Build output
 dist/
@@ -52,6 +49,25 @@ Thumbs.db
 # Misc
 *.local
 .cache/
+*.pem
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Next.js
+next-env.d.ts
+.vercel
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# Lint cache
+.eslintcache
+
+# Task/session summary files (generated during development sessions,
+# not part of the committed project)
+*SUMMARY*.txt
+*-summary.txt
