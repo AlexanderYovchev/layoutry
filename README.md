@@ -1,12 +1,12 @@
-# Layerix
+# Layoutry
 
-**Design visually. Export clean HTML & CSS.**
+**Build layouts visually. Own the code.**
 
-Layerix is a professional visual HTML & CSS editor that allows developers and designers to build interfaces visually while generating clean, production-ready code. It lets users select elements on a page — text, containers, buttons, and more — and adjust their styling in real time through an intuitive CSS control panel, without writing a single line of code by hand.
+Layoutry is a professional visual HTML & CSS editor that enables developers and designers to build responsive interfaces visually while generating clean, production-ready code. It lets users select elements on a page — text, containers, buttons, and more — and adjust their styling in real time through an intuitive CSS control panel, without writing a single line of code by hand.
 
 ## Vision
 
-Not everyone who wants to design a web page knows CSS, and not everyone who knows CSS wants to write it from scratch for every experiment. Layerix bridges that gap: it works like a drawing tool, but instead of a canvas and a drawing toolbar, it gives you a live-rendered page and a toolbar of CSS controls.
+Not everyone who wants to design a web page knows CSS, and not everyone who knows CSS wants to write it from scratch for every experiment. Layoutry bridges that gap: it works like a drawing tool, but instead of a canvas and a drawing toolbar, it gives you a live-rendered page and a toolbar of CSS controls.
 
 The core workflow:
 
@@ -16,7 +16,7 @@ The core workflow:
 4. Adjust values with sliders, pickers, and inputs, and watch the page update instantly.
 5. When satisfied, export or copy the generated HTML/CSS source code (available to subscribed users).
 
-Layerix is aimed at anyone who wants to explore and refine a page's look and feel before committing to code — designers prototyping ideas, developers iterating quickly, and non-technical users who just want to see "what if."
+Layoutry is aimed at anyone who wants to explore and refine a page's look and feel before committing to code — designers prototyping ideas, developers iterating quickly, and non-technical users who just want to see "what if."
 
 ## Product Principles
 
@@ -27,7 +27,7 @@ Layerix is aimed at anyone who wants to explore and refine a page's look and fee
 
 ## Status
 
-Layerix is in early planning. This repository currently contains project documentation and setup scaffolding; application development has not yet begun.
+Layoutry is in early planning. This repository currently contains project documentation and setup scaffolding; application development has not yet begun.
 
 ## License
 
