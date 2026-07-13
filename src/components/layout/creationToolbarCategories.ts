@@ -1,13 +1,14 @@
-export interface CategoryPlaceholderRow {
+export interface CatalogCardPlaceholder {
   id: string;
-  label: string;
+  name: string;
+  description: string;
   disabled: true;
 }
 
 export interface CategorySection {
   id: string;
   label: string;
-  rows: CategoryPlaceholderRow[];
+  cards: CatalogCardPlaceholder[];
 }
 
 export interface ToolbarCategoryContent {
@@ -16,17 +17,26 @@ export interface ToolbarCategoryContent {
   sections: CategorySection[];
 }
 
-function tbdSection(
+interface CardSeed {
+  name: string;
+  description: string;
+}
+
+function section(
   categoryId: string,
   sectionId: string,
   label: string,
+  cardSeeds: CardSeed[],
 ): CategorySection {
   return {
     id: `${categoryId}-${sectionId}`,
     label,
-    rows: [
-      { id: `${categoryId}-${sectionId}-tbd`, label: "(TBD)", disabled: true },
-    ],
+    cards: cardSeeds.map((seed, index) => ({
+      id: `${categoryId}-${sectionId}-${index}`,
+      name: seed.name,
+      description: seed.description,
+      disabled: true,
+    })),
   };
 }
 
@@ -36,14 +46,38 @@ function htmlCategory(): ToolbarCategoryContent {
     id,
     label: "HTML",
     sections: [
-      tbdSection(id, "containers", "Containers"),
-      tbdSection(id, "typography", "Typography"),
-      tbdSection(id, "navigation", "Navigation"),
-      tbdSection(id, "lists", "Lists"),
-      tbdSection(id, "forms", "Forms"),
-      tbdSection(id, "media", "Media"),
-      tbdSection(id, "tables", "Tables"),
-      tbdSection(id, "semantic", "Semantic Elements"),
+      section(id, "containers", "Containers", [
+        { name: "Container", description: "Generic layout container" },
+        { name: "Section", description: "Generic content section" },
+      ]),
+      section(id, "typography", "Typography", [
+        { name: "Heading", description: "Page heading" },
+        { name: "Paragraph", description: "Body text" },
+      ]),
+      section(id, "navigation", "Navigation", [
+        { name: "Link", description: "Navigable link" },
+        { name: "Menu", description: "Navigation menu" },
+      ]),
+      section(id, "lists", "Lists", [
+        { name: "List", description: "Ordered or unordered list" },
+        { name: "List Item", description: "Single list entry" },
+      ]),
+      section(id, "forms", "Forms", [
+        { name: "Input", description: "Single-line text field" },
+        { name: "Button", description: "Interactive button" },
+      ]),
+      section(id, "media", "Media", [
+        { name: "Image", description: "Static image" },
+        { name: "Video", description: "Embedded video" },
+      ]),
+      section(id, "tables", "Tables", [
+        { name: "Table", description: "Tabular data grid" },
+        { name: "Table Row", description: "Single table row" },
+      ]),
+      section(id, "semantic", "Semantic Elements", [
+        { name: "Article", description: "Self-contained content" },
+        { name: "Header", description: "Page or section header" },
+      ]),
     ],
   };
 }
@@ -54,12 +88,30 @@ function componentsCategory(): ToolbarCategoryContent {
     id,
     label: "Components",
     sections: [
-      tbdSection(id, "buttons-actions", "Buttons & Actions"),
-      tbdSection(id, "cards-containers", "Cards & Containers"),
-      tbdSection(id, "navigation", "Navigation"),
-      tbdSection(id, "forms-inputs", "Forms & Inputs"),
-      tbdSection(id, "feedback-overlays", "Feedback & Overlays"),
-      tbdSection(id, "data-display", "Data Display"),
+      section(id, "buttons-actions", "Buttons & Actions", [
+        { name: "Primary Button", description: "Main call-to-action button" },
+        { name: "Icon Button", description: "Compact icon-only action" },
+      ]),
+      section(id, "cards-containers", "Cards & Containers", [
+        { name: "Card", description: "Content container with elevation" },
+        { name: "Panel", description: "Grouped content area" },
+      ]),
+      section(id, "navigation", "Navigation", [
+        { name: "Tabs", description: "Switch between views" },
+        { name: "Breadcrumb", description: "Hierarchical location trail" },
+      ]),
+      section(id, "forms-inputs", "Forms & Inputs", [
+        { name: "Text Field", description: "Labeled input with validation" },
+        { name: "Select", description: "Dropdown choice control" },
+      ]),
+      section(id, "feedback-overlays", "Feedback & Overlays", [
+        { name: "Modal", description: "Overlay dialog" },
+        { name: "Toast", description: "Temporary status message" },
+      ]),
+      section(id, "data-display", "Data Display", [
+        { name: "Badge", description: "Small status indicator" },
+        { name: "Avatar", description: "User profile image" },
+      ]),
     ],
   };
 }
@@ -70,11 +122,26 @@ function layoutCategory(): ToolbarCategoryContent {
     id,
     label: "Layout",
     sections: [
-      tbdSection(id, "flex", "Flex Layouts"),
-      tbdSection(id, "grid", "Grid Layouts"),
-      tbdSection(id, "containers-wrappers", "Containers & Wrappers"),
-      tbdSection(id, "spacers-dividers", "Spacers & Dividers"),
-      tbdSection(id, "responsive-presets", "Responsive Presets"),
+      section(id, "flex", "Flex Layouts", [
+        { name: "Row", description: "Horizontal flex container" },
+        { name: "Column", description: "Vertical flex container" },
+      ]),
+      section(id, "grid", "Grid Layouts", [
+        { name: "Grid", description: "CSS grid container" },
+        { name: "Grid Item", description: "Single grid cell" },
+      ]),
+      section(id, "containers-wrappers", "Containers & Wrappers", [
+        { name: "Wrapper", description: "Generic content wrapper" },
+        { name: "Section Frame", description: "Bordered content frame" },
+      ]),
+      section(id, "spacers-dividers", "Spacers & Dividers", [
+        { name: "Spacer", description: "Empty flexible space" },
+        { name: "Divider", description: "Horizontal separator line" },
+      ]),
+      section(id, "responsive-presets", "Responsive Presets", [
+        { name: "Two Column", description: "Responsive two-column layout" },
+        { name: "Stack", description: "Responsive vertical stack" },
+      ]),
     ],
   };
 }
@@ -85,11 +152,23 @@ function mediaCategory(): ToolbarCategoryContent {
     id,
     label: "Media",
     sections: [
-      tbdSection(id, "images", "Images"),
-      tbdSection(id, "video", "Video"),
-      tbdSection(id, "audio", "Audio"),
-      tbdSection(id, "icons", "Icons"),
-      tbdSection(id, "embeds", "Embeds"),
+      section(id, "images", "Images", [
+        { name: "Image", description: "Static image placeholder" },
+        { name: "Gallery", description: "Grid of images" },
+      ]),
+      section(id, "video", "Video", [
+        { name: "Video Player", description: "Embedded video player" },
+        { name: "Video Background", description: "Looping background video" },
+      ]),
+      section(id, "audio", "Audio", [
+        { name: "Audio Player", description: "Embedded audio player" },
+      ]),
+      section(id, "icons", "Icons", [
+        { name: "Icon", description: "Single vector icon" },
+      ]),
+      section(id, "embeds", "Embeds", [
+        { name: "Embed", description: "Third-party embedded content" },
+      ]),
     ],
   };
 }
@@ -100,11 +179,26 @@ function formsCategory(): ToolbarCategoryContent {
     id,
     label: "Forms",
     sections: [
-      tbdSection(id, "inputs", "Inputs"),
-      tbdSection(id, "selection-controls", "Selection Controls"),
-      tbdSection(id, "buttons", "Buttons"),
-      tbdSection(id, "validation-feedback", "Validation & Feedback"),
-      tbdSection(id, "layout-grouping", "Layout & Grouping"),
+      section(id, "inputs", "Inputs", [
+        { name: "Text Input", description: "Single-line text field" },
+        { name: "Textarea", description: "Multi-line text field" },
+      ]),
+      section(id, "selection-controls", "Selection Controls", [
+        { name: "Checkbox", description: "Toggleable option" },
+        { name: "Radio Button", description: "Single choice option" },
+      ]),
+      section(id, "buttons", "Buttons", [
+        { name: "Submit Button", description: "Submits the form" },
+        { name: "Reset Button", description: "Clears the form" },
+      ]),
+      section(id, "validation-feedback", "Validation & Feedback", [
+        { name: "Error Message", description: "Inline validation message" },
+        { name: "Helper Text", description: "Supplementary field guidance" },
+      ]),
+      section(id, "layout-grouping", "Layout & Grouping", [
+        { name: "Fieldset", description: "Grouped form fields" },
+        { name: "Form Row", description: "Horizontal field grouping" },
+      ]),
     ],
   };
 }
@@ -115,11 +209,26 @@ function stylesCategory(): ToolbarCategoryContent {
     id,
     label: "Styles",
     sections: [
-      tbdSection(id, "typography", "Typography"),
-      tbdSection(id, "color-theme", "Color & Theme"),
-      tbdSection(id, "spacing", "Spacing"),
-      tbdSection(id, "effects", "Effects"),
-      tbdSection(id, "global-styles", "Global Styles"),
+      section(id, "typography", "Typography", [
+        { name: "Font Scale", description: "Type size presets" },
+        { name: "Font Weight", description: "Weight presets" },
+      ]),
+      section(id, "color-theme", "Color & Theme", [
+        { name: "Color Palette", description: "Brand color tokens" },
+        { name: "Theme Toggle", description: "Light/dark mode control" },
+      ]),
+      section(id, "spacing", "Spacing", [
+        { name: "Spacing Scale", description: "Consistent spacing tokens" },
+        { name: "Padding Preset", description: "Common padding values" },
+      ]),
+      section(id, "effects", "Effects", [
+        { name: "Shadow", description: "Elevation shadow presets" },
+        { name: "Border Radius", description: "Corner rounding presets" },
+      ]),
+      section(id, "global-styles", "Global Styles", [
+        { name: "Reset", description: "Base style reset" },
+        { name: "Typography Base", description: "Base font settings" },
+      ]),
     ],
   };
 }

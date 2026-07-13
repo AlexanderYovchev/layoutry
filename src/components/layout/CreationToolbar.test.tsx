@@ -62,7 +62,27 @@ describe("CreationToolbar", () => {
     ]) {
       expect(menu.getByText(section)).toBeInTheDocument();
     }
-    expect(menu.getAllByText("(TBD)").length).toBeGreaterThan(0);
+  });
+
+  it("shows a placeholder card with a name and description for each future element", async () => {
+    const user = userEvent.setup();
+    render(<CreationToolbar />);
+
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+    const menu = within(screen.getByRole("menu", { name: "HTML elements" }));
+
+    expect(menu.getByText("Container")).toBeInTheDocument();
+    expect(menu.getByText("Generic layout container")).toBeInTheDocument();
+  });
+
+  it("shows a non-functional search field at the top of each catalog", async () => {
+    const user = userEvent.setup();
+    render(<CreationToolbar />);
+
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+
+    const searchField = screen.getByPlaceholderText("Search html");
+    expect(searchField).toBeDisabled();
   });
 
   it("switches directly to another category when a different trigger is clicked", () => {
@@ -140,15 +160,18 @@ describe("CreationToolbar", () => {
     expect(htmlTrigger).toHaveFocus();
   });
 
-  it("never activates the disabled placeholder rows", async () => {
+  it("never activates the disabled placeholder cards", async () => {
     const user = userEvent.setup();
     render(<CreationToolbar />);
 
     await user.click(screen.getByRole("button", { name: "Components" }));
-    const rows = screen.getAllByRole("menuitem", { name: "(TBD)" });
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) {
-      expect(row).toBeDisabled();
+    const menu = within(
+      screen.getByRole("menu", { name: "Components elements" }),
+    );
+    const cards = menu.getAllByRole("menuitem");
+    expect(cards.length).toBeGreaterThan(0);
+    for (const card of cards) {
+      expect(card).toBeDisabled();
     }
   });
 });

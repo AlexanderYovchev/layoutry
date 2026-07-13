@@ -3,6 +3,8 @@
 import { useEffect, useRef, type KeyboardEvent } from "react";
 import { ChevronDown, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CatalogCard } from "@/components/layout/CatalogCard";
+import { CatalogSearchField } from "@/components/layout/CatalogSearchField";
 import type { ToolbarCategoryContent } from "@/components/layout/creationToolbarCategories";
 
 interface ToolbarCategoryTriggerProps {
@@ -90,7 +92,7 @@ export function ToolbarCategoryTrigger({
         onClose(false);
         break;
       // ArrowUp/ArrowDown/Home/End/Enter intentionally have nothing to do
-      // yet: every row is disabled until the real catalog is built.
+      // yet: every card is disabled until the real catalog is built.
     }
   }
 
@@ -126,34 +128,29 @@ export function ToolbarCategoryTrigger({
           aria-label={`${category.label} elements`}
           tabIndex={-1}
           onKeyDown={handlePanelKeyDown}
-          className="absolute z-50 mt-1 max-h-[70vh] w-64 overflow-y-auto rounded-md border border-zinc-200 bg-white py-1 shadow-md dark:border-zinc-800 dark:bg-zinc-950"
+          className="absolute z-50 mt-1 flex max-h-[70vh] w-72 flex-col rounded-md border border-zinc-200 bg-white shadow-md dark:border-zinc-800 dark:bg-zinc-950"
         >
-          {category.sections.map((section) => (
-            <div
-              key={section.id}
-              role="group"
-              aria-labelledby={`${section.id}-label`}
-            >
-              <p
-                id={`${section.id}-label`}
-                className="px-3 pt-2 pb-1 text-xs font-semibold tracking-wide text-zinc-400 uppercase dark:text-zinc-600"
+          <CatalogSearchField categoryLabel={category.label} />
+
+          <div className="min-h-0 flex-1 overflow-y-auto py-1">
+            {category.sections.map((section) => (
+              <div
+                key={section.id}
+                role="group"
+                aria-labelledby={`${section.id}-label`}
               >
-                {section.label}
-              </p>
-              {section.rows.map((row) => (
-                <button
-                  key={row.id}
-                  type="button"
-                  role="menuitem"
-                  disabled={row.disabled}
-                  tabIndex={-1}
-                  className="flex w-full items-center px-3 py-1.5 text-left text-sm text-zinc-300 disabled:cursor-not-allowed dark:text-zinc-700"
+                <p
+                  id={`${section.id}-label`}
+                  className="px-3 pt-2 pb-1 text-xs font-semibold tracking-wide text-zinc-400 uppercase dark:text-zinc-600"
                 >
-                  {row.label}
-                </button>
-              ))}
-            </div>
-          ))}
+                  {section.label}
+                </p>
+                {section.cards.map((card) => (
+                  <CatalogCard key={card.id} card={card} />
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
