@@ -29,7 +29,8 @@ export function CreationToolbar() {
           <button
             key={label}
             type="button"
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:text-zinc-400 dark:hover:bg-zinc-900"
+            disabled
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-zinc-400 disabled:cursor-not-allowed dark:text-zinc-600"
           >
             <Icon aria-hidden="true" className="size-4" />
             {label}

@@ -18,7 +18,7 @@ export function AppShell({
     <div className="flex h-dvh w-full flex-col overflow-hidden bg-white dark:bg-black">
       <AppHeader />
       <CreationToolbar />
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 overflow-x-auto">
         <ResourceSidebar />
         <Workspace>{workspaceContent}</Workspace>
         <InspectorPanel>{inspectorContent}</InspectorPanel>

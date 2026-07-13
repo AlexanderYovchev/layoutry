@@ -21,15 +21,16 @@ export function ResourceSidebar() {
           <button
             key={label}
             type="button"
+            disabled
             aria-label={label}
-            className="flex size-10 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:text-zinc-400 dark:hover:bg-zinc-900"
+            className="flex size-10 items-center justify-center rounded-md text-zinc-300 disabled:cursor-not-allowed dark:text-zinc-700"
           >
             <Icon aria-hidden="true" className="size-5" />
           </button>
         ))}
       </nav>
 
-      <div className="w-56 shrink-0 p-3 lg:w-60">
+      <div className="w-52 shrink-0 overflow-hidden p-3 transition-[width] duration-200 ease-in-out lg:w-60">
         <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
           Elements
         </p>
