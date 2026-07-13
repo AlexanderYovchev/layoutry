@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
 import {
   Code2,
   Component,
@@ -6,35 +9,81 @@ import {
   Palette,
   Search,
   TextCursorInput,
+  type LucideIcon,
 } from "lucide-react";
+import { creationToolbarCategories } from "@/components/layout/creationToolbarCategories";
+import { ToolbarCategoryTrigger } from "@/components/layout/ToolbarCategoryTrigger";
 
-const categories = [
-  { label: "HTML", icon: Code2 },
-  { label: "Components", icon: Component },
-  { label: "Layout", icon: LayoutGrid },
-  { label: "Media", icon: Image },
-  { label: "Forms", icon: TextCursorInput },
-  { label: "Styles", icon: Palette },
-] as const;
+const categoryIcons: Record<string, LucideIcon> = {
+  html: Code2,
+  components: Component,
+  layout: LayoutGrid,
+  media: Image,
+  forms: TextCursorInput,
+  styles: Palette,
+};
 
 export function CreationToolbar() {
+  const [openCategoryId, setOpenCategoryId] = useState<string | null>(null);
+  const triggerRefs = useRef(new Map<string, HTMLButtonElement>());
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!openCategoryId) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setOpenCategoryId(null);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [openCategoryId]);
+
+  function moveFocus(fromId: string, direction: 1 | -1) {
+    const ids = creationToolbarCategories.map((category) => category.id);
+    const index = ids.indexOf(fromId);
+    if (index === -1) return;
+    const nextIndex = (index + direction + ids.length) % ids.length;
+    const nextId = ids[nextIndex];
+    triggerRefs.current.get(nextId)?.focus();
+    setOpenCategoryId((current) => (current ? nextId : current));
+  }
+
   return (
     <div
+      ref={containerRef}
       role="toolbar"
       aria-label="Creation toolbar"
       className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-zinc-200 bg-white px-3 dark:border-zinc-800 dark:bg-black"
     >
       <div className="flex items-center gap-1">
-        {categories.map(({ label, icon: Icon }) => (
-          <button
-            key={label}
-            type="button"
-            disabled
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-zinc-400 disabled:cursor-not-allowed dark:text-zinc-600"
-          >
-            <Icon aria-hidden="true" className="size-4" />
-            {label}
-          </button>
+        {creationToolbarCategories.map((category) => (
+          <ToolbarCategoryTrigger
+            key={category.id}
+            category={category}
+            icon={categoryIcons[category.id]}
+            isOpen={openCategoryId === category.id}
+            registerTriggerRef={(el) => {
+              if (el) triggerRefs.current.set(category.id, el);
+              else triggerRefs.current.delete(category.id);
+            }}
+            onOpen={() => setOpenCategoryId(category.id)}
+            onClose={(returnFocus) => {
+              setOpenCategoryId(null);
+              if (returnFocus) triggerRefs.current.get(category.id)?.focus();
+            }}
+            onHoverSwitch={() => {
+              if (openCategoryId && openCategoryId !== category.id) {
+                setOpenCategoryId(category.id);
+              }
+            }}
+            onMoveFocus={(direction) => moveFocus(category.id, direction)}
+          />
         ))}
       </div>
 
