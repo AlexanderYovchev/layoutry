@@ -1,12 +1,12 @@
 import { AppShell } from "@/components/layout/AppShell";
 import { CanvasPlaceholder } from "@/features/canvas/components/CanvasPlaceholder";
-import { InspectorPlaceholder } from "@/features/inspector/components/InspectorPlaceholder";
+import { InspectorContent } from "@/features/inspector/components/InspectorContent";
 
 export default function Home() {
   return (
     <AppShell
       workspaceContent={<CanvasPlaceholder />}
-      inspectorContent={<InspectorPlaceholder />}
+      inspectorContent={<InspectorContent selectedElement={null} />}
     />
   );
 }
