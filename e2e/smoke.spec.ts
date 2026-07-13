@@ -3,10 +3,9 @@ import { expect, test } from "@playwright/test";
 test("home page renders the application shell regions", async ({ page }) => {
   await page.goto("/");
 
-  await expect(
-    page.getByRole("banner", { name: "Application menu bar" }),
-  ).toBeVisible();
-  await expect(page.getByText("Layoutry")).toBeVisible();
+  const banner = page.getByRole("banner", { name: "Application menu bar" });
+  await expect(banner).toBeVisible();
+  await expect(banner.getByText("Layoutry")).toBeVisible();
   await expect(
     page.getByRole("toolbar", { name: "Creation toolbar" }),
   ).toBeVisible();
