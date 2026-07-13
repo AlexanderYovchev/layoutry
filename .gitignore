@@ -71,3 +71,4 @@ next-env.d.ts
 # not part of the committed project)
 *SUMMARY*.txt
 *-summary.txt
+/changelogs/

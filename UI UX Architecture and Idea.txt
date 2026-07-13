@@ -1,0 +1,456 @@
+# Layoutry — UI / UX Design Approach
+
+## Master Design Summary (Living Document)
+
+This document summarizes the agreed UI/UX philosophy, application architecture, and development workflow for Layoutry.
+
+It should be used whenever a new ChatGPT UI/UX Design chat is started so that design decisions remain consistent throughout the project.
+
+---
+
+# Project Vision
+
+Layoutry is a browser-based visual HTML and CSS editor.
+
+Its goal is to allow anyone—from complete beginners to senior frontend developers—to visually build responsive webpages without repeatedly writing and deleting HTML and CSS.
+
+The application should teach users naturally through interaction rather than requiring documentation.
+
+Layoutry is not intended to be a simplified website builder.
+
+Instead, it should become one of the most complete visual HTML & CSS playgrounds available while remaining approachable for beginners.
+
+---
+
+# Core Design Philosophy
+
+Simple by default.
+
+Powerful when needed.
+
+Every design decision should satisfy these principles:
+
+* Beginner friendly
+* Professional
+* Instructional
+* Scalable
+* Responsive
+* Accessible
+* Minimal visual clutter
+* High information density without overwhelming the user
+
+The interface should never expose every possible option immediately.
+
+Complexity should appear progressively as users need it.
+
+---
+
+# Overall Application Layout
+
+The application shell consists of five major regions.
+
+Top:
+
+1. Application Menu Bar
+
+2. Creation Toolbar
+
+Center:
+
+3. Left Resource Panel
+
+4. Workspace / Canvas
+
+5. Right Inspector
+
+Bottom:
+
+6. Status Bar
+
+---
+
+# Application Menu Bar
+
+Purpose:
+
+Global application commands.
+
+Examples:
+
+* File
+* Edit
+* View
+* Project
+* Help
+* Undo
+* Redo
+* Project Name
+* Save Status
+* Preview
+* User Account
+
+This bar should never contain HTML elements or CSS properties.
+
+---
+
+# Creation Toolbar
+
+Purpose:
+
+Everything related to creating content.
+
+This toolbar replaces the concept of brushes and shapes found in drawing software.
+
+Instead it provides:
+
+* HTML
+* Components
+* Layout
+* Media
+* Forms
+* Styles
+* Search
+
+These are entry points for creating new content.
+
+The Creation Toolbar should not become a giant list.
+
+Each category opens a large organized panel.
+
+---
+
+# HTML Library
+
+Layoutry aims to eventually support nearly the complete practical HTML specification.
+
+Elements should be grouped into categories such as:
+
+* Structure
+* Typography
+* Navigation
+* Lists
+* Forms
+* Tables
+* Media
+* Interactive
+* Semantic
+
+Each element should include:
+
+* beginner-friendly name
+* short description
+* actual HTML tag
+
+Example:
+
+Section
+
+Semantic page section
+
+<section>
+
+---
+
+# CSS Philosophy
+
+Layoutry aims to support nearly every practical CSS property available to frontend developers.
+
+However:
+
+The interface should never display hundreds of CSS properties at once.
+
+Instead the Inspector organizes them into logical groups.
+
+Examples:
+
+* Layout
+* Size
+* Display
+* Flexbox
+* Grid
+* Position
+* Spacing
+* Typography
+* Colors
+* Background
+* Borders
+* Effects
+* Animation
+* Transform
+* Overflow
+* Advanced
+
+Common controls appear first.
+
+Advanced controls remain available without overwhelming beginners.
+
+---
+
+# Left Resource Panel
+
+Purpose:
+
+Resource browsing.
+
+It will eventually contain:
+
+* Elements
+* Components
+* Templates
+* Assets
+* Project Resources
+
+The panel should use a narrow icon rail plus a contextual content panel.
+
+Changing icons changes the panel contents.
+
+---
+
+# Workspace
+
+The workspace is the heart of Layoutry.
+
+The canvas should always receive the highest visual priority.
+
+The workspace consists of:
+
+* neutral application background
+* centered editable page
+* generous surrounding workspace
+
+The workspace should never feel cramped.
+
+---
+
+# Inspector
+
+Purpose:
+
+Context-sensitive editing.
+
+The Inspector always answers one question:
+
+"What can I change about the selected element?"
+
+Different elements produce different inspector sections.
+
+Examples:
+
+Container
+
+* Size
+* Layout
+* Padding
+* Background
+* Border
+
+Text
+
+* Typography
+* Alignment
+* Color
+* Spacing
+
+Image
+
+* Size
+* Fit
+* Border
+* Filters
+
+The inspector should never show irrelevant controls.
+
+---
+
+# Color Picker
+
+The project will use a professional floating color picker.
+
+Features planned:
+
+* Color wheel
+* Brightness slider
+* Opacity
+* HEX
+* RGB
+* HSL
+* Recent colors
+* Saved colors
+* Document colors
+* CSS variables
+* Gradient support
+* Eyedropper (where supported)
+
+Beginners should be able to choose visually.
+
+Developers should be able to type exact CSS values.
+
+---
+
+# Components
+
+Native HTML elements are different from Components.
+
+Components represent reusable UI structures such as:
+
+* Navbar
+* Hero
+* Card
+* FAQ
+* Pricing
+* Footer
+
+Components are collections of HTML elements.
+
+---
+
+# Templates
+
+Templates are complete page layouts.
+
+They remain separate from both Components and native HTML.
+
+---
+
+# User Workflow
+
+The intended workflow is:
+
+Create
+
+↓
+
+Select
+
+↓
+
+Edit
+
+↓
+
+Preview
+
+↓
+
+Export (future)
+
+Everything in Layoutry should reinforce this workflow.
+
+---
+
+# UX Principles
+
+The application should feel:
+
+* Calm
+* Responsive
+* Discoverable
+* Consistent
+* Professional
+* Encouraging
+
+Users should rarely need documentation.
+
+The interface itself should explain what to do next.
+
+---
+
+# Development Strategy
+
+Development is performed incrementally.
+
+Every checkpoint should be small enough to review before continuing.
+
+No large feature should be implemented in a single Claude prompt.
+
+---
+
+# Claude Development Workflow
+
+The workflow is:
+
+1. Product discussion.
+
+2. UI/UX decision.
+
+3. Freeze design.
+
+4. ChatGPT generates a professional Claude Code prompt.
+
+5. Claude implements only that checkpoint.
+
+6. Review implementation.
+
+7. Adjust if necessary.
+
+8. Continue to the next checkpoint.
+
+Claude writes code.
+
+ChatGPT acts as:
+
+* Product Manager
+* UI Architect
+* UX Designer
+* Design Reviewer
+* Prompt Engineer
+
+---
+
+# Milestone 2 Roadmap
+
+Checkpoint 2.1
+
+Application Shell Foundation
+
+Checkpoint 2.2
+
+Application Menu Bar
+
+Checkpoint 2.3
+
+Creation Toolbar
+
+Checkpoint 2.4
+
+Left Resource Panel
+
+Checkpoint 2.5
+
+Workspace
+
+Checkpoint 2.6
+
+Inspector Shell
+
+Checkpoint 2.7
+
+Status Bar
+
+Checkpoint 2.8
+
+Responsive Behavior
+
+Checkpoint 2.9
+
+Accessibility Pass
+
+Checkpoint 2.10
+
+Visual Polish
+
+Only after Milestone 2 is complete should the project continue with drag & drop, HTML libraries, CSS controls, selection, snapping, layers, export, AI, and other advanced functionality.
+
+---
+
+# Long-Term Vision
+
+Layoutry should become a professional visual frontend development environment.
+
+A beginner should be able to build their first webpage without writing code.
+
+An experienced frontend developer should be able to design complex responsive layouts faster than coding them manually.
+
+Every future design decision should support this vision while preserving the philosophy:
+
+"Simple by default. Powerful when needed."
