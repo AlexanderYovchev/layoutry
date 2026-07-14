@@ -23,7 +23,7 @@ export function InspectorSection({
         type="button"
         onClick={onToggle}
         aria-expanded={isOpen}
-        className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-semibold tracking-wide text-zinc-500 uppercase hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-300"
+        className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-semibold tracking-wide text-zinc-400 uppercase hover:text-zinc-700 dark:text-zinc-600 dark:hover:text-zinc-300"
       >
         <ChevronRight
           aria-hidden="true"

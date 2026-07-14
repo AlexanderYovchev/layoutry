@@ -10,7 +10,7 @@ export function InspectorElementSummary({
   tag,
 }: InspectorElementSummaryProps) {
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
+    <div className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
       <Box
         aria-hidden="true"
         className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500"
@@ -19,7 +19,7 @@ export function InspectorElementSummary({
         <p className="truncate text-sm font-medium text-zinc-700 dark:text-zinc-300">
           {name}
         </p>
-        <p className="truncate font-mono text-xs text-zinc-400 dark:text-zinc-500">
+        <p className="truncate font-mono text-xs text-zinc-400 dark:text-zinc-600">
           {tag}
         </p>
       </div>

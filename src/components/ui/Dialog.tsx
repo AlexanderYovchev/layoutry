@@ -56,7 +56,7 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
           dialogRef.current?.close();
         }
       }}
-      className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-0 text-zinc-950 shadow-lg backdrop:bg-black/40 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
+      className="w-full max-w-md rounded-md border border-zinc-200 bg-white p-0 text-zinc-950 shadow-lg backdrop:bg-black/40 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
     >
       <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <h2 id={headingId} className="text-sm font-semibold">

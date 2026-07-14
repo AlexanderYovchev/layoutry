@@ -92,7 +92,7 @@ export function StructureTreeNode({
             type="button"
             onClick={handleToggleClick}
             aria-label={`${isOpen ? "Collapse" : "Expand"} ${displayName}`}
-            className="flex size-4 shrink-0 items-center justify-center rounded text-zinc-400 hover:text-zinc-700 dark:text-zinc-600 dark:hover:text-zinc-300"
+            className="flex size-4 shrink-0 items-center justify-center rounded-md text-zinc-400 hover:text-zinc-700 dark:text-zinc-600 dark:hover:text-zinc-300"
           >
             <ChevronRight
               aria-hidden="true"

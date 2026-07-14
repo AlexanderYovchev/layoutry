@@ -30,7 +30,7 @@ export function GlobalActions() {
         <button
           type="button"
           disabled
-          className="ml-1 flex items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 py-1 text-sm text-zinc-400 disabled:cursor-not-allowed dark:border-zinc-800 dark:text-zinc-600"
+          className="ml-1 flex items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm text-zinc-400 disabled:cursor-not-allowed dark:border-zinc-800 dark:text-zinc-600"
         >
           Preview
         </button>
