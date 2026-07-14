@@ -1,3 +1,6 @@
+// min-w-105 is 420px — kept in sync with MIN_WORKSPACE_WIDTH in
+// AppShell.tsx, which uses the same number when clamping the side
+// panels so the Workspace never has to go below this floor.
 export function Workspace({ children }: { children: React.ReactNode }) {
   return (
     <main

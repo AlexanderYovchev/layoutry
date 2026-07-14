@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, type PointerEvent, type ReactNode } from "react";
 import { ResizeHandle } from "@/components/ui/resizable/ResizeHandle";
-import { useResizablePanelWidth } from "@/components/ui/resizable/useResizablePanelWidth";
 import { ResourceContextPanel } from "@/components/layout/ResourceContextPanel";
 import { ResourceNavigationRail } from "@/components/layout/ResourceNavigationRail";
 import {
@@ -10,15 +9,23 @@ import {
   type ResourceSectionId,
 } from "@/components/layout/resourcePanelSections";
 
-const RESOURCE_PANEL_DEFAULT_WIDTH = 280;
-const RESOURCE_PANEL_MIN_WIDTH = 220;
-const RESOURCE_PANEL_MAX_WIDTH = 520;
-
 interface ResourceSidebarProps {
   structureContent?: ReactNode;
+  width: number;
+  isDragging: boolean;
+  onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
+  onPointerMove: (event: PointerEvent<HTMLDivElement>) => void;
+  onPointerUp: (event: PointerEvent<HTMLDivElement>) => void;
 }
 
-export function ResourceSidebar({ structureContent }: ResourceSidebarProps) {
+export function ResourceSidebar({
+  structureContent,
+  width,
+  isDragging,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+}: ResourceSidebarProps) {
   const [activeSectionId, setActiveSectionId] = useState<ResourceSectionId>(
     resourcePanelSections[0].id,
   );
@@ -26,20 +33,6 @@ export function ResourceSidebar({ structureContent }: ResourceSidebarProps) {
   const activeSection =
     resourcePanelSections.find((section) => section.id === activeSectionId) ??
     resourcePanelSections[0];
-
-  const {
-    width,
-    isDragging,
-    handlePointerDown,
-    handlePointerMove,
-    handlePointerUp,
-  } = useResizablePanelWidth({
-    storageKey: "layoutry:resource-panel-width",
-    defaultWidth: RESOURCE_PANEL_DEFAULT_WIDTH,
-    minWidth: RESOURCE_PANEL_MIN_WIDTH,
-    maxWidth: RESOURCE_PANEL_MAX_WIDTH,
-    growDirection: "right",
-  });
 
   return (
     <aside
@@ -62,9 +55,9 @@ export function ResourceSidebar({ structureContent }: ResourceSidebarProps) {
       <ResizeHandle
         className="right-0"
         isDragging={isDragging}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
       />
     </aside>
   );

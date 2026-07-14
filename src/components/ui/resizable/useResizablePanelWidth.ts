@@ -44,15 +44,26 @@ export interface UseResizablePanelWidthOptions {
   storageKey: string;
   defaultWidth: number;
   minWidth: number;
+  /** May change across renders (e.g. a caller narrowing it to fit the viewport or a sibling panel). */
   maxWidth: number;
   /** Pointer-movement direction that increases the panel's width. */
   growDirection: "left" | "right";
 }
 
 export interface UseResizablePanelWidthResult {
+  /** The user's preferred width, clamped to [minWidth, maxWidth] — this is what should be rendered. */
   width: number;
   isDragging: boolean;
-  handlePointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  /**
+   * @param displayWidth The width the panel is actually rendered at right
+   * now, if it differs from this hook's own `width` (e.g. a caller further
+   * narrowed it to fit a sibling panel or the viewport). Dragging starts
+   * from this value so the panel never jumps at the start of a drag.
+   */
+  handlePointerDown: (
+    event: ReactPointerEvent<HTMLDivElement>,
+    displayWidth?: number,
+  ) => void;
   handlePointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
   handlePointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
   /** Restores the default width and persists it, for a future reset command. */
@@ -65,6 +76,14 @@ export interface UseResizablePanelWidthResult {
  * (Resource Panel, Inspector, and future regions like a bottom console
  * or AI panel) can use this without duplicating drag or persistence
  * logic.
+ *
+ * The user's preferred width is only ever changed by dragging, resetting,
+ * or restoring a stored value — never by `maxWidth` changing on its own.
+ * The returned `width` is a plain clamp of that preference against the
+ * current `minWidth`/`maxWidth`, so temporarily narrowing `maxWidth` (a
+ * smaller viewport, a sibling panel needing room) never overwrites the
+ * preference, and the full preferred width reappears the instant more
+ * space is available again.
  */
 export function useResizablePanelWidth({
   storageKey,
@@ -73,24 +92,32 @@ export function useResizablePanelWidth({
   maxWidth,
   growDirection,
 }: UseResizablePanelWidthOptions): UseResizablePanelWidthResult {
-  const [width, setWidth] = useState(defaultWidth);
+  const [preferredWidth, setPreferredWidth] = useState(defaultWidth);
   const [isDragging, setIsDragging] = useState(false);
   const dragOrigin = useRef<{ clientX: number; width: number } | null>(null);
-  const latestWidth = useRef(defaultWidth);
+  const latestPreferredWidth = useRef(defaultWidth);
 
   useIsomorphicLayoutEffect(() => {
     const stored = readStoredWidth(storageKey, minWidth, maxWidth);
     if (stored !== null) {
-      latestWidth.current = stored;
-      setWidth(stored);
+      latestPreferredWidth.current = stored;
+      setPreferredWidth(stored);
     }
     // Intentionally run once on mount only.
   }, []);
 
-  function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+  const width = clamp(preferredWidth, minWidth, maxWidth);
+
+  function handlePointerDown(
+    event: ReactPointerEvent<HTMLDivElement>,
+    displayWidth?: number,
+  ) {
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    dragOrigin.current = { clientX: event.clientX, width };
+    dragOrigin.current = {
+      clientX: event.clientX,
+      width: displayWidth ?? width,
+    };
     setIsDragging(true);
   }
 
@@ -103,8 +130,8 @@ export function useResizablePanelWidth({
       minWidth,
       maxWidth,
     );
-    latestWidth.current = nextWidth;
-    setWidth(nextWidth);
+    latestPreferredWidth.current = nextWidth;
+    setPreferredWidth(nextWidth);
   }
 
   function handlePointerUp(event: ReactPointerEvent<HTMLDivElement>) {
@@ -112,12 +139,12 @@ export function useResizablePanelWidth({
     event.currentTarget.releasePointerCapture(event.pointerId);
     dragOrigin.current = null;
     setIsDragging(false);
-    writeStoredWidth(storageKey, latestWidth.current);
+    writeStoredWidth(storageKey, latestPreferredWidth.current);
   }
 
   function reset() {
-    latestWidth.current = defaultWidth;
-    setWidth(defaultWidth);
+    latestPreferredWidth.current = defaultWidth;
+    setPreferredWidth(defaultWidth);
     writeStoredWidth(storageKey, defaultWidth);
   }
 

@@ -1,15 +1,28 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ResourceSidebar } from "./ResourceSidebar";
 
-describe("ResourceSidebar", () => {
-  afterEach(() => {
-    window.localStorage.removeItem("layoutry:resource-panel-width");
-  });
+const noop = () => {};
 
+function renderResourceSidebar(
+  props: Partial<React.ComponentProps<typeof ResourceSidebar>> = {},
+) {
+  return render(
+    <ResourceSidebar
+      width={280}
+      isDragging={false}
+      onPointerDown={noop}
+      onPointerMove={noop}
+      onPointerUp={noop}
+      {...props}
+    />,
+  );
+}
+
+describe("ResourceSidebar", () => {
   it("shows the six navigation items with Elements active by default", () => {
-    render(<ResourceSidebar />);
+    renderResourceSidebar();
 
     const rail = within(
       screen.getByRole("tablist", { name: "Resource categories" }),
@@ -38,7 +51,7 @@ describe("ResourceSidebar", () => {
 
   it("switches the context panel content when a different navigation item is clicked", async () => {
     const user = userEvent.setup();
-    render(<ResourceSidebar />);
+    renderResourceSidebar();
 
     await user.click(screen.getByRole("tab", { name: "Assets" }));
 
@@ -62,7 +75,7 @@ describe("ResourceSidebar", () => {
 
   it("moves focus between navigation items with the arrow keys", async () => {
     const user = userEvent.setup();
-    render(<ResourceSidebar />);
+    renderResourceSidebar();
 
     const elementsTab = screen.getByRole("tab", { name: "Elements" });
     elementsTab.focus();
@@ -76,9 +89,9 @@ describe("ResourceSidebar", () => {
 
   it("renders the provided structureContent when Structure is selected, and only then", async () => {
     const user = userEvent.setup();
-    render(
-      <ResourceSidebar structureContent={<div>mock structure panel</div>} />,
-    );
+    renderResourceSidebar({
+      structureContent: <div>mock structure panel</div>,
+    });
 
     expect(screen.queryByText("mock structure panel")).not.toBeInTheDocument();
 
@@ -87,18 +100,29 @@ describe("ResourceSidebar", () => {
     expect(screen.getByText("mock structure panel")).toBeInTheDocument();
   });
 
-  it("grows when its resize handle is dragged to the right", () => {
-    render(<ResourceSidebar />);
+  it("renders at the width it's given and forwards resize-handle pointer events", () => {
+    const onPointerDown = vi.fn();
+    const onPointerMove = vi.fn();
+    const onPointerUp = vi.fn();
+    renderResourceSidebar({
+      width: 340,
+      onPointerDown,
+      onPointerMove,
+      onPointerUp,
+    });
 
-    const panel = screen.getByRole("complementary", { name: "Resource panel" });
+    const panel = screen.getByRole("complementary", {
+      name: "Resource panel",
+    });
+    expect(panel.style.width).toBe("340px");
+
     const handle = screen.getByRole("separator");
-
-    expect(panel.style.width).toBe("280px");
-
     fireEvent.pointerDown(handle, { clientX: 100 });
     fireEvent.pointerMove(handle, { clientX: 160 });
     fireEvent.pointerUp(handle, { clientX: 160 });
 
-    expect(panel.style.width).toBe("340px");
+    expect(onPointerDown).toHaveBeenCalledTimes(1);
+    expect(onPointerMove).toHaveBeenCalledTimes(1);
+    expect(onPointerUp).toHaveBeenCalledTimes(1);
   });
 });

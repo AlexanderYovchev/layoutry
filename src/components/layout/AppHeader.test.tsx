@@ -211,4 +211,15 @@ describe("AppHeader", () => {
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+
+  it("keeps the project name truncatable so a long name can't push actions out of view", () => {
+    renderAppHeader();
+
+    const projectName = screen.getByText("Untitled Project");
+    expect(projectName).toHaveClass("truncate");
+    // min-w-0 overrides the flex-item default (min-width: auto), which is
+    // what actually lets this region shrink and truncate instead of
+    // forcing the header wider than the viewport.
+    expect(projectName.parentElement).toHaveClass("min-w-0", "flex-1");
+  });
 });

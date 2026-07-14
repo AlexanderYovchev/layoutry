@@ -97,7 +97,7 @@ export function MenuBarRoot({
         ref={rootRef}
         role="menubar"
         aria-label={ariaLabel}
-        className="flex items-center gap-0.5"
+        className="flex shrink-0 items-center gap-0.5"
       >
         {children}
       </div>

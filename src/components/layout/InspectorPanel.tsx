@@ -1,27 +1,25 @@
 "use client";
 
+import type { PointerEvent, ReactNode } from "react";
 import { ResizeHandle } from "@/components/ui/resizable/ResizeHandle";
-import { useResizablePanelWidth } from "@/components/ui/resizable/useResizablePanelWidth";
 
-const INSPECTOR_DEFAULT_WIDTH = 300;
-const INSPECTOR_MIN_WIDTH = 260;
-const INSPECTOR_MAX_WIDTH = 520;
+interface InspectorPanelProps {
+  children: ReactNode;
+  width: number;
+  isDragging: boolean;
+  onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
+  onPointerMove: (event: PointerEvent<HTMLDivElement>) => void;
+  onPointerUp: (event: PointerEvent<HTMLDivElement>) => void;
+}
 
-export function InspectorPanel({ children }: { children: React.ReactNode }) {
-  const {
-    width,
-    isDragging,
-    handlePointerDown,
-    handlePointerMove,
-    handlePointerUp,
-  } = useResizablePanelWidth({
-    storageKey: "layoutry:inspector-panel-width",
-    defaultWidth: INSPECTOR_DEFAULT_WIDTH,
-    minWidth: INSPECTOR_MIN_WIDTH,
-    maxWidth: INSPECTOR_MAX_WIDTH,
-    growDirection: "left",
-  });
-
+export function InspectorPanel({
+  children,
+  width,
+  isDragging,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+}: InspectorPanelProps) {
   return (
     <aside
       aria-label="Inspector panel"
@@ -31,9 +29,9 @@ export function InspectorPanel({ children }: { children: React.ReactNode }) {
       <ResizeHandle
         className="left-0"
         isDragging={isDragging}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
       />
       {children}
     </aside>

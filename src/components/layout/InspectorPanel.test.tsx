@@ -1,18 +1,29 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { InspectorPanel } from "./InspectorPanel";
 
-describe("InspectorPanel", () => {
-  afterEach(() => {
-    window.localStorage.removeItem("layoutry:inspector-panel-width");
-  });
+const noop = () => {};
 
-  it("renders its children inside the panel shell at the default width", () => {
-    render(
-      <InspectorPanel>
-        <div>inspector content</div>
-      </InspectorPanel>,
-    );
+function renderInspectorPanel(
+  props: Partial<React.ComponentProps<typeof InspectorPanel>> = {},
+) {
+  return render(
+    <InspectorPanel
+      width={300}
+      isDragging={false}
+      onPointerDown={noop}
+      onPointerMove={noop}
+      onPointerUp={noop}
+      {...props}
+    >
+      <div>inspector content</div>
+    </InspectorPanel>,
+  );
+}
+
+describe("InspectorPanel", () => {
+  it("renders its children inside the panel shell at the given width", () => {
+    renderInspectorPanel({ width: 300 });
 
     const panel = screen.getByRole("complementary", {
       name: "Inspector panel",
@@ -21,22 +32,19 @@ describe("InspectorPanel", () => {
     expect(screen.getByText("inspector content")).toBeInTheDocument();
   });
 
-  it("grows when its resize handle is dragged to the left", () => {
-    render(
-      <InspectorPanel>
-        <div>inspector content</div>
-      </InspectorPanel>,
-    );
+  it("forwards resize-handle pointer events to the given handlers", () => {
+    const onPointerDown = vi.fn();
+    const onPointerMove = vi.fn();
+    const onPointerUp = vi.fn();
+    renderInspectorPanel({ onPointerDown, onPointerMove, onPointerUp });
 
-    const panel = screen.getByRole("complementary", {
-      name: "Inspector panel",
-    });
     const handle = screen.getByRole("separator");
-
     fireEvent.pointerDown(handle, { clientX: 500 });
     fireEvent.pointerMove(handle, { clientX: 440 });
     fireEvent.pointerUp(handle, { clientX: 440 });
 
-    expect(panel.style.width).toBe("360px");
+    expect(onPointerDown).toHaveBeenCalledTimes(1);
+    expect(onPointerMove).toHaveBeenCalledTimes(1);
+    expect(onPointerUp).toHaveBeenCalledTimes(1);
   });
 });
