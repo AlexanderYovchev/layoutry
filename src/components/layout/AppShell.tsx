@@ -12,6 +12,7 @@ import type { ViewState } from "@/components/layout/applicationMenus";
 interface AppShellProps {
   workspaceContent: ReactNode;
   inspectorContent: ReactNode;
+  structureContent?: ReactNode;
 }
 
 const initialViewState: ViewState = {
@@ -23,6 +24,7 @@ const initialViewState: ViewState = {
 export function AppShell({
   workspaceContent,
   inspectorContent,
+  structureContent,
 }: AppShellProps) {
   const [viewState, setViewState] = useState<ViewState>(initialViewState);
 
@@ -35,7 +37,9 @@ export function AppShell({
       <AppHeader viewState={viewState} onToggleView={handleToggleView} />
       <CreationToolbar />
       <div className="flex min-h-0 flex-1 overflow-x-auto">
-        {viewState.resourcePanelVisible && <ResourceSidebar />}
+        {viewState.resourcePanelVisible && (
+          <ResourceSidebar structureContent={structureContent} />
+        )}
         <Workspace>{workspaceContent}</Workspace>
         {viewState.inspectorPanelVisible && (
           <InspectorPanel>{inspectorContent}</InspectorPanel>

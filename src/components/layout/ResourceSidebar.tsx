@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { ResizeHandle } from "@/components/ui/resizable/ResizeHandle";
+import { useResizablePanelWidth } from "@/components/ui/resizable/useResizablePanelWidth";
 import { ResourceContextPanel } from "@/components/layout/ResourceContextPanel";
 import { ResourceNavigationRail } from "@/components/layout/ResourceNavigationRail";
 import {
@@ -8,7 +10,15 @@ import {
   type ResourceSectionId,
 } from "@/components/layout/resourcePanelSections";
 
-export function ResourceSidebar() {
+const RESOURCE_PANEL_DEFAULT_WIDTH = 280;
+const RESOURCE_PANEL_MIN_WIDTH = 220;
+const RESOURCE_PANEL_MAX_WIDTH = 520;
+
+interface ResourceSidebarProps {
+  structureContent?: ReactNode;
+}
+
+export function ResourceSidebar({ structureContent }: ResourceSidebarProps) {
   const [activeSectionId, setActiveSectionId] = useState<ResourceSectionId>(
     resourcePanelSections[0].id,
   );
@@ -17,19 +27,45 @@ export function ResourceSidebar() {
     resourcePanelSections.find((section) => section.id === activeSectionId) ??
     resourcePanelSections[0];
 
+  const {
+    width,
+    isDragging,
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
+  } = useResizablePanelWidth({
+    storageKey: "layoutry:resource-panel-width",
+    defaultWidth: RESOURCE_PANEL_DEFAULT_WIDTH,
+    minWidth: RESOURCE_PANEL_MIN_WIDTH,
+    maxWidth: RESOURCE_PANEL_MAX_WIDTH,
+    growDirection: "right",
+  });
+
   return (
     <aside
       aria-label="Resource panel"
-      className="flex shrink-0 border-r border-zinc-200 dark:border-zinc-800"
+      style={{ width }}
+      className="relative flex shrink-0 border-r border-zinc-200 dark:border-zinc-800"
     >
       <ResourceNavigationRail
         activeSectionId={activeSectionId}
         onSelect={setActiveSectionId}
       />
 
-      <div className="flex w-52 shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out lg:w-60">
-        <ResourceContextPanel section={activeSection} />
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <ResourceContextPanel
+          section={activeSection}
+          structureContent={structureContent}
+        />
       </div>
+
+      <ResizeHandle
+        className="right-0"
+        isDragging={isDragging}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+      />
     </aside>
   );
 }

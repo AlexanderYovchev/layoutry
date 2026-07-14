@@ -1,9 +1,13 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { ResourceSidebar } from "./ResourceSidebar";
 
 describe("ResourceSidebar", () => {
+  afterEach(() => {
+    window.localStorage.removeItem("layoutry:resource-panel-width");
+  });
+
   it("shows the six navigation items with Elements active by default", () => {
     render(<ResourceSidebar />);
 
@@ -70,16 +74,31 @@ describe("ResourceSidebar", () => {
     expect(elementsTab).toHaveFocus();
   });
 
-  it("renders the placeholder page structure tree when Structure is selected", async () => {
+  it("renders the provided structureContent when Structure is selected, and only then", async () => {
     const user = userEvent.setup();
-    render(<ResourceSidebar />);
+    render(
+      <ResourceSidebar structureContent={<div>mock structure panel</div>} />,
+    );
+
+    expect(screen.queryByText("mock structure panel")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "Structure" }));
 
-    const tree = within(screen.getByRole("tree", { name: "Page structure" }));
-    expect(screen.getByText("Home Page")).toBeInTheDocument();
-    for (const label of ["Body", "Header", "Hero", "Features", "Footer"]) {
-      expect(tree.getByText(label)).toBeInTheDocument();
-    }
+    expect(screen.getByText("mock structure panel")).toBeInTheDocument();
+  });
+
+  it("grows when its resize handle is dragged to the right", () => {
+    render(<ResourceSidebar />);
+
+    const panel = screen.getByRole("complementary", { name: "Resource panel" });
+    const handle = screen.getByRole("separator");
+
+    expect(panel.style.width).toBe("280px");
+
+    fireEvent.pointerDown(handle, { clientX: 100 });
+    fireEvent.pointerMove(handle, { clientX: 160 });
+    fireEvent.pointerUp(handle, { clientX: 160 });
+
+    expect(panel.style.width).toBe("340px");
   });
 });

@@ -26,3 +26,20 @@ if (
     }
   };
 }
+
+// jsdom does not implement the Pointer Capture API used by drag-to-resize
+// handles. These are no-ops in tests — pointer events are still dispatched
+// and handled normally without real OS-level capture.
+if (typeof Element !== "undefined" && !Element.prototype.setPointerCapture) {
+  Element.prototype.setPointerCapture = function setPointerCapture() {};
+  Element.prototype.releasePointerCapture = function releasePointerCapture() {};
+  Element.prototype.hasPointerCapture = function hasPointerCapture() {
+    return false;
+  };
+}
+
+// jsdom does not implement scrollIntoView, used to bring a newly selected
+// Structure tree row into view.
+if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = function scrollIntoView() {};
+}
