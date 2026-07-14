@@ -80,7 +80,7 @@ export function StructureTreeNode({
         onClick={() => onSelect(node.id)}
         onKeyDown={handleRowKeyDown}
         className={cn(
-          "flex cursor-pointer items-center gap-1.5 rounded-md py-1.5 pr-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500",
+          "flex items-center gap-1.5 rounded-md py-1.5 pr-2 text-sm transition-colors duration-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 active:bg-zinc-200 dark:active:bg-zinc-800",
           indentClassName(depth),
           isSelected
             ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100"
@@ -92,12 +92,12 @@ export function StructureTreeNode({
             type="button"
             onClick={handleToggleClick}
             aria-label={`${isOpen ? "Collapse" : "Expand"} ${displayName}`}
-            className="flex size-4 shrink-0 items-center justify-center rounded-md text-zinc-400 hover:text-zinc-700 dark:text-zinc-600 dark:hover:text-zinc-300"
+            className="flex size-4 shrink-0 items-center justify-center rounded-md text-zinc-400 transition-colors duration-100 hover:text-zinc-700 dark:text-zinc-600 dark:hover:text-zinc-300"
           >
             <ChevronRight
               aria-hidden="true"
               className={cn(
-                "size-3.5 transition-transform",
+                "size-3.5 transition-transform duration-200 ease-out",
                 isOpen && "rotate-90",
               )}
             />
@@ -123,20 +123,29 @@ export function StructureTreeNode({
         )}
       </div>
 
-      {hasChildren && isOpen && (
-        <div role="group">
-          {children.map((child) => (
-            <StructureTreeNode
-              key={child.id}
-              node={child}
-              depth={depth + 1}
-              selectedElementId={selectedElementId}
-              openNodeIds={openNodeIds}
-              onToggle={onToggle}
-              onSelect={onSelect}
-              registerRowRef={registerRowRef}
-            />
-          ))}
+      {hasChildren && (
+        <div
+          className={cn(
+            "grid transition-[grid-template-rows] duration-200 ease-out",
+            isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+          )}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div role="group" inert={!isOpen}>
+              {children.map((child) => (
+                <StructureTreeNode
+                  key={child.id}
+                  node={child}
+                  depth={depth + 1}
+                  selectedElementId={selectedElementId}
+                  openNodeIds={openNodeIds}
+                  onToggle={onToggle}
+                  onSelect={onSelect}
+                  registerRowRef={registerRowRef}
+                />
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </>

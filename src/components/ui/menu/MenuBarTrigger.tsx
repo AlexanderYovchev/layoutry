@@ -4,7 +4,12 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
 import { useMenuBarContext } from "@/components/ui/menu/MenuBarRoot";
 import { MenuDropdown } from "@/components/ui/menu/MenuDropdown";
+import { useDismissableTransition } from "@/components/ui/motion/useDismissableTransition";
 import type { MenuItem } from "@/components/ui/menu/types";
+
+// Matches the duration-200 transition on MenuDropdown's own root element,
+// so the dropdown stays mounted exactly as long as its exit fade plays.
+const MENU_EXIT_DURATION_MS = 200;
 
 interface MenuBarTriggerProps {
   id: string;
@@ -81,6 +86,11 @@ export function MenuBarTrigger({
     }
   }
 
+  const { shouldRender, isVisible } = useDismissableTransition(
+    isOpen,
+    MENU_EXIT_DURATION_MS,
+  );
+
   return (
     <div className="relative">
       <button
@@ -93,7 +103,7 @@ export function MenuBarTrigger({
         onMouseEnter={handleMouseEnter}
         onKeyDown={handleKeyDown}
         className={cn(
-          "rounded-md px-2.5 py-1.5 text-sm text-zinc-600 dark:text-zinc-400",
+          "rounded-md px-2.5 py-1.5 text-sm text-zinc-600 transition-colors duration-100 active:bg-zinc-200 dark:text-zinc-400 dark:active:bg-zinc-800",
           isOpen
             ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100"
             : "hover:bg-zinc-100 dark:hover:bg-zinc-900",
@@ -101,11 +111,13 @@ export function MenuBarTrigger({
       >
         {label}
       </button>
-      {isOpen && (
+      {shouldRender && (
         <MenuDropdown
           items={items}
           align={align}
           initialFocus={initialFocus}
+          visible={isVisible}
+          isOpen={isOpen}
           onRequestClose={(returnFocus) => {
             closeMenu();
             if (returnFocus) buttonRef.current?.focus();

@@ -23,25 +23,31 @@ describe("StructureTree", () => {
   });
 
   it("collapses and expands a section's children via its disclosure control", async () => {
+    // Collapsed children stay mounted (so the collapse can animate) but
+    // become inert — removed from focus and the accessibility tree —
+    // rather than being removed from the DOM outright.
     const user = userEvent.setup();
     render(<StructureTree />);
 
     const [firstSectionToggle] = screen.getAllByRole("button", {
       name: "Collapse Section",
     });
+    const headingGroup = screen
+      .getByText("Heading")
+      .closest('[role="group"]') as HTMLElement;
 
-    expect(screen.getByText("Heading")).toBeInTheDocument();
+    expect(headingGroup).not.toHaveAttribute("inert");
 
     await user.click(firstSectionToggle);
 
-    expect(screen.queryByText("Heading")).not.toBeInTheDocument();
+    expect(headingGroup).toHaveAttribute("inert");
     expect(
       screen.getByRole("button", { name: "Expand Section" }),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Expand Section" }));
 
-    expect(screen.getByText("Heading")).toBeInTheDocument();
+    expect(headingGroup).not.toHaveAttribute("inert");
   });
 
   it("selects the corresponding element when a row is clicked", async () => {
@@ -72,14 +78,18 @@ describe("StructureTree", () => {
     const sectionToggles = screen.getAllByRole("button", {
       name: "Collapse Section",
     });
+    const imageGroup = screen
+      .getByText("Image")
+      .closest('[role="group"]') as HTMLElement;
+
     await user.click(sectionToggles[1]);
-    expect(screen.queryByText("Image")).not.toBeInTheDocument();
+    expect(imageGroup).toHaveAttribute("inert");
 
     act(() => {
       useEditorStore.getState().selectElement("image-1");
     });
 
-    expect(screen.getByText("Image")).toBeInTheDocument();
+    expect(imageGroup).not.toHaveAttribute("inert");
     expect(
       screen.getByText("Image").closest('[role="treeitem"]'),
     ).toHaveAttribute("aria-selected", "true");

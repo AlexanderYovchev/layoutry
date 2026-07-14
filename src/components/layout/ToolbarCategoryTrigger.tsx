@@ -1,11 +1,16 @@
 "use client";
 
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import { useRef, type KeyboardEvent } from "react";
 import { ChevronDown, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CatalogCard } from "@/components/layout/CatalogCard";
 import { CatalogSearchField } from "@/components/layout/CatalogSearchField";
+import { useDismissableTransition } from "@/components/ui/motion/useDismissableTransition";
 import type { ToolbarCategoryContent } from "@/components/layout/creationToolbarCategories";
+
+// Matches the duration-200 transition on the catalog panel itself, so it
+// stays mounted exactly as long as its exit fade plays.
+const CATALOG_PANEL_EXIT_DURATION_MS = 200;
 
 interface ToolbarCategoryTriggerProps {
   category: ToolbarCategoryContent;
@@ -29,12 +34,20 @@ export function ToolbarCategoryTrigger({
   onMoveFocus,
 }: ToolbarCategoryTriggerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const { shouldRender, isVisible } = useDismissableTransition(
+    isOpen,
+    CATALOG_PANEL_EXIT_DURATION_MS,
+  );
 
-  useEffect(() => {
-    if (isOpen) {
-      panelRef.current?.focus();
+  // A ref callback (not an effect keyed on isOpen) so focus lands the
+  // instant the panel actually mounts, regardless of the extra render
+  // shouldRender takes to catch up to isOpen.
+  function registerPanelRef(el: HTMLDivElement | null) {
+    panelRef.current = el;
+    if (el && isOpen) {
+      el.focus();
     }
-  }, [isOpen]);
+  }
 
   function handleTriggerClick() {
     if (isOpen) {
@@ -107,7 +120,7 @@ export function ToolbarCategoryTrigger({
         onMouseEnter={onHoverSwitch}
         onKeyDown={handleTriggerKeyDown}
         className={cn(
-          "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm",
+          "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-100 active:bg-zinc-200 dark:active:bg-zinc-800",
           isOpen
             ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100"
             : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900",
@@ -121,14 +134,21 @@ export function ToolbarCategoryTrigger({
         />
       </button>
 
-      {isOpen && (
+      {shouldRender && (
         <div
-          ref={panelRef}
+          ref={registerPanelRef}
           role="menu"
           aria-label={`${category.label} elements`}
           tabIndex={-1}
+          inert={!isOpen}
+          aria-hidden={!isOpen}
           onKeyDown={handlePanelKeyDown}
-          className="absolute z-50 mt-1 flex max-h-[70vh] w-72 flex-col rounded-md border border-zinc-200 bg-white shadow-md dark:border-zinc-800 dark:bg-zinc-950"
+          className={cn(
+            "absolute z-50 mt-1 flex max-h-[70vh] w-72 flex-col rounded-md border border-zinc-200 bg-white shadow-md transition-[opacity,transform] duration-200 ease-out dark:border-zinc-800 dark:bg-zinc-950",
+            isVisible
+              ? "translate-y-0 opacity-100"
+              : "-translate-y-1 opacity-0",
+          )}
         >
           <CatalogSearchField categoryLabel={category.label} />
 

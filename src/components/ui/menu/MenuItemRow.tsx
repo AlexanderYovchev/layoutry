@@ -8,6 +8,8 @@ import type { MenuItem } from "@/components/ui/menu/types";
 interface MenuItemRowProps {
   item: MenuItem;
   isActive: boolean;
+  /** Whether this row's submenu is currently open — drives aria-expanded. Ignored for non-submenu items. */
+  submenuOpen?: boolean;
   registerRef: (el: HTMLButtonElement | null) => void;
   onMouseEnter: () => void;
   onActivate: () => void;
@@ -17,6 +19,7 @@ interface MenuItemRowProps {
 export function MenuItemRow({
   item,
   isActive,
+  submenuOpen = false,
   registerRef,
   onMouseEnter,
   onActivate,
@@ -34,7 +37,6 @@ export function MenuItemRow({
   const disabled = Boolean(item.disabled);
   const isCheckbox = item.type === "checkbox";
   const isSubmenu = item.type === "submenu";
-  const submenuOpen = isSubmenu && Boolean(children);
 
   return (
     <div className="relative">
@@ -53,10 +55,10 @@ export function MenuItemRow({
           onActivate();
         }}
         className={cn(
-          "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm",
+          "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors duration-100",
           disabled
             ? "cursor-not-allowed text-zinc-300 dark:text-zinc-700"
-            : "text-zinc-700 dark:text-zinc-300",
+            : "text-zinc-700 active:bg-zinc-200 dark:text-zinc-300 dark:active:bg-zinc-800",
           isActive && !disabled && "bg-zinc-100 dark:bg-zinc-900",
         )}
       >

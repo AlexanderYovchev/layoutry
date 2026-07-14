@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { mockContainerElement } from "@/features/inspector/mockSelectedElement";
@@ -33,12 +33,29 @@ describe("InspectorContent", () => {
     }
   });
 
+  // A collapsed section's content stays mounted (so the collapse can
+  // animate) but becomes inert — removed from focus and the
+  // accessibility tree — rather than being removed from the DOM outright.
+  function getSectionContent(header: HTMLElement) {
+    return header.nextElementSibling?.firstElementChild
+      ?.firstElementChild as HTMLElement;
+  }
+
   it("opens Layout and Size by default, and keeps the rest collapsed", () => {
     render(<InspectorContent selectedElement={mockContainerElement} />);
 
     expect(screen.getByText("Display")).toBeInTheDocument();
-    expect(screen.getByText("Width")).toBeInTheDocument();
-    expect(screen.queryByText("Padding")).not.toBeInTheDocument();
+
+    const sizeContent = getSectionContent(
+      screen.getByRole("button", { name: "Size" }),
+    );
+    expect(within(sizeContent).getByText("Width")).toBeInTheDocument();
+    expect(sizeContent).not.toHaveAttribute("inert");
+
+    const spacingContent = getSectionContent(
+      screen.getByRole("button", { name: "Spacing" }),
+    );
+    expect(spacingContent).toHaveAttribute("inert");
   });
 
   it("expands a collapsed section on click and collapses an open one", async () => {
@@ -51,12 +68,13 @@ describe("InspectorContent", () => {
     await user.click(spacingHeader);
     expect(spacingHeader).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("Padding")).toBeInTheDocument();
+    expect(getSectionContent(spacingHeader)).not.toHaveAttribute("inert");
 
     const layoutHeader = screen.getByRole("button", { name: "Layout" });
     expect(layoutHeader).toHaveAttribute("aria-expanded", "true");
 
     await user.click(layoutHeader);
     expect(layoutHeader).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByText("Display")).not.toBeInTheDocument();
+    expect(getSectionContent(layoutHeader)).toHaveAttribute("inert");
   });
 });

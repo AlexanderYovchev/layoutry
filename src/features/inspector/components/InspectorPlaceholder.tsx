@@ -2,7 +2,7 @@ import { SlidersHorizontal } from "lucide-react";
 
 export function InspectorPlaceholder() {
   return (
-    <div className="flex flex-col items-center gap-2 text-center">
+    <div className="animate-fade-in flex flex-col items-center gap-2 text-center">
       <SlidersHorizontal
         aria-hidden="true"
         className="size-5 text-zinc-300 dark:text-zinc-600"

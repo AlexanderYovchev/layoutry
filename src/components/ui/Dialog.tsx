@@ -66,7 +66,7 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
           type="button"
           aria-label="Close"
           onClick={() => dialogRef.current?.close()}
-          className="flex size-6 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:text-zinc-400 dark:hover:bg-zinc-900"
+          className="flex size-6 items-center justify-center rounded-md text-zinc-500 transition-colors duration-100 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 active:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:active:bg-zinc-800"
         >
           <X aria-hidden="true" className="size-4" />
         </button>

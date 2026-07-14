@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { AppHeader } from "./AppHeader";
@@ -43,11 +49,15 @@ describe("AppHeader", () => {
 
     await user.click(fileTrigger);
 
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(fileTrigger).toHaveAttribute("aria-expanded", "false");
+    // The dropdown lingers briefly to play its exit fade rather than
+    // disappearing the instant it's closed.
+    await waitFor(() =>
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument(),
+    );
   });
 
-  it("switches directly to another top-level menu when a different trigger is clicked", () => {
+  it("switches directly to another top-level menu when a different trigger is clicked", async () => {
     // Uses fireEvent (a single discrete click, no simulated pointer travel) to
     // isolate click-to-switch behavior from mouse hover-switching, which is
     // exercised separately and would otherwise already open "Edit" on the way.
@@ -60,10 +70,12 @@ describe("AppHeader", () => {
 
     fireEvent.click(screen.getByRole("menuitem", { name: "Edit" }));
 
-    expect(
-      screen.queryByRole("menuitem", { name: "New Project" }),
-    ).not.toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Undo" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("menuitem", { name: "New Project" }),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("switches to another top-level menu on hover once a menu is already open", async () => {
@@ -77,10 +89,12 @@ describe("AppHeader", () => {
 
     await user.hover(screen.getByRole("menuitem", { name: "Edit" }));
 
-    expect(
-      screen.queryByRole("menuitem", { name: "New Project" }),
-    ).not.toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Undo" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("menuitem", { name: "New Project" }),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("closes the open menu when clicking outside", async () => {
@@ -92,7 +106,9 @@ describe("AppHeader", () => {
 
     await user.click(document.body);
 
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument(),
+    );
   });
 
   it("closes the open menu with Escape and returns focus to the trigger", async () => {
@@ -105,8 +121,10 @@ describe("AppHeader", () => {
 
     await user.keyboard("{Escape}");
 
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(fileTrigger).toHaveFocus();
+    await waitFor(() =>
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument(),
+    );
   });
 
   it("does not activate disabled items and leaves the menu open", async () => {
@@ -166,7 +184,9 @@ describe("AppHeader", () => {
     await user.click(resourcePanelItem);
 
     expect(onToggleView).toHaveBeenCalledWith("resourcePanelVisible");
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument(),
+    );
   });
 
   it("reflects unchecked view state", async () => {

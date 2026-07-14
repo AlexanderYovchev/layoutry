@@ -2,7 +2,7 @@ import { ListTree } from "lucide-react";
 
 export function StructureEmptyState() {
   return (
-    <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+    <div className="animate-fade-in flex flex-col items-center gap-2 px-4 py-8 text-center">
       <ListTree
         aria-hidden="true"
         className="size-5 text-zinc-300 dark:text-zinc-600"

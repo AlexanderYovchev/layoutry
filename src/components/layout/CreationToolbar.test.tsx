@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { CreationToolbar } from "./CreationToolbar";
@@ -37,10 +43,14 @@ describe("CreationToolbar", () => {
 
     await user.click(htmlTrigger);
 
-    expect(
-      screen.queryByRole("menu", { name: "HTML elements" }),
-    ).not.toBeInTheDocument();
     expect(htmlTrigger).toHaveAttribute("aria-expanded", "false");
+    // The panel lingers briefly to play its exit fade rather than
+    // disappearing the instant it's closed.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("menu", { name: "HTML elements" }),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("shows the documented placeholder sections inside the HTML dropdown", async () => {
@@ -85,7 +95,7 @@ describe("CreationToolbar", () => {
     expect(searchField).toBeDisabled();
   });
 
-  it("switches directly to another category when a different trigger is clicked", () => {
+  it("switches directly to another category when a different trigger is clicked", async () => {
     // fireEvent isolates the discrete click from simulated hover, which is
     // covered separately below.
     render(<CreationToolbar />);
@@ -98,11 +108,13 @@ describe("CreationToolbar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Layout" }));
 
     expect(
-      screen.queryByRole("menu", { name: "HTML elements" }),
-    ).not.toBeInTheDocument();
-    expect(
       screen.getByRole("menu", { name: "Layout elements" }),
     ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("menu", { name: "HTML elements" }),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("switches categories on hover once one is already open", async () => {
@@ -113,11 +125,13 @@ describe("CreationToolbar", () => {
     await user.hover(screen.getByRole("button", { name: "Media" }));
 
     expect(
-      screen.queryByRole("menu", { name: "HTML elements" }),
-    ).not.toBeInTheDocument();
-    expect(
       screen.getByRole("menu", { name: "Media elements" }),
     ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("menu", { name: "HTML elements" }),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("closes the open dropdown when clicking outside", async () => {
@@ -129,7 +143,9 @@ describe("CreationToolbar", () => {
 
     await user.click(document.body);
 
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument(),
+    );
   });
 
   it("closes with Escape and restores focus to the trigger", async () => {
@@ -142,8 +158,10 @@ describe("CreationToolbar", () => {
 
     await user.keyboard("{Escape}");
 
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(stylesTrigger).toHaveFocus();
+    await waitFor(() =>
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument(),
+    );
   });
 
   it("moves focus between category triggers with the arrow keys", async () => {

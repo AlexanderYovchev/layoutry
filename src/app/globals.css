@@ -8,11 +8,49 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --animate-fade-in: fade-in 180ms ease-out;
+  --animate-fade-in-up: fade-in-up 220ms ease-out;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/*
+ * Single, global reduced-motion override rather than sprinkling
+ * motion-reduce: variants across every component. State changes (open,
+ * select, expand) still happen — they just stop being animated.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

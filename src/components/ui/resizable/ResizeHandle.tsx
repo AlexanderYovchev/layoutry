@@ -40,7 +40,7 @@ export function ResizeHandle({
     >
       <div
         className={cn(
-          "absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors",
+          "absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors duration-150 ease-out",
           isDragging
             ? "bg-zinc-400 dark:bg-zinc-600"
             : "bg-transparent group-hover:bg-zinc-300 dark:group-hover:bg-zinc-700",

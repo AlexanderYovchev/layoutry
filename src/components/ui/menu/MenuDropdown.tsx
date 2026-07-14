@@ -3,13 +3,28 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
 import { MenuItemRow } from "@/components/ui/menu/MenuItemRow";
+import { useDismissableTransition } from "@/components/ui/motion/useDismissableTransition";
 import type { MenuItem } from "@/components/ui/menu/types";
+
+// Matches the duration-200 transition on MenuDropdown's own root element,
+// so the submenu stays mounted exactly as long as its exit fade plays.
+const SUBMENU_EXIT_DURATION_MS = 200;
 
 interface MenuDropdownProps {
   items: MenuItem[];
   align?: "left" | "right";
   initialFocus?: "first" | "last";
   variant?: "top" | "submenu";
+  /** Drives the open/close fade+slide. Defaults to true for a dropdown that's mounted unconditionally by its parent. */
+  visible?: boolean;
+  /**
+   * The real open/closed intent, independent of `visible`'s animation-frame
+   * delay. Drives `inert` so a closing dropdown stops being focusable,
+   * clickable, and discoverable by assistive tech and automation the
+   * instant close is requested — not just once its exit fade finishes.
+   * Defaults to true for a dropdown that's mounted unconditionally.
+   */
+  isOpen?: boolean;
   onRequestClose: (returnFocus: boolean) => void;
   onMoveToAdjacentMenu?: (direction: 1 | -1) => void;
 }
@@ -18,11 +33,43 @@ function isSelectable(item: MenuItem) {
   return item.type !== "separator" && !item.disabled;
 }
 
+interface SubmenuSlotProps {
+  isOpen: boolean;
+  items: MenuItem[];
+  onRequestClose: (returnFocus: boolean) => void;
+}
+
+// A submenu's open state is owned by its parent (openSubmenuIndex), but the
+// exit-transition timing is local to each submenu slot — isolating it in
+// its own component gives each one its own useDismissableTransition
+// instance without calling hooks inside the items.map() loop above.
+function SubmenuSlot({ isOpen, items, onRequestClose }: SubmenuSlotProps) {
+  const { shouldRender, isVisible } = useDismissableTransition(
+    isOpen,
+    SUBMENU_EXIT_DURATION_MS,
+  );
+
+  if (!shouldRender) return null;
+
+  return (
+    <MenuDropdown
+      items={items}
+      variant="submenu"
+      initialFocus="first"
+      visible={isVisible}
+      isOpen={isOpen}
+      onRequestClose={onRequestClose}
+    />
+  );
+}
+
 export function MenuDropdown({
   items,
   align = "left",
   initialFocus = "first",
   variant = "top",
+  visible = true,
+  isOpen = true,
   onRequestClose,
   onMoveToAdjacentMenu,
 }: MenuDropdownProps) {
@@ -146,9 +193,12 @@ export function MenuDropdown({
       ref={containerRef}
       role="menu"
       tabIndex={-1}
+      inert={!isOpen}
+      aria-hidden={!isOpen}
       onKeyDown={handleKeyDown}
       className={cn(
-        "absolute z-50 w-64 rounded-md border border-zinc-200 bg-white py-1 shadow-md dark:border-zinc-800 dark:bg-zinc-950",
+        "absolute z-50 w-64 rounded-md border border-zinc-200 bg-white py-1 shadow-md transition-[opacity,transform] duration-200 ease-out dark:border-zinc-800 dark:bg-zinc-950",
+        visible ? "translate-y-0 opacity-100" : "-translate-y-1 opacity-0",
         variant === "top" && "mt-1",
         variant === "top" && (align === "left" ? "left-0" : "right-0"),
         variant === "submenu" && "top-0 left-full ml-1",
@@ -159,6 +209,7 @@ export function MenuDropdown({
           key={item.id}
           item={item}
           isActive={index === activeIndex}
+          submenuOpen={openSubmenuIndex === index}
           registerRef={(el) => {
             if (el) itemRefs.current.set(index, el);
             else itemRefs.current.delete(index);
@@ -171,11 +222,10 @@ export function MenuDropdown({
           }}
           onActivate={() => activateItem(index)}
         >
-          {item.type === "submenu" && openSubmenuIndex === index && (
-            <MenuDropdown
+          {item.type === "submenu" && (
+            <SubmenuSlot
+              isOpen={openSubmenuIndex === index}
               items={item.items}
-              variant="submenu"
-              initialFocus="first"
               onRequestClose={(returnFocus) => {
                 setOpenSubmenuIndex(null);
                 if (returnFocus) itemRefs.current.get(index)?.focus();
