@@ -1,6 +1,6 @@
 "use client";
 
-import { DocumentNodeRenderer } from "@/features/canvas/components/document/DocumentNodeRenderer";
+import { CanvasInteractionBoundary } from "@/features/canvas/components/CanvasInteractionBoundary";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 
 /**
@@ -15,7 +15,7 @@ export function DocumentCanvas() {
 
   return (
     <div className="animate-fade-in-up relative min-h-500 w-full max-w-360 shrink-0 rounded-md border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-black">
-      <DocumentNodeRenderer node={document} parentId={null} />
+      <CanvasInteractionBoundary document={document} />
     </div>
   );
 }

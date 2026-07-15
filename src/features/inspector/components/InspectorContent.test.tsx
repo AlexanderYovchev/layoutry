@@ -1,10 +1,17 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { mockContainerElement } from "@/features/inspector/mockSelectedElement";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { InspectorContent } from "./InspectorContent";
 
+const initialState = useEditorStore.getState();
+
 describe("InspectorContent", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
   it("shows the no-selection empty state by default", () => {
     render(<InspectorContent />);
 
@@ -78,5 +85,26 @@ describe("InspectorContent", () => {
     await user.click(layoutHeader);
     expect(layoutHeader).toHaveAttribute("aria-expanded", "false");
     expect(getSectionContent(layoutHeader)).toHaveAttribute("inert");
+  });
+
+  it("shows a real selected node's read-only summary, taking priority over mock data", () => {
+    useEditorStore.setState({ selectedElementId: "heading-1" });
+
+    render(<InspectorContent selectedElement={mockContainerElement} />);
+
+    expect(screen.getByText("1 element selected")).toBeInTheDocument();
+    expect(screen.getByText("Heading")).toBeInTheDocument();
+    expect(screen.getByText("heading-1")).toBeInTheDocument();
+    // The mock CSS-section demo must not render while a real node is selected.
+    expect(screen.queryByText("Layout")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the no-selection state when the selected id no longer resolves", () => {
+    useEditorStore.setState({ selectedElementId: "does-not-exist" });
+
+    render(<InspectorContent />);
+
+    expect(screen.getByText("No selection")).toBeInTheDocument();
+    expect(screen.getByText("No element selected")).toBeInTheDocument();
   });
 });

@@ -4,16 +4,21 @@ import { useState } from "react";
 import { InspectorElementSummary } from "@/features/inspector/components/InspectorElementSummary";
 import { InspectorFieldRow } from "@/features/inspector/components/InspectorFieldRow";
 import { InspectorHeader } from "@/features/inspector/components/InspectorHeader";
+import { InspectorNodeSummary } from "@/features/inspector/components/InspectorNodeSummary";
 import { InspectorPlaceholder } from "@/features/inspector/components/InspectorPlaceholder";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { InspectorSegmentedRow } from "@/features/inspector/components/InspectorSegmentedRow";
+import { useSelectedNode } from "@/features/editor/hooks/useSelectedNode";
 import type { MockSelectedElement } from "@/features/inspector/types/inspector";
 
 interface InspectorContentProps {
   /**
-   * Static demonstration data only — real element selection does not
-   * exist yet. Left null in the shipped app; a mock value can be passed
-   * in during development to validate the selected-element architecture.
+   * Static demonstration data for the future CSS Inspector's section/row
+   * layout only — unrelated to real selection, which is read directly
+   * from the shared editor store below and always takes priority when
+   * present. Left null in the shipped app; a mock value can be passed in
+   * during development to validate the CSS-editing information
+   * architecture ahead of M6.
    */
   selectedElement?: MockSelectedElement | null;
 }
@@ -21,6 +26,7 @@ interface InspectorContentProps {
 export function InspectorContent({
   selectedElement = null,
 }: InspectorContentProps) {
+  const selected = useSelectedNode();
   const [openSectionIds, setOpenSectionIds] = useState<Set<string>>(
     () =>
       new Set(
@@ -42,13 +48,17 @@ export function InspectorContent({
     });
   }
 
+  const hasSelection = selected !== null || selectedElement !== null;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <InspectorHeader
-        statusLabel={selectedElement ? "1 element selected" : "No selection"}
+        statusLabel={hasSelection ? "1 element selected" : "No selection"}
       />
 
-      {selectedElement ? (
+      {selected ? (
+        <InspectorNodeSummary node={selected.node} parentId={selected.parentId} />
+      ) : selectedElement ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <InspectorElementSummary
             name={selectedElement.name}

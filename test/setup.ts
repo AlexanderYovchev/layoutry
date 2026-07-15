@@ -43,3 +43,14 @@ if (typeof Element !== "undefined" && !Element.prototype.setPointerCapture) {
 if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function scrollIntoView() {};
 }
+
+// jsdom does not implement ResizeObserver, used to keep the Canvas
+// selection/hover overlay aligned with its target element's box.
+if (typeof window !== "undefined" && !window.ResizeObserver) {
+  class ResizeObserverStub {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  window.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
+}
