@@ -9,6 +9,7 @@ import {
   MousePointerClick,
   PanelBottom,
   PanelTop,
+  Rows3,
   Type,
   type LucideIcon,
 } from "lucide-react";
@@ -18,6 +19,7 @@ export const FALLBACK_ELEMENT_ICON = Component;
 /** Centralized tag-to-icon mapping for Structure tree rows. */
 export const TAG_ICONS: Record<string, LucideIcon> = {
   page: FileText,
+  body: Rows3,
   div: Box,
   section: Layout,
   h1: Type,

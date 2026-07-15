@@ -2,6 +2,7 @@ import type { EditorElementNode } from "@/features/editor/types/document";
 
 const TAG_DISPLAY_NAMES: Record<string, string> = {
   page: "Page",
+  body: "Body",
   div: "Container",
   section: "Section",
   h1: "Heading",

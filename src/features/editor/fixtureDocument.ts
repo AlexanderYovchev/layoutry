@@ -14,9 +14,22 @@ export const fixtureDocument: EditorElementNode = {
       id: "section-1",
       tag: "section",
       children: [
-        { id: "heading-1", tag: "h1" },
-        { id: "paragraph-1", tag: "p" },
-        { id: "button-1", tag: "button", displayName: "Primary Button" },
+        {
+          id: "heading-1",
+          tag: "h1",
+          text: "Build layouts visually. Own the code.",
+        },
+        {
+          id: "paragraph-1",
+          tag: "p",
+          text: "Layoutry renders every element on this page from a single typed document model — the same model the Structure panel, inspector, and code export will all read from.",
+        },
+        {
+          id: "button-1",
+          tag: "button",
+          displayName: "Primary Button",
+          text: "Get Started",
+        },
       ],
     },
     {
