@@ -99,6 +99,8 @@ export function AppShell({
           <ResourceSidebar
             structureContent={structureContent}
             width={resourceWidth}
+            minWidth={RESOURCE_PANEL_MIN_WIDTH}
+            maxWidth={RESOURCE_PANEL_MAX_WIDTH}
             isDragging={resourcePanel.isDragging}
             onPointerDown={(event) =>
               resourcePanel.handlePointerDown(event, resourceWidth)
@@ -111,6 +113,8 @@ export function AppShell({
         {viewState.inspectorPanelVisible && (
           <InspectorPanel
             width={inspectorWidth}
+            minWidth={INSPECTOR_MIN_WIDTH}
+            maxWidth={INSPECTOR_MAX_WIDTH}
             isDragging={inspectorPanel.isDragging}
             onPointerDown={(event) =>
               inspectorPanel.handlePointerDown(event, inspectorWidth)

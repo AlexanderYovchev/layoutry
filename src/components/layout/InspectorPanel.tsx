@@ -6,6 +6,8 @@ import { ResizeHandle } from "@/components/ui/resizable/ResizeHandle";
 interface InspectorPanelProps {
   children: ReactNode;
   width: number;
+  minWidth: number;
+  maxWidth: number;
   isDragging: boolean;
   onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
   onPointerMove: (event: PointerEvent<HTMLDivElement>) => void;
@@ -15,6 +17,8 @@ interface InspectorPanelProps {
 export function InspectorPanel({
   children,
   width,
+  minWidth,
+  maxWidth,
   isDragging,
   onPointerDown,
   onPointerMove,
@@ -27,6 +31,10 @@ export function InspectorPanel({
       className="relative flex shrink-0 flex-col overflow-hidden border-l border-zinc-200 dark:border-zinc-800"
     >
       <ResizeHandle
+        aria-label="Resize Inspector Panel"
+        valueNow={width}
+        valueMin={minWidth}
+        valueMax={maxWidth}
         className="left-0"
         isDragging={isDragging}
         onPointerDown={onPointerDown}

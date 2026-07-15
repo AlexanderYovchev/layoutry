@@ -19,7 +19,7 @@ export function InspectorElementSummary({
         <p className="truncate text-sm font-medium text-zinc-700 dark:text-zinc-300">
           {name}
         </p>
-        <p className="truncate font-mono text-xs text-zinc-400 dark:text-zinc-600">
+        <p className="truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
           {tag}
         </p>
       </div>

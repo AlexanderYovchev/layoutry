@@ -10,6 +10,8 @@ function renderInspectorPanel(
   return render(
     <InspectorPanel
       width={300}
+      minWidth={260}
+      maxWidth={520}
       isDragging={false}
       onPointerDown={noop}
       onPointerMove={noop}

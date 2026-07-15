@@ -27,7 +27,7 @@ export function HelpDialogs({ openDialogId, onClose }: HelpDialogsProps) {
             something.
           </li>
         </ul>
-        <p className="mt-3 text-zinc-400 dark:text-zinc-600">
+        <p className="mt-3 text-zinc-500 dark:text-zinc-400">
           Layoutry is still in active development — most menu commands are
           placeholders until their underlying systems are built.
         </p>
@@ -70,7 +70,7 @@ export function HelpDialogs({ openDialogId, onClose }: HelpDialogsProps) {
       >
         <p className="font-medium text-zinc-700 dark:text-zinc-300">Layoutry</p>
         <p>Build layouts visually. Own the code.</p>
-        <p className="mt-3 text-zinc-400 dark:text-zinc-600">
+        <p className="mt-3 text-zinc-500 dark:text-zinc-400">
           Version 0.1.0 — development preview.
         </p>
       </Dialog>

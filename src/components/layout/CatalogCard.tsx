@@ -19,7 +19,7 @@ export function CatalogCard({ card, registerRef }: CatalogCardProps) {
       role="menuitem"
       disabled={card.disabled}
       tabIndex={-1}
-      className="flex w-full items-start gap-2 rounded-md px-3 py-2 text-left disabled:cursor-not-allowed"
+      className="flex w-full items-start gap-2 rounded-md px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed"
     >
       <span
         aria-hidden="true"
@@ -29,7 +29,7 @@ export function CatalogCard({ card, registerRef }: CatalogCardProps) {
         <span className="block truncate text-sm font-medium text-zinc-600 dark:text-zinc-400">
           {card.name}
         </span>
-        <span className="block truncate text-xs text-zinc-400 dark:text-zinc-500">
+        <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">
           {card.description}
         </span>
       </span>

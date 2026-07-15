@@ -11,6 +11,8 @@ function renderResourceSidebar(
   return render(
     <ResourceSidebar
       width={280}
+      minWidth={220}
+      maxWidth={520}
       isDragging={false}
       onPointerDown={noop}
       onPointerMove={noop}

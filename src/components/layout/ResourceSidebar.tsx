@@ -12,6 +12,8 @@ import {
 interface ResourceSidebarProps {
   structureContent?: ReactNode;
   width: number;
+  minWidth: number;
+  maxWidth: number;
   isDragging: boolean;
   onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
   onPointerMove: (event: PointerEvent<HTMLDivElement>) => void;
@@ -21,6 +23,8 @@ interface ResourceSidebarProps {
 export function ResourceSidebar({
   structureContent,
   width,
+  minWidth,
+  maxWidth,
   isDragging,
   onPointerDown,
   onPointerMove,
@@ -53,6 +57,10 @@ export function ResourceSidebar({
       </div>
 
       <ResizeHandle
+        aria-label="Resize Resource Panel"
+        valueNow={width}
+        valueMin={minWidth}
+        valueMax={maxWidth}
         className="right-0"
         isDragging={isDragging}
         onPointerDown={onPointerDown}

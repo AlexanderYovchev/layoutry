@@ -30,6 +30,8 @@ export function MenuBarTrigger({
     closeMenu,
     registerTrigger,
     focusAdjacentTrigger,
+    currentTriggerId,
+    setCurrentTriggerId,
   } = useMenuBarContext();
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [initialFocus, setInitialFocus] = useState<"first" | "last">("first");
@@ -99,11 +101,13 @@ export function MenuBarTrigger({
         role="menuitem"
         aria-haspopup="menu"
         aria-expanded={isOpen}
+        tabIndex={currentTriggerId === id ? 0 : -1}
         onClick={handleClick}
         onMouseEnter={handleMouseEnter}
+        onFocus={() => setCurrentTriggerId(id)}
         onKeyDown={handleKeyDown}
         className={cn(
-          "rounded-md px-2.5 py-1.5 text-sm text-zinc-600 transition-colors duration-100 active:bg-zinc-200 dark:text-zinc-400 dark:active:bg-zinc-800",
+          "rounded-md px-2.5 py-1.5 text-sm text-zinc-600 transition-colors duration-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 active:bg-zinc-200 dark:text-zinc-400 dark:active:bg-zinc-800",
           isOpen
             ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100"
             : "hover:bg-zinc-100 dark:hover:bg-zinc-900",
@@ -114,6 +118,7 @@ export function MenuBarTrigger({
       {shouldRender && (
         <MenuDropdown
           items={items}
+          ariaLabel={label}
           align={align}
           initialFocus={initialFocus}
           visible={isVisible}

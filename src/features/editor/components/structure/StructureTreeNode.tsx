@@ -34,8 +34,13 @@ interface StructureTreeNodeProps {
   depth: number;
   selectedElementId: string | null;
   openNodeIds: Set<string>;
+  /** The tree's single roving tab stop (WAI-ARIA treeview pattern) — every other row is tabIndex=-1. */
+  currentNodeId: string;
   onToggle: (id: string) => void;
   onSelect: (id: string) => void;
+  onFocusRow: (id: string) => void;
+  onMoveFocus: (fromId: string, direction: 1 | -1) => void;
+  onMoveToEdge: (edge: "first" | "last") => void;
   registerRowRef: (id: string, el: HTMLDivElement | null) => void;
 }
 
@@ -44,8 +49,12 @@ export function StructureTreeNode({
   depth,
   selectedElementId,
   openNodeIds,
+  currentNodeId,
   onToggle,
   onSelect,
+  onFocusRow,
+  onMoveFocus,
+  onMoveToEdge,
   registerRowRef,
 }: StructureTreeNodeProps) {
   const children = node.children ?? [];
@@ -56,9 +65,28 @@ export function StructureTreeNode({
   const Icon = TAG_ICONS[node.tag] ?? FALLBACK_ELEMENT_ICON;
 
   function handleRowKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onSelect(node.id);
+    switch (event.key) {
+      case "Enter":
+      case " ":
+        event.preventDefault();
+        onSelect(node.id);
+        break;
+      case "ArrowDown":
+        event.preventDefault();
+        onMoveFocus(node.id, 1);
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        onMoveFocus(node.id, -1);
+        break;
+      case "Home":
+        event.preventDefault();
+        onMoveToEdge("first");
+        break;
+      case "End":
+        event.preventDefault();
+        onMoveToEdge("last");
+        break;
     }
   }
 
@@ -75,9 +103,10 @@ export function StructureTreeNode({
         aria-selected={isSelected}
         aria-expanded={hasChildren ? isOpen : undefined}
         aria-level={depth + 1}
-        tabIndex={0}
+        tabIndex={node.id === currentNodeId ? 0 : -1}
         title={displayName}
         onClick={() => onSelect(node.id)}
+        onFocus={() => onFocusRow(node.id)}
         onKeyDown={handleRowKeyDown}
         className={cn(
           "flex items-center gap-1.5 rounded-md py-1.5 pr-2 text-sm transition-colors duration-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 active:bg-zinc-200 dark:active:bg-zinc-800",
@@ -92,7 +121,7 @@ export function StructureTreeNode({
             type="button"
             onClick={handleToggleClick}
             aria-label={`${isOpen ? "Collapse" : "Expand"} ${displayName}`}
-            className="flex size-4 shrink-0 items-center justify-center rounded-md text-zinc-400 transition-colors duration-100 hover:text-zinc-700 dark:text-zinc-600 dark:hover:text-zinc-300"
+            className="flex size-5 shrink-0 items-center justify-center rounded-md text-zinc-500 transition-colors duration-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
           >
             <ChevronRight
               aria-hidden="true"
@@ -116,7 +145,7 @@ export function StructureTreeNode({
         {shouldShowTagBadge(node) && (
           <span
             aria-hidden="true"
-            className="shrink-0 font-mono text-xs text-zinc-400 dark:text-zinc-600"
+            className="shrink-0 font-mono text-xs text-zinc-500 dark:text-zinc-400"
           >
             {node.tag}
           </span>
@@ -139,8 +168,12 @@ export function StructureTreeNode({
                   depth={depth + 1}
                   selectedElementId={selectedElementId}
                   openNodeIds={openNodeIds}
+                  currentNodeId={currentNodeId}
                   onToggle={onToggle}
                   onSelect={onSelect}
+                  onFocusRow={onFocusRow}
+                  onMoveFocus={onMoveFocus}
+                  onMoveToEdge={onMoveToEdge}
                   registerRowRef={registerRowRef}
                 />
               ))}

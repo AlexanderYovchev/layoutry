@@ -55,7 +55,7 @@ export function MenuItemRow({
           onActivate();
         }}
         className={cn(
-          "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors duration-100",
+          "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors duration-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500",
           disabled
             ? "cursor-not-allowed text-zinc-300 dark:text-zinc-700"
             : "text-zinc-700 active:bg-zinc-200 dark:text-zinc-300 dark:active:bg-zinc-800",
@@ -79,7 +79,7 @@ export function MenuItemRow({
         {item.type === "command" && item.shortcut && (
           <span
             aria-hidden="true"
-            className="shrink-0 text-xs text-zinc-400 dark:text-zinc-600"
+            className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400"
           >
             {item.shortcut}
           </span>

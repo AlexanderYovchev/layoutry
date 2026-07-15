@@ -6,7 +6,7 @@ export function ResourcePlaceholderMessage({
   description,
 }: ResourcePlaceholderMessageProps) {
   return (
-    <p className="px-1 text-sm text-zinc-400 dark:text-zinc-500">
+    <p className="px-1 text-sm text-zinc-500 dark:text-zinc-400">
       {description}
     </p>
   );

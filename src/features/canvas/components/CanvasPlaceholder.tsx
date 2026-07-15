@@ -13,7 +13,7 @@ export function CanvasPlaceholder() {
         <span className="block font-medium text-zinc-600 dark:text-zinc-300">
           Desktop
         </span>
-        <span className="block text-zinc-400 dark:text-zinc-500">
+        <span className="block text-zinc-500 dark:text-zinc-400">
           1440 &times; Auto
         </span>
       </span>
@@ -23,10 +23,10 @@ export function CanvasPlaceholder() {
           aria-hidden="true"
           className="size-6 text-zinc-300 dark:text-zinc-600"
         />
-        <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
+        <h2 className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
           Build your page
-        </p>
-        <p className="max-w-xs text-sm text-zinc-400 dark:text-zinc-500">
+        </h2>
+        <p className="max-w-xs text-sm text-zinc-500 dark:text-zinc-400">
           Start by adding HTML elements or Components from the Creation Toolbar.
         </p>
       </div>

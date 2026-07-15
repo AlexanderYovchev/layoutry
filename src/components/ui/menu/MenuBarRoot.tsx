@@ -16,6 +16,9 @@ interface MenuBarContextValue {
   closeMenu: () => void;
   registerTrigger: (id: string, el: HTMLButtonElement | null) => void;
   focusAdjacentTrigger: (fromId: string, direction: 1 | -1) => void;
+  /** The single roving tab stop for the menu bar (WAI-ARIA menubar pattern) — every other trigger is tabIndex=-1. */
+  currentTriggerId: string;
+  setCurrentTriggerId: (id: string) => void;
 }
 
 const MenuBarContext = createContext<MenuBarContextValue | null>(null);
@@ -41,6 +44,7 @@ export function MenuBarRoot({
   children,
 }: MenuBarRootProps) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [currentTriggerId, setCurrentTriggerId] = useState(menuIds[0]);
   const triggerRefs = useRef(new Map<string, HTMLButtonElement>());
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -91,6 +95,8 @@ export function MenuBarRoot({
         closeMenu,
         registerTrigger,
         focusAdjacentTrigger,
+        currentTriggerId,
+        setCurrentTriggerId,
       }}
     >
       <div

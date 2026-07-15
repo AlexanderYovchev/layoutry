@@ -15,7 +15,7 @@ export function ProjectIdentity() {
       </span>
       <span
         title="Saving isn't implemented yet"
-        className="ml-1 shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-500"
+        className="ml-1 shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400"
       >
         Draft
       </span>

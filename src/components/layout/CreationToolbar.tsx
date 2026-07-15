@@ -25,6 +25,9 @@ const categoryIcons: Record<string, LucideIcon> = {
 
 export function CreationToolbar() {
   const [openCategoryId, setOpenCategoryId] = useState<string | null>(null);
+  const [currentCategoryId, setCurrentCategoryId] = useState(
+    creationToolbarCategories[0].id,
+  );
   const triggerRefs = useRef(new Map<string, HTMLButtonElement>());
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -68,6 +71,7 @@ export function CreationToolbar() {
             category={category}
             icon={categoryIcons[category.id]}
             isOpen={openCategoryId === category.id}
+            isCurrent={currentCategoryId === category.id}
             registerTriggerRef={(el) => {
               if (el) triggerRefs.current.set(category.id, el);
               else triggerRefs.current.delete(category.id);
@@ -82,6 +86,7 @@ export function CreationToolbar() {
                 setOpenCategoryId(category.id);
               }
             }}
+            onFocusTrigger={() => setCurrentCategoryId(category.id)}
             onMoveFocus={(direction) => moveFocus(category.id, direction)}
           />
         ))}

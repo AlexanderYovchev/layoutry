@@ -22,7 +22,7 @@ export function InspectorSegmentedRow({
               "px-2 py-1",
               option === activeOption
                 ? "bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-                : "text-zinc-400 dark:text-zinc-600",
+                : "text-zinc-500 dark:text-zinc-400",
             )}
           >
             {option}

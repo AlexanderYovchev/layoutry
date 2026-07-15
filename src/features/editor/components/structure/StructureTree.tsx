@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
-import { findAncestorIds } from "@/features/editor/components/structure/documentTreeUtils";
+import {
+  findAncestorIds,
+  getVisibleNodeIds,
+} from "@/features/editor/components/structure/documentTreeUtils";
 import { StructureTreeNode } from "@/features/editor/components/structure/StructureTreeNode";
 
 export function StructureTree() {
@@ -19,6 +22,11 @@ export function StructureTree() {
     }
     return initial;
   });
+
+  // The tree's single roving tab stop (WAI-ARIA treeview pattern) — every
+  // other row is tabIndex=-1. Defaults to the root until the user focuses
+  // or selects something else.
+  const [currentNodeId, setCurrentNodeId] = useState(documentTree.id);
 
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
 
@@ -42,6 +50,28 @@ export function StructureTree() {
     });
   }
 
+  function handleMoveFocus(fromId: string, direction: 1 | -1) {
+    const visibleIds = getVisibleNodeIds(documentTree, openNodeIds);
+    const index = visibleIds.indexOf(fromId);
+    if (index === -1) return;
+    // Tree navigation doesn't wrap at the ends (unlike a menubar/toolbar) —
+    // Up at the first row and Down at the last row simply stay put.
+    const nextIndex = Math.min(
+      Math.max(index + direction, 0),
+      visibleIds.length - 1,
+    );
+    const nextId = visibleIds[nextIndex];
+    rowRefs.current.get(nextId)?.focus();
+  }
+
+  function handleMoveToEdge(edge: "first" | "last") {
+    const visibleIds = getVisibleNodeIds(documentTree, openNodeIds);
+    if (visibleIds.length === 0) return;
+    const nextId =
+      edge === "first" ? visibleIds[0] : visibleIds[visibleIds.length - 1];
+    rowRefs.current.get(nextId)?.focus();
+  }
+
   // Synchronizes local expansion state with an external event (the
   // editor store's selection changing, whether from this tree or, once
   // it exists, the canvas). This is a one-time reaction, not a derived
@@ -61,6 +91,7 @@ export function StructureTree() {
       });
     }
 
+    setCurrentNodeId(selectedElementId);
     rowRefs.current
       .get(selectedElementId)
       ?.scrollIntoView({ block: "nearest" });
@@ -77,8 +108,12 @@ export function StructureTree() {
         depth={0}
         selectedElementId={selectedElementId}
         openNodeIds={openNodeIds}
+        currentNodeId={currentNodeId}
         onToggle={handleToggle}
         onSelect={selectElement}
+        onFocusRow={setCurrentNodeId}
+        onMoveFocus={handleMoveFocus}
+        onMoveToEdge={handleMoveToEdge}
         registerRowRef={registerRowRef}
       />
     </div>

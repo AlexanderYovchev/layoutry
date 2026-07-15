@@ -36,9 +36,11 @@ describe("InspectorContent", () => {
   // A collapsed section's content stays mounted (so the collapse can
   // animate) but becomes inert — removed from focus and the
   // accessibility tree — rather than being removed from the DOM outright.
+  // Uses the header's own aria-controls, which also exercises the
+  // heading-button/panel ARIA relationship itself.
   function getSectionContent(header: HTMLElement) {
-    return header.nextElementSibling?.firstElementChild
-      ?.firstElementChild as HTMLElement;
+    const panelId = header.getAttribute("aria-controls");
+    return document.getElementById(panelId ?? "") as HTMLElement;
   }
 
   it("opens Layout and Size by default, and keeps the rest collapsed", () => {

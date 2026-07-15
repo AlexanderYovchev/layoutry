@@ -12,6 +12,8 @@ const SUBMENU_EXIT_DURATION_MS = 200;
 
 interface MenuDropdownProps {
   items: MenuItem[];
+  /** Accessible name for the menu itself, e.g. the trigger's own label ("File", "Open Recent"). */
+  ariaLabel: string;
   align?: "left" | "right";
   initialFocus?: "first" | "last";
   variant?: "top" | "submenu";
@@ -36,6 +38,7 @@ function isSelectable(item: MenuItem) {
 interface SubmenuSlotProps {
   isOpen: boolean;
   items: MenuItem[];
+  ariaLabel: string;
   onRequestClose: (returnFocus: boolean) => void;
 }
 
@@ -43,7 +46,12 @@ interface SubmenuSlotProps {
 // exit-transition timing is local to each submenu slot — isolating it in
 // its own component gives each one its own useDismissableTransition
 // instance without calling hooks inside the items.map() loop above.
-function SubmenuSlot({ isOpen, items, onRequestClose }: SubmenuSlotProps) {
+function SubmenuSlot({
+  isOpen,
+  items,
+  ariaLabel,
+  onRequestClose,
+}: SubmenuSlotProps) {
   const { shouldRender, isVisible } = useDismissableTransition(
     isOpen,
     SUBMENU_EXIT_DURATION_MS,
@@ -54,6 +62,7 @@ function SubmenuSlot({ isOpen, items, onRequestClose }: SubmenuSlotProps) {
   return (
     <MenuDropdown
       items={items}
+      ariaLabel={ariaLabel}
       variant="submenu"
       initialFocus="first"
       visible={isVisible}
@@ -65,6 +74,7 @@ function SubmenuSlot({ isOpen, items, onRequestClose }: SubmenuSlotProps) {
 
 export function MenuDropdown({
   items,
+  ariaLabel,
   align = "left",
   initialFocus = "first",
   variant = "top",
@@ -192,6 +202,7 @@ export function MenuDropdown({
     <div
       ref={containerRef}
       role="menu"
+      aria-label={ariaLabel}
       tabIndex={-1}
       inert={!isOpen}
       aria-hidden={!isOpen}
@@ -226,6 +237,7 @@ export function MenuDropdown({
             <SubmenuSlot
               isOpen={openSubmenuIndex === index}
               items={item.items}
+              ariaLabel={item.label}
               onRequestClose={(returnFocus) => {
                 setOpenSubmenuIndex(null);
                 if (returnFocus) itemRefs.current.get(index)?.focus();

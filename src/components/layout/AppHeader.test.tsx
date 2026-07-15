@@ -37,6 +37,20 @@ describe("AppHeader", () => {
     }
   });
 
+  it("keeps only one top-level trigger in the tab sequence at a time (roving tabindex)", () => {
+    renderAppHeader();
+
+    const fileTrigger = screen.getByRole("menuitem", { name: "File" });
+    const editTrigger = screen.getByRole("menuitem", { name: "Edit" });
+    expect(fileTrigger).toHaveAttribute("tabindex", "0");
+    expect(editTrigger).toHaveAttribute("tabindex", "-1");
+
+    fireEvent.focus(editTrigger);
+
+    expect(fileTrigger).toHaveAttribute("tabindex", "-1");
+    expect(editTrigger).toHaveAttribute("tabindex", "0");
+  });
+
   it("opens a menu on click and closes it when the same trigger is clicked again", async () => {
     const user = userEvent.setup();
     renderAppHeader();

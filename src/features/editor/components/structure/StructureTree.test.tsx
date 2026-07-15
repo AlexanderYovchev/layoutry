@@ -114,6 +114,91 @@ describe("StructureTree", () => {
     expect(useEditorStore.getState().selectedElementId).toBe("paragraph-1");
   });
 
+  it("keeps only one row in the tab sequence at a time (roving tabindex)", () => {
+    render(<StructureTree />);
+
+    const pageRow = screen.getByText("Page").closest('[role="treeitem"]');
+    const headingRow = screen.getByText("Heading").closest('[role="treeitem"]');
+    expect(pageRow).toHaveAttribute("tabindex", "0");
+    expect(headingRow).toHaveAttribute("tabindex", "-1");
+
+    fireEvent.focus(headingRow as HTMLElement);
+
+    expect(pageRow).toHaveAttribute("tabindex", "-1");
+    expect(headingRow).toHaveAttribute("tabindex", "0");
+  });
+
+  it("moves focus to the next and previous visible row with ArrowDown/ArrowUp", () => {
+    render(<StructureTree />);
+
+    const pageRow = screen
+      .getByText("Page")
+      .closest('[role="treeitem"]') as HTMLElement;
+    const firstSectionRow = screen
+      .getAllByText("Section")[0]
+      .closest('[role="treeitem"]') as HTMLElement;
+
+    pageRow.focus();
+    fireEvent.keyDown(pageRow, { key: "ArrowDown" });
+    expect(firstSectionRow).toHaveFocus();
+
+    fireEvent.keyDown(firstSectionRow, { key: "ArrowUp" });
+    expect(pageRow).toHaveFocus();
+  });
+
+  it("does not move focus past the first row on ArrowUp", () => {
+    render(<StructureTree />);
+
+    const pageRow = screen
+      .getByText("Page")
+      .closest('[role="treeitem"]') as HTMLElement;
+
+    pageRow.focus();
+    fireEvent.keyDown(pageRow, { key: "ArrowUp" });
+
+    expect(pageRow).toHaveFocus();
+  });
+
+  it("moves focus to the first and last visible row with Home/End", () => {
+    render(<StructureTree />);
+
+    const pageRow = screen
+      .getByText("Page")
+      .closest('[role="treeitem"]') as HTMLElement;
+    const imageRow = screen
+      .getByText("Image")
+      .closest('[role="treeitem"]') as HTMLElement;
+
+    pageRow.focus();
+    fireEvent.keyDown(pageRow, { key: "End" });
+    expect(imageRow).toHaveFocus();
+
+    fireEvent.keyDown(imageRow, { key: "Home" });
+    expect(pageRow).toHaveFocus();
+  });
+
+  it("skips a collapsed branch's children when moving focus with ArrowDown", async () => {
+    const user = userEvent.setup();
+    render(<StructureTree />);
+
+    const [firstSectionToggle] = screen.getAllByRole("button", {
+      name: "Collapse Section",
+    });
+    await user.click(firstSectionToggle);
+
+    const firstSectionRow = screen
+      .getAllByText("Section")[0]
+      .closest('[role="treeitem"]') as HTMLElement;
+    const secondSectionRow = screen
+      .getAllByText("Section")[1]
+      .closest('[role="treeitem"]') as HTMLElement;
+
+    firstSectionRow.focus();
+    fireEvent.keyDown(firstSectionRow, { key: "ArrowDown" });
+
+    expect(secondSectionRow).toHaveFocus();
+  });
+
   it("truncates a long element name and exposes the full name via title", () => {
     const longName =
       "A very long custom component label that should truncate instead of wrapping or overflowing";

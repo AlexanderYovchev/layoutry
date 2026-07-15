@@ -25,3 +25,30 @@ export function findAncestorIds(
   walk(root);
   return path;
 }
+
+/**
+ * Ids of every node currently reachable by the tree in display order —
+ * the root, then each open branch's children, skipping the children of
+ * any collapsed node. This is the roving-tabindex order for keyboard
+ * navigation: Up/Down/Home/End move within this list, never into a
+ * branch that isn't actually visible.
+ */
+export function getVisibleNodeIds(
+  root: EditorElementNode,
+  openNodeIds: Set<string>,
+): string[] {
+  const ids: string[] = [];
+
+  function walk(node: EditorElementNode) {
+    ids.push(node.id);
+    const children = node.children ?? [];
+    if (children.length > 0 && openNodeIds.has(node.id)) {
+      for (const child of children) {
+        walk(child);
+      }
+    }
+  }
+
+  walk(root);
+  return ids;
+}
