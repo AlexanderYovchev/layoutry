@@ -20,6 +20,13 @@ interface CatalogCardProps {
  * role="menuitem" semantics. Drag is a pointer-only enhancement layered
  * on top of the fully keyboard-accessible click path, not a replacement
  * for it.
+ *
+ * Interactive affordance (hover/focus-visible/active) is applied purely
+ * via the `enabled:` Tailwind variant rather than a JS hover-state or an
+ * `isDragging`-style conditional, so disabled cards are structurally
+ * incapable of showing it — there's no branch to accidentally leave on.
+ * The hover/active scale uses `transform`, which never affects layout,
+ * so neighboring cards never shift.
  */
 export function CatalogCard({ card, registerRef, onActivate }: CatalogCardProps) {
   const { setNodeRef, listeners, isDragging } = useDraggable({
@@ -42,7 +49,11 @@ export function CatalogCard({ card, registerRef, onActivate }: CatalogCardProps)
       tabIndex={card.disabled ? -1 : 0}
       onClick={() => onActivate?.(card)}
       className={cn(
-        "flex w-full items-start gap-2 rounded-md px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed",
+        "flex w-full items-start gap-2 rounded-lg border border-transparent px-3 py-2 text-left transition-[transform,background-color,border-color] duration-100 ease-out",
+        "enabled:cursor-pointer enabled:hover:scale-[1.02] enabled:hover:border-zinc-300 enabled:hover:bg-zinc-100 dark:enabled:hover:border-zinc-700 dark:enabled:hover:bg-zinc-900",
+        "enabled:focus-visible:scale-[1.02] enabled:focus-visible:border-zinc-300 enabled:focus-visible:bg-zinc-100 dark:enabled:focus-visible:border-zinc-700 dark:enabled:focus-visible:bg-zinc-900",
+        "enabled:active:scale-100 enabled:active:bg-zinc-200 dark:enabled:active:bg-zinc-800",
+        "focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed",
         isDragging && "opacity-40",
       )}
       {...listeners}

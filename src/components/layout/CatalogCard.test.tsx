@@ -54,4 +54,25 @@ describe("CatalogCard", () => {
     await user.click(card);
     expect(onActivate).not.toHaveBeenCalled();
   });
+
+  it("gives an enabled card pointer-cursor and hover/focus-visible styling hooks", () => {
+    render(<CatalogCard card={enabledCard} />);
+
+    const card = screen.getByRole("menuitem", { name: /Button/ });
+    expect(card.className).toContain("enabled:cursor-pointer");
+    expect(card.className).toContain("enabled:hover:scale-[1.02]");
+    expect(card.className).toContain("enabled:hover:bg-zinc-100");
+    expect(card.className).toContain("enabled:hover:border-zinc-300");
+    expect(card.className).toContain("enabled:focus-visible:scale-[1.02]");
+    expect(card.className).toContain("enabled:focus-visible:bg-zinc-100");
+    expect(card.className).toContain("enabled:active:scale-100");
+  });
+
+  it("does not apply the enabled interactive styling hooks to a disabled card", () => {
+    render(<CatalogCard card={disabledCard} />);
+
+    const card = screen.getByRole("menuitem", { name: /Link/ });
+    expect(card.className).toContain("disabled:cursor-not-allowed");
+    expect(card.className).not.toContain("hover:cursor-pointer");
+  });
 });
