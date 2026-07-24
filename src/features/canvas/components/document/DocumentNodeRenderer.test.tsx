@@ -52,4 +52,28 @@ describe("DocumentNodeRenderer", () => {
 
     expect(screen.getByText("Still visible")).toBeInTheDocument();
   });
+
+  it("renders the document root (tag page) via its own dedicated component", () => {
+    const tree: EditorElementNode = {
+      id: "page-root",
+      tag: "page",
+      children: [{ id: "heading-1", tag: "h1", text: "Title" }],
+    };
+
+    render(<DocumentNodeRenderer node={tree} parentId={null} />);
+
+    const root = document.querySelector('[data-node-id="page-root"]');
+    expect(root).toHaveAttribute("data-node-type", "page");
+    expect(screen.getByRole("heading", { name: "Title" })).toBeInTheDocument();
+  });
+
+  it("renders an img node as an empty-image placeholder rather than nothing", () => {
+    const tree: EditorElementNode = { id: "image-1", tag: "img" };
+
+    render(<DocumentNodeRenderer node={tree} parentId={null} />);
+
+    const placeholder = document.querySelector('[data-node-id="image-1"]');
+    expect(placeholder).toBeInTheDocument();
+    expect(placeholder).toHaveAttribute("data-node-type", "img");
+  });
 });

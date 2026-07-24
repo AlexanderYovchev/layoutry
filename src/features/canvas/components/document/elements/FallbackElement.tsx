@@ -2,9 +2,8 @@ import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttr
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
 /**
- * Safety net for any node type without a registered renderer, including
- * the document root itself (tag "page", which owns no visual identity of
- * its own — the page chrome belongs to DocumentCanvas). Renders children
+ * Safety net for any node type without a registered renderer (e.g.
+ * "section", not yet given its own presentation). Renders children
  * without adding presentation, so new node types degrade gracefully
  * instead of breaking the canvas.
  */

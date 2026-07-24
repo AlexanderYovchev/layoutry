@@ -31,4 +31,16 @@ describe("useEditorStore", () => {
 
     expect(useEditorStore.getState().selectedElementId).toBeNull();
   });
+
+  it("inserts a node into the target parent and selects it in one update", () => {
+    const newNode = { id: "button-new", tag: "button", text: "Go" };
+
+    useEditorStore.getState().insertElement("section-1", newNode);
+
+    const section = useEditorStore
+      .getState()
+      .document.children?.find((child) => child.id === "section-1");
+    expect(section?.children?.at(-1)).toEqual(newNode);
+    expect(useEditorStore.getState().selectedElementId).toBe("button-new");
+  });
 });

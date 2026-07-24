@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { insertNode } from "@/features/editor/commands/documentCommands";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -7,6 +8,7 @@ interface EditorState {
   selectedElementId: string | null;
   selectElement: (id: string | null) => void;
   clearSelection: () => void;
+  insertElement: (parentId: string, node: EditorElementNode) => void;
 }
 
 /**
@@ -22,4 +24,13 @@ export const useEditorStore = create<EditorState>()((set) => ({
   selectedElementId: null,
   selectElement: (id) => set({ selectedElementId: id }),
   clearSelection: () => set({ selectedElementId: null }),
+  // Insertion and selecting the newly inserted node are one atomic
+  // update — every insertion method (click, drag) goes through this
+  // single action so "select what you just inserted" can never drift
+  // out of sync with "what got inserted."
+  insertElement: (parentId, node) =>
+    set((state) => ({
+      document: insertNode(state.document, parentId, node),
+      selectedElementId: node.id,
+    })),
 }));

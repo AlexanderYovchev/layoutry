@@ -1,18 +1,21 @@
 import { BodyElement } from "@/features/canvas/components/document/elements/BodyElement";
 import { ButtonElement } from "@/features/canvas/components/document/elements/ButtonElement";
 import { ContainerElement } from "@/features/canvas/components/document/elements/ContainerElement";
+import { DocumentRootElement } from "@/features/canvas/components/document/elements/DocumentRootElement";
 import { HeadingElement } from "@/features/canvas/components/document/elements/HeadingElement";
+import { ImageElement } from "@/features/canvas/components/document/elements/ImageElement";
 import { ParagraphElement } from "@/features/canvas/components/document/elements/ParagraphElement";
 import type { DocumentElementComponent } from "@/features/canvas/types/documentRenderer";
 
 /**
  * Tag-to-component lookup driving the canvas renderer — adding a new node
  * type is a new entry here plus its element component, never a switch
- * statement. Tags without an entry (including "page", the document root)
- * fall back to FallbackElement in DocumentNodeRenderer.
+ * statement. Tags without an entry fall back to FallbackElement in
+ * DocumentNodeRenderer.
  */
 export const documentNodeComponents: Record<string, DocumentElementComponent> =
   {
+    page: DocumentRootElement,
     body: BodyElement,
     div: ContainerElement,
     section: ContainerElement,
@@ -24,4 +27,5 @@ export const documentNodeComponents: Record<string, DocumentElementComponent> =
     h6: HeadingElement,
     p: ParagraphElement,
     button: ButtonElement,
+    img: ImageElement,
   };

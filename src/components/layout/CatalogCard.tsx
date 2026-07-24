@@ -1,25 +1,51 @@
+"use client";
+
+import { useDraggable } from "@dnd-kit/core";
 import type { CatalogCardPlaceholder } from "@/components/layout/creationToolbarCategories";
+import { cn } from "@/lib/utils";
 
 interface CatalogCardProps {
   card: CatalogCardPlaceholder;
   registerRef?: (el: HTMLButtonElement | null) => void;
+  /** Click-to-insert — the keyboard-accessible path; native <button> already fires this on Enter/Space. */
+  onActivate?: (card: CatalogCardPlaceholder) => void;
 }
 
 /**
- * Represents one future catalog entry (an HTML element, component, template,
- * or asset). Every card is disabled today — this establishes the card shape
- * (icon slot + name + description) so a real, selectable catalog can replace
- * the placeholder content later without restructuring the layout.
+ * Represents one catalog entry. Enabled cards (those with an
+ * elementType) support click-to-insert and, additively, drag-to-insert
+ * via dnd-kit — deliberately only its pointer `listeners`, not its
+ * `attributes`, since dnd-kit's default ARIA role/tabIndex would
+ * override this card's existing, already-accessibility-audited
+ * role="menuitem" semantics. Drag is a pointer-only enhancement layered
+ * on top of the fully keyboard-accessible click path, not a replacement
+ * for it.
  */
-export function CatalogCard({ card, registerRef }: CatalogCardProps) {
+export function CatalogCard({ card, registerRef, onActivate }: CatalogCardProps) {
+  const { setNodeRef, listeners, isDragging } = useDraggable({
+    id: card.id,
+    data: { elementType: card.elementType, label: card.name },
+    disabled: card.disabled,
+  });
+
+  function setRef(el: HTMLButtonElement | null) {
+    setNodeRef(el);
+    registerRef?.(el);
+  }
+
   return (
     <button
-      ref={registerRef}
+      ref={setRef}
       type="button"
       role="menuitem"
       disabled={card.disabled}
-      tabIndex={-1}
-      className="flex w-full items-start gap-2 rounded-md px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed"
+      tabIndex={card.disabled ? -1 : 0}
+      onClick={() => onActivate?.(card)}
+      className={cn(
+        "flex w-full items-start gap-2 rounded-md px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed",
+        isDragging && "opacity-40",
+      )}
+      {...listeners}
     >
       <span
         aria-hidden="true"

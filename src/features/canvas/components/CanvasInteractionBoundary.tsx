@@ -35,6 +35,19 @@ export function CanvasInteractionBoundary({
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const selectElement = useEditorStore((state) => state.selectElement);
   const clearSelection = useEditorStore((state) => state.clearSelection);
+  const selectedElementId = useEditorStore((state) => state.selectedElementId);
+
+  // Reveals the selected node whenever selection changes — including a
+  // newly inserted node, which may render below the fold. scrollIntoView
+  // with block "nearest" is a no-op when the node is already visible, so
+  // this never causes distracting scrolling on an ordinary re-selection.
+  useEffect(() => {
+    if (!selectedElementId) return;
+    const target = canvasRootRef.current?.querySelector(
+      `[data-node-id="${CSS.escape(selectedElementId)}"]`,
+    );
+    target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selectedElementId]);
 
   useEffect(() => {
     function handleClick(event: MouseEvent) {

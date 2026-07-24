@@ -6,7 +6,10 @@ import { cn } from "@/lib/utils";
 import { CatalogCard } from "@/components/layout/CatalogCard";
 import { CatalogSearchField } from "@/components/layout/CatalogSearchField";
 import { useDismissableTransition } from "@/components/ui/motion/useDismissableTransition";
-import type { ToolbarCategoryContent } from "@/components/layout/creationToolbarCategories";
+import type {
+  CatalogCardPlaceholder,
+  ToolbarCategoryContent,
+} from "@/components/layout/creationToolbarCategories";
 
 // Matches the duration-200 transition on the catalog panel itself, so it
 // stays mounted exactly as long as its exit fade plays.
@@ -24,6 +27,7 @@ interface ToolbarCategoryTriggerProps {
   onHoverSwitch: () => void;
   onFocusTrigger: () => void;
   onMoveFocus: (direction: 1 | -1) => void;
+  onActivateCard?: (card: CatalogCardPlaceholder) => void;
 }
 
 export function ToolbarCategoryTrigger({
@@ -37,6 +41,7 @@ export function ToolbarCategoryTrigger({
   onHoverSwitch,
   onFocusTrigger,
   onMoveFocus,
+  onActivateCard,
 }: ToolbarCategoryTriggerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const { shouldRender, isVisible } = useDismissableTransition(
@@ -183,7 +188,14 @@ export function ToolbarCategoryTrigger({
                   {section.label}
                 </p>
                 {section.cards.map((card) => (
-                  <CatalogCard key={card.id} card={card} />
+                  <CatalogCard
+                    key={card.id}
+                    card={card}
+                    onActivate={(activatedCard) => {
+                      onActivateCard?.(activatedCard);
+                      onClose(true);
+                    }}
+                  />
                 ))}
               </div>
             ))}

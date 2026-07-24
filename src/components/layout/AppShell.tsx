@@ -12,11 +12,13 @@ import { computeAppliedPanelWidths } from "@/components/ui/resizable/computeAppl
 import { useResizablePanelWidth } from "@/components/ui/resizable/useResizablePanelWidth";
 import { useViewportWidth } from "@/components/ui/viewport/useViewportWidth";
 import type { ViewState } from "@/components/layout/applicationMenus";
+import type { CatalogCardPlaceholder } from "@/components/layout/creationToolbarCategories";
 
 interface AppShellProps {
   workspaceContent: ReactNode;
   inspectorContent: ReactNode;
   structureContent?: ReactNode;
+  onActivateCatalogCard?: (card: CatalogCardPlaceholder) => void;
 }
 
 const initialViewState: ViewState = {
@@ -48,6 +50,7 @@ export function AppShell({
   workspaceContent,
   inspectorContent,
   structureContent,
+  onActivateCatalogCard,
 }: AppShellProps) {
   const [viewState, setViewState] = useState<ViewState>(initialViewState);
   const viewportWidth = useViewportWidth();
@@ -93,7 +96,7 @@ export function AppShell({
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden bg-white dark:bg-black">
       <AppHeader viewState={viewState} onToggleView={handleToggleView} />
-      <CreationToolbar />
+      <CreationToolbar onActivateCard={onActivateCatalogCard} />
       <div className="flex min-h-0 flex-1 overflow-x-auto">
         {viewState.resourcePanelVisible && (
           <ResourceSidebar

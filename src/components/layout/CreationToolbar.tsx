@@ -11,7 +11,10 @@ import {
   TextCursorInput,
   type LucideIcon,
 } from "lucide-react";
-import { creationToolbarCategories } from "@/components/layout/creationToolbarCategories";
+import {
+  creationToolbarCategories,
+  type CatalogCardPlaceholder,
+} from "@/components/layout/creationToolbarCategories";
 import { ToolbarCategoryTrigger } from "@/components/layout/ToolbarCategoryTrigger";
 
 const categoryIcons: Record<string, LucideIcon> = {
@@ -23,7 +26,11 @@ const categoryIcons: Record<string, LucideIcon> = {
   styles: Palette,
 };
 
-export function CreationToolbar() {
+interface CreationToolbarProps {
+  onActivateCard?: (card: CatalogCardPlaceholder) => void;
+}
+
+export function CreationToolbar({ onActivateCard }: CreationToolbarProps) {
   const [openCategoryId, setOpenCategoryId] = useState<string | null>(null);
   const [currentCategoryId, setCurrentCategoryId] = useState(
     creationToolbarCategories[0].id,
@@ -88,6 +95,7 @@ export function CreationToolbar() {
             }}
             onFocusTrigger={() => setCurrentCategoryId(category.id)}
             onMoveFocus={(direction) => moveFocus(category.id, direction)}
+            onActivateCard={onActivateCard}
           />
         ))}
       </div>

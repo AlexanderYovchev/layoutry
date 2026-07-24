@@ -1,8 +1,24 @@
+/**
+ * Mirrors the editor feature's InsertableElementType string-for-string,
+ * without importing it — components/layout must not import src/features/*,
+ * so this file owns its own minimal vocabulary and the composition root
+ * (EditorApp) validates/maps the string at the boundary where it actually
+ * calls into the editor.
+ */
+export type InsertableCardType =
+  | "container"
+  | "heading"
+  | "paragraph"
+  | "button"
+  | "image";
+
 export interface CatalogCardPlaceholder {
   id: string;
   name: string;
   description: string;
-  disabled: true;
+  /** True whenever elementType is unset — a card is only ever enabled because a real factory exists for it. */
+  disabled: boolean;
+  elementType?: InsertableCardType;
 }
 
 export interface CategorySection {
@@ -20,6 +36,7 @@ export interface ToolbarCategoryContent {
 interface CardSeed {
   name: string;
   description: string;
+  elementType?: InsertableCardType;
 }
 
 function section(
@@ -35,7 +52,8 @@ function section(
       id: `${categoryId}-${sectionId}-${index}`,
       name: seed.name,
       description: seed.description,
-      disabled: true,
+      disabled: !seed.elementType,
+      elementType: seed.elementType,
     })),
   };
 }
@@ -47,12 +65,20 @@ function htmlCategory(): ToolbarCategoryContent {
     label: "HTML",
     sections: [
       section(id, "containers", "Containers", [
-        { name: "Container", description: "Generic layout container" },
+        {
+          name: "Container",
+          description: "Generic layout container",
+          elementType: "container",
+        },
         { name: "Section", description: "Generic content section" },
       ]),
       section(id, "typography", "Typography", [
-        { name: "Heading", description: "Page heading" },
-        { name: "Paragraph", description: "Body text" },
+        { name: "Heading", description: "Page heading", elementType: "heading" },
+        {
+          name: "Paragraph",
+          description: "Body text",
+          elementType: "paragraph",
+        },
       ]),
       section(id, "navigation", "Navigation", [
         { name: "Link", description: "Navigable link" },
@@ -64,10 +90,14 @@ function htmlCategory(): ToolbarCategoryContent {
       ]),
       section(id, "forms", "Forms", [
         { name: "Input", description: "Single-line text field" },
-        { name: "Button", description: "Interactive button" },
+        {
+          name: "Button",
+          description: "Interactive button",
+          elementType: "button",
+        },
       ]),
       section(id, "media", "Media", [
-        { name: "Image", description: "Static image" },
+        { name: "Image", description: "Static image", elementType: "image" },
         { name: "Video", description: "Embedded video" },
       ]),
       section(id, "tables", "Tables", [
