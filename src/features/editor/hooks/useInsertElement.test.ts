@@ -33,7 +33,42 @@ describe("useInsertElement", () => {
     expect(state.selectedElementId).toBe(inserted?.id);
   });
 
-  it("falls back to the document root when no target is requested", () => {
+  it("falls back to the document root when no target is requested and nothing is selected", () => {
+    const { result } = renderHook(() => useInsertElement());
+
+    result.current("container");
+
+    const state = useEditorStore.getState();
+    expect(state.document.children?.at(-1)?.tag).toBe("div");
+  });
+
+  it("targets the current selection when no explicit drop target is requested and the selection can contain children", () => {
+    useEditorStore.setState({ selectedElementId: "section-1" });
+    const { result } = renderHook(() => useInsertElement());
+
+    result.current("button");
+
+    const section = useEditorStore
+      .getState()
+      .document.children?.find((child) => child.id === "section-1");
+    expect(section?.children?.at(-1)?.tag).toBe("button");
+  });
+
+  it("targets the current selection's parent when no explicit drop target is requested and the selection is a leaf", () => {
+    useEditorStore.setState({ selectedElementId: "image-1" });
+    const { result } = renderHook(() => useInsertElement());
+
+    result.current("image");
+
+    const section = useEditorStore
+      .getState()
+      .document.children?.find((child) => child.id === "section-2");
+    expect(section?.children?.at(-1)?.tag).toBe("img");
+    expect(section?.children).toHaveLength(2);
+  });
+
+  it("falls back to the document root when no explicit drop target is requested and the selected node no longer exists", () => {
+    useEditorStore.setState({ selectedElementId: "does-not-exist" });
     const { result } = renderHook(() => useInsertElement());
 
     result.current("container");

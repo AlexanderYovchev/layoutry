@@ -31,52 +31,49 @@ function contentBoxRange(
  * Every container in this app is a flex column: width is the cross axis
  * (an ancestor that stretches to fill its own parent still resolves to a
  * real, already-settled number at any instant — growing a child past it
- * would overflow, not push that ancestor wider), while height is the main
- * axis, sized to content by default — an ancestor with no explicit height
- * of its own isn't a ceiling at all, it grows to match whatever its
- * children need. Clamping vertical growth against such an ancestor's
- * *current* height (a snapshot that goes stale the instant the very
- * child being resized starts growing, since that's what the ancestor's
- * height is derived from) would incorrectly block a resize that has every
- * right to succeed — this is what made south/north resizing appear
- * completely broken on section-2 and the Image inside it, both of which
- * exactly fit their auto-height parent with zero pre-existing slack.
+ * would overflow, not push that ancestor wider). Height is not symmetric
+ * between its two edges, though: the *top* edge of a containing block is
+ * always a real, already-resolved position (fixed by that ancestor's own
+ * place in its parent's flow) regardless of whether the ancestor's own
+ * height is fixed or auto — exactly like left/right already are. The
+ * *bottom* edge is different: an auto-height ancestor's bottom is a
+ * moving target that grows to match whatever its children need, so it
+ * isn't a real ceiling at all (clamping south/east growth against it would
+ * incorrectly block a resize that has every right to succeed — see
+ * Checkpoint 3.4.2.3).
  *
- * So only the vertical axis walks: past every ancestor whose height is
- * still auto, to the nearest one that has been explicitly given a fixed
- * height (via its own prior resize — detected by an inline `style.height`,
- * which only ever comes from elementDimensionsStyle) — that ancestor
- * really is a ceiling, the same way width already is. If no ancestor is
- * explicitly sized, vertical growth is genuinely unbounded (subject only
- * to the minimum constraint), since nothing between here and the page
- * sheet imposes a real height ceiling in this layout.
+ * Treating top the same walking way as bottom was itself a bug (found in
+ * Checkpoint 3.4.2.4): an ancestor chain with no explicitly-sized member
+ * anywhere resolved to top: -Infinity, letting a north/west-anchored
+ * resize's negative margin push the box's edge past its own immediate
+ * parent's top/left entirely, overlapping whatever came before that
+ * parent in the document. Top must always come from the immediate
+ * containing block, never from walking past it.
  */
-function resolveVerticalBound(
-  canvasRoot: HTMLElement,
-  startEl: HTMLElement,
-): { start: number; end: number } {
+function resolveBottomBound(canvasRoot: HTMLElement, startEl: HTMLElement): number {
   let current: HTMLElement | null = startEl;
 
   while (current) {
     if (current.style.height !== "") {
-      return contentBoxRange(current, canvasRoot, "vertical");
+      return contentBoxRange(current, canvasRoot, "vertical").end;
     }
     if (current === canvasRoot) break;
     current = current.parentElement?.closest<HTMLElement>("[data-node-id]") ?? null;
   }
 
-  return { start: -Infinity, end: Infinity };
+  return Infinity;
 }
 
 /**
  * Measures the resized node's bounds — the rect a resize may not cross —
  * in the same canvas-root-relative coordinate space useMeasuredNodeRect
- * already uses. Horizontal is always the immediate containing block's
- * content box (its nearest DOM ancestor carrying data-node-id): a real,
- * already-resolved ceiling in a flex-column layout, whether that ancestor
- * was explicitly resized or is simply stretched to fill its own parent.
- * Vertical is resolved separately (see resolveVerticalBound) since it
- * isn't symmetric with horizontal in this layout.
+ * already uses. Horizontal and the top edge are always the immediate
+ * containing block's content box (its nearest DOM ancestor carrying
+ * data-node-id): a real, already-resolved boundary in a flex-column
+ * layout, whether that ancestor was explicitly resized or is simply
+ * stretched to fill its own parent. The bottom edge is resolved
+ * separately (see resolveBottomBound) since it isn't symmetric with the
+ * other three in this layout.
  *
  * Falls back to the canvas root itself if no containing data-node-id
  * ancestor is found (shouldn't happen for any node this rule allows to be
@@ -91,12 +88,13 @@ export function resolveResizeBounds(
     targetEl.parentElement?.closest<HTMLElement>("[data-node-id]") ?? canvasRoot;
 
   const horizontal = contentBoxRange(containingEl, canvasRoot, "horizontal");
-  const vertical = resolveVerticalBound(canvasRoot, containingEl);
+  const top = contentBoxRange(containingEl, canvasRoot, "vertical").start;
+  const bottom = resolveBottomBound(canvasRoot, containingEl);
 
   return {
     left: horizontal.start,
     right: horizontal.end,
-    top: vertical.start,
-    bottom: vertical.end,
+    top,
+    bottom,
   };
 }

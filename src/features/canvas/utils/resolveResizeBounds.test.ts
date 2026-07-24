@@ -20,7 +20,7 @@ describe("resolveResizeBounds", () => {
     vi.restoreAllMocks();
   });
 
-  it("bounds width to the immediate parent's content box, but leaves height unbounded when the parent auto-sizes", () => {
+  it("bounds width and top to the immediate parent's content box, but leaves the bottom unbounded when the parent auto-sizes", () => {
     const canvasRoot = document.createElement("div");
     const parent = document.createElement("div");
     parent.setAttribute("data-node-id", "page-root");
@@ -38,7 +38,7 @@ describe("resolveResizeBounds", () => {
 
     expect(bounds.left).toBe(0);
     expect(bounds.right).toBe(900);
-    expect(bounds.top).toBe(-Infinity);
+    expect(bounds.top).toBe(0);
     expect(bounds.bottom).toBe(Infinity);
   });
 
@@ -110,7 +110,7 @@ describe("resolveResizeBounds", () => {
     expect(bounds.bottom).toBe(500);
   });
 
-  it("leaves height unbounded when neither the parent nor any ancestor up to the canvas root has an explicit height", () => {
+  it("bounds the top to the immediate parent even when no ancestor up to the canvas root has an explicit height, but leaves the bottom unbounded", () => {
     const canvasRoot = document.createElement("div");
     const grandparent = document.createElement("div");
     grandparent.setAttribute("data-node-id", "outer-container");
@@ -125,11 +125,15 @@ describe("resolveResizeBounds", () => {
 
     stubRect(canvasRoot, { left: 0, top: 0, right: 900, bottom: 900 });
     stubRect(grandparent, { left: 0, top: 0, right: 900, bottom: 500 });
-    stubRect(parent, { left: 0, top: 0, right: 900, bottom: 300 });
+    stubRect(parent, { left: 0, top: 200, right: 900, bottom: 300 });
 
     const bounds = resolveResizeBounds(canvasRoot, target);
 
-    expect(bounds.top).toBe(-Infinity);
+    // top must come from the immediate parent (inner-container, top: 200),
+    // never from walking past it the way the bottom bound does — a north
+    // resize must never be able to escape past its own parent's edge just
+    // because that parent (and everything above it) happens to auto-size.
+    expect(bounds.top).toBe(200);
     expect(bounds.bottom).toBe(Infinity);
   });
 
@@ -153,7 +157,7 @@ describe("resolveResizeBounds", () => {
     expect(bounds.bottom).toBe(400);
   });
 
-  it("falls back to the canvas root's own width, and unbounded height, when no containing data-node-id ancestor exists", () => {
+  it("falls back to the canvas root's own box, with an unbounded bottom, when no containing data-node-id ancestor exists", () => {
     const canvasRoot = document.createElement("div");
     const target = document.createElement("div");
     target.setAttribute("data-node-id", "orphan-1");
@@ -166,7 +170,7 @@ describe("resolveResizeBounds", () => {
 
     expect(bounds.left).toBe(0);
     expect(bounds.right).toBe(900);
-    expect(bounds.top).toBe(-Infinity);
+    expect(bounds.top).toBe(0);
     expect(bounds.bottom).toBe(Infinity);
   });
 });
