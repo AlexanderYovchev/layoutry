@@ -1,5 +1,10 @@
+"use client";
+
 import { Image as ImageIcon } from "lucide-react";
+import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
+import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
+import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
 /**
@@ -9,10 +14,18 @@ import type { DocumentElementProps } from "@/features/canvas/types/documentRende
  * asset is chosen.
  */
 export function ImageElement({ node, parentId }: DocumentElementProps) {
+  const dropRef = useNodeDropRegistration(node);
+  const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node);
+
   return (
     <div
+      ref={mergeRefs(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
-      className="flex h-40 w-full items-center justify-center rounded-md border border-dashed border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
+      className={cn(
+        "flex h-40 w-full items-center justify-center rounded-md border border-dashed border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900",
+        isDragging && "opacity-40",
+      )}
+      {...listeners}
     >
       <ImageIcon
         aria-hidden="true"

@@ -59,4 +59,56 @@ describe("useInsertElement", () => {
     const state = useEditorStore.getState();
     expect(state.document.children?.at(-1)?.tag).toBe("p");
   });
+
+  it("inserts before the target as a sibling when zone is 'before'", () => {
+    const { result } = renderHook(() => useInsertElement());
+
+    result.current("heading", "heading-1", "before");
+
+    const section = useEditorStore
+      .getState()
+      .document.children?.find((child) => child.id === "section-1");
+    expect(section?.children?.map((child) => child.tag)).toEqual([
+      "h1",
+      "h1",
+      "p",
+      "button",
+    ]);
+  });
+
+  it("inserts after the target as a sibling when zone is 'after'", () => {
+    const { result } = renderHook(() => useInsertElement());
+
+    result.current("paragraph", "heading-1", "after");
+
+    const section = useEditorStore
+      .getState()
+      .document.children?.find((child) => child.id === "section-1");
+    expect(section?.children?.map((child) => child.id)).toEqual([
+      "heading-1",
+      expect.stringMatching(/^p-/),
+      "paragraph-1",
+      "button-1",
+    ]);
+  });
+
+  it("treats zone 'inside' the same as the default append behavior", () => {
+    const { result } = renderHook(() => useInsertElement());
+
+    result.current("button", "section-1", "inside");
+
+    const section = useEditorStore
+      .getState()
+      .document.children?.find((child) => child.id === "section-1");
+    expect(section?.children?.at(-1)?.tag).toBe("button");
+  });
+
+  it("falls back to the default container when a before/after target is the document root", () => {
+    const { result } = renderHook(() => useInsertElement());
+
+    result.current("button", "page-root", "before");
+
+    const state = useEditorStore.getState();
+    expect(state.document.children?.at(-1)?.tag).toBe("button");
+  });
 });

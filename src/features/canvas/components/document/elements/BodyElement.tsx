@@ -1,22 +1,24 @@
 "use client";
 
-import { useContainerDropTarget } from "@/features/canvas/hooks/useContainerDropTarget";
+import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
+import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { DROP_TARGET_ACTIVE_CLASSES } from "@/features/canvas/utils/dropTargetVisuals";
-import { cn } from "@/lib/utils";
+import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
 export function BodyElement({ node, parentId, children }: DocumentElementProps) {
-  const { setNodeRef, isDropActive } = useContainerDropTarget(node);
+  const dropRef = useNodeDropRegistration(node);
+  const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node);
 
   return (
     <div
-      ref={setNodeRef}
+      ref={mergeRefs(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
       className={cn(
-        "flex flex-col gap-8 p-10 transition-colors sm:p-14",
-        isDropActive && DROP_TARGET_ACTIVE_CLASSES,
+        "flex flex-col gap-8 p-10 sm:p-14",
+        isDragging && "opacity-40",
       )}
+      {...listeners}
     >
       {children}
     </div>

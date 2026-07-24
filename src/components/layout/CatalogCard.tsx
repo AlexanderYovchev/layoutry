@@ -24,7 +24,7 @@ interface CatalogCardProps {
 export function CatalogCard({ card, registerRef, onActivate }: CatalogCardProps) {
   const { setNodeRef, listeners, isDragging } = useDraggable({
     id: card.id,
-    data: { elementType: card.elementType, label: card.name },
+    data: { kind: "insert", elementType: card.elementType, label: card.name },
     disabled: card.disabled,
   });
 

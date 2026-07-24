@@ -43,4 +43,45 @@ describe("useEditorStore", () => {
     expect(section?.children?.at(-1)).toEqual(newNode);
     expect(useEditorStore.getState().selectedElementId).toBe("button-new");
   });
+
+  it("inserts a node at an explicit position and selects it", () => {
+    const newNode = { id: "heading-new", tag: "h1", text: "New" };
+
+    useEditorStore
+      .getState()
+      .insertElement("section-1", newNode, { referenceId: "heading-1", placement: "before" });
+
+    const section = useEditorStore
+      .getState()
+      .document.children?.find((child) => child.id === "section-1");
+    expect(section?.children?.map((child) => child.id)).toEqual([
+      "heading-new",
+      "heading-1",
+      "paragraph-1",
+      "button-1",
+    ]);
+    expect(useEditorStore.getState().selectedElementId).toBe("heading-new");
+  });
+
+  it("moves a node and keeps it selected in one update", () => {
+    useEditorStore.getState().moveElement("button-1", "section-2", "inside");
+
+    const state = useEditorStore.getState();
+    const sourceSection = state.document.children?.find((child) => child.id === "section-1");
+    const targetSection = state.document.children?.find((child) => child.id === "section-2");
+    expect(sourceSection?.children?.map((child) => child.id)).toEqual([
+      "heading-1",
+      "paragraph-1",
+    ]);
+    expect(targetSection?.children?.map((child) => child.id)).toEqual(["image-1", "button-1"]);
+    expect(state.selectedElementId).toBe("button-1");
+  });
+
+  it("rejects an invalid move without altering the document", () => {
+    const before = useEditorStore.getState().document;
+
+    useEditorStore.getState().moveElement("section-1", "heading-1", "inside");
+
+    expect(useEditorStore.getState().document).toBe(before);
+  });
 });

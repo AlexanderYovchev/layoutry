@@ -1,6 +1,11 @@
 import { create } from "zustand";
-import { insertNode } from "@/features/editor/commands/documentCommands";
+import {
+  insertNode,
+  moveNode,
+  type InsertPosition,
+} from "@/features/editor/commands/documentCommands";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
+import type { DropZone } from "@/features/editor/utils/resolveDropZone";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
 interface EditorState {
@@ -8,7 +13,12 @@ interface EditorState {
   selectedElementId: string | null;
   selectElement: (id: string | null) => void;
   clearSelection: () => void;
-  insertElement: (parentId: string, node: EditorElementNode) => void;
+  insertElement: (
+    parentId: string,
+    node: EditorElementNode,
+    position?: InsertPosition,
+  ) => void;
+  moveElement: (nodeId: string, targetId: string, zone: DropZone) => void;
 }
 
 /**
@@ -28,9 +38,19 @@ export const useEditorStore = create<EditorState>()((set) => ({
   // update — every insertion method (click, drag) goes through this
   // single action so "select what you just inserted" can never drift
   // out of sync with "what got inserted."
-  insertElement: (parentId, node) =>
+  insertElement: (parentId, node, position) =>
     set((state) => ({
-      document: insertNode(state.document, parentId, node),
+      document: insertNode(state.document, parentId, node, position),
       selectedElementId: node.id,
+    })),
+  // Same shape as insertElement: the move and re-selecting the moved
+  // node are one atomic update, so selection can never lag behind (or
+  // survive) a move that was actually rejected by moveNode's own
+  // validation — if moveNode no-ops, selectedElementId simply gets
+  // reset to the id it already was.
+  moveElement: (nodeId, targetId, zone) =>
+    set((state) => ({
+      document: moveNode(state.document, nodeId, targetId, zone),
+      selectedElementId: nodeId,
     })),
 }));
