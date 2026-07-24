@@ -1,6 +1,7 @@
 "use client";
 
 import type { RefObject } from "react";
+import { ResizeOverlay } from "@/features/canvas/components/overlay/ResizeOverlay";
 import { useMeasuredNodeRect } from "@/features/canvas/hooks/useMeasuredNodeRect";
 import { getElementDisplayName } from "@/features/editor/utils/elementDisplayName";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,7 @@ export function SelectionOverlay({ canvasRootRef, node }: SelectionOverlayProps)
       >
         {getElementDisplayName(node)}
       </span>
+      <ResizeOverlay node={node} rect={rect} canvasRootRef={canvasRootRef} />
     </div>
   );
 }

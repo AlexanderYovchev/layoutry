@@ -1,7 +1,9 @@
 import { isValidMoveTarget } from "@/features/editor/rules/moveValidationRules";
+import { canResizeElement } from "@/features/editor/rules/resizeRules";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
+import { DEFAULT_RESIZE_CONSTRAINTS } from "@/features/editor/types/resize";
 import type { DropZone } from "@/features/editor/utils/resolveDropZone";
-import type { EditorElementNode } from "@/features/editor/types/document";
+import type { ElementDimensions, EditorElementNode } from "@/features/editor/types/document";
 
 /**
  * Document mutation layer — the only place the document tree is ever
@@ -112,4 +114,46 @@ export function moveNode(
     placement: zone,
   });
   return result === withoutNode ? root : result;
+}
+
+/**
+ * Sets nodeId's explicit pixel dimensions (and its west/north-anchor
+ * offset — see ElementDimensions in document.ts). A no-op (same reference
+ * returned) if nodeId doesn't resolve to a resizable tag (see
+ * canResizeElement) or doesn't exist — the live resize session already
+ * gates on the same rule before a drag can even start, so this is a
+ * second, independent check rather than the only one, matching moveNode's
+ * "never trust the caller alone" shape. width/height are also clamped
+ * defensively to the same minimums the live session enforces, in case a
+ * caller ever passes this command a raw value that bypassed
+ * computeResizeResult's own clamping — offsetX/offsetY have no such floor
+ * (a valid anchor shift can legitimately be any sign or magnitude), so
+ * they pass through unchanged.
+ */
+export function resizeNode(
+  root: EditorElementNode,
+  nodeId: string,
+  dimensions: ElementDimensions,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (!canResizeElement(root.tag)) return root;
+    const safeDimensions: ElementDimensions = {
+      width: Math.max(DEFAULT_RESIZE_CONSTRAINTS.minWidth, dimensions.width),
+      height: Math.max(DEFAULT_RESIZE_CONSTRAINTS.minHeight, dimensions.height),
+      offsetX: dimensions.offsetX,
+      offsetY: dimensions.offsetY,
+    };
+    return { ...root, dimensions: safeDimensions };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = resizeNode(child, nodeId, dimensions);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
 }

@@ -2,11 +2,12 @@ import { create } from "zustand";
 import {
   insertNode,
   moveNode,
+  resizeNode,
   type InsertPosition,
 } from "@/features/editor/commands/documentCommands";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
 import type { DropZone } from "@/features/editor/utils/resolveDropZone";
-import type { EditorElementNode } from "@/features/editor/types/document";
+import type { ElementDimensions, EditorElementNode } from "@/features/editor/types/document";
 
 interface EditorState {
   document: EditorElementNode;
@@ -19,6 +20,7 @@ interface EditorState {
     position?: InsertPosition,
   ) => void;
   moveElement: (nodeId: string, targetId: string, zone: DropZone) => void;
+  resizeElement: (nodeId: string, dimensions: ElementDimensions) => void;
 }
 
 /**
@@ -52,5 +54,13 @@ export const useEditorStore = create<EditorState>()((set) => ({
     set((state) => ({
       document: moveNode(state.document, nodeId, targetId, zone),
       selectedElementId: nodeId,
+    })),
+  // Resizing never changes selection — the resized node was already
+  // selected (handles only render for the current selection) and stays
+  // selected, unlike insertElement/moveElement which each select their
+  // own target.
+  resizeElement: (nodeId, dimensions) =>
+    set((state) => ({
+      document: resizeNode(state.document, nodeId, dimensions),
     })),
 }));

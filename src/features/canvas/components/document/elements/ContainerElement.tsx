@@ -3,6 +3,7 @@
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
+import { elementDimensionsStyle } from "@/features/canvas/utils/elementDimensionsStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -22,6 +23,7 @@ export function ContainerElement({
         "flex flex-col items-start gap-4 rounded-lg border border-zinc-100 p-8 dark:border-zinc-900",
         isDragging && "opacity-40",
       )}
+      style={elementDimensionsStyle(node.dimensions)}
       {...listeners}
     >
       {children}

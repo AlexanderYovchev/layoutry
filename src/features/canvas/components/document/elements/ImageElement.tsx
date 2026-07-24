@@ -4,6 +4,7 @@ import { Image as ImageIcon } from "lucide-react";
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
+import { elementDimensionsStyle } from "@/features/canvas/utils/elementDimensionsStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -25,6 +26,7 @@ export function ImageElement({ node, parentId }: DocumentElementProps) {
         "flex h-40 w-full items-center justify-center rounded-md border border-dashed border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900",
         isDragging && "opacity-40",
       )}
+      style={elementDimensionsStyle(node.dimensions)}
       {...listeners}
     >
       <ImageIcon

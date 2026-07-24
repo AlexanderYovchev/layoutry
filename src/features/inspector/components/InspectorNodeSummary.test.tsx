@@ -33,4 +33,35 @@ describe("InspectorNodeSummary", () => {
 
     expect(screen.queryByText("Parent ID")).not.toBeInTheDocument();
   });
+
+  it("shows Width/Height as Auto for a resizable node that hasn't been resized yet", () => {
+    render(<InspectorNodeSummary node={{ id: "section-1", tag: "section" }} parentId={null} />);
+
+    expect(screen.getByText("Width")).toBeInTheDocument();
+    expect(screen.getByText("Height")).toBeInTheDocument();
+    expect(screen.getAllByText("Auto")).toHaveLength(2);
+  });
+
+  it("shows the current pixel dimensions for a resized node", () => {
+    render(
+      <InspectorNodeSummary
+        node={{
+          id: "section-1",
+          tag: "section",
+          dimensions: { width: 320.4, height: 180, offsetX: 0, offsetY: 0 },
+        }}
+        parentId={null}
+      />,
+    );
+
+    expect(screen.getByText("320px")).toBeInTheDocument();
+    expect(screen.getByText("180px")).toBeInTheDocument();
+  });
+
+  it("omits Width/Height rows for a non-resizable node", () => {
+    render(<InspectorNodeSummary node={{ id: "heading-1", tag: "h1" }} parentId={null} />);
+
+    expect(screen.queryByText("Width")).not.toBeInTheDocument();
+    expect(screen.queryByText("Height")).not.toBeInTheDocument();
+  });
 });

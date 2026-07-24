@@ -84,4 +84,28 @@ describe("useEditorStore", () => {
 
     expect(useEditorStore.getState().document).toBe(before);
   });
+
+  it("resizes a node without changing selection", () => {
+    useEditorStore.getState().selectElement("section-1");
+
+    useEditorStore
+      .getState()
+      .resizeElement("section-1", { width: 320, height: 180, offsetX: 0, offsetY: 0 });
+
+    const section = useEditorStore
+      .getState()
+      .document.children?.find((child) => child.id === "section-1");
+    expect(section?.dimensions).toEqual({ width: 320, height: 180, offsetX: 0, offsetY: 0 });
+    expect(useEditorStore.getState().selectedElementId).toBe("section-1");
+  });
+
+  it("does not alter the document when resizing an unsupported element type", () => {
+    const before = useEditorStore.getState().document;
+
+    useEditorStore
+      .getState()
+      .resizeElement("heading-1", { width: 320, height: 180, offsetX: 0, offsetY: 0 });
+
+    expect(useEditorStore.getState().document).toBe(before);
+  });
 });
