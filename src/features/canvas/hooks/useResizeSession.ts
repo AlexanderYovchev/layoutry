@@ -2,6 +2,7 @@
 
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -66,6 +67,14 @@ const UNBOUNDED: ResizeBounds = {
  * move/up events for that pointer even outside its own bounds, which is
  * exactly what a resize handle needs and mirrors the jsdom
  * setPointerCapture polyfill already present in test/setup.ts.
+ *
+ * History (Checkpoint 3.4.3): begins a resize transaction at pointer-down
+ * (snapshotting the pre-drag document once) and commits it at pointer-up/
+ * pointer-cancel, so every live per-frame resizeElement call in between
+ * contributes to a single undo step rather than one per frame. Escape
+ * mid-drag cancels the transaction instead: the document is restored to
+ * exactly what the transaction snapshotted, and nothing is pushed to
+ * history at all — as if the drag had never happened.
  */
 export function useResizeSession(
   nodeId: string,
@@ -101,6 +110,7 @@ export function useResizeSession(
         event.stopPropagation();
         event.preventDefault();
         event.currentTarget.setPointerCapture(event.pointerId);
+        useEditorStore.getState().beginResizeTransaction();
 
         const canvasRoot = canvasRootRef.current;
         const targetEl = canvasRoot?.querySelector<HTMLElement>(
@@ -152,6 +162,7 @@ export function useResizeSession(
       // arrived in the same tick as a still-pending frame — otherwise the
       // last few pixels of a fast drag could be dropped.
       commit();
+      useEditorStore.getState().commitResizeTransaction();
 
       event.currentTarget.releasePointerCapture(event.pointerId);
       sessionRef.current = null;
@@ -161,6 +172,41 @@ export function useResizeSession(
     },
     [commit],
   );
+
+  // Escape cancels an in-progress resize (rather than clearing selection,
+  // which is CanvasInteractionBoundary's own Escape behavior for when no
+  // drag is active) — reverts the document to exactly what it was at
+  // pointer-down and discards the transaction, so nothing is recorded to
+  // history at all.
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape" || !sessionRef.current) return;
+      event.stopPropagation();
+
+      if (frameRef.current !== null) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+
+      const store = useEditorStore.getState();
+      const snapshot = store.transactionSnapshot;
+      if (snapshot) {
+        useEditorStore.setState({
+          document: snapshot.document,
+          selectedElementId: snapshot.selectedElementId,
+        });
+      }
+      store.cancelResizeTransaction();
+
+      sessionRef.current = null;
+      setActiveDirection(null);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
+  }, []);
 
   return {
     activeDirection,

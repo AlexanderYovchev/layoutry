@@ -3,6 +3,7 @@
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
+import { elementDimensionsStyle } from "@/features/canvas/utils/elementDimensionsStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -26,6 +27,7 @@ export function HeadingElement({ node, parentId }: DocumentElementProps) {
         "text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50",
         isDragging && "opacity-40",
       )}
+      style={elementDimensionsStyle(node.dimensions, { clipOverflowY: true })}
       {...listeners}
     >
       {node.text}

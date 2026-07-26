@@ -2,7 +2,7 @@
 
 import type { RefObject } from "react";
 import { ResizeHandles } from "@/features/canvas/components/overlay/ResizeHandles";
-import { canResizeElement } from "@/features/editor/rules/resizeRules";
+import { canResizeElement } from "@/features/editor/rules/elementCapabilities";
 import type { MeasuredNodeRect } from "@/features/canvas/hooks/useMeasuredNodeRect";
 import type { EditorElementNode } from "@/features/editor/types/document";
 

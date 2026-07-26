@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { CanvasOverlay } from "@/features/canvas/components/overlay/CanvasOverlay";
 import { DocumentNodeRenderer } from "@/features/canvas/components/document/DocumentNodeRenderer";
+import { isSelectableElement } from "@/features/editor/rules/elementCapabilities";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -10,14 +11,20 @@ interface CanvasInteractionBoundaryProps {
   document: EditorElementNode;
 }
 
-function resolveHoverableNodeId(
-  target: EventTarget | null,
-  rootId: string,
-): string | null {
+/**
+ * The deepest data-node-id under the pointer, or null if that node's own
+ * tag opts out of selection (see elementCapabilities) — the document root
+ * and any other structural wrapper never becomes hoverable/selectable,
+ * regardless of which specific id it happens to have.
+ */
+function resolveHoverableNodeId(target: EventTarget | null): string | null {
   if (!(target instanceof Element)) return null;
   const nodeElement = target.closest<HTMLElement>("[data-node-id]");
-  const nodeId = nodeElement?.getAttribute("data-node-id") ?? null;
-  return nodeId && nodeId !== rootId ? nodeId : null;
+  if (!nodeElement) return null;
+  const nodeId = nodeElement.getAttribute("data-node-id");
+  const nodeType = nodeElement.getAttribute("data-node-type");
+  if (!nodeId || !nodeType || !isSelectableElement(nodeType)) return null;
+  return nodeId;
 }
 
 /**
@@ -63,11 +70,12 @@ export function CanvasInteractionBoundary({
         return;
       }
 
-      const nodeId = nodeElement.getAttribute("data-node-id");
-      if (!nodeId || nodeId === documentModel.id) {
-        // The pseudo document root has no canvas visual identity of its
-        // own — clicking it (or blank page-sheet space) clears
-        // selection rather than selecting the root.
+      const nodeId = resolveHoverableNodeId(nodeElement);
+      if (!nodeId) {
+        // The pseudo document root (and any other non-selectable
+        // structural wrapper) has no canvas visual identity of its own —
+        // clicking it (or blank page-sheet space) clears selection rather
+        // than selecting it.
         clearSelection();
         return;
       }
@@ -86,19 +94,16 @@ export function CanvasInteractionBoundary({
       window.removeEventListener("click", handleClick);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [documentModel.id, selectElement, clearSelection]);
+  }, [selectElement, clearSelection]);
 
   function handlePointerOver(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.pointerType === "touch") return;
-    setHoveredNodeId(resolveHoverableNodeId(event.target, documentModel.id));
+    setHoveredNodeId(resolveHoverableNodeId(event.target));
   }
 
   function handlePointerOut(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.pointerType === "touch") return;
-    const stillOverNode = resolveHoverableNodeId(
-      event.relatedTarget,
-      documentModel.id,
-    );
+    const stillOverNode = resolveHoverableNodeId(event.relatedTarget);
     if (!stillOverNode) setHoveredNodeId(null);
   }
 

@@ -27,31 +27,31 @@ describe("computeResizeResult", () => {
     it("grows width when dragging the east handle right, left edge fixed", () => {
       const result = computeResizeResult(session({ direction: "e" }), 560, 300, DEFAULT_RESIZE_CONSTRAINTS);
 
-      expect(result).toEqual({ width: 260, height: 100, offsetX: 0, offsetY: 0 });
+      expect(result).toEqual({ preferredWidth: 260, preferredHeight: 100, offsetX: 0, offsetY: 0 });
     });
 
     it("shrinks width when dragging the east handle left", () => {
       const result = computeResizeResult(session({ direction: "e" }), 470, 300, DEFAULT_RESIZE_CONSTRAINTS);
 
-      expect(result).toEqual({ width: 170, height: 100, offsetX: 0, offsetY: 0 });
+      expect(result).toEqual({ preferredWidth: 170, preferredHeight: 100, offsetX: 0, offsetY: 0 });
     });
 
     it("grows height when dragging the south handle down, top edge fixed", () => {
       const result = computeResizeResult(session({ direction: "s" }), 500, 340, DEFAULT_RESIZE_CONSTRAINTS);
 
-      expect(result).toEqual({ width: 200, height: 140, offsetX: 0, offsetY: 0 });
+      expect(result).toEqual({ preferredWidth: 200, preferredHeight: 140, offsetX: 0, offsetY: 0 });
     });
 
     it("drives both axes at once for a diagonal (south-east) handle, top-left anchor fixed", () => {
       const result = computeResizeResult(session({ direction: "se" }), 540, 330, DEFAULT_RESIZE_CONSTRAINTS);
 
-      expect(result).toEqual({ width: 240, height: 130, offsetX: 0, offsetY: 0 });
+      expect(result).toEqual({ preferredWidth: 240, preferredHeight: 130, offsetX: 0, offsetY: 0 });
     });
 
     it("clamps width to the minimum constraint instead of going negative or to zero", () => {
       const result = computeResizeResult(session({ direction: "e" }), 0, 300, DEFAULT_RESIZE_CONSTRAINTS);
 
-      expect(result.width).toBe(DEFAULT_RESIZE_CONSTRAINTS.minWidth);
+      expect(result.preferredWidth).toBe(DEFAULT_RESIZE_CONSTRAINTS.minWidth);
     });
   });
 
@@ -60,21 +60,21 @@ describe("computeResizeResult", () => {
       const result = computeResizeResult(session({ direction: "w" }), 440, 300, DEFAULT_RESIZE_CONSTRAINTS);
 
       // width grew by 60 (500->440 is -60 delta, west subtracts delta)
-      expect(result.width).toBe(260);
+      expect(result.preferredWidth).toBe(260);
       // offset must shift left by exactly the growth so the right edge (startLeft+startWidth) stays put
       expect(result.offsetX).toBe(-60);
       const renderedLeft = session().startLeft + result.offsetX;
-      const renderedRight = renderedLeft + result.width;
+      const renderedRight = renderedLeft + result.preferredWidth;
       expect(renderedRight).toBe(session().startLeft + session().startWidth);
     });
 
     it("west resize (dragging right, shrinking) keeps the right edge fixed", () => {
       const result = computeResizeResult(session({ direction: "w" }), 560, 300, DEFAULT_RESIZE_CONSTRAINTS);
 
-      expect(result.width).toBe(140);
+      expect(result.preferredWidth).toBe(140);
       expect(result.offsetX).toBe(60);
       const renderedLeft = session().startLeft + result.offsetX;
-      expect(renderedLeft + result.width).toBe(session().startLeft + session().startWidth);
+      expect(renderedLeft + result.preferredWidth).toBe(session().startLeft + session().startWidth);
     });
 
     it("west resize composes onto a pre-existing offsetX rather than resetting it", () => {
@@ -91,10 +91,10 @@ describe("computeResizeResult", () => {
     it("north resize keeps the bottom edge fixed: height grows and offsetY compensates", () => {
       const result = computeResizeResult(session({ direction: "n" }), 500, 260, DEFAULT_RESIZE_CONSTRAINTS);
 
-      expect(result.height).toBe(140);
+      expect(result.preferredHeight).toBe(140);
       expect(result.offsetY).toBe(-40);
       const renderedTop = session().startTop + result.offsetY;
-      expect(renderedTop + result.height).toBe(session().startTop + session().startHeight);
+      expect(renderedTop + result.preferredHeight).toBe(session().startTop + session().startHeight);
     });
 
     it("east resize never touches offsetX even with a pre-existing offset", () => {
@@ -111,25 +111,25 @@ describe("computeResizeResult", () => {
     it("north-west drives both anchored axes at once", () => {
       const result = computeResizeResult(session({ direction: "nw" }), 470, 280, DEFAULT_RESIZE_CONSTRAINTS);
 
-      expect(result.width).toBe(230);
+      expect(result.preferredWidth).toBe(230);
       expect(result.offsetX).toBe(-30);
-      expect(result.height).toBe(120);
+      expect(result.preferredHeight).toBe(120);
       expect(result.offsetY).toBe(-20);
     });
 
     it("south-west updates the width/offsetX axis and the unanchored height axis", () => {
       const result = computeResizeResult(session({ direction: "sw" }), 470, 330, DEFAULT_RESIZE_CONSTRAINTS);
 
-      expect(result.width).toBe(230);
+      expect(result.preferredWidth).toBe(230);
       expect(result.offsetX).toBe(-30);
-      expect(result.height).toBe(130);
+      expect(result.preferredHeight).toBe(130);
       expect(result.offsetY).toBe(0);
     });
 
     it("west resize still respects the minimum width constraint", () => {
       const result = computeResizeResult(session({ direction: "w" }), 10000, 300, DEFAULT_RESIZE_CONSTRAINTS);
 
-      expect(result.width).toBe(DEFAULT_RESIZE_CONSTRAINTS.minWidth);
+      expect(result.preferredWidth).toBe(DEFAULT_RESIZE_CONSTRAINTS.minWidth);
     });
   });
 
@@ -144,7 +144,7 @@ describe("computeResizeResult", () => {
       );
 
       // startLeft (300) + width must not exceed bounds.right (560)
-      expect(result.width).toBe(260);
+      expect(result.preferredWidth).toBe(260);
     });
 
     it("west resize clamps at the left containing-block boundary", () => {
@@ -157,7 +157,7 @@ describe("computeResizeResult", () => {
       );
 
       // rendered left edge must not cross bounds.left (200); startLeft+startWidth=500 is the fixed right edge
-      expect(result.width).toBe(300);
+      expect(result.preferredWidth).toBe(300);
       const renderedLeft = session().startLeft + result.offsetX;
       expect(renderedLeft).toBe(200);
     });
@@ -171,7 +171,7 @@ describe("computeResizeResult", () => {
         DEFAULT_RESIZE_CONSTRAINTS,
       );
 
-      expect(result.height).toBe(150);
+      expect(result.preferredHeight).toBe(150);
     });
 
     it("north resize clamps at the top containing-block boundary", () => {
@@ -183,7 +183,7 @@ describe("computeResizeResult", () => {
         DEFAULT_RESIZE_CONSTRAINTS,
       );
 
-      expect(result.height).toBe(150);
+      expect(result.preferredHeight).toBe(150);
       const renderedTop = session().startTop + result.offsetY;
       expect(renderedTop).toBe(100);
     });
@@ -197,8 +197,8 @@ describe("computeResizeResult", () => {
         DEFAULT_RESIZE_CONSTRAINTS,
       );
 
-      expect(result.width).toBe(260);
-      expect(result.height).toBe(180);
+      expect(result.preferredWidth).toBe(260);
+      expect(result.preferredHeight).toBe(180);
     });
 
     it("an oversized pointer movement never produces overflow past the boundary", () => {
@@ -210,7 +210,7 @@ describe("computeResizeResult", () => {
         DEFAULT_RESIZE_CONSTRAINTS,
       );
 
-      expect(session().startLeft + result.width).toBeLessThanOrEqual(900);
+      expect(session().startLeft + result.preferredWidth).toBeLessThanOrEqual(900);
     });
 
     it("respects a nested node's tighter containing boundary independent of the page sheet", () => {
@@ -223,7 +223,7 @@ describe("computeResizeResult", () => {
         DEFAULT_RESIZE_CONSTRAINTS,
       );
 
-      expect(result.width).toBe(120);
+      expect(result.preferredWidth).toBe(120);
     });
   });
 });

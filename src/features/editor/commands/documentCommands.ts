@@ -1,5 +1,5 @@
 import { isValidMoveTarget } from "@/features/editor/rules/moveValidationRules";
-import { canResizeElement } from "@/features/editor/rules/resizeRules";
+import { canResizeElement } from "@/features/editor/rules/elementCapabilities";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
 import { DEFAULT_RESIZE_CONSTRAINTS } from "@/features/editor/types/resize";
 import type { DropZone } from "@/features/editor/utils/resolveDropZone";
@@ -138,8 +138,8 @@ export function resizeNode(
   if (root.id === nodeId) {
     if (!canResizeElement(root.tag)) return root;
     const safeDimensions: ElementDimensions = {
-      width: Math.max(DEFAULT_RESIZE_CONSTRAINTS.minWidth, dimensions.width),
-      height: Math.max(DEFAULT_RESIZE_CONSTRAINTS.minHeight, dimensions.height),
+      preferredWidth: Math.max(DEFAULT_RESIZE_CONSTRAINTS.minWidth, dimensions.preferredWidth),
+      preferredHeight: Math.max(DEFAULT_RESIZE_CONSTRAINTS.minHeight, dimensions.preferredHeight),
       offsetX: dimensions.offsetX,
       offsetY: dimensions.offsetY,
     };

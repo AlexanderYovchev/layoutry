@@ -261,62 +261,74 @@ describe("resizeNode", () => {
 
   it("sets dimensions on a resizable node (container)", () => {
     const result = resizeNode(resizeTree, "container-1", {
-      width: 320,
-      height: 180,
+      preferredWidth: 320,
+      preferredHeight: 180,
       offsetX: 0,
       offsetY: 0,
     });
 
     const container = result.children?.find((child) => child.id === "container-1");
-    expect(container?.dimensions).toEqual({ width: 320, height: 180, offsetX: 0, offsetY: 0 });
+    expect(container?.dimensions).toEqual({ preferredWidth: 320, preferredHeight: 180, offsetX: 0, offsetY: 0 });
   });
 
   it("sets dimensions on a resizable node (image)", () => {
     const result = resizeNode(resizeTree, "image-1", {
-      width: 200,
-      height: 150,
+      preferredWidth: 200,
+      preferredHeight: 150,
       offsetX: 0,
       offsetY: 0,
     });
 
     const image = result.children?.find((child) => child.id === "image-1");
-    expect(image?.dimensions).toEqual({ width: 200, height: 150, offsetX: 0, offsetY: 0 });
+    expect(image?.dimensions).toEqual({ preferredWidth: 200, preferredHeight: 150, offsetX: 0, offsetY: 0 });
+  });
+
+  it("sets dimensions on a text element (heading) — universal resize, Checkpoint 3.4.3", () => {
+    const result = resizeNode(resizeTree, "heading-1", {
+      preferredWidth: 400,
+      preferredHeight: 80,
+      offsetX: 0,
+      offsetY: 0,
+    });
+
+    const heading = result.children?.find((child) => child.id === "heading-1");
+    expect(heading?.dimensions).toEqual({ preferredWidth: 400, preferredHeight: 80, offsetX: 0, offsetY: 0 });
   });
 
   it("preserves a west/north anchor offset", () => {
     const result = resizeNode(resizeTree, "container-1", {
-      width: 320,
-      height: 180,
+      preferredWidth: 320,
+      preferredHeight: 180,
       offsetX: -60,
       offsetY: -20,
     });
 
     const container = result.children?.find((child) => child.id === "container-1");
-    expect(container?.dimensions).toEqual({ width: 320, height: 180, offsetX: -60, offsetY: -20 });
+    expect(container?.dimensions).toEqual({ preferredWidth: 320, preferredHeight: 180, offsetX: -60, offsetY: -20 });
   });
 
   it("clamps width/height defensively to the minimum constraints even if the caller didn't", () => {
     const result = resizeNode(resizeTree, "container-1", {
-      width: 10,
-      height: -5,
+      preferredWidth: 10,
+      preferredHeight: -5,
       offsetX: 0,
       offsetY: 0,
     });
 
     const container = result.children?.find((child) => child.id === "container-1");
-    expect(container?.dimensions).toEqual({ width: 64, height: 64, offsetX: 0, offsetY: 0 });
+    expect(container?.dimensions).toEqual({ preferredWidth: 64, preferredHeight: 64, offsetX: 0, offsetY: 0 });
   });
 
   it("does not mutate the original tree", () => {
-    resizeNode(resizeTree, "container-1", { width: 320, height: 180, offsetX: 0, offsetY: 0 });
+    resizeNode(resizeTree, "container-1", { preferredWidth: 320, preferredHeight: 180, offsetX: 0, offsetY: 0 });
 
     expect(resizeTree.children?.[0].dimensions).toBeUndefined();
   });
 
   it("keeps unrelated branches referentially unchanged", () => {
     const result = resizeNode(resizeTree, "container-1", {
-      width: 320,
-      height: 180,
+      preferredWidth: 320,
+      preferredHeight: 180,
       offsetX: 0,
       offsetY: 0,
     });
@@ -325,10 +337,10 @@ describe("resizeNode", () => {
     expect(result.children?.[2]).toBe(resizeTree.children?.[2]);
   });
 
-  it("is a no-op (same reference) for an unsupported element type", () => {
-    const result = resizeNode(resizeTree, "heading-1", {
-      width: 320,
-      height: 180,
+  it("is a no-op (same reference) for an unsupported element type (the document root)", () => {
+    const result = resizeNode(resizeTree, "root", {
+      preferredWidth: 320,
+      preferredHeight: 180,
       offsetX: 0,
       offsetY: 0,
     });
@@ -338,8 +350,8 @@ describe("resizeNode", () => {
 
   it("is a no-op (same reference) when the id does not exist", () => {
     const result = resizeNode(resizeTree, "does-not-exist", {
-      width: 320,
-      height: 180,
+      preferredWidth: 320,
+      preferredHeight: 180,
       offsetX: 0,
       offsetY: 0,
     });
@@ -349,21 +361,21 @@ describe("resizeNode", () => {
 
   it("overwrites a previous resize with the latest dimensions", () => {
     const already = resizeNode(resizeTree, "container-1", {
-      width: 100,
-      height: 100,
+      preferredWidth: 100,
+      preferredHeight: 100,
       offsetX: 0,
       offsetY: 0,
     });
 
     const result = resizeNode(already, "container-1", {
-      width: 320,
-      height: 180,
+      preferredWidth: 320,
+      preferredHeight: 180,
       offsetX: 0,
       offsetY: 0,
     });
 
     const container = result.children?.find((child) => child.id === "container-1");
-    expect(container?.dimensions).toEqual({ width: 320, height: 180, offsetX: 0, offsetY: 0 });
+    expect(container?.dimensions).toEqual({ preferredWidth: 320, preferredHeight: 180, offsetX: 0, offsetY: 0 });
   });
 });
 

@@ -43,6 +43,14 @@ function clamp(value: number, min: number, max: number): number {
  * block, resolved once at pointer-down (see resolveResizeBounds) — so an
  * edge can grow right up to that boundary and no further, in either
  * direction, without ever needing to re-measure the DOM mid-drag.
+ *
+ * session.startWidth/startHeight come from the node's *rendered* box at
+ * drag start (see ResizeHandleStart), not necessarily its stored
+ * preferredWidth/preferredHeight — the two can differ when a parent is
+ * currently constraining the child (Checkpoint 3.4.3). That's correct:
+ * the handle itself is drawn at the rendered edge, so a drag naturally
+ * grows the box from wherever it currently visually is, not from a
+ * larger stored preference the user can't currently see.
  */
 export function computeResizeResult(
   session: ResizeSession,
@@ -74,5 +82,5 @@ export function computeResizeResult(
   const offsetX = direction.includes("w") ? startOffsetX - (width - startWidth) : startOffsetX;
   const offsetY = direction.includes("n") ? startOffsetY - (height - startHeight) : startOffsetY;
 
-  return { width, height, offsetX, offsetY };
+  return { preferredWidth: width, preferredHeight: height, offsetX, offsetY };
 }

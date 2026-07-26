@@ -1,14 +1,24 @@
 export interface ElementDimensions {
-  width: number;
-  height: number;
+  /**
+   * The user's own resize intent in pixels — set once by a resize drag and
+   * never silently rewritten afterward (in particular, never shrunk just
+   * because a containing parent happens to be smaller right now; see
+   * Checkpoint 3.4.3). What actually renders is this value clamped live,
+   * in CSS, against the current containing block (elementDimensionsStyle's
+   * maxWidth/maxHeight: "100%") — so the preferred size is preserved and
+   * simply becomes visible again the moment the parent grows enough to
+   * fit it, with no extra bookkeeping to "restore" anything.
+   */
+  preferredWidth: number;
+  preferredHeight: number;
   /**
    * Pixel shift applied on top of the element's normal-flow position, via
    * marginLeft/marginTop (see elementDimensionsStyle). West/north-anchored
    * resizes need this: in normal flow, a box's top-left corner is wherever
    * the flow algorithm puts it, not an independently settable coordinate,
-   * so growing `width` alone can only ever extend the box's right edge —
-   * there is no such thing as "move the left edge" without also shifting
-   * where the box sits. Margin, specifically, not `transform`: a
+   * so growing `preferredWidth` alone can only ever extend the box's right
+   * edge — there is no such thing as "move the left edge" without also
+   * shifting where the box sits. Margin, specifically, not `transform`: a
    * transform only shifts where a box *paints*, never how much flow space
    * it *reserves*, so a sibling positioned after it would still be placed
    * using the box's raw (unshifted) height/width, drifting out of sync

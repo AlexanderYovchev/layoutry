@@ -5,6 +5,7 @@ import { MenuBarRoot } from "@/components/ui/menu/MenuBarRoot";
 import { MenuBarTrigger } from "@/components/ui/menu/MenuBarTrigger";
 import {
   buildApplicationMenus,
+  type EditMenuCommands,
   type HelpDialogId,
   type ViewState,
 } from "@/components/layout/applicationMenus";
@@ -15,15 +16,17 @@ import { HelpDialogs } from "@/components/layout/HelpDialogs";
 interface AppHeaderProps {
   viewState: ViewState;
   onToggleView: (region: keyof ViewState) => void;
+  editMenuCommands: EditMenuCommands;
 }
 
-export function AppHeader({ viewState, onToggleView }: AppHeaderProps) {
+export function AppHeader({ viewState, onToggleView, editMenuCommands }: AppHeaderProps) {
   const [openDialogId, setOpenDialogId] = useState<HelpDialogId | null>(null);
 
   const menus = buildApplicationMenus({
     viewState,
     onToggleView,
     onOpenHelpDialog: setOpenDialogId,
+    editMenuCommands,
   });
 
   return (

@@ -66,7 +66,7 @@ describe("ResizeHandles", () => {
     const section = useEditorStore
       .getState()
       .document.children?.find((child) => child.id === "section-1");
-    expect(section?.dimensions).toEqual({ width: 260, height: 100, offsetX: 0, offsetY: 0 });
+    expect(section?.dimensions).toEqual({ preferredWidth: 260, preferredHeight: 100, offsetX: 0, offsetY: 0 });
   });
 
   it("grows the node's height when dragging the south handle down", () => {
@@ -80,7 +80,7 @@ describe("ResizeHandles", () => {
     const section = useEditorStore
       .getState()
       .document.children?.find((child) => child.id === "section-1");
-    expect(section?.dimensions).toEqual({ width: 200, height: 140, offsetX: 0, offsetY: 0 });
+    expect(section?.dimensions).toEqual({ preferredWidth: 200, preferredHeight: 140, offsetX: 0, offsetY: 0 });
   });
 
   it("drives both axes at once when dragging a diagonal (south-east) handle", () => {
@@ -94,7 +94,7 @@ describe("ResizeHandles", () => {
     const section = useEditorStore
       .getState()
       .document.children?.find((child) => child.id === "section-1");
-    expect(section?.dimensions).toEqual({ width: 240, height: 130, offsetX: 0, offsetY: 0 });
+    expect(section?.dimensions).toEqual({ preferredWidth: 240, preferredHeight: 130, offsetX: 0, offsetY: 0 });
   });
 
   it("grows width and shifts offsetX left when dragging the west handle left (true left-edge growth)", () => {
@@ -108,9 +108,9 @@ describe("ResizeHandles", () => {
     const section = useEditorStore
       .getState()
       .document.children?.find((child) => child.id === "section-1");
-    expect(section?.dimensions).toEqual({ width: 260, height: 100, offsetX: -60, offsetY: 0 });
+    expect(section?.dimensions).toEqual({ preferredWidth: 260, preferredHeight: 100, offsetX: -60, offsetY: 0 });
     // right edge (startLeft + startWidth) must stay put
-    const renderedRight = rect.left + section!.dimensions!.offsetX + section!.dimensions!.width;
+    const renderedRight = rect.left + section!.dimensions!.offsetX + section!.dimensions!.preferredWidth;
     expect(renderedRight).toBe(rect.left + rect.width);
   });
 
@@ -139,7 +139,7 @@ describe("ResizeHandles", () => {
     const section = useEditorStore
       .getState()
       .document.children?.find((child) => child.id === "section-1");
-    expect(section?.dimensions?.width).toBe(64);
+    expect(section?.dimensions?.preferredWidth).toBe(64);
   });
 
   it("marks the dragged handle active while resizing", () => {
@@ -242,6 +242,88 @@ describe("ResizeHandles boundary clamping (wired end-to-end through the DOM)", (
     const section = useEditorStore
       .getState()
       .document.children?.find((child) => child.id === "section-1");
-    expect(section?.dimensions?.width).toBe(260);
+    expect(section?.dimensions?.preferredWidth).toBe(260);
+  });
+});
+
+describe("ResizeHandles history transactions (Checkpoint 3.4.3)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("a full drag (many pointermove frames) produces exactly one history entry", () => {
+    renderHandles();
+    const handle = document.querySelector('[data-resize-handle="e"]') as Element;
+
+    fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
+    for (let x = 505; x <= 560; x += 5) {
+      fireEvent.pointerMove(handle, { clientX: x, clientY: 300, pointerId: 1 });
+    }
+    fireEvent.pointerUp(handle, { clientX: 560, clientY: 300, pointerId: 1 });
+
+    expect(useEditorStore.getState().past).toHaveLength(1);
+  });
+
+  it("undo after a completed resize drag reverts the entire drag in one step", () => {
+    renderHandles();
+    const handle = document.querySelector('[data-resize-handle="e"]') as Element;
+
+    fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 520, clientY: 300, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 560, clientY: 300, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 560, clientY: 300, pointerId: 1 });
+
+    useEditorStore.getState().undo();
+
+    const section = useEditorStore
+      .getState()
+      .document.children?.find((child) => child.id === "section-1");
+    expect(section?.dimensions).toBeUndefined();
+  });
+
+  it("Escape mid-drag cancels the resize: reverts the document and records no history", () => {
+    renderHandles();
+    const handle = document.querySelector('[data-resize-handle="e"]') as Element;
+
+    fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 560, clientY: 300, pointerId: 1 });
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    const section = useEditorStore
+      .getState()
+      .document.children?.find((child) => child.id === "section-1");
+    expect(section?.dimensions).toBeUndefined();
+    expect(useEditorStore.getState().past).toHaveLength(0);
+    expect(useEditorStore.getState().transactionSnapshot).toBeNull();
+  });
+
+  it("Escape mid-drag does not clear the current selection (unlike Escape with no active drag)", () => {
+    useEditorStore.setState({ selectedElementId: "section-1" });
+    renderHandles();
+    const handle = document.querySelector('[data-resize-handle="e"]') as Element;
+
+    fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 560, clientY: 300, pointerId: 1 });
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(useEditorStore.getState().selectedElementId).toBe("section-1");
+  });
+
+  it("Escape with no active drag does not touch history or the transaction state", () => {
+    renderHandles();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(useEditorStore.getState().past).toHaveLength(0);
+    expect(useEditorStore.getState().transactionSnapshot).toBeNull();
   });
 });

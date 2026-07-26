@@ -25,10 +25,20 @@ describe("SelectionOverlay", () => {
     expect(document.querySelector('[data-resize-handle="e"]')).toBeInTheDocument();
   });
 
-  it("does not show resize handles for a selected non-resizable node", () => {
+  it("shows resize handles for a selected text element (heading) — universal resize, Checkpoint 3.4.3", () => {
     render(
       <Harness node={{ id: "heading-1", tag: "h1" }}>
         <div data-node-id="heading-1" />
+      </Harness>,
+    );
+
+    expect(document.querySelector('[data-resize-handle="e"]')).toBeInTheDocument();
+  });
+
+  it("does not show resize handles for a selected non-resizable node (the document root)", () => {
+    render(
+      <Harness node={{ id: "page-root", tag: "page" }}>
+        <div data-node-id="page-root" />
       </Harness>,
     );
 

@@ -2,6 +2,24 @@ import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "./AppShell";
+import type { EditMenuCommands } from "./applicationMenus";
+
+const noopEditMenuCommands: EditMenuCommands = {
+  canUndo: false,
+  canRedo: false,
+  canCut: false,
+  canCopy: false,
+  canPaste: false,
+  canDuplicate: false,
+  canDelete: false,
+  onUndo: () => {},
+  onRedo: () => {},
+  onCut: () => {},
+  onCopy: () => {},
+  onPaste: () => {},
+  onDuplicate: () => {},
+  onDelete: () => {},
+};
 
 const originalInnerWidth = window.innerWidth;
 
@@ -18,6 +36,7 @@ function renderShell() {
     <AppShell
       workspaceContent={<div>workspace content</div>}
       inspectorContent={<div>inspector content</div>}
+      editMenuCommands={noopEditMenuCommands}
     />,
   );
 }

@@ -8,10 +8,35 @@ export interface ViewState {
 
 export type HelpDialogId = "getting-started" | "keyboard-shortcuts" | "about";
 
+/**
+ * Plain callbacks/booleans only — no feature types — since components/
+ * layout must not import src/features/* (see CLAUDE.md's Dependency
+ * Direction rules). EditorApp (the composition root) computes these from
+ * the real editor store and passes them down the same way
+ * onActivateCatalogCard already threads through AppShell/CreationToolbar.
+ */
+export interface EditMenuCommands {
+  canUndo: boolean;
+  canRedo: boolean;
+  canCut: boolean;
+  canCopy: boolean;
+  canPaste: boolean;
+  canDuplicate: boolean;
+  canDelete: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
+  onCut: () => void;
+  onCopy: () => void;
+  onPaste: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}
+
 interface BuildApplicationMenusOptions {
   viewState: ViewState;
   onToggleView: (region: keyof ViewState) => void;
   onOpenHelpDialog: (id: HelpDialogId) => void;
+  editMenuCommands: EditMenuCommands;
 }
 
 function separator(id: string): MenuItem {
@@ -77,7 +102,7 @@ function fileMenu(): TopLevelMenu {
   };
 }
 
-function editMenu(): TopLevelMenu {
+function editMenu(commands: EditMenuCommands): TopLevelMenu {
   return {
     id: "edit",
     label: "Edit",
@@ -87,14 +112,16 @@ function editMenu(): TopLevelMenu {
         id: "edit-undo",
         label: "Undo",
         shortcut: "Ctrl+Z",
-        disabled: true,
+        disabled: !commands.canUndo,
+        onSelect: commands.onUndo,
       },
       {
         type: "command",
         id: "edit-redo",
         label: "Redo",
         shortcut: "Ctrl+Shift+Z",
-        disabled: true,
+        disabled: !commands.canRedo,
+        onSelect: commands.onRedo,
       },
       separator("edit-sep-1"),
       {
@@ -102,35 +129,40 @@ function editMenu(): TopLevelMenu {
         id: "edit-cut",
         label: "Cut",
         shortcut: "Ctrl+X",
-        disabled: true,
+        disabled: !commands.canCut,
+        onSelect: commands.onCut,
       },
       {
         type: "command",
         id: "edit-copy",
         label: "Copy",
         shortcut: "Ctrl+C",
-        disabled: true,
+        disabled: !commands.canCopy,
+        onSelect: commands.onCopy,
       },
       {
         type: "command",
         id: "edit-paste",
         label: "Paste",
         shortcut: "Ctrl+V",
-        disabled: true,
+        disabled: !commands.canPaste,
+        onSelect: commands.onPaste,
       },
       {
         type: "command",
         id: "edit-duplicate",
         label: "Duplicate",
         shortcut: "Ctrl+D",
-        disabled: true,
+        disabled: !commands.canDuplicate,
+        onSelect: commands.onDuplicate,
       },
       {
         type: "command",
         id: "edit-delete",
         label: "Delete",
         shortcut: "Delete",
-        disabled: true,
+        disabled: !commands.canDelete,
+        onSelect: commands.onDelete,
       },
       separator("edit-sep-2"),
       {
@@ -423,10 +455,11 @@ export function buildApplicationMenus({
   viewState,
   onToggleView,
   onOpenHelpDialog,
+  editMenuCommands,
 }: BuildApplicationMenusOptions): TopLevelMenu[] {
   return [
     fileMenu(),
-    editMenu(),
+    editMenu(editMenuCommands),
     viewMenu(viewState, onToggleView),
     insertMenu(),
     projectMenu(),

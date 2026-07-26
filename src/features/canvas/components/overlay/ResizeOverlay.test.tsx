@@ -22,12 +22,26 @@ describe("ResizeOverlay", () => {
     expect(document.querySelector('[data-resize-handle="e"]')).toBeInTheDocument();
   });
 
-  it("renders nothing for an unsupported element type", () => {
-    const { container } = render(
+  it("renders resize handles for a text element (heading) — universal resize, Checkpoint 3.4.3", () => {
+    render(
       <ResizeOverlay node={{ id: "heading-1", tag: "h1" }} rect={rect} canvasRootRef={canvasRootRef} />,
     );
 
-    expect(container).toBeEmptyDOMElement();
+    expect(document.querySelectorAll("[data-resize-handle]")).toHaveLength(8);
+  });
+
+  it("renders resize handles for a paragraph", () => {
+    render(<ResizeOverlay node={{ id: "p-1", tag: "p" }} rect={rect} canvasRootRef={canvasRootRef} />);
+
+    expect(document.querySelectorAll("[data-resize-handle]")).toHaveLength(8);
+  });
+
+  it("renders resize handles for a button", () => {
+    render(
+      <ResizeOverlay node={{ id: "button-1", tag: "button" }} rect={rect} canvasRootRef={canvasRootRef} />,
+    );
+
+    expect(document.querySelectorAll("[data-resize-handle]")).toHaveLength(8);
   });
 
   it("renders nothing for the document root", () => {
@@ -38,12 +52,24 @@ describe("ResizeOverlay", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("renders nothing for the body wrapper", () => {
+    const { container } = render(
+      <ResizeOverlay node={{ id: "body-1", tag: "body" }} rect={rect} canvasRootRef={canvasRootRef} />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it("passes the node's current offsetX/offsetY through to the handles' start snapshot", () => {
     // Indirectly verified via a real drag in ResizeHandles.test.tsx; here
     // we just confirm a node with existing dimensions still renders handles.
     render(
       <ResizeOverlay
-        node={{ id: "section-1", tag: "section", dimensions: { width: 300, height: 150, offsetX: -40, offsetY: 0 } }}
+        node={{
+          id: "section-1",
+          tag: "section",
+          dimensions: { preferredWidth: 300, preferredHeight: 150, offsetX: -40, offsetY: 0 },
+        }}
         rect={rect}
         canvasRootRef={canvasRootRef}
       />,

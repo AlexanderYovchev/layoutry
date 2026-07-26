@@ -8,7 +8,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { AppHeader } from "./AppHeader";
-import type { ViewState } from "./applicationMenus";
+import type { EditMenuCommands, ViewState } from "./applicationMenus";
 
 const defaultViewState: ViewState = {
   resourcePanelVisible: true,
@@ -16,9 +16,32 @@ const defaultViewState: ViewState = {
   statusBarVisible: true,
 };
 
+const noopEditMenuCommands: EditMenuCommands = {
+  canUndo: false,
+  canRedo: false,
+  canCut: false,
+  canCopy: false,
+  canPaste: false,
+  canDuplicate: false,
+  canDelete: false,
+  onUndo: () => {},
+  onRedo: () => {},
+  onCut: () => {},
+  onCopy: () => {},
+  onPaste: () => {},
+  onDuplicate: () => {},
+  onDelete: () => {},
+};
+
 function renderAppHeader(viewState: ViewState = defaultViewState) {
   const onToggleView = vi.fn();
-  render(<AppHeader viewState={viewState} onToggleView={onToggleView} />);
+  render(
+    <AppHeader
+      viewState={viewState}
+      onToggleView={onToggleView}
+      editMenuCommands={noopEditMenuCommands}
+    />,
+  );
   return { onToggleView };
 }
 
@@ -255,5 +278,42 @@ describe("AppHeader", () => {
     // what actually lets this region shrink and truncate instead of
     // forcing the header wider than the viewport.
     expect(projectName.parentElement).toHaveClass("min-w-0", "flex-1");
+  });
+
+  it("disables Edit menu commands when their editMenuCommands flag is false", async () => {
+    const user = userEvent.setup();
+    render(
+      <AppHeader
+        viewState={defaultViewState}
+        onToggleView={vi.fn()}
+        editMenuCommands={noopEditMenuCommands}
+      />,
+    );
+
+    await user.click(screen.getByRole("menuitem", { name: "Edit" }));
+
+    for (const label of ["Undo", "Redo", "Cut", "Copy", "Paste", "Duplicate", "Delete"]) {
+      expect(screen.getByRole("menuitem", { name: label })).toBeDisabled();
+    }
+  });
+
+  it("enables Edit menu commands and calls the exact same command function the keyboard shortcut would call", async () => {
+    const user = userEvent.setup();
+    const onCopy = vi.fn();
+    render(
+      <AppHeader
+        viewState={defaultViewState}
+        onToggleView={vi.fn()}
+        editMenuCommands={{ ...noopEditMenuCommands, canCopy: true, onCopy }}
+      />,
+    );
+
+    await user.click(screen.getByRole("menuitem", { name: "Edit" }));
+    const copyItem = screen.getByRole("menuitem", { name: "Copy" });
+    expect(copyItem).not.toBeDisabled();
+
+    await user.click(copyItem);
+
+    expect(onCopy).toHaveBeenCalledOnce();
   });
 });

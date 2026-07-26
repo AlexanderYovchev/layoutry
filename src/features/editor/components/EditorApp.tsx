@@ -12,12 +12,14 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { AppShell } from "@/components/layout/AppShell";
+import type { EditMenuCommands } from "@/components/layout/applicationMenus";
 import type { CatalogCardPlaceholder } from "@/components/layout/creationToolbarCategories";
 import { DocumentCanvas } from "@/features/canvas/components/DocumentCanvas";
 import { StructurePanel } from "@/features/editor/components/structure/StructurePanel";
 import { InspectorContent } from "@/features/inspector/components/InspectorContent";
 import { isInsertableElementType } from "@/features/editor/factories/elementFactories";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { useEditorKeyboardShortcuts } from "@/features/editor/hooks/useEditorKeyboardShortcuts";
 import { useInsertElement } from "@/features/editor/hooks/useInsertElement";
 import { useMoveElement } from "@/features/editor/hooks/useMoveElement";
 import { resolveDragEndInsertion } from "@/features/editor/utils/resolveDragEndInsertion";
@@ -44,13 +46,38 @@ interface ActiveDragPreview {
  */
 export function EditorApp() {
   const documentModel = useEditorStore((state) => state.document);
+  const selectedElementId = useEditorStore((state) => state.selectedElementId);
+  const clipboard = useEditorStore((state) => state.clipboard);
+  const hasPast = useEditorStore((state) => state.past.length > 0);
+  const hasFuture = useEditorStore((state) => state.future.length > 0);
   const insert = useInsertElement();
   const move = useMoveElement();
   const [activeDrag, setActiveDrag] = useState<ActiveDragPreview | null>(null);
 
+  useEditorKeyboardShortcuts();
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
   );
+
+  const hasEligibleSelection = selectedElementId !== null && selectedElementId !== documentModel.id;
+
+  const editMenuCommands: EditMenuCommands = {
+    canUndo: hasPast,
+    canRedo: hasFuture,
+    canCut: hasEligibleSelection,
+    canCopy: hasEligibleSelection,
+    canDuplicate: hasEligibleSelection,
+    canDelete: hasEligibleSelection,
+    canPaste: clipboard !== null,
+    onUndo: () => useEditorStore.getState().undo(),
+    onRedo: () => useEditorStore.getState().redo(),
+    onCut: () => useEditorStore.getState().cutSelection(),
+    onCopy: () => useEditorStore.getState().copySelection(),
+    onPaste: () => useEditorStore.getState().pasteClipboard(),
+    onDuplicate: () => useEditorStore.getState().duplicateSelection(),
+    onDelete: () => useEditorStore.getState().deleteSelection(),
+  };
 
   function handleDragStart(event: DragStartEvent) {
     const label = event.active.data.current?.label;
@@ -97,6 +124,7 @@ export function EditorApp() {
         inspectorContent={<InspectorContent selectedElement={null} />}
         structureContent={<StructurePanel />}
         onActivateCatalogCard={handleActivateCard}
+        editMenuCommands={editMenuCommands}
       />
       <DragOverlay>
         {activeDrag && (

@@ -11,7 +11,7 @@ import { Workspace } from "@/components/layout/Workspace";
 import { computeAppliedPanelWidths } from "@/components/ui/resizable/computeAppliedPanelWidths";
 import { useResizablePanelWidth } from "@/components/ui/resizable/useResizablePanelWidth";
 import { useViewportWidth } from "@/components/ui/viewport/useViewportWidth";
-import type { ViewState } from "@/components/layout/applicationMenus";
+import type { EditMenuCommands, ViewState } from "@/components/layout/applicationMenus";
 import type { CatalogCardPlaceholder } from "@/components/layout/creationToolbarCategories";
 
 interface AppShellProps {
@@ -19,6 +19,7 @@ interface AppShellProps {
   inspectorContent: ReactNode;
   structureContent?: ReactNode;
   onActivateCatalogCard?: (card: CatalogCardPlaceholder) => void;
+  editMenuCommands: EditMenuCommands;
 }
 
 const initialViewState: ViewState = {
@@ -51,6 +52,7 @@ export function AppShell({
   inspectorContent,
   structureContent,
   onActivateCatalogCard,
+  editMenuCommands,
 }: AppShellProps) {
   const [viewState, setViewState] = useState<ViewState>(initialViewState);
   const viewportWidth = useViewportWidth();
@@ -95,7 +97,11 @@ export function AppShell({
 
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden bg-white dark:bg-black">
-      <AppHeader viewState={viewState} onToggleView={handleToggleView} />
+      <AppHeader
+        viewState={viewState}
+        onToggleView={handleToggleView}
+        editMenuCommands={editMenuCommands}
+      />
       <CreationToolbar onActivateCard={onActivateCatalogCard} />
       <div className="flex min-h-0 flex-1 overflow-x-auto">
         {viewState.resourcePanelVisible && (

@@ -5,30 +5,8 @@ import {
 import { canContainChildren } from "@/features/editor/rules/insertionRules";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
+import { resolveDestinationParent } from "@/features/editor/utils/resolveDestinationParent";
 import type { DropZone } from "@/features/editor/utils/resolveDropZone";
-import type { EditorElementNode } from "@/features/editor/types/document";
-
-/**
- * Click-insert (no explicit drop target) has no hovered node to reason
- * about, so it has to fall back to *something* deterministic. Rather than
- * always the document root regardless of context, it targets wherever the
- * user is currently working: the selected element itself if it can accept
- * children, or that element's own parent otherwise (e.g. a selected Image
- * is a leaf, but its containing Section is exactly where "add another
- * element here" should land) — falling back to the document root only
- * once nothing useful is selected.
- */
-function resolveDefaultInsertionParent(
-  documentModel: EditorElementNode,
-  selectedElementId: string | null,
-): string {
-  const selectedNode = selectedElementId
-    ? findNodeById(documentModel, selectedElementId)
-    : undefined;
-  if (!selectedNode) return documentModel.id;
-  if (canContainChildren(selectedNode.tag)) return selectedNode.id;
-  return findParentId(documentModel, selectedNode.id) ?? documentModel.id;
-}
 
 /**
  * The single insertion pipeline every insertion method (Resource Panel
@@ -37,8 +15,9 @@ function resolveDefaultInsertionParent(
  * "how insertion works" is never duplicated between input methods.
  *
  * requestedTargetId is the hovered node for drag and drop, or omitted
- * for click-insert (see resolveDefaultInsertionParent above for what it
- * falls back to). zone, when given, positions the new node before/after
+ * for click-insert (see resolveDestinationParent for what it falls back
+ * to — the same priority order paste uses). zone, when given, positions
+ * the new node before/after
  * requestedTargetId as a sibling instead of appending inside it — the
  * same before/after/inside vocabulary Checkpoint 3.4.1 introduced for
  * moving existing nodes, reused here for free now that the underlying
@@ -83,6 +62,6 @@ export function useInsertElement() {
       return;
     }
 
-    insertElement(resolveDefaultInsertionParent(documentModel, selectedElementId), newNode);
+    insertElement(resolveDestinationParent(documentModel, selectedElementId), newNode);
   };
 }
