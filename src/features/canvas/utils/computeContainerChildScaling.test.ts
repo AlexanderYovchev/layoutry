@@ -97,7 +97,25 @@ describe("computeContainerChildScaling — clamp policy", () => {
     expect(result.b.x + result.b.width).toBeLessThanOrEqual(100);
   });
 
-  it("respects each child's own tag minimum (a container child floors higher than a leaf)", () => {
+  it("respects each child's own tag minimum (a container child floors higher than a leaf) when the new bounds are large enough to allow it", () => {
+    const mixedChildren: ContainerChildSnapshot[] = [
+      { id: "leaf", tag: "img", geometry: { x: 0, y: 0, width: 10, height: 10 } },
+      { id: "nested-container", tag: "div", geometry: { x: 0, y: 0, width: 10, height: 10 } },
+    ];
+    const result = computeContainerChildScaling(
+      mixedChildren,
+      { width: 400, height: 300 },
+      { width: 200, height: 200 },
+      "clamp",
+    );
+    expect(result.leaf.width).toBe(64);
+    expect(result["nested-container"].width).toBe(160);
+  });
+
+  it("never lets a child escape the new bounds, even a nested container whose own minimum exceeds them", () => {
+    // A container's own minimum (160 for div) can exceed how much room a
+    // severely shrunk parent actually has — containment must win over
+    // that minimum regardless of the child's own tag.
     const mixedChildren: ContainerChildSnapshot[] = [
       { id: "leaf", tag: "img", geometry: { x: 0, y: 0, width: 300, height: 300 } },
       { id: "nested-container", tag: "div", geometry: { x: 0, y: 0, width: 300, height: 300 } },
@@ -108,8 +126,10 @@ describe("computeContainerChildScaling — clamp policy", () => {
       { width: 50, height: 50 },
       "clamp",
     );
-    expect(result.leaf.width).toBe(64);
-    expect(result["nested-container"].width).toBe(160);
+    expect(result.leaf.width).toBeLessThanOrEqual(50);
+    expect(result.leaf.height).toBeLessThanOrEqual(50);
+    expect(result["nested-container"].width).toBeLessThanOrEqual(50);
+    expect(result["nested-container"].height).toBeLessThanOrEqual(50);
   });
 });
 

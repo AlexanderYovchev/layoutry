@@ -99,6 +99,47 @@ describe("useConvertContainerToFreeLayout", () => {
     expect(section?.dimensions).toEqual({ preferredWidth: 400, preferredHeight: 300, offsetX: 0, offsetY: 0 });
   });
 
+  it("floors the container's own preserved size at its tag minimum when its Flow-rendered size measures smaller (e.g. empty or lightly populated)", () => {
+    useEditorStore.setState((state) => ({
+      document: { ...state.document, children: [{ id: "container-1", tag: "div", children: [] }] },
+    }));
+
+    const container = document.createElement("div");
+    container.setAttribute("data-node-id", "container-1");
+    container.setAttribute("data-node-type", "div");
+    document.body.appendChild(container);
+
+    // An empty/near-empty Flow container commonly measures far below the
+    // div minimum (160x120) — Flow auto-sizing has no enforced floor,
+    // unlike an explicit resize.
+    stubRect(container, { left: 0, top: 0, right: 400, bottom: 40 });
+
+    const { result } = renderHook(() => useConvertContainerToFreeLayout());
+    result.current("container-1");
+
+    const converted = useEditorStore.getState().document.children?.find((c) => c.id === "container-1");
+    expect(converted?.dimensions).toEqual({ preferredWidth: 400, preferredHeight: 120, offsetX: 0, offsetY: 0 });
+  });
+
+  it("floors a Section's own preserved size at its (bigger) 240x160 minimum", () => {
+    useEditorStore.setState((state) => ({
+      document: { ...state.document, children: [{ id: "section-x", tag: "section", children: [] }] },
+    }));
+
+    const container = document.createElement("div");
+    container.setAttribute("data-node-id", "section-x");
+    container.setAttribute("data-node-type", "section");
+    document.body.appendChild(container);
+
+    stubRect(container, { left: 0, top: 0, right: 100, bottom: 50 });
+
+    const { result } = renderHook(() => useConvertContainerToFreeLayout());
+    result.current("section-x");
+
+    const converted = useEditorStore.getState().document.children?.find((c) => c.id === "section-x");
+    expect(converted?.dimensions).toEqual({ preferredWidth: 240, preferredHeight: 160, offsetX: 0, offsetY: 0 });
+  });
+
   it("preserves a nested Free container's own size as freeLayout (not dimensions) when its own parent is already Free", () => {
     useEditorStore.setState((state) => ({
       document: {

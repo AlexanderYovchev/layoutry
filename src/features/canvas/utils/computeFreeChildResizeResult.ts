@@ -16,8 +16,14 @@ export interface FreeChildResizeSession {
   aspectRatioLocked: boolean;
 }
 
+// Containment always wins over the aesthetic minimum when they conflict
+// (max < min) — see normalizeFreeLayoutGeometry's identical clamp for
+// the full reasoning. A Free child must never render outside its
+// parent's bounds, even at the cost of shrinking below its own minimum.
 function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(value, Math.max(min, max)));
+  const safeMax = Math.max(0, max);
+  if (safeMax < min) return safeMax;
+  return Math.max(min, Math.min(value, safeMax));
 }
 
 /**

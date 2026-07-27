@@ -1,6 +1,6 @@
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
-import { getLayoutMode } from "@/features/editor/types/layout";
+import { getLayoutMode, getResizeConstraintsForTag } from "@/features/editor/types/layout";
 import type { FreeContainerSelfUpdate } from "@/features/editor/commands/layoutCommands";
 import type { FreeLayoutGeometry } from "@/features/editor/types/layout";
 
@@ -65,6 +65,22 @@ export function useConvertContainerToFreeLayout() {
     const containerParent = containerParentId ? findNodeById(documentModel, containerParentId) : undefined;
     const containerIsFreeChild = containerParent ? getLayoutMode(containerParent) === "free" : false;
 
+    // A container's *Flow* rendered size has no enforced minimum (only an
+    // explicit resize does) — an empty or lightly-populated container can
+    // measure smaller than its own tag minimum (see
+    // getResizeConstraintsForTag; a Section/Container resized via its own
+    // handles can never go below 240x160/160x120, but Flow auto-sizing has
+    // no such floor). Freezing that raw measured size as the container's
+    // permanent Free-mode size would then force every subsequently
+    // inserted/placed child's own minimum size (normalizeFreeLayoutGeometry
+    // always honors a child's minimum over the parent bounds when they
+    // conflict) to overflow past the container's own edge. Flooring the
+    // preserved size at conversion time is what keeps a freshly-Free'd
+    // container always large enough to actually hold content.
+    const containerConstraints = getResizeConstraintsForTag(containerEl.getAttribute("data-node-type") ?? "");
+    const selfWidth = Math.max(containerRect.width, containerConstraints.minWidth);
+    const selfHeight = Math.max(containerRect.height, containerConstraints.minHeight);
+
     let selfUpdate: FreeContainerSelfUpdate;
     if (containerIsFreeChild) {
       const parentEl = containerEl.parentElement?.closest<HTMLElement>("[data-node-id]");
@@ -79,15 +95,15 @@ export function useConvertContainerToFreeLayout() {
         freeLayout: {
           x: parentRect ? containerRect.left - parentRect.left - parentInsetLeft : 0,
           y: parentRect ? containerRect.top - parentRect.top - parentInsetTop : 0,
-          width: containerRect.width,
-          height: containerRect.height,
+          width: selfWidth,
+          height: selfHeight,
         },
       };
     } else {
       selfUpdate = {
         dimensions: {
-          preferredWidth: containerRect.width,
-          preferredHeight: containerRect.height,
+          preferredWidth: selfWidth,
+          preferredHeight: selfHeight,
           offsetX: 0,
           offsetY: 0,
         },

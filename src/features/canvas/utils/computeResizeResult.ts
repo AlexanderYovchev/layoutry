@@ -5,9 +5,14 @@ import type {
 } from "@/features/editor/types/resize";
 
 function clamp(value: number, min: number, max: number): number {
-  // max can end up smaller than min against a tiny containing block; min
-  // always wins so the element never renders below its own minimum size.
-  return Math.max(min, Math.min(value, Math.max(min, max)));
+  // max can end up smaller than min against a tiny containing block —
+  // containment wins in that conflict: the element must never render
+  // wider/taller than its containing block for any reason, even at the
+  // cost of shrinking below its own preferred minimum. Escaping the
+  // parent is a harder failure than being smaller than ideal.
+  const safeMax = Math.max(0, max);
+  if (safeMax < min) return safeMax;
+  return Math.max(min, Math.min(value, safeMax));
 }
 
 /**
