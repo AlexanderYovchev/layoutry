@@ -1,0 +1,156 @@
+"use client";
+
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+import { computeFreeChildMoveResult, type FreeChildMoveStart } from "@/features/canvas/utils/computeFreeChildMoveResult";
+import { measureFreeContainerBounds } from "@/features/canvas/utils/measureFreeContainerBounds";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+
+export interface UseFreeChildMoveSessionResult {
+  isDragging: boolean;
+  // Element, not HTMLElement — matches NodeDragSource.listeners' generic
+  // (defaults to Element) so useNodeDragSource can return these handlers
+  // directly without a type mismatch.
+  onPointerDown: (event: ReactPointerEvent<Element>) => void;
+  onPointerMove: (event: ReactPointerEvent<Element>) => void;
+  onPointerUp: (event: ReactPointerEvent<Element>) => void;
+  onPointerCancel: (event: ReactPointerEvent<Element>) => void;
+}
+
+/**
+ * Drag-to-reposition for a Free container's direct child (Checkpoint
+ * 3.4.4) — the Free-mode counterpart to useResizeSession, sharing the
+ * exact same pointer-capture/rAF-throttled-commit/begin-commit-
+ * transaction/Escape-cancel shape (kept as its own hook rather than
+ * folded into useResizeSession, which stays untouched for Flow's
+ * offsetX/Y margin-based resize; see the checkpoint plan's "existing
+ * tested code is extended, not replaced" decision).
+ *
+ * Unlike a Flow reorder-drag (dnd-kit's useNodeDragSource path), this
+ * never changes the document tree — it only ever writes this one node's
+ * freeLayout, committed continuously (every frame, not just on release)
+ * so the canvas, its own selection overlay, and the Inspector's X/Y
+ * fields all stay in sync for free, exactly like a resize drag already
+ * does.
+ *
+ * Needs no canvasRootRef, unlike useResizeSession: every value computed
+ * here (startX/Y, parentBounds) is relative to the node's own immediate
+ * parent, not to the canvas root, so a single global data-node-id lookup
+ * (there is exactly one Canvas per app instance — see useRenderedNodeSize
+ * for the same reasoning) is all pointer-down needs.
+ */
+export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSessionResult {
+  const setFreeChildGeometryLive = useEditorStore((state) => state.setFreeChildGeometryLive);
+  const [isDragging, setIsDragging] = useState(false);
+  const startRef = useRef<FreeChildMoveStart | null>(null);
+  const latestPointerRef = useRef({ x: 0, y: 0 });
+  const frameRef = useRef<number | null>(null);
+
+  const commit = useCallback(() => {
+    frameRef.current = null;
+    const start = startRef.current;
+    if (!start) return;
+    const result = computeFreeChildMoveResult(start, latestPointerRef.current.x, latestPointerRef.current.y);
+    setFreeChildGeometryLive(nodeId, result);
+  }, [nodeId, setFreeChildGeometryLive]);
+
+  const scheduleCommit = useCallback(() => {
+    if (frameRef.current !== null) return;
+    frameRef.current = requestAnimationFrame(commit);
+  }, [commit]);
+
+  const onPointerDown = useCallback(
+    (event: ReactPointerEvent<Element>) => {
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      useEditorStore.getState().beginResizeTransaction();
+
+      const targetEl = window.document.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(nodeId)}"]`);
+      const containerEl = targetEl?.parentElement?.closest<HTMLElement>("[data-node-id]") ?? null;
+      const parentBounds = containerEl ? measureFreeContainerBounds(containerEl) : { width: Infinity, height: Infinity };
+
+      const rect = targetEl?.getBoundingClientRect();
+      const containerRect = containerEl?.getBoundingClientRect();
+      const startX = rect && containerRect ? rect.left - containerRect.left : 0;
+      const startY = rect && containerRect ? rect.top - containerRect.top : 0;
+
+      startRef.current = {
+        startX,
+        startY,
+        width: rect?.width ?? 0,
+        height: rect?.height ?? 0,
+        startPointerX: event.clientX,
+        startPointerY: event.clientY,
+        parentBounds,
+      };
+      latestPointerRef.current = { x: event.clientX, y: event.clientY };
+      setIsDragging(true);
+    },
+    [nodeId],
+  );
+
+  const onPointerMove = useCallback(
+    (event: ReactPointerEvent<Element>) => {
+      if (!startRef.current) return;
+      latestPointerRef.current = { x: event.clientX, y: event.clientY };
+      scheduleCommit();
+    },
+    [scheduleCommit],
+  );
+
+  const endSession = useCallback(
+    (event: ReactPointerEvent<Element>) => {
+      if (!startRef.current) return;
+
+      if (frameRef.current !== null) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+      commit();
+      useEditorStore.getState().commitResizeTransaction();
+
+      event.currentTarget.releasePointerCapture(event.pointerId);
+      startRef.current = null;
+      setIsDragging(false);
+    },
+    [commit],
+  );
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape" || !startRef.current) return;
+      event.stopPropagation();
+
+      if (frameRef.current !== null) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+
+      const store = useEditorStore.getState();
+      const snapshot = store.transactionSnapshot;
+      if (snapshot) {
+        useEditorStore.setState({ document: snapshot.document, selectedElementId: snapshot.selectedElementId });
+      }
+      store.cancelResizeTransaction();
+
+      startRef.current = null;
+      setIsDragging(false);
+    }
+
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
+  }, []);
+
+  return {
+    isDragging,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp: endSession,
+    onPointerCancel: endSession,
+  };
+}

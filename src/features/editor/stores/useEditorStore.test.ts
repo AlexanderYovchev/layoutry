@@ -516,3 +516,165 @@ describe("useEditorStore resize transactions", () => {
     expect(useEditorStore.getState().transactionSnapshot).toBe(firstSnapshot);
   });
 });
+
+describe("useEditorStore — Free layout (Checkpoint 3.4.4)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  function makeFree() {
+    useEditorStore.getState().convertToFreeLayout("section-1", {
+      "heading-1": { x: 16, y: 16, width: 240, height: 48 },
+      "paragraph-1": { x: 16, y: 80, width: 240, height: 80 },
+      "button-1": { x: 16, y: 176, width: 120, height: 40 },
+    });
+  }
+
+  it("setFreeChildGeometry updates the node and pushes one history entry", () => {
+    makeFree();
+    const pastLengthBefore = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().setFreeChildGeometry("heading-1", { x: 50, y: 60, width: 200, height: 100 });
+
+    const heading = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === "heading-1");
+    expect(heading?.freeLayout).toEqual({ x: 50, y: 60, width: 200, height: 100 });
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+  });
+
+  it("setFreeChildGeometryLive updates the node without pushing history", () => {
+    makeFree();
+    const pastLengthBefore = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().setFreeChildGeometryLive("heading-1", { x: 50, y: 60, width: 200, height: 100 });
+
+    const heading = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === "heading-1");
+    expect(heading?.freeLayout).toEqual({ x: 50, y: 60, width: 200, height: 100 });
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);
+  });
+
+  it("applyFreeContainerChildGeometriesLive atomically updates the container and its children without pushing history", () => {
+    makeFree();
+    const pastLengthBefore = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().applyFreeContainerChildGeometriesLive(
+      "section-1",
+      { dimensions: { preferredWidth: 500, preferredHeight: 400, offsetX: 0, offsetY: 0 } },
+      { "heading-1": { x: 32, y: 32, width: 480, height: 96 } },
+    );
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(section?.dimensions).toEqual({ preferredWidth: 500, preferredHeight: 400, offsetX: 0, offsetY: 0 });
+    expect(section?.children?.find((c) => c.id === "heading-1")?.freeLayout).toEqual({
+      x: 32,
+      y: 32,
+      width: 480,
+      height: 96,
+    });
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);
+  });
+
+  it("setChildResizePolicy pushes one history entry", () => {
+    makeFree();
+    const pastLengthBefore = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().setChildResizePolicy("section-1", "clamp");
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(section?.childResizePolicy).toBe("clamp");
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+  });
+
+  it("convertToFreeLayout sets layoutMode free and each child's freeLayout in one history entry", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+
+    makeFree();
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(section?.layoutMode).toBe("free");
+    expect(section?.children?.find((c) => c.id === "heading-1")?.freeLayout).toEqual({
+      x: 16,
+      y: 16,
+      width: 240,
+      height: 48,
+    });
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+  });
+
+  it("convertToFlowLayout restores flow mode and clears freeLayout in one history entry, and undo restores Free mode atomically", () => {
+    makeFree();
+    const pastLengthBefore = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().convertToFlowLayout("section-1");
+
+    let section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(section?.layoutMode).toBe("flow");
+    expect(section?.children?.every((c) => c.freeLayout === undefined)).toBe(true);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+
+    useEditorStore.getState().undo();
+
+    section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(section?.layoutMode).toBe("free");
+    expect(section?.children?.find((c) => c.id === "heading-1")?.freeLayout).toEqual({
+      x: 16,
+      y: 16,
+      width: 240,
+      height: 48,
+    });
+  });
+
+  it("pasteClipboard places a clone inside a Free destination without overlapping an existing child", () => {
+    makeFree();
+    useEditorStore.getState().selectElement("heading-1");
+    useEditorStore.getState().copySelection();
+    useEditorStore.getState().selectElement("section-1");
+
+    useEditorStore.getState().pasteClipboard();
+
+    const pastedId = useEditorStore.getState().selectedElementId;
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    const pasted = section?.children?.find((c) => c.id === pastedId);
+    const original = section?.children?.find((c) => c.id === "heading-1");
+
+    expect(pasted?.freeLayout).toBeDefined();
+    expect(pasted?.freeLayout).not.toEqual(original?.freeLayout);
+    const pastedGeometry = pasted!.freeLayout!;
+    expect(pastedGeometry.x + pastedGeometry.width).toBeLessThanOrEqual(
+      section!.dimensions?.preferredWidth ?? Infinity,
+    );
+  });
+
+  it("duplicateSelection places the duplicate inside a Free parent without overlapping the original", () => {
+    makeFree();
+    useEditorStore.getState().selectElement("heading-1");
+
+    useEditorStore.getState().duplicateSelection();
+
+    const duplicateId = useEditorStore.getState().selectedElementId;
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    const duplicate = section?.children?.find((c) => c.id === duplicateId);
+    const original = section?.children?.find((c) => c.id === "heading-1");
+
+    expect(duplicate?.freeLayout).toBeDefined();
+    expect(duplicate?.freeLayout).not.toEqual(original?.freeLayout);
+  });
+
+  it("pasting into a Flow destination leaves freeLayout untouched (no Free-specific placement applied)", () => {
+    useEditorStore.getState().selectElement("heading-1");
+    useEditorStore.getState().copySelection();
+    useEditorStore.getState().selectElement("section-2");
+
+    useEditorStore.getState().pasteClipboard();
+
+    const pastedId = useEditorStore.getState().selectedElementId;
+    const section2 = useEditorStore.getState().document.children?.find((c) => c.id === "section-2");
+    const pasted = section2?.children?.find((c) => c.id === pastedId);
+    expect(pasted?.freeLayout).toBeUndefined();
+  });
+});

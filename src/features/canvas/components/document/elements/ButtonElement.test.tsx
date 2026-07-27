@@ -4,7 +4,7 @@ import { ButtonElement } from "./ButtonElement";
 
 describe("ButtonElement", () => {
   it("renders with no inline size when not resized", () => {
-    render(<ButtonElement node={{ id: "button-1", tag: "button", text: "Go" }} parentId="section-1" />);
+    render(<ButtonElement node={{ id: "button-1", tag: "button", text: "Go" }} parentId="section-1" parentLayoutMode="flow" />);
 
     const button = screen.getByRole("button", { name: "Go" });
     expect(button.style.width).toBe("");
@@ -20,6 +20,7 @@ describe("ButtonElement", () => {
           dimensions: { preferredWidth: 200, preferredHeight: 50, offsetX: 0, offsetY: 0 },
         }}
         parentId="section-1"
+        parentLayoutMode="flow"
       />,
     );
 

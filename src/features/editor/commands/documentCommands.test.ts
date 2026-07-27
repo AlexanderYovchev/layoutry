@@ -307,7 +307,7 @@ describe("resizeNode", () => {
     expect(container?.dimensions).toEqual({ preferredWidth: 320, preferredHeight: 180, offsetX: -60, offsetY: -20 });
   });
 
-  it("clamps width/height defensively to the minimum constraints even if the caller didn't", () => {
+  it("clamps width/height defensively to the tag's own minimum constraints even if the caller didn't (Checkpoint 3.4.4 — a div container floors at 160x120, not the generic 64x64)", () => {
     const result = resizeNode(resizeTree, "container-1", {
       preferredWidth: 10,
       preferredHeight: -5,
@@ -316,7 +316,19 @@ describe("resizeNode", () => {
     });
 
     const container = result.children?.find((child) => child.id === "container-1");
-    expect(container?.dimensions).toEqual({ preferredWidth: 64, preferredHeight: 64, offsetX: 0, offsetY: 0 });
+    expect(container?.dimensions).toEqual({ preferredWidth: 160, preferredHeight: 120, offsetX: 0, offsetY: 0 });
+  });
+
+  it("clamps a leaf (non-container) node's width/height to the generic 64x64 minimum", () => {
+    const result = resizeNode(resizeTree, "heading-1", {
+      preferredWidth: 10,
+      preferredHeight: -5,
+      offsetX: 0,
+      offsetY: 0,
+    });
+
+    const heading = result.children?.find((child) => child.id === "heading-1");
+    expect(heading?.dimensions).toEqual({ preferredWidth: 64, preferredHeight: 64, offsetX: 0, offsetY: 0 });
   });
 
   it("does not mutate the original tree", () => {

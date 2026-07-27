@@ -147,3 +147,62 @@ describe("useInsertElement", () => {
     expect(state.document.children?.at(-1)?.tag).toBe("button");
   });
 });
+
+describe("useInsertElement — Free destinations (Checkpoint 3.4.4)", () => {
+  const initialState = useEditorStore.getState();
+
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  function makeSection1Free() {
+    useEditorStore.getState().convertToFreeLayout("section-1", {
+      "heading-1": { x: 16, y: 16, width: 240, height: 48 },
+      "paragraph-1": { x: 16, y: 80, width: 240, height: 80 },
+      "button-1": { x: 16, y: 176, width: 120, height: 40 },
+    });
+    // Give the container a large enough size that a non-overlapping grid
+    // slot genuinely exists for a default-sized new element — approximateFreeContainerSize
+    // falls back to a generous 400x300 otherwise, too tight for this test.
+    useEditorStore
+      .getState()
+      .resizeElement("section-1", { preferredWidth: 900, preferredHeight: 700, offsetX: 0, offsetY: 0 });
+  }
+
+  it("assigns a deterministic freeLayout when inserting into a Free container", () => {
+    makeSection1Free();
+    const { result } = renderHook(() => useInsertElement());
+
+    result.current("image", "section-1");
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    const inserted = section?.children?.at(-1);
+    expect(inserted?.tag).toBe("img");
+    expect(inserted?.freeLayout).toBeDefined();
+  });
+
+  it("never overlaps an existing Free sibling when inserting", () => {
+    makeSection1Free();
+    const { result } = renderHook(() => useInsertElement());
+
+    result.current("image", "section-1");
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    const inserted = section!.children!.at(-1)!;
+    for (const sibling of section!.children!.slice(0, -1)) {
+      const a = inserted.freeLayout!;
+      const b = sibling.freeLayout!;
+      const overlaps = a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+      expect(overlaps).toBe(false);
+    }
+  });
+
+  it("leaves freeLayout unset when inserting into a Flow container", () => {
+    const { result } = renderHook(() => useInsertElement());
+
+    result.current("image", "section-1");
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(section?.children?.at(-1)?.freeLayout).toBeUndefined();
+  });
+});

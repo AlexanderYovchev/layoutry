@@ -15,7 +15,7 @@ describe("DocumentNodeRenderer", () => {
       ],
     };
 
-    render(<DocumentNodeRenderer node={tree} parentId={null} />);
+    render(<DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" />);
 
     expect(
       screen.getByRole("heading", { level: 3, name: "Heading text" }),
@@ -33,7 +33,7 @@ describe("DocumentNodeRenderer", () => {
       children: [{ id: "heading-1", tag: "h1", text: "Title" }],
     };
 
-    render(<DocumentNodeRenderer node={tree} parentId={null} />);
+    render(<DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" />);
 
     const heading = screen.getByRole("heading", { name: "Title" });
     expect(heading).toHaveAttribute("data-node-id", "heading-1");
@@ -48,7 +48,7 @@ describe("DocumentNodeRenderer", () => {
       children: [{ id: "paragraph-1", tag: "p", text: "Still visible" }],
     };
 
-    render(<DocumentNodeRenderer node={tree} parentId={null} />);
+    render(<DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" />);
 
     expect(screen.getByText("Still visible")).toBeInTheDocument();
   });
@@ -60,7 +60,7 @@ describe("DocumentNodeRenderer", () => {
       children: [{ id: "heading-1", tag: "h1", text: "Title" }],
     };
 
-    render(<DocumentNodeRenderer node={tree} parentId={null} />);
+    render(<DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" />);
 
     const root = document.querySelector('[data-node-id="page-root"]');
     expect(root).toHaveAttribute("data-node-type", "page");
@@ -70,7 +70,7 @@ describe("DocumentNodeRenderer", () => {
   it("renders an img node as an empty-image placeholder rather than nothing", () => {
     const tree: EditorElementNode = { id: "image-1", tag: "img" };
 
-    render(<DocumentNodeRenderer node={tree} parentId={null} />);
+    render(<DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" />);
 
     const placeholder = document.querySelector('[data-node-id="image-1"]');
     expect(placeholder).toBeInTheDocument();

@@ -31,7 +31,11 @@ export function CanvasOverlay({ canvasRootRef, hoveredNodeId }: CanvasOverlayPro
         <HoverOverlay canvasRootRef={canvasRootRef} nodeId={hoveredNodeId} />
       )}
       {selected && !activeDropIndicator && (
-        <SelectionOverlay canvasRootRef={canvasRootRef} node={selected.node} />
+        <SelectionOverlay
+          canvasRootRef={canvasRootRef}
+          node={selected.node}
+          parentLayoutMode={selected.parentLayoutMode}
+        />
       )}
       {activeDropIndicator && (
         <DropIndicatorOverlay

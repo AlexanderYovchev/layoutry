@@ -78,3 +78,44 @@ describe("ResizeOverlay", () => {
     expect(document.querySelectorAll("[data-resize-handle]")).toHaveLength(8);
   });
 });
+
+describe("ResizeOverlay — Free layout (Checkpoint 3.4.4)", () => {
+  it("renders FreeChildResizeHandles (still 8 handles) for a Free child with a freeLayout", () => {
+    render(
+      <ResizeOverlay
+        node={{ id: "image-1", tag: "img", freeLayout: { x: 16, y: 16, width: 100, height: 80 } }}
+        rect={rect}
+        canvasRootRef={canvasRootRef}
+        parentLayoutMode="free"
+      />,
+    );
+
+    expect(document.querySelectorAll("[data-resize-handle]")).toHaveLength(8);
+  });
+
+  it("falls back to Flow's ResizeHandles when parentLayoutMode is 'free' but the node has no freeLayout yet", () => {
+    render(
+      <ResizeOverlay
+        node={{ id: "image-1", tag: "img" }}
+        rect={rect}
+        canvasRootRef={canvasRootRef}
+        parentLayoutMode="free"
+      />,
+    );
+
+    expect(document.querySelectorAll("[data-resize-handle]")).toHaveLength(8);
+  });
+
+  it("still renders nothing for a non-resizable node even when parentLayoutMode is 'free'", () => {
+    const { container } = render(
+      <ResizeOverlay
+        node={{ id: "page-root", tag: "page" }}
+        rect={rect}
+        canvasRootRef={canvasRootRef}
+        parentLayoutMode="free"
+      />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+});

@@ -24,6 +24,34 @@ describe("useSelectedNode", () => {
     expect(result.current?.parentId).toBe("section-1");
   });
 
+  it("defaults parentLayoutMode to 'flow' when the parent has no layoutMode set", () => {
+    useEditorStore.setState({ selectedElementId: "heading-1" });
+
+    const { result } = renderHook(() => useSelectedNode());
+
+    expect(result.current?.parentLayoutMode).toBe("flow");
+  });
+
+  it("resolves parentLayoutMode to 'free' when the parent is a Free container (Checkpoint 3.4.4)", () => {
+    useEditorStore.getState().convertToFreeLayout("section-1", {
+      "heading-1": { x: 16, y: 16, width: 240, height: 48 },
+    });
+    useEditorStore.setState({ selectedElementId: "heading-1" });
+
+    const { result } = renderHook(() => useSelectedNode());
+
+    expect(result.current?.parentLayoutMode).toBe("free");
+  });
+
+  it("defaults parentLayoutMode to 'flow' for the document root (no parent at all)", () => {
+    useEditorStore.setState({ selectedElementId: "section-1" });
+
+    const { result } = renderHook(() => useSelectedNode());
+
+    expect(result.current?.parentId).toBe("page-root");
+    expect(result.current?.parentLayoutMode).toBe("flow");
+  });
+
   it("fails safely to null when the selected id no longer resolves", () => {
     useEditorStore.setState({ selectedElementId: "does-not-exist" });
 

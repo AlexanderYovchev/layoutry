@@ -1,3 +1,9 @@
+import type {
+  ChildResizePolicy,
+  ContainerLayoutMode,
+  FreeLayoutGeometry,
+} from "@/features/editor/types/layout";
+
 export interface ElementDimensions {
   /**
    * The user's own resize intent in pixels — set once by a resize drag and
@@ -42,6 +48,35 @@ export interface EditorElementNode {
   /** Literal text content for text-bearing leaf nodes (e.g. headings, paragraphs, buttons). Unset for structural nodes. */
   text?: string;
   children?: EditorElementNode[];
-  /** Explicit pixel size set via a resize interaction. Unset means the element still sizes itself naturally. */
+  /** Explicit pixel size set via a resize interaction. Unset means the element still sizes itself naturally. Ignored (in favor of freeLayout) while this node is a direct child of a "free" layoutMode parent. */
   dimensions?: ElementDimensions;
+  /**
+   * This node's own children layout mode (Checkpoint 3.4.4) — "flow"
+   * (normal document flow, the default when unset) or "free" (children
+   * carry independent freeLayout geometry instead of participating in
+   * flow). See getLayoutMode in types/layout.ts. Only meaningful when
+   * this node can contain children.
+   */
+  layoutMode?: ContainerLayoutMode;
+  /**
+   * How this node's direct children respond when this node (a "free"
+   * layoutMode container) is itself resized. Only meaningful alongside
+   * layoutMode: "free"; unset means "scale" — see resolveChildResizePolicy.
+   */
+  childResizePolicy?: ChildResizePolicy;
+  /**
+   * This node's own position and size inside its parent's Free layout
+   * space. Only meaningful while the node's parent has layoutMode:
+   * "free" — a node's own `dimensions` is what applies otherwise. Set by
+   * insertion, drag, resize, paste/duplicate placement, and Flow→Free
+   * conversion; cleared on Free→Flow conversion.
+   */
+  freeLayout?: FreeLayoutGeometry;
+  /**
+   * Overrides the tag-based default aspect-ratio-lock behavior for corner
+   * resizing and container-scale preservation. Unset resolves to
+   * getElementCapabilities(tag).supportsIntrinsicAspectRatio (true for
+   * img/video/iframe by default).
+   */
+  aspectRatioLocked?: boolean;
 }

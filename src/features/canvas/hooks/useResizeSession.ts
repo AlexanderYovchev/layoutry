@@ -8,11 +8,13 @@ import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
+import { computeContainerChildScaling, deriveFlooredContainerOuterSize } from "@/features/canvas/utils/computeContainerChildScaling";
 import { computeResizeResult } from "@/features/canvas/utils/computeResizeResult";
+import { resolveContainerScalingSnapshot, type ContainerScalingSnapshot } from "@/features/canvas/utils/resolveContainerScalingSnapshot";
 import { resolveResizeBounds } from "@/features/canvas/utils/resolveResizeBounds";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { getResizeConstraintsForTag, type ElementResizeConstraints } from "@/features/editor/types/layout";
 import {
-  DEFAULT_RESIZE_CONSTRAINTS,
   RESIZE_HANDLE_CURSORS,
   type ResizeBounds,
   type ResizeDirection,
@@ -81,8 +83,13 @@ export function useResizeSession(
   canvasRootRef: RefObject<HTMLElement | null>,
 ): UseResizeSessionResult {
   const resizeElement = useEditorStore((state) => state.resizeElement);
+  const applyFreeContainerChildGeometriesLive = useEditorStore(
+    (state) => state.applyFreeContainerChildGeometriesLive,
+  );
   const [activeDirection, setActiveDirection] = useState<ResizeDirection | null>(null);
   const sessionRef = useRef<ResizeSession | null>(null);
+  const constraintsRef = useRef<ElementResizeConstraints>(getResizeConstraintsForTag(""));
+  const containerScalingRef = useRef<ContainerScalingSnapshot | null>(null);
   const latestPointerRef = useRef({ x: 0, y: 0 });
   const frameRef = useRef<number | null>(null);
 
@@ -94,10 +101,42 @@ export function useResizeSession(
       session,
       latestPointerRef.current.x,
       latestPointerRef.current.y,
-      DEFAULT_RESIZE_CONSTRAINTS,
+      constraintsRef.current,
     );
+
+    // Checkpoint 3.4.4: this node is itself a Free container with
+    // children (see resolveContainerScalingSnapshot) — its own resize
+    // must also proportionally scale/clamp them, atomically, in the
+    // same store write (see applyFreeContainerChildGeometries). The
+    // plain leaf/non-Free-container path below is completely unchanged.
+    const containerScaling = containerScalingRef.current;
+    if (containerScaling) {
+      const flooredSize = deriveFlooredContainerOuterSize(
+        result.preferredWidth,
+        result.preferredHeight,
+        containerScaling.startContentBounds,
+        containerScaling.outerToContentInset,
+      );
+      const newContentBounds = {
+        width: flooredSize.width - containerScaling.outerToContentInset.width,
+        height: flooredSize.height - containerScaling.outerToContentInset.height,
+      };
+      const childGeometries = computeContainerChildScaling(
+        containerScaling.children,
+        containerScaling.startContentBounds,
+        newContentBounds,
+        containerScaling.policy,
+      );
+      applyFreeContainerChildGeometriesLive(
+        containerScaling.containerId,
+        { dimensions: { ...result, preferredWidth: flooredSize.width, preferredHeight: flooredSize.height } },
+        childGeometries,
+      );
+      return;
+    }
+
     resizeElement(session.nodeId, result);
-  }, [resizeElement]);
+  }, [resizeElement, applyFreeContainerChildGeometriesLive]);
 
   const scheduleCommit = useCallback(() => {
     if (frameRef.current !== null) return;
@@ -116,8 +155,16 @@ export function useResizeSession(
         const targetEl = canvasRoot?.querySelector<HTMLElement>(
           `[data-node-id="${CSS.escape(nodeId)}"]`,
         );
+        constraintsRef.current = getResizeConstraintsForTag(
+          targetEl?.getAttribute("data-node-type") ?? "",
+        );
         const bounds =
           canvasRoot && targetEl ? resolveResizeBounds(canvasRoot, targetEl) : UNBOUNDED;
+        containerScalingRef.current = resolveContainerScalingSnapshot(
+          targetEl ?? null,
+          start.startWidth,
+          start.startHeight,
+        );
 
         sessionRef.current = {
           nodeId,
@@ -166,6 +213,7 @@ export function useResizeSession(
 
       event.currentTarget.releasePointerCapture(event.pointerId);
       sessionRef.current = null;
+      containerScalingRef.current = null;
       setActiveDirection(null);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
@@ -199,6 +247,7 @@ export function useResizeSession(
       store.cancelResizeTransaction();
 
       sessionRef.current = null;
+      containerScalingRef.current = null;
       setActiveDirection(null);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";

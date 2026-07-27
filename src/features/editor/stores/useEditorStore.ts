@@ -6,15 +6,25 @@ import {
   resizeNode,
   type InsertPosition,
 } from "@/features/editor/commands/documentCommands";
+import {
+  applyFreeContainerChildGeometries,
+  convertToFlowLayout,
+  convertToFreeLayout,
+  setChildResizePolicyForNode,
+  setFreeChildGeometry as setFreeChildGeometryCommand,
+  type FreeContainerSelfUpdate,
+} from "@/features/editor/commands/layoutCommands";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
 import { cloneNodeWithFreshIds } from "@/features/editor/utils/cloneNodeWithFreshIds";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
+import { resolveFreeDestinationPlacement } from "@/features/editor/utils/resolveFreeDestinationPlacement";
 import { resolveDeletionFallbackSelection } from "@/features/editor/utils/resolveDeletionFallbackSelection";
 import { resolveDestinationParent } from "@/features/editor/utils/resolveDestinationParent";
 import type { EditorClipboard } from "@/features/editor/types/clipboard";
 import type { DropZone } from "@/features/editor/utils/resolveDropZone";
 import type { HistoryEntry } from "@/features/editor/types/history";
 import type { ElementDimensions, EditorElementNode } from "@/features/editor/types/document";
+import type { ChildResizePolicy, FreeLayoutGeometry } from "@/features/editor/types/layout";
 
 interface EditorState {
   document: EditorElementNode;
@@ -37,6 +47,26 @@ interface EditorState {
   beginResizeTransaction: () => void;
   commitResizeTransaction: () => void;
   cancelResizeTransaction: () => void;
+
+  /** One-shot Free-layout geometry edit (e.g. the Inspector's X/Y/Width/Height fields) — pushes its own history entry, same shape as resizeElement vs. a resize drag. */
+  setFreeChildGeometry: (nodeId: string, geometry: FreeLayoutGeometry) => void;
+  /** Per-frame Free-layout geometry write during a live drag/resize session — no history push; wrap in begin/commitResizeTransaction, same convention resize already established. */
+  setFreeChildGeometryLive: (nodeId: string, geometry: FreeLayoutGeometry) => void;
+  /** Per-frame atomic write of a Free container's own geometry plus its direct children's scaled/clamped geometries during a live parent-resize session — no history push. */
+  applyFreeContainerChildGeometriesLive: (
+    containerId: string,
+    selfUpdate: FreeContainerSelfUpdate,
+    childGeometries: Record<string, FreeLayoutGeometry>,
+  ) => void;
+  setChildResizePolicy: (containerId: string, policy: ChildResizePolicy) => void;
+  /** Flow -> Free conversion — one atomic, one-history-entry write (see useConvertContainerToFreeLayout for the DOM measurement step that produces childGeometries and selfUpdate, the container's own measured size). */
+  convertToFreeLayout: (
+    containerId: string,
+    childGeometries: Record<string, FreeLayoutGeometry>,
+    selfUpdate?: FreeContainerSelfUpdate,
+  ) => void;
+  /** Free -> Flow conversion — one atomic, one-history-entry write. */
+  convertToFlowLayout: (containerId: string) => void;
 
   copySelection: () => void;
   cutSelection: () => void;
@@ -151,6 +181,40 @@ export const useEditorStore = create<EditorState>()((set) => ({
   // live document too, not just skip the history push.
   cancelResizeTransaction: () => set({ transactionSnapshot: null }),
 
+  setFreeChildGeometry: (nodeId, geometry) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setFreeChildGeometryCommand(state.document, nodeId, geometry),
+    })),
+
+  setFreeChildGeometryLive: (nodeId, geometry) =>
+    set((state) => ({
+      document: setFreeChildGeometryCommand(state.document, nodeId, geometry),
+    })),
+
+  applyFreeContainerChildGeometriesLive: (containerId, selfUpdate, childGeometries) =>
+    set((state) => ({
+      document: applyFreeContainerChildGeometries(state.document, containerId, selfUpdate, childGeometries),
+    })),
+
+  setChildResizePolicy: (containerId, policy) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setChildResizePolicyForNode(state.document, containerId, policy),
+    })),
+
+  convertToFreeLayout: (containerId, childGeometries, selfUpdate) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: convertToFreeLayout(state.document, containerId, childGeometries, selfUpdate),
+    })),
+
+  convertToFlowLayout: (containerId) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: convertToFlowLayout(state.document, containerId),
+    })),
+
   copySelection: () =>
     set((state) => {
       const node = eligibleSelectedNode(state);
@@ -182,7 +246,11 @@ export const useEditorStore = create<EditorState>()((set) => ({
         state.selectedElementId,
         state.clipboard?.sourceParentId,
       );
-      const clone = cloneNodeWithFreshIds(sourceNode);
+      const clone = resolveFreeDestinationPlacement(
+        state.document,
+        destinationParentId,
+        cloneNodeWithFreshIds(sourceNode),
+      );
       return {
         ...pushHistory(state),
         document: insertNode(state.document, destinationParentId, clone),
@@ -196,7 +264,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
       if (!node) return {};
       const parentId = findParentId(state.document, node.id);
       if (!parentId) return {};
-      const clone = cloneNodeWithFreshIds(node);
+      const clone = resolveFreeDestinationPlacement(state.document, parentId, cloneNodeWithFreshIds(node));
       const document = insertNode(state.document, parentId, clone, {
         referenceId: node.id,
         placement: "after",

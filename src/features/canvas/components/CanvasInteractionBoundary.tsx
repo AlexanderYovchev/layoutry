@@ -114,7 +114,7 @@ export function CanvasInteractionBoundary({
       onPointerOver={handlePointerOver}
       onPointerOut={handlePointerOut}
     >
-      <DocumentNodeRenderer node={documentModel} parentId={null} />
+      <DocumentNodeRenderer node={documentModel} parentId={null} parentLayoutMode="flow" />
       <CanvasOverlay canvasRootRef={canvasRootRef} hoveredNodeId={hoveredNodeId} />
     </div>
   );

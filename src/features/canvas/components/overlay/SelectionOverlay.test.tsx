@@ -44,4 +44,20 @@ describe("SelectionOverlay", () => {
 
     expect(document.querySelector('[data-resize-handle="e"]')).not.toBeInTheDocument();
   });
+
+  it("passes parentLayoutMode through to ResizeOverlay (Checkpoint 3.4.4)", () => {
+    const ref = { current: document.createElement("div") };
+    render(
+      <div ref={ref}>
+        <div data-node-id="image-1" />
+        <SelectionOverlay
+          canvasRootRef={ref}
+          node={{ id: "image-1", tag: "img", freeLayout: { x: 16, y: 16, width: 100, height: 80 } }}
+          parentLayoutMode="free"
+        />
+      </div>,
+    );
+
+    expect(document.querySelectorAll("[data-resize-handle]")).toHaveLength(8);
+  });
 });

@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
-import type { ElementDimensions } from "@/features/editor/types/document";
+import type { ElementDimensions, EditorElementNode } from "@/features/editor/types/document";
+import type { ContainerLayoutMode, FreeLayoutGeometry } from "@/features/editor/types/layout";
 
 /**
  * Converts a resized node's explicit pixel dimensions into inline style,
@@ -67,6 +68,51 @@ export function elementDimensionsStyle(
 
   if (dimensions.offsetX !== 0) style.marginLeft = dimensions.offsetX;
   if (dimensions.offsetY !== 0) style.marginTop = dimensions.offsetY;
+  if (options?.clipOverflowY) style.overflow = "hidden";
+
+  return style;
+}
+
+/**
+ * The one place every element component decides which geometry source
+ * actually applies to it: freeChildStyle(node.freeLayout) when its
+ * parent is a Free-mode container, else the original
+ * elementDimensionsStyle(node.dimensions) for ordinary Flow rendering.
+ * Every DocumentElementComponent calls this instead of choosing between
+ * the two style functions itself.
+ */
+export function elementPositionStyle(
+  node: EditorElementNode,
+  parentLayoutMode: ContainerLayoutMode,
+  options?: { clipOverflowY?: boolean },
+): CSSProperties | undefined {
+  if (parentLayoutMode === "free") return freeChildStyle(node.freeLayout, options);
+  return elementDimensionsStyle(node.dimensions, options);
+}
+
+/**
+ * A Free-mode child's geometry as inline style — position: absolute with
+ * left/top/width/height, all relative to the nearest positioned ancestor
+ * (its Free-mode parent — see ContainerElement's own position: relative
+ * when it hosts Free children). Unlike elementDimensionsStyle's
+ * offsetX/Y margin trick, a Free child has a genuinely independent x/y —
+ * no flow participation, so no margin/maxWidth/maxHeight clamp is needed
+ * or wanted here.
+ */
+export function freeChildStyle(
+  geometry: FreeLayoutGeometry | undefined,
+  options?: { clipOverflowY?: boolean },
+): CSSProperties | undefined {
+  if (!geometry) return undefined;
+
+  const style: CSSProperties = {
+    position: "absolute",
+    left: geometry.x,
+    top: geometry.y,
+    width: geometry.width,
+    height: geometry.height,
+  };
+
   if (options?.clipOverflowY) style.overflow = "hidden";
 
   return style;

@@ -57,7 +57,11 @@ export function InspectorContent({
       />
 
       {selected ? (
-        <InspectorNodeSummary node={selected.node} parentId={selected.parentId} />
+        <InspectorNodeSummary
+          node={selected.node}
+          parentId={selected.parentId}
+          parentLayoutMode={selected.parentLayoutMode}
+        />
       ) : selectedElement ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <InspectorElementSummary

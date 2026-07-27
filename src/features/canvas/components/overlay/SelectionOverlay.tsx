@@ -6,15 +6,18 @@ import { useMeasuredNodeRect } from "@/features/canvas/hooks/useMeasuredNodeRect
 import { getElementDisplayName } from "@/features/editor/utils/elementDisplayName";
 import { cn } from "@/lib/utils";
 import type { EditorElementNode } from "@/features/editor/types/document";
+import type { ContainerLayoutMode } from "@/features/editor/types/layout";
 
 interface SelectionOverlayProps {
   canvasRootRef: RefObject<HTMLElement | null>;
   node: EditorElementNode;
+  /** node's own parent's layoutMode — threaded through to ResizeOverlay (Checkpoint 3.4.4). Defaults to "flow". */
+  parentLayoutMode?: ContainerLayoutMode;
 }
 
 const LABEL_HEIGHT_PX = 24;
 
-export function SelectionOverlay({ canvasRootRef, node }: SelectionOverlayProps) {
+export function SelectionOverlay({ canvasRootRef, node, parentLayoutMode = "flow" }: SelectionOverlayProps) {
   const rect = useMeasuredNodeRect(canvasRootRef, node.id);
   if (!rect) return null;
 
@@ -34,7 +37,7 @@ export function SelectionOverlay({ canvasRootRef, node }: SelectionOverlayProps)
       >
         {getElementDisplayName(node)}
       </span>
-      <ResizeOverlay node={node} rect={rect} canvasRootRef={canvasRootRef} />
+      <ResizeOverlay node={node} rect={rect} canvasRootRef={canvasRootRef} parentLayoutMode={parentLayoutMode} />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import {
 import { canContainChildren } from "@/features/editor/rules/insertionRules";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
+import { resolveFreeDestinationPlacement } from "@/features/editor/utils/resolveFreeDestinationPlacement";
 import { resolveDestinationParent } from "@/features/editor/utils/resolveDestinationParent";
 import type { DropZone } from "@/features/editor/utils/resolveDropZone";
 
@@ -41,13 +42,19 @@ export function useInsertElement() {
       ? findNodeById(documentModel, requestedTargetId)
       : undefined;
 
+    // Free-mode destinations need a deterministic freeLayout assigned
+    // before insertion (see resolveFreeDestinationPlacement) — a no-op
+    // for a Flow destination, so every branch below can call this
+    // uniformly rather than duplicating the Free-mode check three times.
+    function insertInto(parentId: string, position?: Parameters<typeof insertElement>[2]) {
+      const placedNode = resolveFreeDestinationPlacement(documentModel, parentId, newNode);
+      insertElement(parentId, placedNode, position);
+    }
+
     if (requestedTarget && zone && zone !== "inside") {
       const parentId = findParentId(documentModel, requestedTarget.id);
       if (parentId) {
-        insertElement(parentId, newNode, {
-          referenceId: requestedTarget.id,
-          placement: zone,
-        });
+        insertInto(parentId, { referenceId: requestedTarget.id, placement: zone });
         return;
       }
       // requestedTarget has no parent (it's the document root) — before/after
@@ -58,10 +65,10 @@ export function useInsertElement() {
       const parentId = canContainChildren(requestedTarget.tag)
         ? requestedTarget.id
         : documentModel.id;
-      insertElement(parentId, newNode);
+      insertInto(parentId);
       return;
     }
 
-    insertElement(resolveDestinationParent(documentModel, selectedElementId), newNode);
+    insertInto(resolveDestinationParent(documentModel, selectedElementId));
   };
 }

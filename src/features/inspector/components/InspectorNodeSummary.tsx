@@ -1,13 +1,19 @@
 import { InspectorElementSummary } from "@/features/inspector/components/InspectorElementSummary";
 import { InspectorFieldRow } from "@/features/inspector/components/InspectorFieldRow";
+import { InspectorFreeGeometryFields } from "@/features/inspector/components/InspectorFreeGeometryFields";
+import { InspectorLayoutSection } from "@/features/inspector/components/InspectorLayoutSection";
 import { canResizeElement } from "@/features/editor/rules/elementCapabilities";
 import { useRenderedNodeSize } from "@/features/editor/hooks/useRenderedNodeSize";
+import { canContainChildren } from "@/features/editor/rules/insertionRules";
 import { getElementDisplayName } from "@/features/editor/utils/elementDisplayName";
 import type { EditorElementNode } from "@/features/editor/types/document";
+import type { ContainerLayoutMode } from "@/features/editor/types/layout";
 
 interface InspectorNodeSummaryProps {
   node: EditorElementNode;
   parentId: string | null;
+  /** The selected node's own parent's layoutMode — decides whether Width/Height reads from dimensions (Flow) or the Free geometry fields take over (Checkpoint 3.4.4). */
+  parentLayoutMode: ContainerLayoutMode;
 }
 
 // A rendered size within this many pixels of the preferred size counts as
@@ -56,12 +62,16 @@ function DimensionRows({ label, preferred, rendered }: DimensionRowsProps) {
  * (including mid-drag, since a resize commits to the store every frame),
  * plus the node's actual rendered size (useRenderedNodeSize) whenever a
  * containing parent is currently clamping it smaller — see DimensionRows.
- * Still plain text, not inputs — editable size fields are explicitly
- * future scope.
+ * Width/Height are still plain text (DimensionRows) for a Flow node —
+ * editable size fields there are explicitly future scope. A Free child
+ * (Checkpoint 3.4.4) gets real editable X/Y/Width/Height fields instead
+ * (see InspectorFreeGeometryFields), since Free geometry has no
+ * "constrained by parent" ambiguity to display read-only.
  */
-export function InspectorNodeSummary({ node, parentId }: InspectorNodeSummaryProps) {
+export function InspectorNodeSummary({ node, parentId, parentLayoutMode }: InspectorNodeSummaryProps) {
   const isResizable = canResizeElement(node.tag);
-  const renderedSize = useRenderedNodeSize(isResizable ? node.id : null);
+  const isFreeChild = parentLayoutMode === "free";
+  const renderedSize = useRenderedNodeSize(isResizable && !isFreeChild ? node.id : null);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -69,21 +79,26 @@ export function InspectorNodeSummary({ node, parentId }: InspectorNodeSummaryPro
       <div className="flex flex-col gap-1.5 px-3 py-2">
         <InspectorFieldRow label="Node ID" value={node.id} />
         {parentId && <InspectorFieldRow label="Parent ID" value={parentId} />}
-        {isResizable && (
-          <>
-            <DimensionRows
-              label="Width"
-              preferred={node.dimensions?.preferredWidth}
-              rendered={renderedSize?.width}
-            />
-            <DimensionRows
-              label="Height"
-              preferred={node.dimensions?.preferredHeight}
-              rendered={renderedSize?.height}
-            />
-          </>
+        {isFreeChild ? (
+          <InspectorFreeGeometryFields node={node} />
+        ) : (
+          isResizable && (
+            <>
+              <DimensionRows
+                label="Width"
+                preferred={node.dimensions?.preferredWidth}
+                rendered={renderedSize?.width}
+              />
+              <DimensionRows
+                label="Height"
+                preferred={node.dimensions?.preferredHeight}
+                rendered={renderedSize?.height}
+              />
+            </>
+          )
         )}
       </div>
+      {canContainChildren(node.tag) && <InspectorLayoutSection node={node} />}
     </div>
   );
 }

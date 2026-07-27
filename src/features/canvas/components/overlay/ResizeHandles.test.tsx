@@ -2,6 +2,7 @@ import { fireEvent, render } from "@testing-library/react";
 import { useRef, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { findNodeById } from "@/features/editor/utils/findNodeById";
 import { ResizeHandles } from "./ResizeHandles";
 import type { MeasuredNodeRect } from "@/features/canvas/hooks/useMeasuredNodeRect";
 
@@ -19,11 +20,16 @@ function UnboundedHarness({ children }: { children: ReactNode }) {
   return <div ref={canvasRootRef}>{children}</div>;
 }
 
+// heading-1 (a leaf, not a container) deliberately keeps the generic 64x64
+// resize floor (Checkpoint 3.4.4 gives container tags like "section" a
+// much bigger 240x160 minimum — see getResizeConstraintsForTag), so these
+// direction-math/anchor tests exercise plain per-handle geometry rather
+// than incidentally re-testing the container minimum.
 function renderHandles(overrides: Partial<{ offsetX: number; offsetY: number }> = {}) {
   return render(
     <UnboundedHarness>
       <ResizeHandles
-        nodeId="section-1"
+        nodeId="heading-1"
         rect={rect}
         offsetX={overrides.offsetX ?? 0}
         offsetY={overrides.offsetY ?? 0}
@@ -63,9 +69,7 @@ describe("ResizeHandles", () => {
     fireEvent.pointerMove(handle, { clientX: 560, clientY: 300, pointerId: 1 });
     fireEvent.pointerUp(handle, { clientX: 560, clientY: 300, pointerId: 1 });
 
-    const section = useEditorStore
-      .getState()
-      .document.children?.find((child) => child.id === "section-1");
+    const section = findNodeById(useEditorStore.getState().document, "heading-1");
     expect(section?.dimensions).toEqual({ preferredWidth: 260, preferredHeight: 100, offsetX: 0, offsetY: 0 });
   });
 
@@ -77,9 +81,7 @@ describe("ResizeHandles", () => {
     fireEvent.pointerMove(handle, { clientX: 500, clientY: 340, pointerId: 1 });
     fireEvent.pointerUp(handle, { clientX: 500, clientY: 340, pointerId: 1 });
 
-    const section = useEditorStore
-      .getState()
-      .document.children?.find((child) => child.id === "section-1");
+    const section = findNodeById(useEditorStore.getState().document, "heading-1");
     expect(section?.dimensions).toEqual({ preferredWidth: 200, preferredHeight: 140, offsetX: 0, offsetY: 0 });
   });
 
@@ -91,9 +93,7 @@ describe("ResizeHandles", () => {
     fireEvent.pointerMove(handle, { clientX: 540, clientY: 330, pointerId: 1 });
     fireEvent.pointerUp(handle, { clientX: 540, clientY: 330, pointerId: 1 });
 
-    const section = useEditorStore
-      .getState()
-      .document.children?.find((child) => child.id === "section-1");
+    const section = findNodeById(useEditorStore.getState().document, "heading-1");
     expect(section?.dimensions).toEqual({ preferredWidth: 240, preferredHeight: 130, offsetX: 0, offsetY: 0 });
   });
 
@@ -105,9 +105,7 @@ describe("ResizeHandles", () => {
     fireEvent.pointerMove(handle, { clientX: 440, clientY: 300, pointerId: 1 });
     fireEvent.pointerUp(handle, { clientX: 440, clientY: 300, pointerId: 1 });
 
-    const section = useEditorStore
-      .getState()
-      .document.children?.find((child) => child.id === "section-1");
+    const section = findNodeById(useEditorStore.getState().document, "heading-1");
     expect(section?.dimensions).toEqual({ preferredWidth: 260, preferredHeight: 100, offsetX: -60, offsetY: 0 });
     // right edge (startLeft + startWidth) must stay put
     const renderedRight = rect.left + section!.dimensions!.offsetX + section!.dimensions!.preferredWidth;
@@ -122,9 +120,7 @@ describe("ResizeHandles", () => {
     fireEvent.pointerMove(handle, { clientX: 440, clientY: 300, pointerId: 1 });
     fireEvent.pointerUp(handle, { clientX: 440, clientY: 300, pointerId: 1 });
 
-    const section = useEditorStore
-      .getState()
-      .document.children?.find((child) => child.id === "section-1");
+    const section = findNodeById(useEditorStore.getState().document, "heading-1");
     expect(section?.dimensions?.offsetX).toBe(-80);
   });
 
@@ -136,9 +132,7 @@ describe("ResizeHandles", () => {
     fireEvent.pointerMove(handle, { clientX: 0, clientY: 300, pointerId: 1 });
     fireEvent.pointerUp(handle, { clientX: 0, clientY: 300, pointerId: 1 });
 
-    const section = useEditorStore
-      .getState()
-      .document.children?.find((child) => child.id === "section-1");
+    const section = findNodeById(useEditorStore.getState().document, "heading-1");
     expect(section?.dimensions?.preferredWidth).toBe(64);
   });
 
@@ -246,6 +240,159 @@ describe("ResizeHandles boundary clamping (wired end-to-end through the DOM)", (
   });
 });
 
+describe("ResizeHandles — Free container child scaling (Checkpoint 3.4.4)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    useEditorStore.setState(initialState, true);
+  });
+
+  function stubRect(el: Element, box: { left: number; top: number; right: number; bottom: number }) {
+    vi.spyOn(el, "getBoundingClientRect").mockReturnValue({
+      ...box,
+      width: box.right - box.left,
+      height: box.bottom - box.top,
+      x: box.left,
+      y: box.top,
+      toJSON: () => box,
+    });
+  }
+
+  function stubClientSize(el: Element, width: number, height: number) {
+    Object.defineProperty(el, "clientWidth", { value: width, configurable: true });
+    Object.defineProperty(el, "clientHeight", { value: height, configurable: true });
+  }
+
+  function FreeContainerHarness() {
+    const canvasRootRef = useRef<HTMLDivElement>(null);
+    return (
+      <div ref={canvasRootRef} data-testid="canvas-root">
+        <div data-node-id="page-root">
+          <div data-node-id="section-1" />
+        </div>
+        <ResizeHandles nodeId="section-1" rect={rect} offsetX={0} offsetY={0} canvasRootRef={canvasRootRef} />
+      </div>
+    );
+  }
+
+  function makeSection1FreeWithChildren() {
+    useEditorStore.getState().convertToFreeLayout("section-1", {
+      "heading-1": { x: 16, y: 16, width: 240, height: 64 },
+      "paragraph-1": { x: 16, y: 80, width: 240, height: 80 },
+    });
+  }
+
+  it("proportionally scales every direct child when the Free container itself is resized (default 'scale' policy)", () => {
+    makeSection1FreeWithChildren();
+    const { container } = render(<FreeContainerHarness />);
+    const canvasRoot = container.querySelector('[data-testid="canvas-root"]') as HTMLElement;
+    const pageRoot = container.querySelector('[data-node-id="page-root"]') as HTMLElement;
+    const sectionEl = container.querySelector('[data-node-id="section-1"]') as HTMLElement;
+    stubRect(canvasRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+    stubRect(pageRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+    stubClientSize(sectionEl, 200, 100); // matches rect (200x100) — no border/padding inset
+
+    const handle = container.querySelector('[data-resize-handle="e"]') as Element;
+    fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 700, clientY: 300, pointerId: 1 }); // width 200 -> 400, scaleX = 2
+    fireEvent.pointerUp(handle, { clientX: 700, clientY: 300, pointerId: 1 });
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(section?.dimensions?.preferredWidth).toBe(400);
+    expect(section?.children?.find((c) => c.id === "heading-1")?.freeLayout).toEqual({
+      x: 32,
+      y: 16,
+      width: 480,
+      height: 64,
+    });
+    // scaleY is 1 (only width changed) — untouched.
+    expect(section?.children?.find((c) => c.id === "paragraph-1")?.freeLayout).toEqual({
+      x: 32,
+      y: 80,
+      width: 480,
+      height: 80,
+    });
+  });
+
+  it("re-clamps (never scales) children under the 'clamp' policy", () => {
+    makeSection1FreeWithChildren();
+    useEditorStore.getState().setChildResizePolicy("section-1", "clamp");
+    const { container } = render(<FreeContainerHarness />);
+    const canvasRoot = container.querySelector('[data-testid="canvas-root"]') as HTMLElement;
+    const pageRoot = container.querySelector('[data-node-id="page-root"]') as HTMLElement;
+    const sectionEl = container.querySelector('[data-node-id="section-1"]') as HTMLElement;
+    stubRect(canvasRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+    stubRect(pageRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+    stubClientSize(sectionEl, 200, 100);
+
+    const handle = container.querySelector('[data-resize-handle="e"]') as Element;
+    fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 700, clientY: 300, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 700, clientY: 300, pointerId: 1 });
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    // Growing never needs to clamp anything — children keep their exact original geometry.
+    expect(section?.children?.find((c) => c.id === "heading-1")?.freeLayout).toEqual({
+      x: 16,
+      y: 16,
+      width: 240,
+      height: 64,
+    });
+  });
+
+  it("floors the container's own shrink at 25% of its starting content size, stopping children from becoming unreadably tiny", () => {
+    makeSection1FreeWithChildren();
+    const { container } = render(<FreeContainerHarness />);
+    const canvasRoot = container.querySelector('[data-testid="canvas-root"]') as HTMLElement;
+    const pageRoot = container.querySelector('[data-node-id="page-root"]') as HTMLElement;
+    const sectionEl = container.querySelector('[data-node-id="section-1"]') as HTMLElement;
+    stubRect(canvasRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+    stubRect(pageRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+    stubClientSize(sectionEl, 200, 100);
+
+    const handle = container.querySelector('[data-resize-handle="e"]') as Element;
+    fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
+    // Try to shrink far past 25% of the starting 200px width (would be 50px).
+    fireEvent.pointerMove(handle, { clientX: 0, clientY: 300, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 0, clientY: 300, pointerId: 1 });
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    // Container's own tag minimum (240 for "section") wins over the 25% floor (50) here —
+    // both floors exist; whichever is bigger applies. Either way it never reaches near-zero.
+    expect(section?.dimensions?.preferredWidth).toBeGreaterThanOrEqual(50);
+    const heading = section?.children?.find((c) => c.id === "heading-1");
+    expect(heading?.freeLayout?.width).toBeGreaterThan(0);
+  });
+
+  it("does not affect an ordinary Flow container's resize (no children, no layoutMode) — existing behavior unchanged", () => {
+    const { container } = render(<FreeContainerHarness />);
+    const canvasRoot = container.querySelector('[data-testid="canvas-root"]') as HTMLElement;
+    const pageRoot = container.querySelector('[data-node-id="page-root"]') as HTMLElement;
+    stubRect(canvasRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+    stubRect(pageRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+
+    const handle = container.querySelector('[data-resize-handle="e"]') as Element;
+    fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 560, clientY: 300, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 560, clientY: 300, pointerId: 1 });
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    // Height (100) floors up to section's own 160px minimum (Checkpoint
+    // 3.4.4's per-tag container minimums), even though this drag only
+    // touched the east/width handle — resizeNode's defensive clamp
+    // applies regardless of which axis actually changed.
+    expect(section?.dimensions).toEqual({ preferredWidth: 260, preferredHeight: 160, offsetX: 0, offsetY: 0 });
+  });
+});
+
 describe("ResizeHandles history transactions (Checkpoint 3.4.3)", () => {
   beforeEach(() => {
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -284,9 +431,7 @@ describe("ResizeHandles history transactions (Checkpoint 3.4.3)", () => {
 
     useEditorStore.getState().undo();
 
-    const section = useEditorStore
-      .getState()
-      .document.children?.find((child) => child.id === "section-1");
+    const section = findNodeById(useEditorStore.getState().document, "heading-1");
     expect(section?.dimensions).toBeUndefined();
   });
 
@@ -298,9 +443,7 @@ describe("ResizeHandles history transactions (Checkpoint 3.4.3)", () => {
     fireEvent.pointerMove(handle, { clientX: 560, clientY: 300, pointerId: 1 });
     fireEvent.keyDown(window, { key: "Escape" });
 
-    const section = useEditorStore
-      .getState()
-      .document.children?.find((child) => child.id === "section-1");
+    const section = findNodeById(useEditorStore.getState().document, "heading-1");
     expect(section?.dimensions).toBeUndefined();
     expect(useEditorStore.getState().past).toHaveLength(0);
     expect(useEditorStore.getState().transactionSnapshot).toBeNull();
