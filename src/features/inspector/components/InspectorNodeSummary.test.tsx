@@ -7,7 +7,7 @@ describe("InspectorNodeSummary", () => {
     render(
       <InspectorNodeSummary
         node={{ id: "heading-1", tag: "h1" }}
-        parentId="section-1" parentLayoutMode="flow"
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
       />,
     );
 
@@ -21,7 +21,7 @@ describe("InspectorNodeSummary", () => {
     render(
       <InspectorNodeSummary
         node={{ id: "button-1", tag: "button", displayName: "Primary Button" }}
-        parentId={null} parentLayoutMode="flow"
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
       />,
     );
 
@@ -29,13 +29,23 @@ describe("InspectorNodeSummary", () => {
   });
 
   it("omits the Parent ID row when the node has no parent", () => {
-    render(<InspectorNodeSummary node={{ id: "page-root", tag: "page" }} parentId={null} parentLayoutMode="flow" />);
+    render(
+      <InspectorNodeSummary
+        node={{ id: "page-root", tag: "page" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
 
     expect(screen.queryByText("Parent ID")).not.toBeInTheDocument();
   });
 
   it("shows Width/Height as Auto for a resizable node that hasn't been resized yet", () => {
-    render(<InspectorNodeSummary node={{ id: "section-1", tag: "section" }} parentId={null} parentLayoutMode="flow" />);
+    render(
+      <InspectorNodeSummary
+        node={{ id: "section-1", tag: "section" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
 
     expect(screen.getByText("Width")).toBeInTheDocument();
     expect(screen.getByText("Height")).toBeInTheDocument();
@@ -50,7 +60,7 @@ describe("InspectorNodeSummary", () => {
           tag: "section",
           dimensions: { preferredWidth: 320.4, preferredHeight: 180, offsetX: 0, offsetY: 0 },
         }}
-        parentId={null} parentLayoutMode="flow"
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
       />,
     );
 
@@ -67,7 +77,7 @@ describe("InspectorNodeSummary", () => {
           tag: "h1",
           dimensions: { preferredWidth: 400, preferredHeight: 60, offsetX: 0, offsetY: 0 },
         }}
-        parentId={null} parentLayoutMode="flow"
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
       />,
     );
 
@@ -76,7 +86,12 @@ describe("InspectorNodeSummary", () => {
   });
 
   it("omits Width/Height rows for a non-resizable node (the document root)", () => {
-    render(<InspectorNodeSummary node={{ id: "page-root", tag: "page" }} parentId={null} parentLayoutMode="flow" />);
+    render(
+      <InspectorNodeSummary
+        node={{ id: "page-root", tag: "page" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
 
     expect(screen.queryByText("Width")).not.toBeInTheDocument();
     expect(screen.queryByText("Height")).not.toBeInTheDocument();
@@ -93,7 +108,9 @@ describe("InspectorNodeSummary", () => {
     target.getBoundingClientRect = () =>
       ({ width: 350, height: 200, top: 0, left: 0, right: 350, bottom: 200, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
 
-    render(<InspectorNodeSummary node={node} parentId="section-2" parentLayoutMode="flow" />);
+    render(
+      <InspectorNodeSummary node={node} parentId="section-2" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
 
     expect(screen.getByText("350px")).toBeInTheDocument();
     expect(screen.getByText("Preferred width")).toBeInTheDocument();
@@ -114,6 +131,7 @@ describe("InspectorNodeSummary — Free layout (Checkpoint 3.4.4)", () => {
         node={{ id: "image-1", tag: "img", freeLayout: { x: 16, y: 16, width: 100, height: 80 } }}
         parentId="section-1"
         parentLayoutMode="free"
+        parentFlowDisplay="block"
       />,
     );
 
@@ -124,7 +142,10 @@ describe("InspectorNodeSummary — Free layout (Checkpoint 3.4.4)", () => {
 
   it("shows the Layout section for a container-capable node", () => {
     render(
-      <InspectorNodeSummary node={{ id: "section-1", tag: "section" }} parentId={null} parentLayoutMode="flow" />,
+      <InspectorNodeSummary
+        node={{ id: "section-1", tag: "section" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
     );
 
     expect(screen.getByText("Layout")).toBeInTheDocument();
@@ -132,8 +153,98 @@ describe("InspectorNodeSummary — Free layout (Checkpoint 3.4.4)", () => {
   });
 
   it("omits the Layout section for a leaf node", () => {
-    render(<InspectorNodeSummary node={{ id: "heading-1", tag: "h1" }} parentId="section-1" parentLayoutMode="flow" />);
+    render(
+      <InspectorNodeSummary
+        node={{ id: "heading-1", tag: "h1" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
 
     expect(screen.queryByText("Layout")).not.toBeInTheDocument();
+  });
+});
+
+describe("InspectorNodeSummary — Flex/Grid child sections (Checkpoint 3.5)", () => {
+  it("shows the Flex item section when the parent's display is flex", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "heading-1", tag: "h1" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="flex"
+      />,
+    );
+
+    expect(screen.getByText("Flex item")).toBeInTheDocument();
+    expect(screen.queryByText("Grid item")).not.toBeInTheDocument();
+  });
+
+  it("shows the Grid item section when the parent's display is grid", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "heading-1", tag: "h1" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="grid"
+      />,
+    );
+
+    expect(screen.getByText("Grid item")).toBeInTheDocument();
+    expect(screen.queryByText("Flex item")).not.toBeInTheDocument();
+  });
+
+  it("omits both Flex and Grid item sections when the parent's display is block", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "heading-1", tag: "h1" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.queryByText("Flex item")).not.toBeInTheDocument();
+    expect(screen.queryByText("Grid item")).not.toBeInTheDocument();
+  });
+
+  it("omits both Flex and Grid item sections for a Free child even if parentFlowDisplay is flex/grid", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "image-1", tag: "img", freeLayout: { x: 0, y: 0, width: 100, height: 80 } }}
+        parentId="section-1" parentLayoutMode="free" parentFlowDisplay="flex"
+      />,
+    );
+
+    expect(screen.queryByText("Flex item")).not.toBeInTheDocument();
+    expect(screen.queryByText("Grid item")).not.toBeInTheDocument();
+  });
+
+  it("always shows the Spacing section regardless of parent display", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "heading-1", tag: "h1" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Spacing")).toBeInTheDocument();
+  });
+});
+
+describe("InspectorNodeSummary — Media section (Checkpoint 3.5.1)", () => {
+  it("shows the Media section for an image (intrinsic-aspect-ratio-capable tag)", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "image-1", tag: "img" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Media")).toBeInTheDocument();
+  });
+
+  it("omits the Media section for a non-media tag", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "heading-1", tag: "h1" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.queryByText("Media")).not.toBeInTheDocument();
   });
 });

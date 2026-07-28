@@ -1,8 +1,10 @@
 import { documentNodeComponents } from "@/features/canvas/components/document/documentNodeComponents";
 import { FallbackElement } from "@/features/canvas/components/document/elements/FallbackElement";
 import { getLayoutMode } from "@/features/editor/types/layout";
+import { getFlowLayoutSettings } from "@/features/editor/types/flowLayout";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { ContainerLayoutMode } from "@/features/editor/types/layout";
+import type { FlowDisplayMode } from "@/features/editor/types/flowLayout";
 
 interface DocumentNodeRendererProps {
   node: EditorElementNode;
@@ -10,6 +12,8 @@ interface DocumentNodeRendererProps {
   parentId: string | null;
   /** node's own parent's layoutMode — see DocumentElementProps.parentLayoutMode. "flow" for the document root. */
   parentLayoutMode: ContainerLayoutMode;
+  /** node's own parent's resolved flowLayout.display — see DocumentElementProps.parentFlowDisplay. "block" for the document root. */
+  parentFlowDisplay: FlowDisplayMode;
 }
 
 /**
@@ -23,9 +27,11 @@ export function DocumentNodeRenderer({
   node,
   parentId,
   parentLayoutMode,
+  parentFlowDisplay,
 }: DocumentNodeRendererProps) {
   const ElementComponent = documentNodeComponents[node.tag] ?? FallbackElement;
   const childLayoutMode = getLayoutMode(node);
+  const childFlowDisplay = getFlowLayoutSettings(node).display;
 
   const children = (node.children ?? []).map((child) => (
     <DocumentNodeRenderer
@@ -33,11 +39,17 @@ export function DocumentNodeRenderer({
       node={child}
       parentId={node.id}
       parentLayoutMode={childLayoutMode}
+      parentFlowDisplay={childFlowDisplay}
     />
   ));
 
   return (
-    <ElementComponent node={node} parentId={parentId} parentLayoutMode={parentLayoutMode}>
+    <ElementComponent
+      node={node}
+      parentId={parentId}
+      parentLayoutMode={parentLayoutMode}
+      parentFlowDisplay={parentFlowDisplay}
+    >
       {children}
     </ElementComponent>
   );

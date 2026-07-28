@@ -17,6 +17,20 @@ describe("element factories", () => {
     expect(node.id).toMatch(/^div-/);
   });
 
+  it("createContainerNode defaults to Block display with 16px padding and zero margin (Checkpoint 3.5)", () => {
+    const node = createContainerNode();
+    expect(node.flowLayout).toEqual({ display: "block" });
+    expect(node.spacing).toEqual({
+      margin: { top: 0, right: 0, bottom: 0, left: 0 },
+      padding: { top: 16, right: 16, bottom: 16, left: 16 },
+    });
+  });
+
+  it("leaf factories leave flowLayout/spacing unset (defaults come from the resolver, not stamped data)", () => {
+    expect(createHeadingNode().flowLayout).toBeUndefined();
+    expect(createHeadingNode().spacing).toBeUndefined();
+  });
+
   it("createHeadingNode produces default heading text", () => {
     const node = createHeadingNode();
     expect(node.tag).toBe("h1");
@@ -38,6 +52,14 @@ describe("element factories", () => {
   it("createImageNode produces a plain image node", () => {
     const node = createImageNode();
     expect(node.tag).toBe("img");
+  });
+
+  it("createImageNode defaults to a placeholder src with a real 4:3 intrinsic aspect ratio (Checkpoint 3.5.1)", () => {
+    const node = createImageNode();
+    expect(node.src).toMatch(/^data:image\/svg\+xml/);
+    expect(node.src).toContain("width%3D%22400%22");
+    expect(node.src).toContain("height%3D%22300%22");
+    expect(node.mediaFit).toBeUndefined();
   });
 
   it("every factory produces a unique id per call", () => {

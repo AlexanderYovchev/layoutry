@@ -1,5 +1,12 @@
 import { generateNodeId } from "@/features/editor/utils/generateNodeId";
 import type { EditorElementNode } from "@/features/editor/types/document";
+import type { ElementSpacing } from "@/features/editor/types/spacing";
+
+/** Checkpoint 3.5's stated default for a newly created container: Block display, 16px padding on every side, zero margin. */
+const DEFAULT_CONTAINER_SPACING: ElementSpacing = {
+  margin: { top: 0, right: 0, bottom: 0, left: 0 },
+  padding: { top: 16, right: 16, bottom: 16, left: 16 },
+};
 
 /**
  * Every element type this checkpoint's insertion system can create.
@@ -16,7 +23,13 @@ export type InsertableElementType =
   | "image";
 
 export function createContainerNode(): EditorElementNode {
-  return { id: generateNodeId("div"), tag: "div", children: [] };
+  return {
+    id: generateNodeId("div"),
+    tag: "div",
+    children: [],
+    flowLayout: { display: "block" },
+    spacing: DEFAULT_CONTAINER_SPACING,
+  };
 }
 
 export function createHeadingNode(): EditorElementNode {
@@ -31,8 +44,25 @@ export function createButtonNode(): EditorElementNode {
   return { id: generateNodeId("button"), tag: "button", text: "Button" };
 }
 
+/**
+ * A generic placeholder photo, not a real asset — this app has no image
+ * upload/picker yet (out of scope for Checkpoint 3.5.1). An inline SVG
+ * with explicit width/height gives the <img> a real, non-square intrinsic
+ * aspect ratio (4:3), which is what actually makes object-fit meaningful:
+ * a plain colored box has no "natural size" for object-fit to preserve.
+ */
+const DEFAULT_IMAGE_SRC =
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">' +
+      '<rect width="400" height="300" fill="#e4e4e7"/>' +
+      '<path d="M0 230 L110 130 L190 190 L270 100 L400 230 V300 H0 Z" fill="#a1a1aa"/>' +
+      '<circle cx="320" cy="70" r="28" fill="#a1a1aa"/>' +
+      "</svg>",
+  );
+
 export function createImageNode(): EditorElementNode {
-  return { id: generateNodeId("img"), tag: "img" };
+  return { id: generateNodeId("img"), tag: "img", src: DEFAULT_IMAGE_SRC };
 }
 
 const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> = {

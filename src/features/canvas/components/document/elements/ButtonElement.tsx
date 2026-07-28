@@ -4,10 +4,11 @@ import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
+import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
-export function ButtonElement({ node, parentId, parentLayoutMode }: DocumentElementProps) {
+export function ButtonElement({ node, parentId, parentLayoutMode, parentFlowDisplay }: DocumentElementProps) {
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
 
@@ -20,7 +21,10 @@ export function ButtonElement({ node, parentId, parentLayoutMode }: DocumentElem
         "inline-flex w-fit items-center justify-center rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm dark:bg-zinc-50 dark:text-zinc-900",
         isDragging && "opacity-40",
       )}
-      style={elementPositionStyle(node, parentLayoutMode, { clipOverflowY: true })}
+      style={{
+        ...elementPositionStyle(node, parentLayoutMode, { clipOverflowY: true }),
+        ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
+      }}
       {...listeners}
     >
       {node.text}

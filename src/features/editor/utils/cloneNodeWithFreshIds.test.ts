@@ -62,6 +62,44 @@ describe("cloneNodeWithFreshIds", () => {
     expect(clone.children?.map((child) => child.text)).toEqual(["A", "B"]);
   });
 
+  it("preserves flowLayout, spacing, flexChild, and gridChild (Checkpoint 3.5)", () => {
+    const source: EditorElementNode = {
+      id: "container-1",
+      tag: "div",
+      flowLayout: { display: "flex", flex: { direction: "row", wrap: "wrap", justifyContent: "center", alignItems: "stretch", rowGap: 8, columnGap: 8 } },
+      spacing: { margin: { top: 4, right: 4, bottom: 4, left: 4 }, padding: { top: 16, right: 16, bottom: 16, left: 16 } },
+      children: [
+        {
+          id: "heading-1",
+          tag: "h1",
+          flexChild: { grow: 1, shrink: 0, basis: 200, alignSelf: "center" },
+          gridChild: { columnStart: 2, columnSpan: 2, rowStart: "auto", rowSpan: 1 },
+        },
+      ],
+    };
+
+    const clone = cloneNodeWithFreshIds(source);
+
+    expect(clone.flowLayout).toEqual(source.flowLayout);
+    expect(clone.spacing).toEqual(source.spacing);
+    expect(clone.children?.[0].flexChild).toEqual(source.children?.[0].flexChild);
+    expect(clone.children?.[0].gridChild).toEqual(source.children?.[0].gridChild);
+  });
+
+  it("preserves src and mediaFit (Checkpoint 3.5.1)", () => {
+    const source: EditorElementNode = {
+      id: "image-1",
+      tag: "img",
+      src: "data:image/svg+xml;utf8,<svg/>",
+      mediaFit: { fit: "cover", position: "top", preserveAspectRatio: true },
+    };
+
+    const clone = cloneNodeWithFreshIds(source);
+
+    expect(clone.src).toBe(source.src);
+    expect(clone.mediaFit).toEqual(source.mediaFit);
+  });
+
   it("does not mutate the source tree", () => {
     const source: EditorElementNode = {
       id: "container-1",

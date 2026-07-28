@@ -1,14 +1,18 @@
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
 import { getLayoutMode } from "@/features/editor/types/layout";
+import { getFlowLayoutSettings } from "@/features/editor/types/flowLayout";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { ContainerLayoutMode } from "@/features/editor/types/layout";
+import type { FlowDisplayMode } from "@/features/editor/types/flowLayout";
 
 export interface SelectedNode {
   node: EditorElementNode;
   parentId: string | null;
   /** The selected node's own parent's layoutMode — "flow" when there is no parent (the document root is selected) or the parent has none set. Drives both the Canvas resize/move session choice and the Inspector's Free geometry fields. */
   parentLayoutMode: ContainerLayoutMode;
+  /** The selected node's own parent's resolved flowLayout.display (Checkpoint 3.5) — "block" when there is no parent or the parent has none set. Drives the Inspector's Flex/Grid child sections. */
+  parentFlowDisplay: FlowDisplayMode;
 }
 
 /**
@@ -30,5 +34,10 @@ export function useSelectedNode(): SelectedNode | null {
   const parentId = findParentId(documentModel, selectedElementId);
   const parentNode = parentId ? findNodeById(documentModel, parentId) : undefined;
 
-  return { node, parentId, parentLayoutMode: parentNode ? getLayoutMode(parentNode) : "flow" };
+  return {
+    node,
+    parentId,
+    parentLayoutMode: parentNode ? getLayoutMode(parentNode) : "flow",
+    parentFlowDisplay: parentNode ? getFlowLayoutSettings(parentNode).display : "block",
+  };
 }

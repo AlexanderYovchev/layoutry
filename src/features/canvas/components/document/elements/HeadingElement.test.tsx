@@ -4,7 +4,7 @@ import { HeadingElement } from "./HeadingElement";
 
 describe("HeadingElement", () => {
   it("renders its text content with no inline size when not resized", () => {
-    render(<HeadingElement node={{ id: "heading-1", tag: "h1", text: "Title" }} parentId="section-1" parentLayoutMode="flow" />);
+    render(<HeadingElement node={{ id: "heading-1", tag: "h1", text: "Title" }} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
 
     const heading = screen.getByText("Title");
     expect(heading.style.width).toBe("");
@@ -22,6 +22,7 @@ describe("HeadingElement", () => {
         }}
         parentId="section-1"
         parentLayoutMode="flow"
+        parentFlowDisplay="block"
       />,
     );
 

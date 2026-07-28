@@ -3,6 +3,9 @@ import type {
   ContainerLayoutMode,
   FreeLayoutGeometry,
 } from "@/features/editor/types/layout";
+import type { FlexChildSettings, FlowLayoutSettings, GridChildSettings } from "@/features/editor/types/flowLayout";
+import type { ElementSpacing } from "@/features/editor/types/spacing";
+import type { MediaFitSettings } from "@/features/editor/types/mediaFit";
 
 export interface ElementDimensions {
   /**
@@ -79,4 +82,24 @@ export interface EditorElementNode {
    * img/video/iframe by default).
    */
   aspectRatioLocked?: boolean;
+  /**
+   * This node's own children arrangement (Checkpoint 3.5) — block, flex,
+   * or grid, plus that mode's settings. Only meaningful while the node
+   * is Flow-mode (layoutMode !== "free"); retained (never cleared) while
+   * temporarily switched to Free, so it reactivates unchanged on
+   * returning to Flow. Unset entirely means "legacy" — see
+   * resolveFlowLayoutStyle's fallback to this app's original hardcoded
+   * flex-column rendering, which predates this field.
+   */
+  flowLayout?: FlowLayoutSettings;
+  /** This node's own margin + padding (Checkpoint 3.5). Unset means zero on all sides — see getElementSpacing. Meaningful for any node, not just containers. */
+  spacing?: ElementSpacing;
+  /** This node's own flex-item properties. Only meaningful while its parent's flowLayout.display is "flex". */
+  flexChild?: FlexChildSettings;
+  /** This node's own grid-item placement. Only meaningful while its parent's flowLayout.display is "grid". */
+  gridChild?: GridChildSettings;
+  /** The media source URL (Checkpoint 3.5.1) — only meaningful for a media-capable tag (img; video/iframe once those exist). Unset renders an empty placeholder rather than a broken/missing image. */
+  src?: string;
+  /** How this node's own visual content fits its rendered box (Checkpoint 3.5.1) — only meaningful for a media-capable tag (see getElementCapabilities().supportsIntrinsicAspectRatio). Unset means contain/center/preserveAspectRatio:true — see getMediaFitSettings. */
+  mediaFit?: MediaFitSettings;
 }

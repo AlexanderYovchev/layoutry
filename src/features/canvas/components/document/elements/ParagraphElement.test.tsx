@@ -4,7 +4,7 @@ import { ParagraphElement } from "./ParagraphElement";
 
 describe("ParagraphElement", () => {
   it("uses the prose reading-measure default when not resized", () => {
-    render(<ParagraphElement node={{ id: "p-1", tag: "p", text: "Body copy." }} parentId="section-1" parentLayoutMode="flow" />);
+    render(<ParagraphElement node={{ id: "p-1", tag: "p", text: "Body copy." }} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
 
     const paragraph = screen.getByText("Body copy.");
     expect(paragraph.className).toContain("max-w-prose");
@@ -22,6 +22,7 @@ describe("ParagraphElement", () => {
         }}
         parentId="section-1"
         parentLayoutMode="flow"
+        parentFlowDisplay="block"
       />,
     );
 

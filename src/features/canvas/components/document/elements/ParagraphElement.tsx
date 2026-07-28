@@ -4,10 +4,11 @@ import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
+import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
-export function ParagraphElement({ node, parentId, parentLayoutMode }: DocumentElementProps) {
+export function ParagraphElement({ node, parentId, parentLayoutMode, parentFlowDisplay }: DocumentElementProps) {
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
 
@@ -25,7 +26,10 @@ export function ParagraphElement({ node, parentId, parentLayoutMode }: DocumentE
         parentLayoutMode !== "free" && !node.dimensions && "max-w-prose",
         isDragging && "opacity-40",
       )}
-      style={elementPositionStyle(node, parentLayoutMode, { clipOverflowY: true })}
+      style={{
+        ...elementPositionStyle(node, parentLayoutMode, { clipOverflowY: true }),
+        ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
+      }}
       {...listeners}
     >
       {node.text}

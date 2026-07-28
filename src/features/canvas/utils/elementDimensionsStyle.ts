@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { getElementSpacing } from "@/features/editor/types/spacing";
 import type { ElementDimensions, EditorElementNode } from "@/features/editor/types/document";
 import type { ContainerLayoutMode, FreeLayoutGeometry } from "@/features/editor/types/layout";
 
@@ -28,9 +29,14 @@ import type { ContainerLayoutMode, FreeLayoutGeometry } from "@/features/editor/
  * in flow, so growing north by shrinking marginTop simultaneously shifts
  * this box up *and* correctly reduces the flow space between it and
  * whatever precedes it, keeping every sibling's position exactly where a
- * user watching the box's edges would expect it. Omitted entirely when
- * both are 0 (every element resized only from its east/south edges)
- * rather than emitting redundant `margin: 0px 0px`.
+ * user watching the box's edges would expect it.
+ *
+ * extraMarginLeft/Top (Checkpoint 3.5) is the node's own spacing.margin,
+ * composed additively with the offsetX/Y anchor shift rather than one
+ * overwriting the other in the final CSS — see elementPositionStyle,
+ * the only caller, which is also the only place both values are known.
+ * Margin is omitted entirely when the composed total is 0 on that axis,
+ * rather than emitting a redundant `margin: 0px`.
  *
  * maxWidth/maxHeight: "100%" (Checkpoint 3.4.3) is what keeps a child
  * dependent on its parent's current usable content box without ever
@@ -54,9 +60,18 @@ import type { ContainerLayoutMode, FreeLayoutGeometry } from "@/features/editor/
  */
 export function elementDimensionsStyle(
   dimensions: ElementDimensions | undefined,
-  options?: { clipOverflowY?: boolean },
+  options?: { clipOverflowY?: boolean; extraMarginLeft?: number; extraMarginTop?: number },
 ): CSSProperties | undefined {
-  if (!dimensions) return undefined;
+  const marginLeft = (dimensions?.offsetX ?? 0) + (options?.extraMarginLeft ?? 0);
+  const marginTop = (dimensions?.offsetY ?? 0) + (options?.extraMarginTop ?? 0);
+
+  if (!dimensions) {
+    if (marginLeft === 0 && marginTop === 0) return undefined;
+    const style: CSSProperties = {};
+    if (marginLeft !== 0) style.marginLeft = marginLeft;
+    if (marginTop !== 0) style.marginTop = marginTop;
+    return style;
+  }
 
   const style: CSSProperties = {
     width: dimensions.preferredWidth,
@@ -66,8 +81,8 @@ export function elementDimensionsStyle(
     flexShrink: 0,
   };
 
-  if (dimensions.offsetX !== 0) style.marginLeft = dimensions.offsetX;
-  if (dimensions.offsetY !== 0) style.marginTop = dimensions.offsetY;
+  if (marginLeft !== 0) style.marginLeft = marginLeft;
+  if (marginTop !== 0) style.marginTop = marginTop;
   if (options?.clipOverflowY) style.overflow = "hidden";
 
   return style;
@@ -76,18 +91,47 @@ export function elementDimensionsStyle(
 /**
  * The one place every element component decides which geometry source
  * actually applies to it: freeChildStyle(node.freeLayout) when its
- * parent is a Free-mode container, else the original
- * elementDimensionsStyle(node.dimensions) for ordinary Flow rendering.
- * Every DocumentElementComponent calls this instead of choosing between
- * the two style functions itself.
+ * parent is a Free-mode container, else elementDimensionsStyle(node.dimensions)
+ * for ordinary Flow rendering — plus, since Checkpoint 3.5, the node's
+ * own spacing (margin + padding), merged in regardless of whether it has
+ * been resized/positioned at all. Every DocumentElementComponent calls
+ * this instead of composing geometry and spacing itself.
  */
 export function elementPositionStyle(
   node: EditorElementNode,
   parentLayoutMode: ContainerLayoutMode,
   options?: { clipOverflowY?: boolean },
 ): CSSProperties | undefined {
-  if (parentLayoutMode === "free") return freeChildStyle(node.freeLayout, options);
-  return elementDimensionsStyle(node.dimensions, options);
+  const spacing = getElementSpacing(node);
+
+  const geometryStyle =
+    parentLayoutMode === "free"
+      ? freeChildStyle(node.freeLayout, {
+          clipOverflowY: options?.clipOverflowY,
+          extraMarginLeft: spacing.margin.left,
+          extraMarginTop: spacing.margin.top,
+        })
+      : elementDimensionsStyle(node.dimensions, {
+          clipOverflowY: options?.clipOverflowY,
+          extraMarginLeft: spacing.margin.left,
+          extraMarginTop: spacing.margin.top,
+        });
+
+  const hasRightBottomMargin = spacing.margin.right !== 0 || spacing.margin.bottom !== 0;
+  const hasPadding =
+    spacing.padding.top !== 0 || spacing.padding.right !== 0 || spacing.padding.bottom !== 0 || spacing.padding.left !== 0;
+
+  if (!geometryStyle && !hasRightBottomMargin && !hasPadding) return undefined;
+
+  const style: CSSProperties = { ...geometryStyle };
+  if (spacing.margin.right !== 0) style.marginRight = spacing.margin.right;
+  if (spacing.margin.bottom !== 0) style.marginBottom = spacing.margin.bottom;
+  if (spacing.padding.top !== 0) style.paddingTop = spacing.padding.top;
+  if (spacing.padding.right !== 0) style.paddingRight = spacing.padding.right;
+  if (spacing.padding.bottom !== 0) style.paddingBottom = spacing.padding.bottom;
+  if (spacing.padding.left !== 0) style.paddingLeft = spacing.padding.left;
+
+  return style;
 }
 
 /**
@@ -96,14 +140,28 @@ export function elementPositionStyle(
  * (its Free-mode parent — see ContainerElement's own position: relative
  * when it hosts Free children). Unlike elementDimensionsStyle's
  * offsetX/Y margin trick, a Free child has a genuinely independent x/y —
- * no flow participation, so no margin/maxWidth/maxHeight clamp is needed
- * or wanted here.
+ * no flow participation, so no maxWidth/maxHeight clamp is needed or
+ * wanted here. extraMarginLeft/Top (Checkpoint 3.5, see
+ * elementPositionStyle) still applies even to a Free child: margin is a
+ * spacing concern independent of Free's own x/y positioning model — an
+ * absolutely-positioned box with a left margin shifts visually by that
+ * margin without changing its stored x/y (matches ordinary CSS: margin
+ * still applies to absolutely-positioned boxes).
  */
 export function freeChildStyle(
   geometry: FreeLayoutGeometry | undefined,
-  options?: { clipOverflowY?: boolean },
+  options?: { clipOverflowY?: boolean; extraMarginLeft?: number; extraMarginTop?: number },
 ): CSSProperties | undefined {
-  if (!geometry) return undefined;
+  const marginLeft = options?.extraMarginLeft ?? 0;
+  const marginTop = options?.extraMarginTop ?? 0;
+
+  if (!geometry) {
+    if (marginLeft === 0 && marginTop === 0) return undefined;
+    const style: CSSProperties = {};
+    if (marginLeft !== 0) style.marginLeft = marginLeft;
+    if (marginTop !== 0) style.marginTop = marginTop;
+    return style;
+  }
 
   const style: CSSProperties = {
     position: "absolute",
@@ -113,6 +171,8 @@ export function freeChildStyle(
     height: geometry.height,
   };
 
+  if (marginLeft !== 0) style.marginLeft = marginLeft;
+  if (marginTop !== 0) style.marginTop = marginTop;
   if (options?.clipOverflowY) style.overflow = "hidden";
 
   return style;

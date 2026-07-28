@@ -1,19 +1,26 @@
 import { InspectorElementSummary } from "@/features/inspector/components/InspectorElementSummary";
 import { InspectorFieldRow } from "@/features/inspector/components/InspectorFieldRow";
+import { InspectorFlexChildSection } from "@/features/inspector/components/InspectorFlexChildSection";
 import { InspectorFreeGeometryFields } from "@/features/inspector/components/InspectorFreeGeometryFields";
+import { InspectorGridChildSection } from "@/features/inspector/components/InspectorGridChildSection";
 import { InspectorLayoutSection } from "@/features/inspector/components/InspectorLayoutSection";
-import { canResizeElement } from "@/features/editor/rules/elementCapabilities";
+import { InspectorMediaSection } from "@/features/inspector/components/InspectorMediaSection";
+import { InspectorSpacingSection } from "@/features/inspector/components/InspectorSpacingSection";
+import { canResizeElement, getElementCapabilities } from "@/features/editor/rules/elementCapabilities";
 import { useRenderedNodeSize } from "@/features/editor/hooks/useRenderedNodeSize";
 import { canContainChildren } from "@/features/editor/rules/insertionRules";
 import { getElementDisplayName } from "@/features/editor/utils/elementDisplayName";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { ContainerLayoutMode } from "@/features/editor/types/layout";
+import type { FlowDisplayMode } from "@/features/editor/types/flowLayout";
 
 interface InspectorNodeSummaryProps {
   node: EditorElementNode;
   parentId: string | null;
   /** The selected node's own parent's layoutMode — decides whether Width/Height reads from dimensions (Flow) or the Free geometry fields take over (Checkpoint 3.4.4). */
   parentLayoutMode: ContainerLayoutMode;
+  /** The selected node's own parent's resolved flowLayout.display — decides whether the Flex or Grid child section renders (Checkpoint 3.5). Ignored while parentLayoutMode is "free". */
+  parentFlowDisplay: FlowDisplayMode;
 }
 
 // A rendered size within this many pixels of the preferred size counts as
@@ -68,7 +75,12 @@ function DimensionRows({ label, preferred, rendered }: DimensionRowsProps) {
  * (see InspectorFreeGeometryFields), since Free geometry has no
  * "constrained by parent" ambiguity to display read-only.
  */
-export function InspectorNodeSummary({ node, parentId, parentLayoutMode }: InspectorNodeSummaryProps) {
+export function InspectorNodeSummary({
+  node,
+  parentId,
+  parentLayoutMode,
+  parentFlowDisplay,
+}: InspectorNodeSummaryProps) {
   const isResizable = canResizeElement(node.tag);
   const isFreeChild = parentLayoutMode === "free";
   const renderedSize = useRenderedNodeSize(isResizable && !isFreeChild ? node.id : null);
@@ -98,6 +110,10 @@ export function InspectorNodeSummary({ node, parentId, parentLayoutMode }: Inspe
           )
         )}
       </div>
+      {!isFreeChild && parentFlowDisplay === "flex" && <InspectorFlexChildSection node={node} />}
+      {!isFreeChild && parentFlowDisplay === "grid" && <InspectorGridChildSection node={node} />}
+      {getElementCapabilities(node.tag).supportsIntrinsicAspectRatio && <InspectorMediaSection node={node} />}
+      <InspectorSpacingSection node={node} />
       {canContainChildren(node.tag) && <InspectorLayoutSection node={node} />}
     </div>
   );

@@ -678,3 +678,165 @@ describe("useEditorStore — Free layout (Checkpoint 3.4.4)", () => {
     expect(pasted?.freeLayout).toBeUndefined();
   });
 });
+
+describe("useEditorStore — Flow layout, spacing, Flex/Grid (Checkpoint 3.5)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("setFlowDisplayMode pushes one history entry and is undoable", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setFlowDisplayMode("section-1", "flex");
+
+    expect(useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.flowLayout?.display).toBe(
+      "flex",
+    );
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+
+    useEditorStore.getState().undo();
+    expect(
+      useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.flowLayout,
+    ).toBeUndefined();
+  });
+
+  it("setFlexContainerSettings and setGridContainerSettings each push one history entry", () => {
+    useEditorStore.getState().setFlexContainerSettings("section-1", {
+      direction: "column",
+      wrap: "wrap",
+      justifyContent: "center",
+      alignItems: "center",
+      rowGap: 8,
+      columnGap: 8,
+    });
+    useEditorStore.getState().setGridContainerSettings("section-1", {
+      columns: 3,
+      rows: "auto",
+      rowGap: 16,
+      columnGap: 16,
+    });
+
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(node?.flowLayout?.flex?.direction).toBe("column");
+    expect(node?.flowLayout?.grid?.columns).toBe(3);
+  });
+
+  it("setElementMargin and setElementPadding each push one history entry", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setElementMargin("heading-1", { top: 4, right: 4, bottom: 4, left: 4 });
+    useEditorStore.getState().setElementPadding("section-1", { top: 24, right: 24, bottom: 24, left: 24 });
+
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 2);
+  });
+
+  it("setElementPadding re-normalizes a Free container's children in the same store write", () => {
+    useEditorStore.getState().convertToFreeLayout(
+      "section-1",
+      { "heading-1": { x: 16, y: 16, width: 240, height: 48 } },
+      { dimensions: { preferredWidth: 300, preferredHeight: 200, offsetX: 0, offsetY: 0 } },
+    );
+
+    useEditorStore.getState().setElementPadding("section-1", { top: 100, right: 100, bottom: 100, left: 100 });
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    const heading = section?.children?.find((c) => c.id === "heading-1");
+    // New content box is 100x0 (300-200, 200-200 floored at 0) — heading must fit within it.
+    expect(heading!.freeLayout!.x + heading!.freeLayout!.width).toBeLessThanOrEqual(100);
+  });
+
+  it("setFlexChildSettings pushes one history entry", () => {
+    useEditorStore.getState().setFlexChildSettings("heading-1", { grow: 1, shrink: 0, basis: "auto", alignSelf: "center" });
+    const node = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === "heading-1");
+    expect(node?.flexChild).toEqual({ grow: 1, shrink: 0, basis: "auto", alignSelf: "center" });
+  });
+
+  it("setGridChildSettings clamps column/row values to the parent's current Grid track bounds", () => {
+    useEditorStore.getState().setGridContainerSettings("section-1", {
+      columns: 2,
+      rows: "auto",
+      rowGap: 16,
+      columnGap: 16,
+    });
+
+    useEditorStore.getState().setGridChildSettings("heading-1", {
+      columnStart: 5, // parent only has 2 columns
+      columnSpan: 10,
+      rowStart: "auto",
+      rowSpan: 1,
+    });
+
+    const node = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === "heading-1");
+    expect(node?.gridChild?.columnStart).toBe(2);
+    expect(node?.gridChild?.columnSpan).toBe(2);
+  });
+
+  it("setGridChildSettings clamps against the resolved default grid (2 columns) even when the parent has no explicit Grid settings yet", () => {
+    useEditorStore.getState().setGridChildSettings("heading-1", {
+      columnStart: 5,
+      columnSpan: 10,
+      rowStart: "auto",
+      rowSpan: 1,
+    });
+
+    const node = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === "heading-1");
+    // getGridContainerSettings always resolves safe defaults (2 columns)
+    // even for an unconfigured parent, so clamping still applies.
+    expect(node?.gridChild?.columnStart).toBe(2);
+    expect(node?.gridChild?.columnSpan).toBe(2);
+  });
+
+  it("setGridContainerSettings re-clamps an already-set child's placement in the same store write when columns shrink (Checkpoint 3.5.1)", () => {
+    useEditorStore.getState().setGridContainerSettings("section-1", {
+      columns: 4,
+      rows: "auto",
+      rowGap: 16,
+      columnGap: 16,
+    });
+    useEditorStore.getState().setGridChildSettings("heading-1", {
+      columnStart: 3,
+      columnSpan: 2,
+      rowStart: "auto",
+      rowSpan: 1,
+    });
+
+    // Shrink the same container down to 2 columns — heading-1's column 3
+    // start no longer exists.
+    useEditorStore.getState().setGridContainerSettings("section-1", {
+      columns: 2,
+      rows: "auto",
+      rowGap: 16,
+      columnGap: 16,
+    });
+
+    const node = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === "heading-1");
+    expect(node?.gridChild?.columnStart).toBeLessThanOrEqual(2);
+  });
+
+  it("setMediaFitSettings pushes one history entry and is undoable", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setMediaFitSettings("image-1", {
+      fit: "cover",
+      position: "top",
+      preserveAspectRatio: true,
+    });
+
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-2")?.children?.find((c) => c.id === "image-1");
+    expect(node?.mediaFit).toEqual({ fit: "cover", position: "top", preserveAspectRatio: true });
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+
+    useEditorStore.getState().undo();
+    const reverted = useEditorStore.getState().document.children?.find((c) => c.id === "section-2")?.children?.find((c) => c.id === "image-1");
+    expect(reverted?.mediaFit).toBeUndefined();
+  });
+});

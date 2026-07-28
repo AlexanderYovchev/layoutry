@@ -14,17 +14,37 @@ import {
   setFreeChildGeometry as setFreeChildGeometryCommand,
   type FreeContainerSelfUpdate,
 } from "@/features/editor/commands/layoutCommands";
+import {
+  setFlexChildSettings as setFlexChildSettingsCommand,
+  setFlexContainerSettings as setFlexContainerSettingsCommand,
+  setFlowDisplayMode as setFlowDisplayModeCommand,
+  setGridChildSettings as setGridChildSettingsCommand,
+  setGridContainerSettings as setGridContainerSettingsCommand,
+} from "@/features/editor/commands/flowLayoutCommands";
+import { setElementMargin as setElementMarginCommand, setElementPadding as setElementPaddingCommand } from "@/features/editor/commands/spacingCommands";
+import { setMediaFitSettings as setMediaFitSettingsCommand } from "@/features/editor/commands/mediaFitCommands";
+import { clampGridChildPlacement } from "@/features/editor/utils/clampGridChildPlacement";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
 import { cloneNodeWithFreshIds } from "@/features/editor/utils/cloneNodeWithFreshIds";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
 import { resolveFreeDestinationPlacement } from "@/features/editor/utils/resolveFreeDestinationPlacement";
 import { resolveDeletionFallbackSelection } from "@/features/editor/utils/resolveDeletionFallbackSelection";
 import { resolveDestinationParent } from "@/features/editor/utils/resolveDestinationParent";
+import { getGridContainerSettings } from "@/features/editor/types/flowLayout";
 import type { EditorClipboard } from "@/features/editor/types/clipboard";
 import type { DropZone } from "@/features/editor/utils/resolveDropZone";
 import type { HistoryEntry } from "@/features/editor/types/history";
 import type { ElementDimensions, EditorElementNode } from "@/features/editor/types/document";
 import type { ChildResizePolicy, FreeLayoutGeometry } from "@/features/editor/types/layout";
+import type {
+  FlexChildSettings,
+  FlexContainerSettings,
+  FlowDisplayMode,
+  GridChildSettings,
+  GridContainerSettings,
+} from "@/features/editor/types/flowLayout";
+import type { EdgeValues } from "@/features/editor/types/spacing";
+import type { MediaFitSettings } from "@/features/editor/types/mediaFit";
 
 interface EditorState {
   document: EditorElementNode;
@@ -67,6 +87,20 @@ interface EditorState {
   ) => void;
   /** Free -> Flow conversion — one atomic, one-history-entry write. */
   convertToFlowLayout: (containerId: string) => void;
+
+  /** Block/Flex/Grid — retains previously-set flex/grid sub-settings across switches (Checkpoint 3.5). */
+  setFlowDisplayMode: (containerId: string, display: FlowDisplayMode) => void;
+  setFlexContainerSettings: (containerId: string, settings: FlexContainerSettings) => void;
+  setGridContainerSettings: (containerId: string, settings: GridContainerSettings) => void;
+  /** Margin never affects Free content bounds — a plain field set, no side effects. */
+  setElementMargin: (nodeId: string, margin: EdgeValues) => void;
+  /** The containment-critical one: re-normalizes a Free container's direct children into its new (padding-adjusted) content bounds in the same atomic write — see spacingCommands.setElementPadding. */
+  setElementPadding: (nodeId: string, padding: EdgeValues) => void;
+  setFlexChildSettings: (nodeId: string, settings: FlexChildSettings) => void;
+  /** Column/row start+span are clamped to the parent's current Grid track counts before being applied — see the implementation for why that happens here rather than in the pure command. */
+  setGridChildSettings: (nodeId: string, settings: GridChildSettings) => void;
+  /** A node's own object-fit/object-position for intrinsic media (Checkpoint 3.5.1) — see resolveMediaFitStyle. */
+  setMediaFitSettings: (nodeId: string, settings: MediaFitSettings) => void;
 
   copySelection: () => void;
   cutSelection: () => void;
@@ -213,6 +247,67 @@ export const useEditorStore = create<EditorState>()((set) => ({
     set((state) => ({
       ...pushHistory(state),
       document: convertToFlowLayout(state.document, containerId),
+    })),
+
+  setFlowDisplayMode: (containerId, display) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setFlowDisplayModeCommand(state.document, containerId, display),
+    })),
+
+  setFlexContainerSettings: (containerId, settings) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setFlexContainerSettingsCommand(state.document, containerId, settings),
+    })),
+
+  setGridContainerSettings: (containerId, settings) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setGridContainerSettingsCommand(state.document, containerId, settings),
+    })),
+
+  setElementMargin: (nodeId, margin) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setElementMarginCommand(state.document, nodeId, margin),
+    })),
+
+  setElementPadding: (nodeId, padding) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setElementPaddingCommand(state.document, nodeId, padding),
+    })),
+
+  setFlexChildSettings: (nodeId, settings) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setFlexChildSettingsCommand(state.document, nodeId, settings),
+    })),
+
+  // Grid track bounds are only cheaply known here (the parent is one
+  // findParentId/findNodeById lookup away), so the clamp lives at this
+  // boundary rather than inside the pure recursive command, which stays
+  // a plain "set this field" — see setGridChildSettings on the store
+  // interface.
+  setGridChildSettings: (nodeId, settings) =>
+    set((state) => {
+      const parentId = findParentId(state.document, nodeId);
+      const parent = parentId ? findNodeById(state.document, parentId) : undefined;
+      const grid = parent ? getGridContainerSettings(parent) : undefined;
+
+      const clamped: GridChildSettings = grid ? clampGridChildPlacement(settings, grid) : settings;
+
+      return {
+        ...pushHistory(state),
+        document: setGridChildSettingsCommand(state.document, nodeId, clamped),
+      };
+    }),
+
+  setMediaFitSettings: (nodeId, settings) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setMediaFitSettingsCommand(state.document, nodeId, settings),
     })),
 
   copySelection: () =>

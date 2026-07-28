@@ -126,3 +126,64 @@ describe("elementPositionStyle", () => {
     expect(elementPositionStyle(node, "free")).toBeUndefined();
   });
 });
+
+describe("elementPositionStyle — spacing (Checkpoint 3.5)", () => {
+  it("applies padding regardless of whether the node has been resized/positioned", () => {
+    const node: EditorElementNode = {
+      id: "n1",
+      tag: "div",
+      spacing: { margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 8, right: 16, bottom: 8, left: 16 } },
+    };
+    expect(elementPositionStyle(node, "flow")).toEqual({
+      paddingTop: 8,
+      paddingRight: 16,
+      paddingBottom: 8,
+      paddingLeft: 16,
+    });
+  });
+
+  it("applies right/bottom margin directly (no offsetX/Y interaction on those axes)", () => {
+    const node: EditorElementNode = {
+      id: "n1",
+      tag: "div",
+      spacing: { margin: { top: 0, right: 12, bottom: 24, left: 0 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } },
+    };
+    expect(elementPositionStyle(node, "flow")).toEqual({ marginRight: 12, marginBottom: 24 });
+  });
+
+  it("composes spacing.margin.left/top additively with offsetX/offsetY instead of one overwriting the other", () => {
+    const node: EditorElementNode = {
+      id: "n1",
+      tag: "div",
+      dimensions: { preferredWidth: 200, preferredHeight: 100, offsetX: -40, offsetY: -10 },
+      spacing: { margin: { top: 5, right: 0, bottom: 0, left: 8 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } },
+    };
+    const style = elementPositionStyle(node, "flow");
+    expect(style?.marginLeft).toBe(-32); // -40 (offsetX) + 8 (spacing.margin.left)
+    expect(style?.marginTop).toBe(-5); // -10 (offsetY) + 5 (spacing.margin.top)
+  });
+
+  it("applies margin even to a Free child (margin still applies to absolutely-positioned boxes)", () => {
+    const node: EditorElementNode = {
+      id: "n1",
+      tag: "div",
+      freeLayout: { x: 16, y: 16, width: 100, height: 80 },
+      spacing: { margin: { top: 4, right: 0, bottom: 0, left: 4 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } },
+    };
+    const style = elementPositionStyle(node, "free");
+    expect(style).toEqual({
+      position: "absolute",
+      left: 16,
+      top: 16,
+      width: 100,
+      height: 80,
+      marginLeft: 4,
+      marginTop: 4,
+    });
+  });
+
+  it("returns undefined when neither geometry nor any non-zero spacing is present", () => {
+    const node: EditorElementNode = { id: "n1", tag: "div" };
+    expect(elementPositionStyle(node, "flow")).toBeUndefined();
+  });
+});

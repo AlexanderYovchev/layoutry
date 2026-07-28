@@ -52,6 +52,31 @@ describe("useSelectedNode", () => {
     expect(result.current?.parentLayoutMode).toBe("flow");
   });
 
+  it("defaults parentFlowDisplay to 'block' when the parent has no flowLayout set", () => {
+    useEditorStore.setState({ selectedElementId: "heading-1" });
+
+    const { result } = renderHook(() => useSelectedNode());
+
+    expect(result.current?.parentFlowDisplay).toBe("block");
+  });
+
+  it("resolves parentFlowDisplay to 'flex' when the parent's flowLayout.display is flex (Checkpoint 3.5)", () => {
+    useEditorStore.getState().setFlowDisplayMode("section-1", "flex");
+    useEditorStore.setState({ selectedElementId: "heading-1" });
+
+    const { result } = renderHook(() => useSelectedNode());
+
+    expect(result.current?.parentFlowDisplay).toBe("flex");
+  });
+
+  it("defaults parentFlowDisplay to 'block' for the document root (no parent at all)", () => {
+    useEditorStore.setState({ selectedElementId: "section-1" });
+
+    const { result } = renderHook(() => useSelectedNode());
+
+    expect(result.current?.parentFlowDisplay).toBe("block");
+  });
+
   it("fails safely to null when the selected id no longer resolves", () => {
     useEditorStore.setState({ selectedElementId: "does-not-exist" });
 

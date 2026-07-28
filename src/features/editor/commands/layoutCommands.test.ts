@@ -253,6 +253,69 @@ describe("convertToFreeLayout", () => {
     const result = convertToFreeLayout(root, "does-not-exist", {});
     expect(result).toBe(root);
   });
+
+  it("preserves the container's and its children's flowLayout/spacing/flexChild/gridChild across the Flow -> Free trip (Checkpoint 3.5)", () => {
+    const root: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [
+        {
+          id: "section-1",
+          tag: "section",
+          flowLayout: { display: "flex", flex: { direction: "row", wrap: "nowrap", justifyContent: "center", alignItems: "stretch", rowGap: 8, columnGap: 8 } },
+          spacing: { margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 16, right: 16, bottom: 16, left: 16 } },
+          children: [
+            {
+              id: "heading-1",
+              tag: "h1",
+              flexChild: { grow: 1, shrink: 0, basis: "auto", alignSelf: "center" },
+              spacing: { margin: { top: 4, right: 0, bottom: 0, left: 0 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } },
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = convertToFreeLayout(root, "section-1", {
+      "heading-1": { x: 16, y: 16, width: 240, height: 48 },
+    });
+
+    const section = result.children?.find((child) => child.id === "section-1");
+    expect(section?.flowLayout).toEqual(root.children![0].flowLayout);
+    expect(section?.spacing).toEqual(root.children![0].spacing);
+    const heading = section?.children?.find((child) => child.id === "heading-1");
+    expect(heading?.flexChild).toEqual(root.children![0].children![0].flexChild);
+    expect(heading?.spacing).toEqual(root.children![0].children![0].spacing);
+  });
+
+  it("preserves a child's src and mediaFit across the Flow -> Free trip (Checkpoint 3.5.1)", () => {
+    const root: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [
+        {
+          id: "section-1",
+          tag: "section",
+          children: [
+            {
+              id: "image-1",
+              tag: "img",
+              src: "data:image/svg+xml;utf8,<svg/>",
+              mediaFit: { fit: "cover", position: "top", preserveAspectRatio: true },
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = convertToFreeLayout(root, "section-1", {
+      "image-1": { x: 0, y: 0, width: 200, height: 150 },
+    });
+
+    const image = result.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === "image-1");
+    expect(image?.src).toBe(root.children![0].children![0].src);
+    expect(image?.mediaFit).toEqual(root.children![0].children![0].mediaFit);
+  });
 });
 
 describe("convertToFlowLayout", () => {
@@ -292,6 +355,35 @@ describe("convertToFlowLayout", () => {
     const result = convertToFlowLayout(root, "section-1");
     const section = result.children?.find((child) => child.id === "section-1");
     expect(section?.children?.map((child) => child.id)).toEqual(["image-1", "paragraph-1"]);
+  });
+
+  it("preserves the container's and its children's flowLayout/spacing across the Free -> Flow trip (Checkpoint 3.5)", () => {
+    const root = freeTree();
+    root.children![0].flowLayout = { display: "grid", grid: { columns: 3, rows: "auto", rowGap: 16, columnGap: 16 } };
+    root.children![0].spacing = {
+      margin: { top: 0, right: 0, bottom: 0, left: 0 },
+      padding: { top: 24, right: 24, bottom: 24, left: 24 },
+    };
+    root.children![0].children![0].gridChild = { columnStart: 1, columnSpan: 2, rowStart: "auto", rowSpan: 1 };
+
+    const result = convertToFlowLayout(root, "section-1");
+
+    const section = result.children?.find((child) => child.id === "section-1");
+    expect(section?.flowLayout).toEqual(root.children![0].flowLayout);
+    expect(section?.spacing).toEqual(root.children![0].spacing);
+    expect(section?.children?.[0].gridChild).toEqual(root.children![0].children![0].gridChild);
+  });
+
+  it("preserves a child's src and mediaFit across the Free -> Flow trip (Checkpoint 3.5.1)", () => {
+    const root = freeTree();
+    root.children![0].children![0].src = "data:image/svg+xml;utf8,<svg/>";
+    root.children![0].children![0].mediaFit = { fit: "cover", position: "top", preserveAspectRatio: true };
+
+    const result = convertToFlowLayout(root, "section-1");
+
+    const image = result.children?.find((c) => c.id === "section-1")?.children?.[0];
+    expect(image?.src).toBe(root.children![0].children![0].src);
+    expect(image?.mediaFit).toEqual(root.children![0].children![0].mediaFit);
   });
 });
 
