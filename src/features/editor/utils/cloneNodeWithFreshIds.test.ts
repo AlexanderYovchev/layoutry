@@ -100,6 +100,43 @@ describe("cloneNodeWithFreshIds", () => {
     expect(clone.mediaFit).toEqual(source.mediaFit);
   });
 
+  it("preserves typography (Checkpoint 4.2)", () => {
+    const source: EditorElementNode = {
+      id: "heading-1",
+      tag: "h1",
+      typography: {
+        fontFamily: "Georgia, serif",
+        fontSize: { value: 32, unit: "px" },
+        fontWeight: 700,
+        color: "#3366ff",
+      },
+    };
+
+    const clone = cloneNodeWithFreshIds(source);
+
+    expect(clone.typography).toEqual(source.typography);
+  });
+
+  it("preserves background (Checkpoint 4.3)", () => {
+    const source: EditorElementNode = {
+      id: "container-1",
+      tag: "div",
+      background: {
+        color: "#3366ff",
+        image: "https://example.com/hero.jpg",
+        size: "custom",
+        customSize: { width: { value: 200, unit: "px" }, height: "auto" },
+        position: "center",
+        repeat: "no-repeat",
+        attachment: "fixed",
+      },
+    };
+
+    const clone = cloneNodeWithFreshIds(source);
+
+    expect(clone.background).toEqual(source.background);
+  });
+
   it("does not mutate the source tree", () => {
     const source: EditorElementNode = {
       id: "container-1",

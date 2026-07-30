@@ -4,6 +4,7 @@ import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
+import { resolveBackgroundStyle } from "@/features/canvas/utils/resolveBackgroundStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolveFlowLayoutStyle } from "@/features/canvas/utils/resolveFlowLayoutStyle";
 import { cn, mergeRefs } from "@/lib/utils";
@@ -55,6 +56,7 @@ export function ContainerElement({
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
         ...(ownLayoutMode === "flow" ? resolveFlowLayoutStyle(node) : undefined),
         ...(hostsOwnFreeChildren ? { position: "relative" } : {}),
+        ...resolveBackgroundStyle(node),
       }}
       {...listeners}
     >

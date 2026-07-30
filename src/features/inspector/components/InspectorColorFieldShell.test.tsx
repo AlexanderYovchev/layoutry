@@ -37,4 +37,63 @@ describe("InspectorColorFieldShell", () => {
     fireEvent.click(resetButton);
     expect(onReset).toHaveBeenCalledTimes(1);
   });
+
+  it("stays read-only when onCommit is omitted", () => {
+    render(<InspectorColorFieldShell value="#3366ff" label="Background color" />);
+    expect(screen.getByLabelText("Background color")).toHaveAttribute("readonly");
+  });
+
+  it("commits the typed text on blur when onCommit is provided", () => {
+    const onCommit = vi.fn();
+    render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Text color" />);
+
+    const input = screen.getByLabelText("Text color");
+    expect(input).not.toHaveAttribute("readonly");
+    fireEvent.change(input, { target: { value: "#ff0000" } });
+    fireEvent.blur(input);
+
+    expect(onCommit).toHaveBeenCalledWith("#ff0000");
+  });
+
+  it("commits on Enter and blurs the field", () => {
+    const onCommit = vi.fn();
+    render(<InspectorColorFieldShell value={null} onCommit={onCommit} label="Text color" />);
+
+    const input = screen.getByLabelText("Text color");
+    fireEvent.change(input, { target: { value: "rgba(0, 0, 0, 0.5)" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onCommit).toHaveBeenCalledWith("rgba(0, 0, 0, 0.5)");
+  });
+
+  it("reverts to the last committed value on Escape without calling onCommit", () => {
+    const onCommit = vi.fn();
+    render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Text color" />);
+
+    const input = screen.getByLabelText("Text color");
+    fireEvent.change(input, { target: { value: "garbage" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(input).toHaveValue("#3366ff");
+  });
+
+  it("discards an empty draft on blur instead of committing it", () => {
+    const onCommit = vi.fn();
+    render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Text color" />);
+
+    const input = screen.getByLabelText("Text color");
+    fireEvent.change(input, { target: { value: "  " } });
+    fireEvent.blur(input);
+
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(input).toHaveValue("#3366ff");
+  });
+
+  it("shows an invalid visual state (aria-invalid, red border) when an error is passed", () => {
+    render(<InspectorColorFieldShell value="not-a-color" onCommit={vi.fn()} error="Enter a valid color" label="Text color" />);
+    const input = screen.getByLabelText("Text color");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveClass("border-red-400");
+  });
 });

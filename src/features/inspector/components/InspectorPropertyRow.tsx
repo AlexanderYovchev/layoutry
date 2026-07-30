@@ -4,11 +4,8 @@ import { HelpCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/Tooltip";
-import {
-  isInactivePropertyState,
-  PROPERTY_STATE_DESCRIPTIONS,
-  type PropertyState,
-} from "@/features/inspector/types/propertyState";
+import { InspectorPropertyStateDot } from "@/features/inspector/components/InspectorPropertyStateDot";
+import { isInactivePropertyState, type PropertyState } from "@/features/inspector/types/propertyState";
 
 interface InspectorPropertyRowProps {
   label: string;
@@ -70,16 +67,7 @@ export function InspectorPropertyRow({
       >
         {label}
       </label>
-      {effectiveState && effectiveState !== "unset" && (
-        <>
-          <span
-            aria-hidden="true"
-            title={PROPERTY_STATE_DESCRIPTIONS[effectiveState]}
-            className={cn("size-1.5 shrink-0 rounded-full", stateDotClassName(effectiveState))}
-          />
-          <span className="sr-only">{PROPERTY_STATE_DESCRIPTIONS[effectiveState]}</span>
-        </>
-      )}
+      {effectiveState && <InspectorPropertyStateDot state={effectiveState} />}
       {help && (
         <Tooltip label={help}>
           <button type="button" aria-label={help} className="text-zinc-400 dark:text-zinc-500">
@@ -121,23 +109,4 @@ export function InspectorPropertyRow({
       )}
     </div>
   );
-}
-
-function stateDotClassName(state: PropertyState): string {
-  switch (state) {
-    case "set":
-      return "bg-blue-500";
-    case "invalid":
-      return "bg-red-500";
-    case "mixed":
-      return "bg-amber-500";
-    case "inherited":
-      return "bg-zinc-400 dark:bg-zinc-500";
-    case "not-applicable":
-    case "overridden":
-      return "bg-zinc-300 dark:bg-zinc-700";
-    case "unset":
-    default:
-      return "hidden";
-  }
 }

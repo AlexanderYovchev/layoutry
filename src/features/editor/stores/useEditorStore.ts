@@ -23,6 +23,8 @@ import {
 } from "@/features/editor/commands/flowLayoutCommands";
 import { setElementMargin as setElementMarginCommand, setElementPadding as setElementPaddingCommand } from "@/features/editor/commands/spacingCommands";
 import { setMediaFitSettings as setMediaFitSettingsCommand } from "@/features/editor/commands/mediaFitCommands";
+import { setTypographySettings as setTypographySettingsCommand } from "@/features/editor/commands/typographyCommands";
+import { setBackgroundSettings as setBackgroundSettingsCommand } from "@/features/editor/commands/backgroundCommands";
 import { clampGridChildPlacement } from "@/features/editor/utils/clampGridChildPlacement";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
 import { cloneNodeWithFreshIds } from "@/features/editor/utils/cloneNodeWithFreshIds";
@@ -45,6 +47,8 @@ import type {
 } from "@/features/editor/types/flowLayout";
 import type { EdgeValues } from "@/features/editor/types/spacing";
 import type { MediaFitSettings } from "@/features/editor/types/mediaFit";
+import type { TypographySettings } from "@/features/editor/types/typography";
+import type { BackgroundSettings } from "@/features/editor/types/background";
 
 interface EditorState {
   document: EditorElementNode;
@@ -101,6 +105,10 @@ interface EditorState {
   setGridChildSettings: (nodeId: string, settings: GridChildSettings) => void;
   /** A node's own object-fit/object-position for intrinsic media (Checkpoint 3.5.1) — see resolveMediaFitStyle. */
   setMediaFitSettings: (nodeId: string, settings: MediaFitSettings) => void;
+  /** A node's own text styling (Checkpoint 4.2) — see resolveTypographyStyle. `undefined` clears it entirely (see withTypographyField). */
+  setElementTypography: (nodeId: string, typography: TypographySettings | undefined) => void;
+  /** A node's own background styling (Checkpoint 4.3) — see resolveBackgroundStyle. `undefined` clears it entirely (see withBackgroundField/withBackgroundSize). */
+  setElementBackground: (nodeId: string, background: BackgroundSettings | undefined) => void;
 
   copySelection: () => void;
   cutSelection: () => void;
@@ -308,6 +316,18 @@ export const useEditorStore = create<EditorState>()((set) => ({
     set((state) => ({
       ...pushHistory(state),
       document: setMediaFitSettingsCommand(state.document, nodeId, settings),
+    })),
+
+  setElementTypography: (nodeId, typography) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setTypographySettingsCommand(state.document, nodeId, typography),
+    })),
+
+  setElementBackground: (nodeId, background) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setBackgroundSettingsCommand(state.document, nodeId, background),
     })),
 
   copySelection: () =>

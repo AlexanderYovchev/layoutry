@@ -4,7 +4,9 @@ import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
+import { resolveBackgroundStyle } from "@/features/canvas/utils/resolveBackgroundStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
+import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -31,6 +33,8 @@ export function HeadingElement({ node, parentId, parentLayoutMode, parentFlowDis
       style={{
         ...elementPositionStyle(node, parentLayoutMode, { clipOverflowY: true }),
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
+        ...resolveTypographyStyle(node),
+        ...resolveBackgroundStyle(node),
       }}
       {...listeners}
     >

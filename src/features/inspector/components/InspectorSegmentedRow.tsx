@@ -1,9 +1,11 @@
 "use client";
 
 import { HelpCircle } from "lucide-react";
-import { useRef, type KeyboardEvent } from "react";
+import { useRef, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { InspectorPropertyStateDot } from "@/features/inspector/components/InspectorPropertyStateDot";
+import type { PropertyState } from "@/features/inspector/types/propertyState";
 
 interface InspectorSegmentedRowProps {
   label: string;
@@ -14,8 +16,21 @@ interface InspectorSegmentedRowProps {
   disabled?: boolean;
   /** Per-option tooltip text — mainly for a future icon-only variant, where the label alone wouldn't be visible. */
   optionTooltips?: Record<string, string>;
+  /**
+   * Renders the given icon in place of the option's visible text (the text
+   * still contributes the option's accessible name via sr-only content,
+   * and via `title` for a native mouse tooltip) — for a compact row like
+   * Text Alignment where icons read faster than words. An option with no
+   * entry here still renders as plain text, so a segmented row can mix
+   * icon and text options if a future property needs to.
+   */
+  optionIcons?: Record<string, ReactNode>;
   /** Short plain-language guidance shown via a small help icon next to the label — same affordance as InspectorPropertyRow's help, for a segmented control used outside a property row. */
   help?: string;
+  /** Property-state dot next to the label (Checkpoint 4.2) — for a segmented property (e.g. Font Weight) that isn't wrapped in InspectorPropertyRow. */
+  state?: PropertyState;
+  /** Reset affordance rendered after the option group — typically an InspectorResetButton. */
+  reset?: ReactNode;
 }
 
 export function InspectorSegmentedRow({
@@ -25,7 +40,10 @@ export function InspectorSegmentedRow({
   onSelect,
   disabled = false,
   optionTooltips,
+  optionIcons,
   help,
+  state,
+  reset,
 }: InspectorSegmentedRowProps) {
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -39,19 +57,21 @@ export function InspectorSegmentedRow({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs">
-      {help ? (
-        // Only introduces the extra wrapper when help is actually present —
-        // several existing tests locate a segmented row's button group via
-        // `getByText(label).closest("div")`, which depends on the label
-        // being a direct child of the outer row when there's no help icon
-        // to lay out alongside it.
+      {help || state ? (
+        // Only introduces the extra wrapper when help/state is actually
+        // present — several existing tests locate a segmented row's button
+        // group via `getByText(label).closest("div")`, which depends on the
+        // label being a direct child of the outer row otherwise.
         <div className="flex min-w-0 items-center gap-1 text-zinc-500 dark:text-zinc-400">
           <span className="truncate">{label}</span>
-          <Tooltip label={help}>
-            <button type="button" aria-label={help} className="text-zinc-400 dark:text-zinc-500">
-              <HelpCircle aria-hidden="true" className="size-3" />
-            </button>
-          </Tooltip>
+          {state && <InspectorPropertyStateDot state={state} />}
+          {help && (
+            <Tooltip label={help}>
+              <button type="button" aria-label={help} className="text-zinc-400 dark:text-zinc-500">
+                <HelpCircle aria-hidden="true" className="size-3" />
+              </button>
+            </Tooltip>
+          )}
         </div>
       ) : (
         <span className="text-zinc-500 dark:text-zinc-400">{label}</span>
@@ -74,17 +94,30 @@ export function InspectorSegmentedRow({
       >
         {options.map((option, index) => {
           const isActive = option === activeOption;
+          const icon = optionIcons?.[option];
           const className = cn(
-            "flex h-6 items-center justify-center rounded-md border px-2",
+            "flex h-6 items-center justify-center rounded-md border",
+            icon ? "w-6 shrink-0" : "px-2",
             isActive
               ? "border-zinc-200 bg-zinc-100 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
               : "border-transparent text-zinc-500 dark:text-zinc-400",
           );
+          // The icon is aria-hidden and the option's own text moves to
+          // sr-only rather than disappearing — it still contributes the
+          // accessible name, and `title` covers the mouse-hover case.
+          const content = icon ? (
+            <>
+              <span aria-hidden="true">{icon}</span>
+              <span className="sr-only">{option}</span>
+            </>
+          ) : (
+            option
+          );
 
           if (!onSelect) {
             return (
-              <span key={option} className={className} title={optionTooltips?.[option]}>
-                {option}
+              <span key={option} className={className} title={optionTooltips?.[option] ?? (icon ? option : undefined)}>
+                {content}
               </span>
             );
           }
@@ -97,7 +130,7 @@ export function InspectorSegmentedRow({
               }}
               type="button"
               disabled={disabled}
-              title={optionTooltips?.[option]}
+              title={optionTooltips?.[option] ?? (icon ? option : undefined)}
               className={cn(
                 className,
                 "transition-colors duration-150 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-zinc-800/50",
@@ -106,11 +139,12 @@ export function InspectorSegmentedRow({
               onClick={() => onSelect(option)}
               onKeyDown={(event) => handleKeyDown(event, index)}
             >
-              {option}
+              {content}
             </button>
           );
         })}
       </div>
+      {reset}
     </div>
   );
 }

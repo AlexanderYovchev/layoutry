@@ -1,3 +1,4 @@
+import { InspectorBackgroundSection } from "@/features/inspector/components/InspectorBackgroundSection";
 import { InspectorElementSummary } from "@/features/inspector/components/InspectorElementSummary";
 import { InspectorFieldRow } from "@/features/inspector/components/InspectorFieldRow";
 import { InspectorFlexChildSection } from "@/features/inspector/components/InspectorFlexChildSection";
@@ -6,6 +7,7 @@ import { InspectorGridChildSection } from "@/features/inspector/components/Inspe
 import { InspectorLayoutSection } from "@/features/inspector/components/InspectorLayoutSection";
 import { InspectorMediaSection } from "@/features/inspector/components/InspectorMediaSection";
 import { InspectorSpacingSection } from "@/features/inspector/components/InspectorSpacingSection";
+import { InspectorTypographySection } from "@/features/inspector/components/InspectorTypographySection";
 import { canResizeElement, getElementCapabilities } from "@/features/editor/rules/elementCapabilities";
 import { useRenderedNodeSize } from "@/features/editor/hooks/useRenderedNodeSize";
 import { canContainChildren } from "@/features/editor/rules/insertionRules";
@@ -113,6 +115,8 @@ export function InspectorNodeSummary({
       {!isFreeChild && parentFlowDisplay === "flex" && <InspectorFlexChildSection node={node} />}
       {!isFreeChild && parentFlowDisplay === "grid" && <InspectorGridChildSection node={node} />}
       {getElementCapabilities(node.tag).supportsIntrinsicAspectRatio && <InspectorMediaSection node={node} />}
+      {getElementCapabilities(node.tag).supportsTypography && <InspectorTypographySection node={node} />}
+      {getElementCapabilities(node.tag).supportsBackground && <InspectorBackgroundSection node={node} />}
       <InspectorSpacingSection node={node} />
       {canContainChildren(node.tag) && <InspectorLayoutSection node={node} />}
     </div>

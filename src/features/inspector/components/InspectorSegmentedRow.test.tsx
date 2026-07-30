@@ -137,4 +137,66 @@ describe("InspectorSegmentedRow", () => {
     expect(group).toHaveClass("flex-wrap");
     expect(screen.getAllByRole("button")).toHaveLength(6);
   });
+
+  it("renders an icon in place of the visible text for an option with optionIcons, while keeping its accessible name", () => {
+    render(
+      <InspectorSegmentedRow
+        label="Text align"
+        options={["Left", "Center"]}
+        activeOption="Left"
+        onSelect={vi.fn()}
+        optionIcons={{ Left: <svg data-testid="left-icon" />, Center: <svg data-testid="center-icon" /> }}
+      />,
+    );
+
+    const leftButton = screen.getByRole("button", { name: "Left" });
+    expect(leftButton).toHaveAttribute("title", "Left");
+    expect(leftButton.querySelector('[data-testid="left-icon"]')).toBeInTheDocument();
+    // The text is still present (for the accessible name) but visually hidden.
+    expect(leftButton.querySelector(".sr-only")).toHaveTextContent("Left");
+  });
+
+  it("renders plain text (no icon markup) for an option with no optionIcons entry, even when other options in the same row have one", () => {
+    render(
+      <InspectorSegmentedRow
+        label="Text align"
+        options={["Left", "Justify"]}
+        activeOption="Left"
+        onSelect={vi.fn()}
+        optionIcons={{ Left: <svg data-testid="left-icon" /> }}
+      />,
+    );
+
+    const justifyButton = screen.getByRole("button", { name: "Justify" });
+    expect(justifyButton).not.toHaveAttribute("title");
+    expect(justifyButton.querySelector(".sr-only")).not.toBeInTheDocument();
+    expect(justifyButton).toHaveTextContent("Justify");
+  });
+
+  it("shows a property-state indicator next to the label when state is provided", () => {
+    render(
+      <InspectorSegmentedRow label="Font style" state="set" options={["Normal", "Italic"]} activeOption="Italic" onSelect={vi.fn()} />,
+    );
+    expect(screen.getByText("Explicitly set")).toBeInTheDocument();
+  });
+
+  it("renders no state indicator for the unset state, matching InspectorPropertyRow", () => {
+    render(
+      <InspectorSegmentedRow label="Font style" state="unset" options={["Normal", "Italic"]} activeOption="Normal" onSelect={vi.fn()} />,
+    );
+    expect(screen.queryByText("Not set — using the default")).not.toBeInTheDocument();
+  });
+
+  it("renders the reset affordance after the option group", () => {
+    render(
+      <InspectorSegmentedRow
+        label="Font style"
+        options={["Normal", "Italic"]}
+        activeOption="Italic"
+        onSelect={vi.fn()}
+        reset={<button type="button">Reset font style</button>}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Reset font style" })).toBeInTheDocument();
+  });
 });

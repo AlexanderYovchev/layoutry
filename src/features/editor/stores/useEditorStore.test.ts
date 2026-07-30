@@ -839,4 +839,38 @@ describe("useEditorStore — Flow layout, spacing, Flex/Grid (Checkpoint 3.5)", 
     const reverted = useEditorStore.getState().document.children?.find((c) => c.id === "section-2")?.children?.find((c) => c.id === "image-1");
     expect(reverted?.mediaFit).toBeUndefined();
   });
+
+  it("setElementTypography pushes one history entry and is undoable/redoable", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setElementTypography("heading-1", { fontWeight: 700, color: "#3366ff" });
+
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === "heading-1");
+    expect(node?.typography).toEqual({ fontWeight: 700, color: "#3366ff" });
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+
+    useEditorStore.getState().undo();
+    const reverted = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === "heading-1");
+    expect(reverted?.typography).toBeUndefined();
+
+    useEditorStore.getState().redo();
+    const redone = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === "heading-1");
+    expect(redone?.typography).toEqual({ fontWeight: 700, color: "#3366ff" });
+  });
+
+  it("setElementBackground pushes one history entry and is undoable/redoable", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setElementBackground("section-1", { color: "#3366ff", repeat: "no-repeat" });
+
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(node?.background).toEqual({ color: "#3366ff", repeat: "no-repeat" });
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+
+    useEditorStore.getState().undo();
+    const reverted = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(reverted?.background).toBeUndefined();
+
+    useEditorStore.getState().redo();
+    const redone = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(redone?.background).toEqual({ color: "#3366ff", repeat: "no-repeat" });
+  });
 });

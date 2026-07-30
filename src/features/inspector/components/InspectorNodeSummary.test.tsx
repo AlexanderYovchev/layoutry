@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { InspectorNodeSummary } from "./InspectorNodeSummary";
 
@@ -47,9 +47,17 @@ describe("InspectorNodeSummary", () => {
       />,
     );
 
-    expect(screen.getByText("Width")).toBeInTheDocument();
-    expect(screen.getByText("Height")).toBeInTheDocument();
-    expect(screen.getAllByText("Auto")).toHaveLength(2);
+    const widthRow = screen.getByText("Width").parentElement;
+    const heightRow = screen.getByText("Height").parentElement;
+    expect(widthRow).not.toBeNull();
+    expect(heightRow).not.toBeNull();
+    // Scoped to each dimension row specifically (rather than a page-wide
+    // getAllByText("Auto") count) — the Background section's Size control
+    // (Checkpoint 4.3) also has a literal "Auto" option, which would
+    // otherwise inflate an unscoped count and make this assertion fragile
+    // against unrelated Inspector sections.
+    expect(within(widthRow!).getByText("Auto")).toBeInTheDocument();
+    expect(within(heightRow!).getByText("Auto")).toBeInTheDocument();
   });
 
   it("shows the current pixel dimensions for a resized node", () => {
@@ -246,5 +254,75 @@ describe("InspectorNodeSummary — Media section (Checkpoint 3.5.1)", () => {
     );
 
     expect(screen.queryByText("Media")).not.toBeInTheDocument();
+  });
+});
+
+describe("InspectorNodeSummary — Typography section (Checkpoint 4.2)", () => {
+  it("shows the Typography section for a text-bearing tag", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "heading-1", tag: "h1" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Typography")).toBeInTheDocument();
+  });
+
+  it("omits the Typography section for a non-text-bearing tag (e.g. a container)", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "section-1", tag: "section" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.queryByText("Typography")).not.toBeInTheDocument();
+  });
+
+  it("omits the Typography section for a media tag", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "image-1", tag: "img" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.queryByText("Typography")).not.toBeInTheDocument();
+  });
+});
+
+describe("InspectorNodeSummary — Background section (Checkpoint 4.3)", () => {
+  it("shows the Background section for a container tag", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "section-1", tag: "section" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Background")).toBeInTheDocument();
+  });
+
+  it("shows the Background section for a text-bearing tag", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "heading-1", tag: "h1" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Background")).toBeInTheDocument();
+  });
+
+  it("omits the Background section for a media tag", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "image-1", tag: "img" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.queryByText("Background")).not.toBeInTheDocument();
   });
 });

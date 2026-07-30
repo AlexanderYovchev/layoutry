@@ -6,6 +6,8 @@ import type {
 import type { FlexChildSettings, FlowLayoutSettings, GridChildSettings } from "@/features/editor/types/flowLayout";
 import type { ElementSpacing } from "@/features/editor/types/spacing";
 import type { MediaFitSettings } from "@/features/editor/types/mediaFit";
+import type { TypographySettings } from "@/features/editor/types/typography";
+import type { BackgroundSettings } from "@/features/editor/types/background";
 
 export interface ElementDimensions {
   /**
@@ -102,4 +104,8 @@ export interface EditorElementNode {
   src?: string;
   /** How this node's own visual content fits its rendered box (Checkpoint 3.5.1) — only meaningful for a media-capable tag (see getElementCapabilities().supportsIntrinsicAspectRatio). Unset means contain/center/preserveAspectRatio:true — see getMediaFitSettings. */
   mediaFit?: MediaFitSettings;
+  /** This node's own text styling (Checkpoint 4.2) — only meaningful for a text-bearing tag (see getElementCapabilities().supportsTypography). Unlike mediaFit/spacing, unset fields here have no synthesized default; each is genuinely absent until explicitly set — see getTypographySettings and resolveTypographyStyle. */
+  typography?: TypographySettings;
+  /** This node's own background styling (Checkpoint 4.3) — only meaningful for a background-capable tag (see getElementCapabilities().supportsBackground). Like typography, unset fields here have no synthesized default — see getBackgroundSettings and resolveBackgroundStyle. */
+  background?: BackgroundSettings;
 }

@@ -13,6 +13,8 @@ export interface ElementCapabilities {
   resizableY: boolean;
   canContainChildren: boolean;
   supportsIntrinsicAspectRatio: boolean;
+  supportsTypography: boolean;
+  supportsBackground: boolean;
 }
 
 const DEFAULT_CAPABILITIES: ElementCapabilities = {
@@ -21,7 +23,19 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
   resizableY: true,
   canContainChildren: false,
   supportsIntrinsicAspectRatio: false,
+  supportsTypography: false,
+  supportsBackground: false,
 };
+
+/**
+ * Tags whose own rendered content is literal text (see
+ * EditorElementNode.text) — the Inspector's Typography section
+ * (Checkpoint 4.2) only renders for these. Includes "a"/"li"/"blockquote",
+ * which have no insertable factory yet (same forward-compatible pattern
+ * insertionRules.ts's CONTAINER_TAGS already uses), so typography support
+ * is already correct the moment a factory for one of them is added.
+ */
+const TEXT_BEARING_TAGS: ReadonlySet<string> = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "button", "a", "li", "blockquote"]);
 
 /**
  * Only the document root and the body wrapper opt out of selection and
@@ -44,6 +58,17 @@ export function getElementCapabilities(tag: string): ElementCapabilities {
   return {
     ...DEFAULT_CAPABILITIES,
     canContainChildren: canContainChildren(tag),
+    supportsTypography: TEXT_BEARING_TAGS.has(tag),
+    // Any container (div/section/ul/... ) or text-bearing tag (h1/p/button/...)
+    // can meaningfully receive a CSS background — this is deliberately NOT
+    // extended to img/video/iframe (Checkpoint 4.3): a media tag's own
+    // rendered content (see resolveMediaFitStyle) already fills its box via
+    // object-fit, so a background color/image would sit fully behind it and
+    // never be visible — exposing those controls would be misleading, not
+    // just unused. canContainChildren("img") and TEXT_BEARING_TAGS.has("img")
+    // are already both false, so this already excludes media tags with no
+    // override needed; CAPABILITY_OVERRIDES intentionally adds none for them.
+    supportsBackground: canContainChildren(tag) || TEXT_BEARING_TAGS.has(tag),
     ...CAPABILITY_OVERRIDES[tag],
   };
 }

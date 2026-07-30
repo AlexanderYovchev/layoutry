@@ -1,8 +1,9 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import type { CssUnit } from "@/features/editor/types/typography";
 
-export type CssUnit = "px" | "%" | "rem" | "em" | "vw" | "vh";
+export type { CssUnit };
 
 interface InspectorUnitSelectProps {
   unit: CssUnit;
@@ -12,6 +13,11 @@ interface InspectorUnitSelectProps {
   disabled?: boolean;
   /** Accessible name, e.g. "Width unit". */
   label: string;
+}
+
+/** "unitless" is a real, selectable unit (e.g. line-height: 1.5 has no CSS suffix) but reads poorly as literal option text — shown as an em dash instead. Every other unit displays as its own literal CSS suffix. */
+function unitDisplayLabel(unit: CssUnit): string {
+  return unit === "unitless" ? "—" : unit;
 }
 
 /**
@@ -27,7 +33,7 @@ export function InspectorUnitSelect({ unit, allowedUnits, onChange, disabled = f
   if (allowedUnits.length <= 1) {
     return (
       <span className="flex h-6 w-9 shrink-0 items-center justify-end text-[11px] text-zinc-400 dark:text-zinc-500">
-        {allowedUnits[0] ?? unit}
+        {unitDisplayLabel(allowedUnits[0] ?? unit)}
       </span>
     );
   }
@@ -44,7 +50,7 @@ export function InspectorUnitSelect({ unit, allowedUnits, onChange, disabled = f
     >
       {allowedUnits.map((option) => (
         <option key={option} value={option}>
-          {option}
+          {unitDisplayLabel(option)}
         </option>
       ))}
     </select>

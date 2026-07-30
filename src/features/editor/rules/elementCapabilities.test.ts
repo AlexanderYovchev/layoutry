@@ -47,6 +47,24 @@ describe("elementCapabilities", () => {
     expect(getElementCapabilities("div").supportsIntrinsicAspectRatio).toBe(false);
   });
 
+  it("flags text-bearing tags (including ones with no factory yet) as supporting typography; structural/media tags don't", () => {
+    for (const tag of ["h1", "h2", "h3", "h4", "h5", "h6", "p", "button", "a", "li", "blockquote"]) {
+      expect(getElementCapabilities(tag).supportsTypography, tag).toBe(true);
+    }
+    for (const tag of ["div", "section", "img", "page", "body"]) {
+      expect(getElementCapabilities(tag).supportsTypography, tag).toBe(false);
+    }
+  });
+
+  it("flags container and text-bearing tags as supporting a background; media tags don't", () => {
+    for (const tag of ["div", "section", "form", "ul", "li", "header", "table", "h1", "p", "button", "a", "blockquote"]) {
+      expect(getElementCapabilities(tag).supportsBackground, tag).toBe(true);
+    }
+    for (const tag of ["img", "video", "iframe"]) {
+      expect(getElementCapabilities(tag).supportsBackground, tag).toBe(false);
+    }
+  });
+
   it("gives an entirely unknown tag the same sensible defaults as any other element", () => {
     const caps = getElementCapabilities("some-future-tag");
 
