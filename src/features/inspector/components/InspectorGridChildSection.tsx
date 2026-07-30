@@ -25,7 +25,6 @@ const START_MODE_OPTIONS = ["Auto", "Fixed"];
  * stays permissive rather than duplicating that bounds logic.
  */
 export function InspectorGridChildSection({ node }: InspectorGridChildSectionProps) {
-  const [isOpen, setIsOpen] = useState(true);
   const setGridChildSettings = useEditorStore((state) => state.setGridChildSettings);
   const gridChild = getGridChildSettings(node);
   const [columnStartFixed, setColumnStartFixed] = useState(() => gridChild.columnStart !== "auto");
@@ -54,7 +53,7 @@ export function InspectorGridChildSection({ node }: InspectorGridChildSectionPro
   }
 
   return (
-    <InspectorSection label="Grid item" isOpen={isOpen} onToggle={() => setIsOpen((open) => !open)}>
+    <InspectorSection label="Grid item" defaultOpen>
       <InspectorSegmentedRow
         label="Column start"
         options={START_MODE_OPTIONS}

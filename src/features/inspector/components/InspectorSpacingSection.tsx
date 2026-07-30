@@ -1,10 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { InspectorNumberFieldRow } from "@/features/inspector/components/InspectorNumberFieldRow";
+import { InspectorLinkToggle } from "@/features/inspector/components/InspectorLinkToggle";
+import { InspectorNumericValueControl } from "@/features/inspector/components/InspectorNumericValueControl";
+import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
+import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
-import { clampEdgeValues, getElementSpacing } from "@/features/editor/types/spacing";
+import { clampEdgeValues, getElementSpacing, SPACING_MAX_PX, SPACING_MIN_PX, ZERO_EDGES } from "@/features/editor/types/spacing";
 import type { EdgeValues } from "@/features/editor/types/spacing";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -20,19 +23,40 @@ interface EdgeGroupProps {
   nodeId: string;
 }
 
+const EDGE_SIDES = ["top", "right", "bottom", "left"] as const;
+const EDGE_SIDE_LABELS: Record<(typeof EDGE_SIDES)[number], string> = {
+  top: "Top",
+  right: "Right",
+  bottom: "Bottom",
+  left: "Left",
+};
+
+function allSidesEqual(values: EdgeValues): boolean {
+  return values.top === values.right && values.right === values.bottom && values.bottom === values.left;
+}
+
 /**
- * One margin or padding group: a link/unlink toggle over either a single
- * "all sides" field (linked — the common case, one value applied to all
- * four sides atomically) or four independent Top/Right/Bottom/Left
- * fields (unlinked). Values that fail validation (non-finite, or the
- * whole update if any single side is invalid — see clampEdgeValues) are
- * silently discarded rather than partially applied; InspectorNumberFieldRow
- * already guarantees only finite numbers ever reach onCommit.
+ * One margin or padding group — a link/unlink toggle over either a single
+ * "all sides" field (linked, the common case) or four independent
+ * Top/Right/Bottom/Left fields (unlinked). Built on the Checkpoint 4.1
+ * shared primitives (InspectorPropertyRow's "stack" variant, which is
+ * exactly the "labelled control group expanding vertically beneath its
+ * label" case that primitive was designed for, InspectorNumericValueControl,
+ * InspectorLinkToggle, InspectorResetButton) as this checkpoint's proof
+ * integration — same setElementMargin/setElementPadding commands, same
+ * clampEdgeValues validation, and the same accessible names
+ * ("Margin (all sides)"/"Top"/"Right"/"Bottom"/"Left") the previous
+ * hand-rolled implementation used, so existing behavior is unchanged.
+ * "Set" vs "unset" is a value-based heuristic (all-zero counts as unset,
+ * matching the spacing model's own documented zero default — see
+ * ZERO_EDGES) rather than a genuine per-property explicit flag, since the
+ * document model stores margin/padding as one required EdgeValues object,
+ * not an optional-per-side value; see the checkpoint report's Known
+ * Limitations for why a real flag is a domain-model change out of scope
+ * here.
  */
 function EdgeGroup({ label, values, onCommit, nodeId }: EdgeGroupProps) {
-  const [linked, setLinked] = useState(
-    () => values.top === values.right && values.right === values.bottom && values.bottom === values.left,
-  );
+  const [linked, setLinked] = useState(() => allSidesEqual(values));
 
   // Re-derives the linked/unlinked toggle only when the *selection*
   // itself changes, not on every values update (a user unlinking and
@@ -45,43 +69,60 @@ function EdgeGroup({ label, values, onCommit, nodeId }: EdgeGroupProps) {
   const [lastNodeId, setLastNodeId] = useState(nodeId);
   if (nodeId !== lastNodeId) {
     setLastNodeId(nodeId);
-    setLinked(values.top === values.right && values.right === values.bottom && values.bottom === values.left);
+    setLinked(allSidesEqual(values));
   }
 
-  function commitLinked(value: number) {
-    const clamped = clampEdgeValues({ top: value, right: value, bottom: value, left: value });
+  const isSet = values.top !== 0 || values.right !== 0 || values.bottom !== 0 || values.left !== 0;
+
+  function commitLinked(next: number | "auto") {
+    if (typeof next !== "number") return;
+    const clamped = clampEdgeValues({ top: next, right: next, bottom: next, left: next });
     if (clamped) onCommit(clamped);
   }
 
-  function commitSide(side: keyof EdgeValues, value: number) {
-    const clamped = clampEdgeValues({ ...values, [side]: value });
+  function commitSide(side: keyof EdgeValues, next: number | "auto") {
+    if (typeof next !== "number") return;
+    const clamped = clampEdgeValues({ ...values, [side]: next });
     if (clamped) onCommit(clamped);
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">{label}</span>
-        <button
-          type="button"
-          onClick={() => setLinked((prev) => !prev)}
-          aria-pressed={linked}
-          className="rounded px-1.5 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-        >
-          {linked ? "Linked" : "Unlinked"}
-        </button>
-      </div>
+    <InspectorPropertyRow
+      label={label}
+      variant="stack"
+      state={isSet ? "set" : "unset"}
+      secondary={<InspectorLinkToggle linked={linked} onToggle={() => setLinked((prev) => !prev)} />}
+      reset={<InspectorResetButton onReset={() => onCommit(ZERO_EDGES)} disabled={!isSet} label={`Reset ${label.toLowerCase()}`} />}
+    >
       {linked ? (
-        <InspectorNumberFieldRow label={`${label} (all sides)`} value={values.top} onCommit={commitLinked} />
+        <InspectorNumericValueControl
+          ariaLabel={`${label} (all sides)`}
+          value={values.top}
+          min={SPACING_MIN_PX}
+          max={SPACING_MAX_PX}
+          unit="px"
+          allowedUnits={["px"]}
+          onCommit={commitLinked}
+        />
       ) : (
-        <>
-          <InspectorNumberFieldRow label="Top" value={values.top} onCommit={(v) => commitSide("top", v)} />
-          <InspectorNumberFieldRow label="Right" value={values.right} onCommit={(v) => commitSide("right", v)} />
-          <InspectorNumberFieldRow label="Bottom" value={values.bottom} onCommit={(v) => commitSide("bottom", v)} />
-          <InspectorNumberFieldRow label="Left" value={values.left} onCommit={(v) => commitSide("left", v)} />
-        </>
+        <div className="flex w-full flex-col gap-1.5">
+          {EDGE_SIDES.map((side) => (
+            <div key={side} className="flex items-center justify-between gap-2 text-xs">
+              <span className="text-zinc-500 dark:text-zinc-400">{EDGE_SIDE_LABELS[side]}</span>
+              <InspectorNumericValueControl
+                ariaLabel={EDGE_SIDE_LABELS[side]}
+                value={values[side]}
+                min={SPACING_MIN_PX}
+                max={SPACING_MAX_PX}
+                unit="px"
+                allowedUnits={["px"]}
+                onCommit={(next) => commitSide(side, next)}
+              />
+            </div>
+          ))}
+        </div>
       )}
-    </div>
+    </InspectorPropertyRow>
   );
 }
 
@@ -117,13 +158,12 @@ function BoxModelDiagram() {
  * the same atomic write this section's commit triggers.
  */
 export function InspectorSpacingSection({ node }: InspectorSpacingSectionProps) {
-  const [isOpen, setIsOpen] = useState(true);
   const setElementMargin = useEditorStore((state) => state.setElementMargin);
   const setElementPadding = useEditorStore((state) => state.setElementPadding);
   const spacing = getElementSpacing(node);
 
   return (
-    <InspectorSection label="Spacing" isOpen={isOpen} onToggle={() => setIsOpen((open) => !open)}>
+    <InspectorSection label="Spacing" defaultOpen>
       <BoxModelDiagram />
       <EdgeGroup label="Margin" values={spacing.margin} nodeId={node.id} onCommit={(edges) => setElementMargin(node.id, edges)} />
       <EdgeGroup label="Padding" values={spacing.padding} nodeId={node.id} onCommit={(edges) => setElementPadding(node.id, edges)} />

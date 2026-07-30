@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { InspectorSegmentedRow } from "@/features/inspector/components/InspectorSegmentedRow";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
@@ -43,7 +42,6 @@ const POSITION_VALUE_TO_LABEL: Record<MediaPosition, string> = {
  * no separate toggle to confuse it with.
  */
 export function InspectorMediaSection({ node }: InspectorMediaSectionProps) {
-  const [isOpen, setIsOpen] = useState(true);
   const setMediaFitSettings = useEditorStore((state) => state.setMediaFitSettings);
   const mediaFit = getMediaFitSettings(node);
 
@@ -52,7 +50,7 @@ export function InspectorMediaSection({ node }: InspectorMediaSectionProps) {
   }
 
   return (
-    <InspectorSection label="Media" isOpen={isOpen} onToggle={() => setIsOpen((open) => !open)}>
+    <InspectorSection label="Media" defaultOpen>
       <InspectorSegmentedRow
         label="Fit"
         options={FIT_OPTIONS}

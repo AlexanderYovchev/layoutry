@@ -39,7 +39,6 @@ const ALIGN_SELF_VALUE_TO_LABEL: Record<AlignSelf, string> = {
  * and a fixed pixel value rather than exposing raw CSS flex-basis syntax.
  */
 export function InspectorFlexChildSection({ node }: InspectorFlexChildSectionProps) {
-  const [isOpen, setIsOpen] = useState(true);
   const setFlexChildSettings = useEditorStore((state) => state.setFlexChildSettings);
   const flexChild = getFlexChildSettings(node);
   const [basisFixed, setBasisFixed] = useState(() => flexChild.basis !== "auto");
@@ -61,7 +60,7 @@ export function InspectorFlexChildSection({ node }: InspectorFlexChildSectionPro
   }
 
   return (
-    <InspectorSection label="Flex item" isOpen={isOpen} onToggle={() => setIsOpen((open) => !open)}>
+    <InspectorSection label="Flex item" defaultOpen>
       <InspectorNumberFieldRow
         label="Grow"
         value={flexChild.grow}

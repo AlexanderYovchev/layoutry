@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { InspectorLinkToggle } from "@/features/inspector/components/InspectorLinkToggle";
 import { InspectorNumberFieldRow } from "@/features/inspector/components/InspectorNumberFieldRow";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { InspectorSegmentedRow } from "@/features/inspector/components/InspectorSegmentedRow";
@@ -72,7 +73,6 @@ const ALIGN_VALUE_TO_LABEL: Record<AlignItems, string> = { start: "Start", cente
  * Free mode" requirement.
  */
 export function InspectorLayoutSection({ node }: InspectorLayoutSectionProps) {
-  const [isOpen, setIsOpen] = useState(true);
   const convertToFreeLayout = useConvertContainerToFreeLayout();
   const convertToFlowLayout = useEditorStore((state) => state.convertToFlowLayout);
   const setChildResizePolicy = useEditorStore((state) => state.setChildResizePolicy);
@@ -98,7 +98,7 @@ export function InspectorLayoutSection({ node }: InspectorLayoutSectionProps) {
   }
 
   return (
-    <InspectorSection label="Layout" isOpen={isOpen} onToggle={() => setIsOpen((open) => !open)}>
+    <InspectorSection label="Layout" defaultOpen>
       <InspectorSegmentedRow
         label="Layout mode"
         options={LAYOUT_MODE_OPTIONS}
@@ -187,14 +187,7 @@ function FlexContainerControls({ node, onChange }: FlexContainerControlsProps) {
       />
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Gap</span>
-        <button
-          type="button"
-          onClick={() => setGapLinked((prev) => !prev)}
-          aria-pressed={gapLinked}
-          className="rounded px-1.5 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-        >
-          {gapLinked ? "Linked" : "Unlinked"}
-        </button>
+        <InspectorLinkToggle linked={gapLinked} onToggle={() => setGapLinked((prev) => !prev)} />
       </div>
       {gapLinked ? (
         <InspectorNumberFieldRow

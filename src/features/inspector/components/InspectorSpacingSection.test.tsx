@@ -159,4 +159,76 @@ describe("InspectorSpacingSection", () => {
     expect(screen.getAllByLabelText("Top")[0]).toHaveValue(4);
     expect(screen.getAllByLabelText("Right")[0]).toHaveValue(8);
   });
+
+  it("disables the reset button for a group that is already at the zero default", () => {
+    render(<InspectorSpacingSection node={{ id: "n1", tag: "div" }} />);
+    expect(screen.getByRole("button", { name: "Reset margin" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reset padding" })).toBeDisabled();
+  });
+
+  it("reset removes the explicit margin by committing the model's own zero default, through the same setElementMargin command (undoable)", () => {
+    useEditorStore.setState((state) => ({
+      document: {
+        ...state.document,
+        children: [
+          {
+            id: "n1",
+            tag: "div",
+            children: [],
+            spacing: {
+              margin: { top: 8, right: 8, bottom: 8, left: 8 },
+              padding: { top: 0, right: 0, bottom: 0, left: 0 },
+            },
+          },
+        ],
+      },
+    }));
+
+    render(
+      <InspectorSpacingSection
+        node={{
+          id: "n1",
+          tag: "div",
+          spacing: {
+            margin: { top: 8, right: 8, bottom: 8, left: 8 },
+            padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          },
+        }}
+      />,
+    );
+    const resetMargin = screen.getByRole("button", { name: "Reset margin" });
+    expect(resetMargin).toBeEnabled();
+    fireEvent.click(resetMargin);
+
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "n1");
+    expect(node?.spacing?.margin).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
+
+    // Undoable through the normal history stack — reset is a plain
+    // setElementMargin commit, not a special bypass.
+    useEditorStore.getState().undo();
+    const afterUndo = useEditorStore.getState().document.children?.find((c) => c.id === "n1");
+    expect(afterUndo?.spacing?.margin).toEqual({ top: 8, right: 8, bottom: 8, left: 8 });
+
+    useEditorStore.getState().redo();
+    const afterRedo = useEditorStore.getState().document.children?.find((c) => c.id === "n1");
+    expect(afterRedo?.spacing?.margin).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
+  });
+
+  it("keeps the same node selected across an undo/redo round trip of a spacing commit", () => {
+    useEditorStore.setState((state) => ({
+      document: { ...state.document, children: [{ id: "n1", tag: "div", children: [] }] },
+      selectedElementId: "n1",
+    }));
+
+    render(<InspectorSpacingSection node={{ id: "n1", tag: "div" }} />);
+    const input = screen.getByLabelText("Margin (all sides)");
+    fireEvent.change(input, { target: { value: "16" } });
+    fireEvent.blur(input);
+
+    useEditorStore.getState().undo();
+    expect(useEditorStore.getState().selectedElementId).toBe("n1");
+
+    useEditorStore.getState().redo();
+    expect(useEditorStore.getState().selectedElementId).toBe("n1");
+  });
 });
