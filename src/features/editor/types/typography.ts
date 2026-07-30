@@ -24,8 +24,12 @@
  * "unitless" is not a real CSS unit suffix — see formatCssLength — but is
  * a selectable value in the unit dropdown for a property like line-height
  * that has a genuine unitless CSS syntax (e.g. `line-height: 1.5`).
+ * "deg" was added in Checkpoint 4.3.1 for the Gradient angle control —
+ * always its own single-option (non-dropdown) display, same as "%" for a
+ * gradient stop's position, since no property here ever offers a choice
+ * of angle units.
  */
-export type CssUnit = "px" | "%" | "rem" | "em" | "vw" | "vh" | "unitless";
+export type CssUnit = "px" | "%" | "rem" | "em" | "vw" | "vh" | "unitless" | "deg";
 
 export type FontWeight = 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900;
 export type FontStyleValue = "normal" | "italic" | "oblique";

@@ -874,3 +874,57 @@ describe("useEditorStore — Flow layout, spacing, Flex/Grid (Checkpoint 3.5)", 
     expect(redone?.background).toEqual({ color: "#3366ff", repeat: "no-repeat" });
   });
 });
+
+describe("useEditorStore — generic transactions (Checkpoint 4.3.1)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("setElementBackgroundLive does not push history", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setElementBackgroundLive("section-1", { color: "#3366ff" });
+
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(node?.background).toEqual({ color: "#3366ff" });
+  });
+
+  it("collapses an entire drag (multiple live writes between begin/commitTransaction) into one history entry", () => {
+    useEditorStore.getState().beginTransaction();
+    useEditorStore.getState().setElementBackgroundLive("section-1", { color: "#111111" });
+    useEditorStore.getState().setElementBackgroundLive("section-1", { color: "#222222" });
+    useEditorStore.getState().setElementBackgroundLive("section-1", { color: "#333333" });
+    useEditorStore.getState().commitTransaction();
+
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(node?.background).toEqual({ color: "#333333" });
+    expect(useEditorStore.getState().past).toHaveLength(1);
+
+    useEditorStore.getState().undo();
+    const reverted = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(reverted?.background).toBeUndefined();
+  });
+
+  it("cancelTransaction discards the transaction without pushing history", () => {
+    useEditorStore.getState().beginTransaction();
+    useEditorStore.getState().setElementBackgroundLive("section-1", { color: "#111111" });
+
+    useEditorStore.getState().cancelTransaction();
+
+    expect(useEditorStore.getState().past).toHaveLength(0);
+    expect(useEditorStore.getState().transactionSnapshot).toBeNull();
+  });
+
+  it("shares the same transactionSnapshot slot as resize transactions (mutually exclusive, not a second parallel mechanism)", () => {
+    useEditorStore.getState().beginTransaction();
+    const viaGeneric = useEditorStore.getState().transactionSnapshot;
+
+    useEditorStore.getState().cancelTransaction();
+    useEditorStore.getState().beginResizeTransaction();
+    const viaResize = useEditorStore.getState().transactionSnapshot;
+
+    expect(viaGeneric).not.toBeNull();
+    expect(viaResize).not.toBeNull();
+    useEditorStore.getState().cancelResizeTransaction();
+  });
+});

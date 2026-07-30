@@ -137,6 +137,36 @@ describe("cloneNodeWithFreshIds", () => {
     expect(clone.background).toEqual(source.background);
   });
 
+  it("preserves a gradient, including its stop ids verbatim (Checkpoint 4.3.1)", () => {
+    const source: EditorElementNode = {
+      id: "container-1",
+      tag: "div",
+      background: {
+        sourceType: "gradient",
+        gradient: {
+          type: "radial",
+          shape: "circle",
+          position: "top-left",
+          stops: [
+            { id: "stop-a", color: "#ff0000", position: 0 },
+            { id: "stop-b", color: "#00ff00", position: 100 },
+          ],
+        },
+      },
+    };
+
+    const clone = cloneNodeWithFreshIds(source);
+
+    // Gradient stop ids are local identities scoped to their own parent
+    // gradient (only ever looked up as `gradient.stops.find(s => s.id ===
+    // ...)` within the same element) — never looked up globally across
+    // the document — so a duplicated element keeping the exact same stop
+    // ids as its source is safe: there is no cross-element stop lookup
+    // anywhere in this codebase that duplicate ids could collide with.
+    // Regenerating them here would add complexity with no real benefit.
+    expect(clone.background).toEqual(source.background);
+  });
+
   it("does not mutate the source tree", () => {
     const source: EditorElementNode = {
       id: "container-1",

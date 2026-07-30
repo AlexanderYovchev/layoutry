@@ -109,6 +109,27 @@ interface EditorState {
   setElementTypography: (nodeId: string, typography: TypographySettings | undefined) => void;
   /** A node's own background styling (Checkpoint 4.3) — see resolveBackgroundStyle. `undefined` clears it entirely (see withBackgroundField/withBackgroundSize). */
   setElementBackground: (nodeId: string, background: BackgroundSettings | undefined) => void;
+  /** Per-frame background write during a live drag session (Checkpoint 4.3.1 — gradient stop dragging) — no history push; wrap in begin/commitTransaction, same convention setFreeChildGeometryLive already established. */
+  setElementBackgroundLive: (nodeId: string, background: BackgroundSettings | undefined) => void;
+
+  /**
+   * Generic continuous-interaction transaction (Checkpoint 4.3.1) — the
+   * exact same shared `transactionSnapshot` mechanism begin/
+   * commitResizeTransaction already established, exposed under a
+   * domain-neutral name for any Inspector-driven continuous drag
+   * (currently: gradient stop dragging — see InspectorGradientStopTrack)
+   * that needs "one history entry for the whole gesture," not one per
+   * pointer-move. Deliberately a separate pair of actions rather than
+   * reusing the resize-named ones directly: those are Canvas-resize
+   * entry points, and calling a function named beginResizeTransaction
+   * from a Gradient Inspector control would misleadingly imply a resize
+   * is happening. Both pairs read/write the same `transactionSnapshot`
+   * slot and are safely mutually exclusive — only one continuous
+   * interaction is ever active at a time in this single-selection editor.
+   */
+  beginTransaction: () => void;
+  commitTransaction: () => void;
+  cancelTransaction: () => void;
 
   copySelection: () => void;
   cutSelection: () => void;
@@ -329,6 +350,22 @@ export const useEditorStore = create<EditorState>()((set) => ({
       ...pushHistory(state),
       document: setBackgroundSettingsCommand(state.document, nodeId, background),
     })),
+
+  setElementBackgroundLive: (nodeId, background) =>
+    set((state) => ({
+      document: setBackgroundSettingsCommand(state.document, nodeId, background),
+    })),
+
+  beginTransaction: () =>
+    set((state) => (state.transactionSnapshot ? {} : { transactionSnapshot: snapshot(state) })),
+
+  commitTransaction: () =>
+    set((state) => {
+      if (!state.transactionSnapshot) return {};
+      return { past: [...state.past, state.transactionSnapshot], future: [], transactionSnapshot: null };
+    }),
+
+  cancelTransaction: () => set({ transactionSnapshot: null }),
 
   copySelection: () =>
     set((state) => {

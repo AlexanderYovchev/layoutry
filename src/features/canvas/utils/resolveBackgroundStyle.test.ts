@@ -25,13 +25,13 @@ describe("resolveBackgroundStyle", () => {
     expect(resolveBackgroundStyle(node).backgroundImage).toBe('url("evil\\".jpg")');
   });
 
-  it("resolves cover and contain size presets verbatim", () => {
-    expect(resolveBackgroundStyle({ id: "n1", tag: "div", background: { size: "cover" } }).backgroundSize).toBe("cover");
-    expect(resolveBackgroundStyle({ id: "n1", tag: "div", background: { size: "contain" } }).backgroundSize).toBe("contain");
+  it("resolves cover and contain size presets verbatim, while Image is the active source", () => {
+    expect(resolveBackgroundStyle({ id: "n1", tag: "div", background: { image: "hero.jpg", size: "cover" } }).backgroundSize).toBe("cover");
+    expect(resolveBackgroundStyle({ id: "n1", tag: "div", background: { image: "hero.jpg", size: "contain" } }).backgroundSize).toBe("contain");
   });
 
   it("resolves an explicit auto size distinctly from an unset size", () => {
-    expect(resolveBackgroundStyle({ id: "n1", tag: "div", background: { size: "auto" } }).backgroundSize).toBe("auto");
+    expect(resolveBackgroundStyle({ id: "n1", tag: "div", background: { image: "hero.jpg", size: "auto" } }).backgroundSize).toBe("auto");
     expect(resolveBackgroundStyle({ id: "n1", tag: "div" }).backgroundSize).toBeUndefined();
   });
 
@@ -39,7 +39,7 @@ describe("resolveBackgroundStyle", () => {
     const node: EditorElementNode = {
       id: "n1",
       tag: "div",
-      background: { size: "custom", customSize: { width: { value: 200, unit: "px" }, height: "auto" } },
+      background: { image: "hero.jpg", size: "custom", customSize: { width: { value: 200, unit: "px" }, height: "auto" } },
     };
     expect(resolveBackgroundStyle(node).backgroundSize).toBe("200px auto");
   });
@@ -57,13 +57,63 @@ describe("resolveBackgroundStyle", () => {
       ["bottom-right", "right bottom"],
     ];
     for (const [position, css] of cases) {
-      const node: EditorElementNode = { id: "n1", tag: "div", background: { position: position as never } };
+      const node: EditorElementNode = { id: "n1", tag: "div", background: { image: "hero.jpg", position: position as never } };
       expect(resolveBackgroundStyle(node).backgroundPosition, position).toBe(css);
     }
   });
 
   it("resolves repeat and attachment verbatim", () => {
-    expect(resolveBackgroundStyle({ id: "n1", tag: "div", background: { repeat: "repeat-x" } }).backgroundRepeat).toBe("repeat-x");
-    expect(resolveBackgroundStyle({ id: "n1", tag: "div", background: { attachment: "fixed" } }).backgroundAttachment).toBe("fixed");
+    expect(resolveBackgroundStyle({ id: "n1", tag: "div", background: { image: "hero.jpg", repeat: "repeat-x" } }).backgroundRepeat).toBe("repeat-x");
+    expect(resolveBackgroundStyle({ id: "n1", tag: "div", background: { image: "hero.jpg", attachment: "fixed" } }).backgroundAttachment).toBe("fixed");
+  });
+
+  it("falls back to treating a stored image as active when sourceType is absent (Checkpoint 4.3 document compatibility)", () => {
+    const node: EditorElementNode = { id: "n1", tag: "div", background: { image: "hero.jpg" } };
+    expect(resolveBackgroundStyle(node).backgroundImage).toBe('url("hero.jpg")');
+  });
+
+  it("does not render a stored image while Gradient is the explicit active source", () => {
+    const node: EditorElementNode = {
+      id: "n1",
+      tag: "div",
+      background: {
+        sourceType: "gradient",
+        image: "hero.jpg",
+        size: "cover",
+        repeat: "repeat",
+        gradient: { type: "linear", angle: 90, stops: [{ id: "a", color: "#000000", position: 0 }, { id: "b", color: "#ffffff", position: 100 }] },
+      },
+    };
+    const style = resolveBackgroundStyle(node);
+    expect(style.backgroundImage).toBe("linear-gradient(90deg, #000000 0%, #ffffff 100%)");
+    expect(style.backgroundSize).toBeUndefined();
+    expect(style.backgroundRepeat).toBeUndefined();
+  });
+
+  it("does not render a stored gradient while Image is the active source, and Background Color stays independent of either", () => {
+    const node: EditorElementNode = {
+      id: "n1",
+      tag: "div",
+      background: {
+        sourceType: "image",
+        color: "#3366ff",
+        image: "hero.jpg",
+        gradient: { type: "linear", angle: 45, stops: [{ id: "a", color: "#000000", position: 0 }, { id: "b", color: "#ffffff", position: 100 }] },
+      },
+    };
+    const style = resolveBackgroundStyle(node);
+    expect(style.backgroundColor).toBe("#3366ff");
+    expect(style.backgroundImage).toBe('url("hero.jpg")');
+  });
+
+  it("does not implicitly activate a stored gradient with no explicit sourceType (unlike image, gradient has no legacy-document fallback)", () => {
+    const node: EditorElementNode = {
+      id: "n1",
+      tag: "div",
+      background: {
+        gradient: { type: "linear", angle: 90, stops: [{ id: "a", color: "#000000", position: 0 }, { id: "b", color: "#ffffff", position: 100 }] },
+      },
+    };
+    expect(resolveBackgroundStyle(node).backgroundImage).toBeUndefined();
   });
 });

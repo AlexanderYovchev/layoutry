@@ -20,25 +20,15 @@ describe("InspectorBackgroundSection", () => {
     useEditorStore.setState(initialState, true);
   });
 
-  it("shows every field as unset for a node with no background", () => {
+  it("shows Color as unset and Source as None for a node with no background", () => {
     render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div" }} />);
 
     expect(screen.getByLabelText("Background color")).toHaveValue("");
-    expect(screen.getByLabelText("Background image URL")).toHaveValue("");
-    for (const name of ["Auto", "Cover", "Contain", "Custom"]) {
-      expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "false");
-    }
-  });
-
-  it("disables Size, Position, Repeat, and Attachment while no image is set", () => {
-    setupNode({ id: "container-1", tag: "div" });
-    render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div" }} />);
-
-    expect(screen.getByRole("button", { name: "Cover" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Center" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Repeat" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Fixed" })).toBeDisabled();
-    expect(screen.getByText(/enable size, position, repeat, and attachment/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "None" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Image" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Gradient" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByLabelText("Background image URL")).not.toBeInTheDocument();
+    expect(screen.queryByText("Stops (2)")).not.toBeInTheDocument();
   });
 
   it("commits a valid hex Background Color", () => {
@@ -73,178 +63,125 @@ describe("InspectorBackgroundSection", () => {
     expect(committedNode()?.background).toBeUndefined();
   });
 
-  it("commits a valid Background Image URL and enables the image-dependent controls", () => {
-    setupNode({ id: "container-1", tag: "div" });
-    render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div" }} />);
-
-    const input = screen.getByLabelText("Background image URL");
-    fireEvent.change(input, { target: { value: "https://example.com/hero.jpg" } });
-    fireEvent.blur(input);
-
-    expect(committedNode()?.background?.image).toBe("https://example.com/hero.jpg");
-  });
-
-  it("rejects an image URL containing whitespace with a clear validation message and does not commit", () => {
-    setupNode({ id: "container-1", tag: "div" });
-    render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div" }} />);
-
-    const input = screen.getByLabelText("Background image URL");
-    fireEvent.change(input, { target: { value: "not a url.jpg" } });
-    fireEvent.blur(input);
-
-    expect(screen.getByRole("alert")).toHaveTextContent("Enter a valid image URL or path.");
-    expect(committedNode()?.background?.image).toBeUndefined();
-  });
-
-  it("accepts a project-relative image path", () => {
-    setupNode({ id: "container-1", tag: "div" });
-    render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div" }} />);
-
-    const input = screen.getByLabelText("Background image URL");
-    fireEvent.change(input, { target: { value: "assets/hero.jpg" } });
-    fireEvent.blur(input);
-
-    expect(committedNode()?.background?.image).toBe("assets/hero.jpg");
-  });
-
-  it("resets the Background Image, independent of other background fields", () => {
-    setupNode({ id: "container-1", tag: "div", background: { image: "hero.jpg", color: "#3366ff" } });
-    render(
-      <InspectorBackgroundSection
-        node={{ id: "container-1", tag: "div", background: { image: "hero.jpg", color: "#3366ff" } }}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Reset background image" }));
-
-    expect(committedNode()?.background?.image).toBeUndefined();
-    expect(committedNode()?.background?.color).toBe("#3366ff");
-  });
-
-  it("commits a Cover size preset once an image is set", () => {
-    setupNode({ id: "container-1", tag: "div", background: { image: "hero.jpg" } });
+  it("shows Image as the active source (and its controls) for a legacy document with a stored image but no explicit sourceType", () => {
     render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div", background: { image: "hero.jpg" } }} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Cover" }));
-
-    expect(committedNode()?.background?.size).toBe("cover");
+    expect(screen.getByRole("button", { name: "Image" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByLabelText("Background image URL")).toHaveValue("hero.jpg");
   });
 
-  it("hides the Custom width/height fields until Size is Custom, and commits Custom through the store", () => {
-    setupNode({ id: "container-1", tag: "div", background: { image: "hero.jpg" } });
-    render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div", background: { image: "hero.jpg" } }} />);
+  it("selecting Image stores an explicit sourceType", () => {
+    setupNode({ id: "container-1", tag: "div" });
+    render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div" }} />);
 
-    expect(screen.queryByLabelText("Width")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Image" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Custom" }));
-
-    // This isolated render doesn't re-receive the node prop after a store
-    // commit (only the real InspectorNodeSummary parent — subscribed to
-    // the store — does that), so the UI's own reactivity to the click is
-    // verified separately below via a fresh render with the committed
-    // background already in props.
-    expect(committedNode()?.background?.size).toBe("custom");
+    expect(committedNode()?.background?.sourceType).toBe("image");
   });
 
-  it("shows Width/Height fields once Size is Custom, and commits both axes", () => {
-    const background = { image: "hero.jpg", size: "custom" as const, customSize: { width: "auto" as const, height: "auto" as const } };
+  it("shows the Image controls once Image is already the active source", () => {
+    render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div", background: { sourceType: "image" } }} />);
+
+    expect(screen.getByLabelText("Background image URL")).toBeInTheDocument();
+  });
+
+  it("selecting Gradient activates a default two-stop linear gradient in one history entry", () => {
+    setupNode({ id: "container-1", tag: "div" });
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div" }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Gradient" }));
+
+    expect(committedNode()?.background?.sourceType).toBe("gradient");
+    expect(committedNode()?.background?.gradient?.type).toBe("linear");
+    expect(committedNode()?.background?.gradient?.stops).toHaveLength(2);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+  });
+
+  it("shows the Gradient controls once Gradient is already the active source", () => {
+    const background = {
+      sourceType: "gradient" as const,
+      gradient: { type: "linear" as const, angle: 90, stops: [{ id: "a", color: "#000000", position: 0 }, { id: "b", color: "#ffffff", position: 100 }] },
+    };
     setupNode({ id: "container-1", tag: "div", background });
     render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div", background }} />);
 
-    const widthInput = screen.getByLabelText("Width");
-    fireEvent.change(widthInput, { target: { value: "200" } });
-    fireEvent.blur(widthInput);
-
-    expect(committedNode()?.background?.customSize?.width).toEqual({ value: 200, unit: "px" });
-    expect(committedNode()?.background?.customSize?.height).toBe("auto");
+    expect(screen.getByText("Stops (2)")).toBeInTheDocument();
   });
 
-  it("rejects a zero or negative Custom size axis with a clear validation message", () => {
-    setupNode({
-      id: "container-1",
-      tag: "div",
-      background: { image: "hero.jpg", size: "custom", customSize: { width: "auto", height: "auto" } },
-    });
-    render(
-      <InspectorBackgroundSection
-        node={{
-          id: "container-1",
-          tag: "div",
-          background: { image: "hero.jpg", size: "custom", customSize: { width: "auto", height: "auto" } },
-        }}
-      />,
-    );
+  it("hides the Gradient controls and shows the Image controls once switched back to Image", () => {
+    const background = {
+      sourceType: "gradient" as const,
+      image: "hero.jpg",
+      gradient: { type: "linear" as const, angle: 90, stops: [{ id: "a", color: "#000000", position: 0 }, { id: "b", color: "#ffffff", position: 100 }] },
+    };
+    setupNode({ id: "container-1", tag: "div", background });
+    render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div", background }} />);
 
-    const widthInput = screen.getByLabelText("Width");
-    fireEvent.change(widthInput, { target: { value: "-10" } });
-    fireEvent.blur(widthInput);
+    fireEvent.click(screen.getByRole("button", { name: "Image" }));
 
-    expect(screen.getByText("Enter a width greater than 0.")).toBeInTheDocument();
-    expect(committedNode()?.background?.customSize?.width).toBe("auto");
-  });
-
-  it("clears customSize when Size is reset", () => {
-    setupNode({
-      id: "container-1",
-      tag: "div",
-      background: { image: "hero.jpg", size: "custom", customSize: { width: { value: 200, unit: "px" }, height: "auto" } },
-    });
-    render(
-      <InspectorBackgroundSection
-        node={{
-          id: "container-1",
-          tag: "div",
-          background: { image: "hero.jpg", size: "custom", customSize: { width: { value: 200, unit: "px" }, height: "auto" } },
-        }}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Reset background size" }));
-
-    expect(committedNode()?.background?.size).toBeUndefined();
-    expect(committedNode()?.background?.customSize).toBeUndefined();
+    expect(committedNode()?.background?.sourceType).toBe("image");
     expect(committedNode()?.background?.image).toBe("hero.jpg");
+    // Preserved, not deleted, even though it's now inactive.
+    expect(committedNode()?.background?.gradient).toBeDefined();
   });
 
-  it("commits a Position selection once an image is set", () => {
-    setupNode({ id: "container-1", tag: "div", background: { image: "hero.jpg" } });
-    render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div", background: { image: "hero.jpg" } }} />);
+  it("preserves a previously-configured gradient when reactivating Gradient after exploring Image", () => {
+    const background = {
+      sourceType: "image" as const,
+      image: "hero.jpg",
+      gradient: {
+        type: "radial" as const,
+        shape: "circle" as const,
+        position: "top-left" as const,
+        stops: [{ id: "a", color: "#ff0000", position: 0 }, { id: "b", color: "#00ff00", position: 100 }],
+      },
+    };
+    setupNode({ id: "container-1", tag: "div", background });
+    render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div", background }} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Bottom right" }));
+    fireEvent.click(screen.getByRole("button", { name: "Gradient" }));
 
-    expect(committedNode()?.background?.position).toBe("bottom-right");
+    expect(committedNode()?.background?.gradient?.type).toBe("radial");
+    expect(committedNode()?.background?.gradient?.stops.map((s) => s.color)).toEqual(["#ff0000", "#00ff00"]);
   });
 
-  it("commits a Repeat selection once an image is set", () => {
-    setupNode({ id: "container-1", tag: "div", background: { image: "hero.jpg" } });
-    render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div", background: { image: "hero.jpg" } }} />);
+  it("selecting None deactivates both sources without deleting their stored data", () => {
+    const background = {
+      sourceType: "gradient" as const,
+      image: "hero.jpg",
+      gradient: { type: "linear" as const, angle: 90, stops: [{ id: "a", color: "#000000", position: 0 }, { id: "b", color: "#ffffff", position: 100 }] },
+    };
+    setupNode({ id: "container-1", tag: "div", background });
+    render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div", background }} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Repeat X" }));
+    fireEvent.click(screen.getByRole("button", { name: "None" }));
 
-    expect(committedNode()?.background?.repeat).toBe("repeat-x");
+    expect(committedNode()?.background?.sourceType).toBeUndefined();
+    expect(committedNode()?.background?.image).toBe("hero.jpg");
+    expect(committedNode()?.background?.gradient).toBeDefined();
   });
 
-  it("commits an Attachment selection once an image is set", () => {
-    setupNode({ id: "container-1", tag: "div", background: { image: "hero.jpg" } });
-    render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div", background: { image: "hero.jpg" } }} />);
+  it("shows neither Image nor Gradient controls once the source is None", () => {
+    render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div", background: { color: "#3366ff" } }} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Fixed" }));
-
-    expect(committedNode()?.background?.attachment).toBe("fixed");
+    expect(screen.getByRole("button", { name: "None" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByLabelText("Background image URL")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Stops \(/)).not.toBeInTheDocument();
   });
 
   it("is undoable and redoable through the normal history stack", () => {
-    setupNode({ id: "container-1", tag: "div", background: { image: "hero.jpg" } });
-    render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div", background: { image: "hero.jpg" } }} />);
+    setupNode({ id: "container-1", tag: "div" });
+    render(<InspectorBackgroundSection node={{ id: "container-1", tag: "div" }} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Cover" }));
-    expect(committedNode()?.background?.size).toBe("cover");
+    fireEvent.click(screen.getByRole("button", { name: "Gradient" }));
+    expect(committedNode()?.background?.sourceType).toBe("gradient");
 
     useEditorStore.getState().undo();
-    expect(committedNode()?.background?.size).toBeUndefined();
+    expect(committedNode()?.background).toBeUndefined();
 
     useEditorStore.getState().redo();
-    expect(committedNode()?.background?.size).toBe("cover");
+    expect(committedNode()?.background?.sourceType).toBe("gradient");
   });
 
   it("clears a stale validation error when the selected node changes", () => {
