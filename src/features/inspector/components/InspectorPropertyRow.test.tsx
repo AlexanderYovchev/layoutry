@@ -76,4 +76,56 @@ describe("InspectorPropertyRow", () => {
       screen.getByRole("button", { name: "The element's own width, before any layout constraints." }),
     ).toBeInTheDocument();
   });
+
+  it("emphasizes the label when the property is explicitly set", () => {
+    render(
+      <InspectorPropertyRow label="Margin" state="set">
+        <input aria-label="Margin" />
+      </InspectorPropertyRow>,
+    );
+    expect(screen.getByText("Margin")).toHaveClass("font-medium");
+  });
+
+  it("does not emphasize the label for an unset property", () => {
+    render(
+      <InspectorPropertyRow label="Margin" state="unset">
+        <input aria-label="Margin" />
+      </InspectorPropertyRow>,
+    );
+    expect(screen.getByText("Margin")).not.toHaveClass("font-medium");
+  });
+
+  it("auto-dims and disables interaction for a not-applicable property, even without an explicit disabled prop", () => {
+    render(
+      <InspectorPropertyRow label="Font size" state="not-applicable">
+        <input aria-label="Font size" />
+      </InspectorPropertyRow>,
+    );
+    const label = screen.getByText("Font size");
+    const outer = label.closest("div")?.parentElement?.parentElement;
+    expect(outer).toHaveClass("opacity-50");
+    expect(outer).toHaveClass("pointer-events-none");
+  });
+
+  it("auto-dims for an overridden property", () => {
+    render(
+      <InspectorPropertyRow label="Width" state="overridden">
+        <input aria-label="Width" />
+      </InspectorPropertyRow>,
+    );
+    const label = screen.getByText("Width");
+    const outer = label.closest("div")?.parentElement?.parentElement;
+    expect(outer).toHaveClass("opacity-50");
+  });
+
+  it("does not dim a merely 'invalid' or 'mixed' state row (only disabled/not-applicable/overridden dim)", () => {
+    render(
+      <InspectorPropertyRow label="Width" state="mixed">
+        <input aria-label="Width" />
+      </InspectorPropertyRow>,
+    );
+    const label = screen.getByText("Width");
+    const outer = label.closest("div")?.parentElement?.parentElement;
+    expect(outer).not.toHaveClass("opacity-50");
+  });
 });

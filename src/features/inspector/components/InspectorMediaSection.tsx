@@ -53,12 +53,14 @@ export function InspectorMediaSection({ node }: InspectorMediaSectionProps) {
     <InspectorSection label="Media" defaultOpen>
       <InspectorSegmentedRow
         label="Fit"
+        help="Controls how the image fills its box: keep its shape, crop to fill, or stretch."
         options={FIT_OPTIONS}
         activeOption={FIT_VALUE_TO_LABEL[mediaFit.fit]}
         onSelect={(option) => commit({ fit: FIT_LABEL_TO_VALUE[option] })}
       />
       <InspectorSegmentedRow
         label="Position"
+        help="Controls which part of the image stays visible when it's cropped."
         options={POSITION_OPTIONS}
         activeOption={POSITION_VALUE_TO_LABEL[mediaFit.position]}
         onSelect={(option) => commit({ position: POSITION_LABEL_TO_VALUE[option] })}

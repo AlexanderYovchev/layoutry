@@ -44,8 +44,8 @@ describe("InspectorMediaSection", () => {
 
   it("changing Position dispatches setMediaFitSettings without disturbing Fit", () => {
     setup({ id: "image-1", tag: "img", mediaFit: { fit: "cover", position: "center", preserveAspectRatio: true } });
-    const positionRow = screen.getByText("Position").closest("div")!;
-    fireEvent.click(within(positionRow).getByRole("button", { name: "Top" }));
+    const positionGroup = screen.getByRole("group", { name: "Position" });
+    fireEvent.click(within(positionGroup).getByRole("button", { name: "Top" }));
 
     const node = useEditorStore.getState().document.children?.find((c) => c.id === "image-1");
     expect(node?.mediaFit).toEqual({ fit: "cover", position: "top", preserveAspectRatio: true });

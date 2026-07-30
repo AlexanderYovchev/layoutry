@@ -142,8 +142,8 @@ describe("InspectorLayoutSection — Flow display: Block/Flex/Grid (Checkpoint 3
     fireEvent.click(screen.getByRole("button", { name: "Column" }));
     fireEvent.click(screen.getByRole("button", { name: "Wrap" }));
     fireEvent.click(screen.getByRole("button", { name: "Space between" }));
-    const alignRow = screen.getByText("Align items").closest("div")!;
-    fireEvent.click(within(alignRow).getByRole("button", { name: "Center" }));
+    const alignGroup = screen.getByRole("group", { name: "Align items" });
+    fireEvent.click(within(alignGroup).getByRole("button", { name: "Center" }));
 
     const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
     expect(section?.flowLayout?.flex).toEqual({

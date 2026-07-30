@@ -1,7 +1,9 @@
 "use client";
 
+import { HelpCircle } from "lucide-react";
 import { useRef, type KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 interface InspectorSegmentedRowProps {
   label: string;
@@ -12,6 +14,8 @@ interface InspectorSegmentedRowProps {
   disabled?: boolean;
   /** Per-option tooltip text — mainly for a future icon-only variant, where the label alone wouldn't be visible. */
   optionTooltips?: Record<string, string>;
+  /** Short plain-language guidance shown via a small help icon next to the label — same affordance as InspectorPropertyRow's help, for a segmented control used outside a property row. */
+  help?: string;
 }
 
 export function InspectorSegmentedRow({
@@ -21,6 +25,7 @@ export function InspectorSegmentedRow({
   onSelect,
   disabled = false,
   optionTooltips,
+  help,
 }: InspectorSegmentedRowProps) {
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -33,15 +38,47 @@ export function InspectorSegmentedRow({
   }
 
   return (
-    <div className="flex items-center justify-between gap-2 text-xs">
-      <span className="text-zinc-500 dark:text-zinc-400">{label}</span>
-      <div role={onSelect ? "group" : undefined} aria-label={onSelect ? label : undefined} className="flex overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800">
+    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs">
+      {help ? (
+        // Only introduces the extra wrapper when help is actually present —
+        // several existing tests locate a segmented row's button group via
+        // `getByText(label).closest("div")`, which depends on the label
+        // being a direct child of the outer row when there's no help icon
+        // to lay out alongside it.
+        <div className="flex min-w-0 items-center gap-1 text-zinc-500 dark:text-zinc-400">
+          <span className="truncate">{label}</span>
+          <Tooltip label={help}>
+            <button type="button" aria-label={help} className="text-zinc-400 dark:text-zinc-500">
+              <HelpCircle aria-hidden="true" className="size-3" />
+            </button>
+          </Tooltip>
+        </div>
+      ) : (
+        <span className="text-zinc-500 dark:text-zinc-400">{label}</span>
+      )}
+      {/*
+       * Individually-chipped options (each its own rounded-md, bordered only
+       * when active) rather than one continuous bordered pill — an option
+       * set with several longer words (e.g. Justify content's "Space
+       * between"/"Space around"/"Space evenly") can exceed the Inspector's
+       * width, and only individually-rounded chips can wrap onto a second
+       * line cleanly; a single pill with internal dividers has no correct
+       * rounded-corner treatment once it wraps. flex-wrap here (and on the
+       * row above) is what actually prevents the overflow/clipping this
+       * would otherwise cause.
+       */}
+      <div
+        role={onSelect ? "group" : undefined}
+        aria-label={onSelect ? label : undefined}
+        className="flex flex-wrap justify-end gap-1"
+      >
         {options.map((option, index) => {
+          const isActive = option === activeOption;
           const className = cn(
-            "px-2 py-1",
-            option === activeOption
-              ? "bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-              : "text-zinc-500 dark:text-zinc-400",
+            "flex h-6 items-center justify-center rounded-md border px-2",
+            isActive
+              ? "border-zinc-200 bg-zinc-100 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+              : "border-transparent text-zinc-500 dark:text-zinc-400",
           );
 
           if (!onSelect) {
@@ -63,9 +100,9 @@ export function InspectorSegmentedRow({
               title={optionTooltips?.[option]}
               className={cn(
                 className,
-                "hover:bg-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-zinc-800/50",
+                "transition-colors duration-150 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-zinc-800/50",
               )}
-              aria-pressed={option === activeOption}
+              aria-pressed={isActive}
               onClick={() => onSelect(option)}
               onKeyDown={(event) => handleKeyDown(event, index)}
             >

@@ -66,7 +66,7 @@ export function InspectorNumberFieldRow({ label, value, onCommit }: InspectorNum
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={handleKeyDown}
-        className="min-w-16 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-right text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+        className="h-6 min-w-16 rounded-md border border-zinc-200 bg-zinc-50 px-2 text-right text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
       />
     </div>
   );

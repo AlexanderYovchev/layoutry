@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { InspectorLinkToggle } from "@/features/inspector/components/InspectorLinkToggle";
 import { InspectorNumberFieldRow } from "@/features/inspector/components/InspectorNumberFieldRow";
+import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { InspectorSegmentedRow } from "@/features/inspector/components/InspectorSegmentedRow";
 import { useConvertContainerToFreeLayout } from "@/features/editor/hooks/useConvertContainerToFreeLayout";
@@ -101,6 +102,7 @@ export function InspectorLayoutSection({ node }: InspectorLayoutSectionProps) {
     <InspectorSection label="Layout" defaultOpen>
       <InspectorSegmentedRow
         label="Layout mode"
+        help="Flow keeps elements in reading order. Free lets you position elements freely, like on a canvas."
         options={LAYOUT_MODE_OPTIONS}
         activeOption={isFree ? "Free" : "Flow"}
         onSelect={handleLayoutModeSelect}
@@ -175,40 +177,44 @@ function FlexContainerControls({ node, onChange }: FlexContainerControlsProps) {
       />
       <InspectorSegmentedRow
         label="Justify content"
+        help="Controls how children are spaced along the container's main direction."
         options={JUSTIFY_OPTIONS}
         activeOption={JUSTIFY_VALUE_TO_LABEL[flex.justifyContent]}
         onSelect={(option) => onChange({ ...flex, justifyContent: JUSTIFY_LABEL_TO_VALUE[option] })}
       />
       <InspectorSegmentedRow
         label="Align items"
+        help="Controls how children line up across the container, perpendicular to its main direction."
         options={ALIGN_OPTIONS}
         activeOption={ALIGN_VALUE_TO_LABEL[flex.alignItems]}
         onSelect={(option) => onChange({ ...flex, alignItems: ALIGN_LABEL_TO_VALUE[option] })}
       />
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Gap</span>
-        <InspectorLinkToggle linked={gapLinked} onToggle={() => setGapLinked((prev) => !prev)} />
-      </div>
-      {gapLinked ? (
-        <InspectorNumberFieldRow
-          label="Gap (all)"
-          value={flex.rowGap}
-          onCommit={(value) => onChange({ ...flex, rowGap: Math.max(0, value), columnGap: Math.max(0, value) })}
-        />
-      ) : (
-        <>
+      <InspectorPropertyRow
+        label="Gap"
+        variant="stack"
+        secondary={<InspectorLinkToggle linked={gapLinked} onToggle={() => setGapLinked((prev) => !prev)} />}
+      >
+        {gapLinked ? (
           <InspectorNumberFieldRow
-            label="Row gap"
+            label="Gap (all)"
             value={flex.rowGap}
-            onCommit={(value) => onChange({ ...flex, rowGap: Math.max(0, value) })}
+            onCommit={(value) => onChange({ ...flex, rowGap: Math.max(0, value), columnGap: Math.max(0, value) })}
           />
-          <InspectorNumberFieldRow
-            label="Column gap"
-            value={flex.columnGap}
-            onCommit={(value) => onChange({ ...flex, columnGap: Math.max(0, value) })}
-          />
-        </>
-      )}
+        ) : (
+          <div className="flex w-full flex-col gap-1.5">
+            <InspectorNumberFieldRow
+              label="Row gap"
+              value={flex.rowGap}
+              onCommit={(value) => onChange({ ...flex, rowGap: Math.max(0, value) })}
+            />
+            <InspectorNumberFieldRow
+              label="Column gap"
+              value={flex.columnGap}
+              onCommit={(value) => onChange({ ...flex, columnGap: Math.max(0, value) })}
+            />
+          </div>
+        )}
+      </InspectorPropertyRow>
     </>
   );
 }

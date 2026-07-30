@@ -26,7 +26,7 @@ interface InspectorUnitSelectProps {
 export function InspectorUnitSelect({ unit, allowedUnits, onChange, disabled = false, label }: InspectorUnitSelectProps) {
   if (allowedUnits.length <= 1) {
     return (
-      <span className="w-9 shrink-0 text-right text-[11px] text-zinc-400 dark:text-zinc-500">
+      <span className="flex h-6 w-9 shrink-0 items-center justify-end text-[11px] text-zinc-400 dark:text-zinc-500">
         {allowedUnits[0] ?? unit}
       </span>
     );
@@ -39,7 +39,7 @@ export function InspectorUnitSelect({ unit, allowedUnits, onChange, disabled = f
       disabled={disabled}
       onChange={(event) => onChange(event.target.value as CssUnit)}
       className={cn(
-        "w-14 shrink-0 rounded-md border border-zinc-200 bg-zinc-50 px-1 py-1 text-right text-[11px] text-zinc-600 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300",
+        "h-6 w-14 shrink-0 rounded-md border border-zinc-200 bg-zinc-50 px-1 text-right text-[11px] text-zinc-600 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300",
       )}
     >
       {allowedUnits.map((option) => (

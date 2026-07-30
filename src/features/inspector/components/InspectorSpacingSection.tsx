@@ -17,6 +17,7 @@ interface InspectorSpacingSectionProps {
 
 interface EdgeGroupProps {
   label: string;
+  help: string;
   values: EdgeValues;
   onCommit: (edges: EdgeValues) => void;
   /** The owning node's id, used only to detect a *selection* change (see the reset below) — never read for any other purpose. */
@@ -55,7 +56,7 @@ function allSidesEqual(values: EdgeValues): boolean {
  * Limitations for why a real flag is a domain-model change out of scope
  * here.
  */
-function EdgeGroup({ label, values, onCommit, nodeId }: EdgeGroupProps) {
+function EdgeGroup({ label, help, values, onCommit, nodeId }: EdgeGroupProps) {
   const [linked, setLinked] = useState(() => allSidesEqual(values));
 
   // Re-derives the linked/unlinked toggle only when the *selection*
@@ -89,6 +90,7 @@ function EdgeGroup({ label, values, onCommit, nodeId }: EdgeGroupProps) {
   return (
     <InspectorPropertyRow
       label={label}
+      help={help}
       variant="stack"
       state={isSet ? "set" : "unset"}
       secondary={<InspectorLinkToggle linked={linked} onToggle={() => setLinked((prev) => !prev)} />}
@@ -136,12 +138,12 @@ function BoxModelDiagram() {
   return (
     <div
       aria-hidden="true"
-      className="rounded border border-dashed border-zinc-300 p-3 text-center text-[9px] font-medium tracking-wide text-zinc-400 uppercase dark:border-zinc-700 dark:text-zinc-500"
+      className="rounded-md border border-dashed border-zinc-300 p-3 text-center text-[9px] font-medium tracking-wide text-zinc-400 uppercase dark:border-zinc-700 dark:text-zinc-500"
     >
       Margin
-      <div className="mt-1 rounded border border-zinc-300 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-900">
+      <div className="mt-1 rounded-md border border-zinc-300 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-900">
         Padding
-        <div className="mt-1 rounded bg-white p-2 normal-case text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400">
+        <div className="mt-1 rounded-md bg-white p-2 normal-case text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400">
           Content
         </div>
       </div>
@@ -165,8 +167,20 @@ export function InspectorSpacingSection({ node }: InspectorSpacingSectionProps) 
   return (
     <InspectorSection label="Spacing" defaultOpen>
       <BoxModelDiagram />
-      <EdgeGroup label="Margin" values={spacing.margin} nodeId={node.id} onCommit={(edges) => setElementMargin(node.id, edges)} />
-      <EdgeGroup label="Padding" values={spacing.padding} nodeId={node.id} onCommit={(edges) => setElementPadding(node.id, edges)} />
+      <EdgeGroup
+        label="Margin"
+        help="The space outside this element, between it and its neighbors."
+        values={spacing.margin}
+        nodeId={node.id}
+        onCommit={(edges) => setElementMargin(node.id, edges)}
+      />
+      <EdgeGroup
+        label="Padding"
+        help="The space inside this element, between its edge and its content."
+        values={spacing.padding}
+        nodeId={node.id}
+        onCommit={(edges) => setElementPadding(node.id, edges)}
+      />
     </InspectorSection>
   );
 }

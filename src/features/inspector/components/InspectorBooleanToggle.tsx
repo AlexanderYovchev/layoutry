@@ -25,9 +25,15 @@ export function InspectorBooleanToggle({ checked, onChange, disabled = false, la
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
+      // Positive outline-offset (ring drawn outside the pill), unlike every
+      // larger rectangular Inspector control's -outline-offset-2 (ring
+      // inset). Deliberate, not a missed pass: an inset ring on a 16px-tall
+      // pill leaves almost nothing visible, whereas an outside ring is the
+      // standard, clearly-visible treatment for small switch/checkbox-style
+      // controls — see the Checkpoint 4.1.5 report's interactive-states audit.
       className={cn(
         "relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:pointer-events-none disabled:opacity-40",
-        checked ? "bg-blue-500" : "bg-zinc-300 dark:bg-zinc-700",
+        checked ? "bg-blue-500 hover:bg-blue-600" : "bg-zinc-300 hover:bg-zinc-400 dark:bg-zinc-700 dark:hover:bg-zinc-600",
       )}
     >
       <span

@@ -4,7 +4,11 @@ import { HelpCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/Tooltip";
-import { PROPERTY_STATE_DESCRIPTIONS, type PropertyState } from "@/features/inspector/types/propertyState";
+import {
+  isInactivePropertyState,
+  PROPERTY_STATE_DESCRIPTIONS,
+  type PropertyState,
+} from "@/features/inspector/types/propertyState";
 
 interface InspectorPropertyRowProps {
   label: string;
@@ -50,10 +54,20 @@ export function InspectorPropertyRow({
   children,
 }: InspectorPropertyRowProps) {
   const effectiveState = error ? "invalid" : state;
+  // "not-applicable"/"overridden" dim and fully inert the row even when the
+  // caller didn't separately pass disabled — the property-state dot alone
+  // was previously the only signal, so the control underneath stayed
+  // clickable despite visually implying it shouldn't be (a real gap, not
+  // just a cosmetic one: a property that "does not apply" must not be
+  // editable either).
+  const effectivelyDisabled = disabled || isInactivePropertyState(effectiveState);
 
   const labelRow = (
     <div className="flex min-w-0 items-center gap-1 text-zinc-500 dark:text-zinc-400">
-      <label htmlFor={labelHtmlFor} className="truncate">
+      <label
+        htmlFor={labelHtmlFor}
+        className={cn("truncate", effectiveState === "set" && "font-medium text-zinc-700 dark:text-zinc-300")}
+      >
         {label}
       </label>
       {effectiveState && effectiveState !== "unset" && (
@@ -77,7 +91,7 @@ export function InspectorPropertyRow({
   );
 
   return (
-    <div className={cn("flex flex-col gap-1", disabled && "opacity-50")}>
+    <div className={cn("flex flex-col gap-1", effectivelyDisabled && "pointer-events-none opacity-50")}>
       {variant === "row" ? (
         <div className="flex items-center justify-between gap-2 text-xs">
           {labelRow}

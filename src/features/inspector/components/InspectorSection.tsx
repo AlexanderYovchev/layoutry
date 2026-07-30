@@ -65,21 +65,26 @@ export function InspectorSection({
           aria-expanded={isOpen}
           aria-controls={panelId}
           className={cn(
-            "flex flex-1 items-center gap-1.5 px-3 py-2 text-left text-xs font-semibold tracking-wide text-zinc-500 uppercase transition-colors duration-100 hover:bg-zinc-100 hover:text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 active:bg-zinc-200 disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-300 dark:active:bg-zinc-800",
+            "flex flex-1 items-center gap-1.5 px-3 py-2 text-left text-xs font-semibold tracking-wide text-zinc-500 uppercase transition-colors duration-150 hover:bg-zinc-100 hover:text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 active:bg-zinc-200 disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-300 dark:active:bg-zinc-800",
           )}
         >
           <ChevronRight
             aria-hidden="true"
             className={cn(
-              "size-3.5 shrink-0 transition-transform duration-200 ease-out",
+              "size-3.5 shrink-0 transition-transform duration-150 ease-out",
               isOpen && "rotate-90",
             )}
           />
-          {icon && <span aria-hidden="true" className="shrink-0">{icon}</span>}
+          {/* Fixed at size-4 regardless of what the caller passes, so every future section (Typography, Border, ...) gets the same identity-icon weight as InspectorElementSummary's icon without each one remembering to size it. */}
+          {icon && (
+            <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center [&>svg]:size-4">
+              {icon}
+            </span>
+          )}
           <span className="truncate">{label}</span>
         </button>
         {actions && (
-          <div onClick={stopActionsToggle} className="flex shrink-0 items-center gap-0.5 pr-2">
+          <div onClick={stopActionsToggle} className="flex shrink-0 items-center gap-1 pr-2">
             {actions}
           </div>
         )}
@@ -87,7 +92,7 @@ export function InspectorSection({
       {!disabled && (
         <div
           className={cn(
-            "grid transition-[grid-template-rows] duration-200 ease-out",
+            "grid transition-[grid-template-rows] duration-150 ease-out",
             isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
           )}
         >

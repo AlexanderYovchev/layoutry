@@ -30,14 +30,15 @@ export function InspectorColorFieldShell({
   const hasValue = value !== null;
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1">
       <button
         type="button"
         onClick={onOpenPicker}
         disabled={disabled || !onOpenPicker}
         aria-label={`${label} swatch${hasValue ? `: ${value}` : ": unset"}`}
         className={cn(
-          "relative size-5 shrink-0 overflow-hidden rounded-md border border-zinc-200 disabled:pointer-events-none dark:border-zinc-800",
+          "relative size-6 shrink-0 overflow-hidden rounded-md border border-zinc-200 transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:pointer-events-none dark:border-zinc-800",
+          onOpenPicker && "hover:border-zinc-300 dark:hover:border-zinc-700",
           !hasValue && "border-dashed",
         )}
       >
@@ -59,7 +60,7 @@ export function InspectorColorFieldShell({
         value={value ?? ""}
         placeholder="Unset"
         disabled={disabled}
-        className="min-w-20 flex-1 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+        className="h-6 min-w-20 flex-1 rounded-md border border-zinc-200 bg-zinc-50 px-2 text-xs text-zinc-700 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
       />
       {onReset && <InspectorResetButton onReset={onReset} disabled={!hasValue} label={`Reset ${label.toLowerCase()}`} />}
     </div>

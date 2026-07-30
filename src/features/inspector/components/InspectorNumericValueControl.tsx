@@ -129,7 +129,7 @@ export function InspectorNumericValueControl({
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={handleKeyDown}
-        className="min-w-14 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-right text-xs text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+        className="h-6 min-w-14 rounded-md border border-zinc-200 bg-zinc-50 px-2 text-right text-xs text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
       />
       {unit && allowedUnits && allowedUnits.length > 0 && (
         <InspectorUnitSelect
