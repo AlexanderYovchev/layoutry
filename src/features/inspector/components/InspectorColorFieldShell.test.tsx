@@ -14,16 +14,91 @@ describe("InspectorColorFieldShell", () => {
     expect(screen.getByLabelText("Background color")).toHaveValue("#3366ff");
   });
 
-  it("calls onOpenPicker when the swatch is clicked", () => {
-    const onOpenPicker = vi.fn();
-    render(<InspectorColorFieldShell value="#3366ff" onOpenPicker={onOpenPicker} label="Background color" />);
-    fireEvent.click(screen.getByRole("button", { name: /Background color swatch/ }));
-    expect(onOpenPicker).toHaveBeenCalledTimes(1);
+  it("renders a static, disabled preview swatch when onCommit is omitted (no picker to open)", () => {
+    render(<InspectorColorFieldShell value="#3366ff" label="Background color" />);
+    expect(screen.getByRole("button", { name: /Background color preview/ })).toBeDisabled();
+    expect(screen.queryByLabelText("Choose background color")).not.toBeInTheDocument();
   });
 
-  it("disables the swatch button when there is no picker to open", () => {
-    render(<InspectorColorFieldShell value="#3366ff" label="Background color" />);
-    expect(screen.getByRole("button", { name: /Background color swatch/ })).toBeDisabled();
+  it("renders a real native color-picker input as the swatch when onCommit is provided", () => {
+    render(<InspectorColorFieldShell value="#3366ff" onCommit={vi.fn()} label="Background color" />);
+    const picker = screen.getByLabelText("Choose background color");
+    expect(picker).toHaveAttribute("type", "color");
+    expect(picker).toHaveValue("#3366ff");
+  });
+
+  it("disables the color-picker input when disabled", () => {
+    render(<InspectorColorFieldShell value="#3366ff" onCommit={vi.fn()} disabled label="Background color" />);
+    expect(screen.getByLabelText("Choose background color")).toBeDisabled();
+  });
+
+  it("expands a short 3-digit hex to its 6-digit form for the native picker", () => {
+    render(<InspectorColorFieldShell value="#0af" onCommit={vi.fn()} label="Background color" />);
+    expect(screen.getByLabelText("Choose background color")).toHaveValue("#00aaff");
+  });
+
+  it("falls back to a safe default in the native picker for a non-representable value, without altering the text field", () => {
+    render(<InspectorColorFieldShell value="rgba(0, 0, 0, 0.5)" onCommit={vi.fn()} label="Text color" />);
+    expect(screen.getByLabelText("Choose text color")).toHaveValue("#000000");
+    expect(screen.getByLabelText("Text color")).toHaveValue("rgba(0, 0, 0, 0.5)");
+  });
+
+  it("commits the picked hex through onCommit when the native picker fires its change event", () => {
+    const onCommit = vi.fn();
+    render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Background color" />);
+
+    const picker = screen.getByLabelText("Choose background color");
+    fireEvent.change(picker, { target: { value: "#ff8800" } });
+
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith("#ff8800");
+  });
+
+  it("does not commit on the native picker's input event (only on change) — avoids one history entry per drag frame", () => {
+    const onCommit = vi.fn();
+    render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Background color" />);
+
+    fireEvent.input(screen.getByLabelText("Choose background color"), { target: { value: "#ff8800" } });
+
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it("does not stomp an in-progress native pick when an unrelated re-render happens before the change event fires", () => {
+    // Regression test: an earlier version made the picker a React-controlled
+    // input (value + a no-op onChange). Since this app re-renders on every
+    // store change, any unrelated re-render while the native color dialog
+    // was still open would force the DOM value back to the last-rendered
+    // prop, discarding whatever the user was still mid-picking — so picking
+    // a color visually silently appeared to do nothing. The fix made the
+    // input uncontrolled (defaultValue) with an imperative ref-based sync
+    // that only runs when the *committed* value actually changes.
+    const onCommit = vi.fn();
+    const { rerender } = render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Background color" />);
+
+    const picker = screen.getByLabelText("Choose background color") as HTMLInputElement;
+
+    // Simulate the browser having live-updated the input while the native
+    // dialog is still open, before it has fired `change`.
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!;
+    setter.call(picker, "#112233");
+
+    // An unrelated re-render with the *same* props (e.g. some other part of
+    // the app updated the store) must not reset the in-progress DOM value.
+    rerender(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Background color" />);
+    expect(picker.value).toBe("#112233");
+
+    // The user then finalizes the pick.
+    fireEvent.change(picker, { target: { value: "#112233" } });
+    expect(onCommit).toHaveBeenCalledWith("#112233");
+  });
+
+  it("updates the text field after a color is picked visually (external value change)", () => {
+    const { rerender } = render(<InspectorColorFieldShell value="#3366ff" onCommit={vi.fn()} label="Background color" />);
+    expect(screen.getByLabelText("Background color")).toHaveValue("#3366ff");
+
+    rerender(<InspectorColorFieldShell value="#ff8800" onCommit={vi.fn()} label="Background color" />);
+    expect(screen.getByLabelText("Background color")).toHaveValue("#ff8800");
+    expect(screen.getByLabelText("Choose background color")).toHaveValue("#ff8800");
   });
 
   it("reset is disabled when unset and enabled (and wired) when a value is present", () => {
