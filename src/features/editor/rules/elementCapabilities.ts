@@ -17,6 +17,8 @@ export interface ElementCapabilities {
   supportsBackground: boolean;
   /** Whether a CSS border is meaningful on this tag (Checkpoint 4.4). Unlike Background — which excludes media tags because their own rendered content already fills the box — a border draws around the box's own edge regardless of what's inside it, so it defaults to true for nearly every tag; only the structural page/body wrappers opt out (see CAPABILITY_OVERRIDES), matching their own selectable/resizable overrides. */
   supportsBorder: boolean;
+  /** Whether a CSS border radius is meaningful on this tag (Checkpoint 4.5) — a separate flag from supportsBorder (a radius can round a background/media box's corners with no border present at all), but the same "meaningful on nearly every visual box" reasoning applies, so it shares supportsBorder's exact default-true / page-body-opt-out rule. */
+  supportsBorderRadius: boolean;
 }
 
 const DEFAULT_CAPABILITIES: ElementCapabilities = {
@@ -28,6 +30,7 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
   supportsTypography: false,
   supportsBackground: false,
   supportsBorder: true,
+  supportsBorderRadius: true,
 };
 
 /**
@@ -49,8 +52,8 @@ const TEXT_BEARING_TAGS: ReadonlySet<string> = new Set(["h1", "h2", "h3", "h4", 
  * traits that vary per tag.
  */
 const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
-  page: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false },
-  body: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false },
+  page: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false },
+  body: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false },
 
   img: { supportsIntrinsicAspectRatio: true },
   video: { supportsIntrinsicAspectRatio: true },

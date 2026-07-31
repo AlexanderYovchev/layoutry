@@ -182,6 +182,21 @@ describe("cloneNodeWithFreshIds", () => {
     expect(clone.border).toEqual(source.border);
   });
 
+  it("preserves border radius, independently per corner (Checkpoint 4.5)", () => {
+    const source: EditorElementNode = {
+      id: "container-1",
+      tag: "div",
+      borderRadius: {
+        topLeft: { value: 8, unit: "px" },
+        bottomRight: { value: 50, unit: "%" },
+      },
+    };
+
+    const clone = cloneNodeWithFreshIds(source);
+
+    expect(clone.borderRadius).toEqual(source.borderRadius);
+  });
+
   it("does not mutate the source tree", () => {
     const source: EditorElementNode = {
       id: "container-1",

@@ -361,3 +361,38 @@ describe("InspectorNodeSummary — Border section (Checkpoint 4.4)", () => {
     expect(screen.queryByText("Border")).not.toBeInTheDocument();
   });
 });
+
+describe("InspectorNodeSummary — Border Radius section (Checkpoint 4.5)", () => {
+  it("shows the Border Radius section for a container tag", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "section-1", tag: "section" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Border Radius")).toBeInTheDocument();
+  });
+
+  it("shows the Border Radius section for a media tag, unlike Background", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "image-1", tag: "img" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Border Radius")).toBeInTheDocument();
+  });
+
+  it("omits the Border Radius section for the non-selectable document root", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "page-root", tag: "page" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.queryByText("Border Radius")).not.toBeInTheDocument();
+  });
+});

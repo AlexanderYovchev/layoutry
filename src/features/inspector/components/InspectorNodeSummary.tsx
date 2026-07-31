@@ -1,4 +1,5 @@
 import { InspectorBackgroundSection } from "@/features/inspector/components/InspectorBackgroundSection";
+import { InspectorBorderRadiusSection } from "@/features/inspector/components/InspectorBorderRadiusSection";
 import { InspectorBorderSection } from "@/features/inspector/components/InspectorBorderSection";
 import { InspectorElementSummary } from "@/features/inspector/components/InspectorElementSummary";
 import { InspectorFieldRow } from "@/features/inspector/components/InspectorFieldRow";
@@ -119,6 +120,7 @@ export function InspectorNodeSummary({
       {getElementCapabilities(node.tag).supportsTypography && <InspectorTypographySection node={node} />}
       {getElementCapabilities(node.tag).supportsBackground && <InspectorBackgroundSection node={node} />}
       {getElementCapabilities(node.tag).supportsBorder && <InspectorBorderSection node={node} />}
+      {getElementCapabilities(node.tag).supportsBorderRadius && <InspectorBorderRadiusSection node={node} />}
       <InspectorSpacingSection node={node} />
       {canContainChildren(node.tag) && <InspectorLayoutSection node={node} />}
     </div>

@@ -5,6 +5,7 @@ import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
+import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderRadiusStyle";
 import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolveMediaFitStyle } from "@/features/canvas/utils/resolveMediaFitStyle";
@@ -37,13 +38,19 @@ export function ImageElement({ node, parentId, parentLayoutMode, parentFlowDispl
   // identical rationale on ContainerElement) so it never bleeds through
   // as a phantom border on whichever sides the user didn't configure.
   const usesLegacyBorderChrome = !node.border;
+  // Same rationale as ContainerElement's usesLegacyRadiusChrome — the
+  // default "rounded-md" placeholder rounding must get out of the way
+  // entirely once real radius data exists, not just on whichever corners
+  // happen to be configured.
+  const usesLegacyRadiusChrome = !node.borderRadius;
 
   return (
     <div
       ref={mergeRefs(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
       className={cn(
-        "flex h-40 w-full items-center justify-center overflow-hidden rounded-md bg-zinc-50 dark:bg-zinc-900",
+        "flex h-40 w-full items-center justify-center overflow-hidden bg-zinc-50 dark:bg-zinc-900",
+        usesLegacyRadiusChrome && "rounded-md",
         usesLegacyBorderChrome && "border border-dashed border-zinc-200 dark:border-zinc-800",
         isDragging && "opacity-40",
       )}
@@ -51,6 +58,7 @@ export function ImageElement({ node, parentId, parentLayoutMode, parentFlowDispl
         ...elementPositionStyle(node, parentLayoutMode),
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
         ...resolveBorderStyle(node),
+        ...resolveBorderRadiusStyle(node),
       }}
       {...listeners}
     >

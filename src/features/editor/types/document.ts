@@ -9,6 +9,7 @@ import type { MediaFitSettings } from "@/features/editor/types/mediaFit";
 import type { TypographySettings } from "@/features/editor/types/typography";
 import type { BackgroundSettings } from "@/features/editor/types/background";
 import type { BorderSettings } from "@/features/editor/types/border";
+import type { BorderRadiusSettings } from "@/features/editor/types/borderRadius";
 
 export interface ElementDimensions {
   /**
@@ -111,4 +112,6 @@ export interface EditorElementNode {
   background?: BackgroundSettings;
   /** This node's own border styling (Checkpoint 4.4) — only meaningful for a border-capable tag (see getElementCapabilities().supportsBorder). Like typography/background, unset fields here have no synthesized default — see getBorderSettings and resolveBorderStyle. */
   border?: BorderSettings;
+  /** This node's own border radius (Checkpoint 4.5) — only meaningful for a radius-capable tag (see getElementCapabilities().supportsBorderRadius). Independent of `border` — a radius can round a background/media box's corners with no border present at all. Unset corners have no synthesized default — see getBorderRadiusSettings and resolveBorderRadiusStyle. */
+  borderRadius?: BorderRadiusSettings;
 }

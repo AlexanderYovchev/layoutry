@@ -26,6 +26,7 @@ import { setMediaFitSettings as setMediaFitSettingsCommand } from "@/features/ed
 import { setTypographySettings as setTypographySettingsCommand } from "@/features/editor/commands/typographyCommands";
 import { setBackgroundSettings as setBackgroundSettingsCommand } from "@/features/editor/commands/backgroundCommands";
 import { setBorderSettings as setBorderSettingsCommand } from "@/features/editor/commands/borderCommands";
+import { setBorderRadiusSettings as setBorderRadiusSettingsCommand } from "@/features/editor/commands/borderRadiusCommands";
 import { clampGridChildPlacement } from "@/features/editor/utils/clampGridChildPlacement";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
 import { cloneNodeWithFreshIds } from "@/features/editor/utils/cloneNodeWithFreshIds";
@@ -51,6 +52,7 @@ import type { MediaFitSettings } from "@/features/editor/types/mediaFit";
 import type { TypographySettings } from "@/features/editor/types/typography";
 import type { BackgroundSettings } from "@/features/editor/types/background";
 import type { BorderSettings } from "@/features/editor/types/border";
+import type { BorderRadiusSettings } from "@/features/editor/types/borderRadius";
 
 interface EditorState {
   document: EditorElementNode;
@@ -114,6 +116,7 @@ interface EditorState {
   /** Per-frame background write during a live drag session (Checkpoint 4.3.1 — gradient stop dragging) — no history push; wrap in begin/commitTransaction, same convention setFreeChildGeometryLive already established. */
   setElementBackgroundLive: (nodeId: string, background: BackgroundSettings | undefined) => void;
   setElementBorder: (nodeId: string, border: BorderSettings | undefined) => void;
+  setElementBorderRadius: (nodeId: string, borderRadius: BorderRadiusSettings | undefined) => void;
 
   /**
    * Generic continuous-interaction transaction (Checkpoint 4.3.1) — the
@@ -363,6 +366,12 @@ export const useEditorStore = create<EditorState>()((set) => ({
     set((state) => ({
       ...pushHistory(state),
       document: setBorderSettingsCommand(state.document, nodeId, border),
+    })),
+
+  setElementBorderRadius: (nodeId, borderRadius) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setBorderRadiusSettingsCommand(state.document, nodeId, borderRadius),
     })),
 
   beginTransaction: () =>

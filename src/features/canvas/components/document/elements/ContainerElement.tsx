@@ -5,6 +5,7 @@ import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegi
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
 import { resolveBackgroundStyle } from "@/features/canvas/utils/resolveBackgroundStyle";
+import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderRadiusStyle";
 import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolveFlowLayoutStyle } from "@/features/canvas/utils/resolveFlowLayoutStyle";
@@ -49,13 +50,21 @@ export function ContainerElement({
   // border on only one edge doesn't leave the other three showing a
   // phantom chrome border that looks like real, if very faint, data.
   const usesLegacyBorderChrome = !node.border;
+  // The "rounded-lg" class below is the same kind of pre-4.5 editor
+  // chrome as the border classes above — a default cosmetic corner
+  // rounding with no relation to real radius data. Gated the same way,
+  // for the same reason: left ungated, an "Individual Corners" radius on
+  // only one corner would leave the other three still showing this
+  // default rounding, indistinguishable from real (if coincidentally
+  // identical) data.
+  const usesLegacyRadiusChrome = !node.borderRadius;
 
   return (
     <div
       ref={mergeRefs(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
       className={cn(
-        "rounded-lg",
+        usesLegacyRadiusChrome && "rounded-lg",
         usesLegacyBorderChrome && "border border-zinc-100 dark:border-zinc-900",
         usesLegacyFlexClasses && "flex flex-col items-start gap-4",
         usesLegacyPadding && "p-8",
@@ -68,6 +77,7 @@ export function ContainerElement({
         ...(hostsOwnFreeChildren ? { position: "relative" } : {}),
         ...resolveBackgroundStyle(node),
         ...resolveBorderStyle(node),
+        ...resolveBorderRadiusStyle(node),
       }}
       {...listeners}
     >
