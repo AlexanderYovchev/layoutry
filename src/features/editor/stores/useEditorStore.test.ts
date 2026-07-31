@@ -909,6 +909,42 @@ describe("useEditorStore — Flow layout, spacing, Flex/Grid (Checkpoint 3.5)", 
     const redone = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
     expect(redone?.borderRadius).toEqual(borderRadius);
   });
+
+  it("setElementBoxShadow pushes one history entry and is undoable/redoable", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    const boxShadow = [{ id: "shadow-1", enabled: true, inset: false, color: "#000000" }];
+    useEditorStore.getState().setElementBoxShadow("section-1", boxShadow);
+
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(node?.boxShadow).toEqual(boxShadow);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+
+    useEditorStore.getState().undo();
+    const reverted = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(reverted?.boxShadow).toBeUndefined();
+
+    useEditorStore.getState().redo();
+    const redone = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(redone?.boxShadow).toEqual(boxShadow);
+  });
+
+  it("setElementFilters pushes one history entry and is undoable/redoable", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    const filters = { opacity: 50, blur: { value: 4, unit: "px" as const } };
+    useEditorStore.getState().setElementFilters("section-1", filters);
+
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(node?.filters).toEqual(filters);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+
+    useEditorStore.getState().undo();
+    const reverted = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(reverted?.filters).toBeUndefined();
+
+    useEditorStore.getState().redo();
+    const redone = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(redone?.filters).toEqual(filters);
+  });
 });
 
 describe("useEditorStore — generic transactions (Checkpoint 4.3.1)", () => {
@@ -949,6 +985,33 @@ describe("useEditorStore — generic transactions (Checkpoint 4.3.1)", () => {
 
     expect(useEditorStore.getState().past).toHaveLength(0);
     expect(useEditorStore.getState().transactionSnapshot).toBeNull();
+  });
+
+  it("setElementBoxShadowLive does not push history", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setElementBoxShadowLive("section-1", [{ id: "shadow-1", enabled: true, inset: false }]);
+
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(node?.boxShadow).toEqual([{ id: "shadow-1", enabled: true, inset: false }]);
+  });
+
+  it("collapses an entire shadow-layer drag reorder (multiple live writes between begin/commitTransaction) into one history entry", () => {
+    const a = { id: "shadow-a", enabled: true, inset: false };
+    const b = { id: "shadow-b", enabled: true, inset: false };
+
+    useEditorStore.getState().beginTransaction();
+    useEditorStore.getState().setElementBoxShadowLive("section-1", [a, b]);
+    useEditorStore.getState().setElementBoxShadowLive("section-1", [b, a]);
+    useEditorStore.getState().commitTransaction();
+
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(node?.boxShadow).toEqual([b, a]);
+    expect(useEditorStore.getState().past).toHaveLength(1);
+
+    useEditorStore.getState().undo();
+    const reverted = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(reverted?.boxShadow).toBeUndefined();
   });
 
   it("shares the same transactionSnapshot slot as resize transactions (mutually exclusive, not a second parallel mechanism)", () => {

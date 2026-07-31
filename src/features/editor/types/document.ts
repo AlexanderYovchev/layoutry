@@ -10,6 +10,8 @@ import type { TypographySettings } from "@/features/editor/types/typography";
 import type { BackgroundSettings } from "@/features/editor/types/background";
 import type { BorderSettings } from "@/features/editor/types/border";
 import type { BorderRadiusSettings } from "@/features/editor/types/borderRadius";
+import type { BoxShadowSettings } from "@/features/editor/types/boxShadow";
+import type { FilterSettings } from "@/features/editor/types/filters";
 
 export interface ElementDimensions {
   /**
@@ -114,4 +116,8 @@ export interface EditorElementNode {
   border?: BorderSettings;
   /** This node's own border radius (Checkpoint 4.5) — only meaningful for a radius-capable tag (see getElementCapabilities().supportsBorderRadius). Independent of `border` — a radius can round a background/media box's corners with no border present at all. Unset corners have no synthesized default — see getBorderRadiusSettings and resolveBorderRadiusStyle. */
   borderRadius?: BorderRadiusSettings;
+  /** This node's own stack of box-shadow layers (Checkpoint 4.6) — only meaningful for a shadow-capable tag (see getElementCapabilities().supportsBoxShadow). A list from day one (not a single-layer object) since real CSS box-shadow natively stacks multiple layers — see getBoxShadowLayers and resolveBoxShadowStyle. An empty/absent list renders no box-shadow CSS at all. */
+  boxShadow?: BoxShadowSettings;
+  /** This node's own visual effects (CSS filters + opacity, Checkpoint 4.7) — only meaningful for a filter-capable tag (see getElementCapabilities().supportsFilters). Like typography/border/boxShadow, unset fields here have no synthesized default — see getFilterSettings and resolveFilterStyle. */
+  filters?: FilterSettings;
 }

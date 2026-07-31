@@ -81,6 +81,22 @@ describe("elementCapabilities", () => {
     expect(getElementCapabilities("body").supportsBorderRadius).toBe(false);
   });
 
+  it("flags nearly every tag as supporting box shadow, including media tags; only page/body opt out", () => {
+    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table"]) {
+      expect(getElementCapabilities(tag).supportsBoxShadow, tag).toBe(true);
+    }
+    expect(getElementCapabilities("page").supportsBoxShadow).toBe(false);
+    expect(getElementCapabilities("body").supportsBoxShadow).toBe(false);
+  });
+
+  it("flags nearly every tag as supporting filters, including media tags; only page/body opt out", () => {
+    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table"]) {
+      expect(getElementCapabilities(tag).supportsFilters, tag).toBe(true);
+    }
+    expect(getElementCapabilities("page").supportsFilters).toBe(false);
+    expect(getElementCapabilities("body").supportsFilters).toBe(false);
+  });
+
   it("gives an entirely unknown tag the same sensible defaults as any other element", () => {
     const caps = getElementCapabilities("some-future-tag");
 

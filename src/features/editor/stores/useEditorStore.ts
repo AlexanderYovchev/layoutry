@@ -27,6 +27,8 @@ import { setTypographySettings as setTypographySettingsCommand } from "@/feature
 import { setBackgroundSettings as setBackgroundSettingsCommand } from "@/features/editor/commands/backgroundCommands";
 import { setBorderSettings as setBorderSettingsCommand } from "@/features/editor/commands/borderCommands";
 import { setBorderRadiusSettings as setBorderRadiusSettingsCommand } from "@/features/editor/commands/borderRadiusCommands";
+import { setBoxShadowSettings as setBoxShadowSettingsCommand } from "@/features/editor/commands/boxShadowCommands";
+import { setFilterSettings as setFilterSettingsCommand } from "@/features/editor/commands/filterCommands";
 import { clampGridChildPlacement } from "@/features/editor/utils/clampGridChildPlacement";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
 import { cloneNodeWithFreshIds } from "@/features/editor/utils/cloneNodeWithFreshIds";
@@ -53,6 +55,8 @@ import type { TypographySettings } from "@/features/editor/types/typography";
 import type { BackgroundSettings } from "@/features/editor/types/background";
 import type { BorderSettings } from "@/features/editor/types/border";
 import type { BorderRadiusSettings } from "@/features/editor/types/borderRadius";
+import type { BoxShadowSettings } from "@/features/editor/types/boxShadow";
+import type { FilterSettings } from "@/features/editor/types/filters";
 
 interface EditorState {
   document: EditorElementNode;
@@ -117,6 +121,12 @@ interface EditorState {
   setElementBackgroundLive: (nodeId: string, background: BackgroundSettings | undefined) => void;
   setElementBorder: (nodeId: string, border: BorderSettings | undefined) => void;
   setElementBorderRadius: (nodeId: string, borderRadius: BorderRadiusSettings | undefined) => void;
+  /** This node's own box-shadow layer stack (Checkpoint 4.6) — see resolveBoxShadowStyle. `undefined` clears it entirely. */
+  setElementBoxShadow: (nodeId: string, boxShadow: BoxShadowSettings | undefined) => void;
+  /** Per-frame box-shadow write during a live drag-reorder session (Checkpoint 4.6) — no history push; wrap in begin/commitTransaction, the same convention setElementBackgroundLive established for gradient stop dragging. */
+  setElementBoxShadowLive: (nodeId: string, boxShadow: BoxShadowSettings | undefined) => void;
+  /** This node's own visual effects (Checkpoint 4.7) — see resolveFilterStyle. `undefined` clears it entirely. No continuous-drag variant: every filter field is a discrete numeric commit, like Typography, not a draggable gesture. */
+  setElementFilters: (nodeId: string, filters: FilterSettings | undefined) => void;
 
   /**
    * Generic continuous-interaction transaction (Checkpoint 4.3.1) — the
@@ -372,6 +382,23 @@ export const useEditorStore = create<EditorState>()((set) => ({
     set((state) => ({
       ...pushHistory(state),
       document: setBorderRadiusSettingsCommand(state.document, nodeId, borderRadius),
+    })),
+
+  setElementBoxShadow: (nodeId, boxShadow) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setBoxShadowSettingsCommand(state.document, nodeId, boxShadow),
+    })),
+
+  setElementBoxShadowLive: (nodeId, boxShadow) =>
+    set((state) => ({
+      document: setBoxShadowSettingsCommand(state.document, nodeId, boxShadow),
+    })),
+
+  setElementFilters: (nodeId, filters) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setFilterSettingsCommand(state.document, nodeId, filters),
     })),
 
   beginTransaction: () =>

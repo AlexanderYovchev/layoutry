@@ -396,3 +396,73 @@ describe("InspectorNodeSummary — Border Radius section (Checkpoint 4.5)", () =
     expect(screen.queryByText("Border Radius")).not.toBeInTheDocument();
   });
 });
+
+describe("InspectorNodeSummary — Box Shadow section (Checkpoint 4.6)", () => {
+  it("shows the Box Shadow section for a container tag", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "section-1", tag: "section" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Box Shadow")).toBeInTheDocument();
+  });
+
+  it("shows the Box Shadow section for a media tag, unlike Background", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "image-1", tag: "img" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Box Shadow")).toBeInTheDocument();
+  });
+
+  it("omits the Box Shadow section for the non-selectable document root", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "page-root", tag: "page" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.queryByText("Box Shadow")).not.toBeInTheDocument();
+  });
+});
+
+describe("InspectorNodeSummary — Visual Effects section (Checkpoint 4.7)", () => {
+  it("shows the Visual Effects section for a container tag", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "section-1", tag: "section" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Visual Effects")).toBeInTheDocument();
+  });
+
+  it("shows the Visual Effects section for a media tag, unlike Background", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "image-1", tag: "img" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Visual Effects")).toBeInTheDocument();
+  });
+
+  it("omits the Visual Effects section for the non-selectable document root", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "page-root", tag: "page" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.queryByText("Visual Effects")).not.toBeInTheDocument();
+  });
+});

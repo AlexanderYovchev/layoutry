@@ -197,6 +197,37 @@ describe("cloneNodeWithFreshIds", () => {
     expect(clone.borderRadius).toEqual(source.borderRadius);
   });
 
+  it("preserves box shadow layers verbatim, including their stop-like ids (Checkpoint 4.6)", () => {
+    const source: EditorElementNode = {
+      id: "container-1",
+      tag: "div",
+      boxShadow: [
+        { id: "shadow-1", enabled: true, inset: false, offsetY: { value: 4, unit: "px" }, color: "#000000" },
+        { id: "shadow-2", enabled: false, inset: true, blur: { value: 8, unit: "px" } },
+      ],
+    };
+
+    const clone = cloneNodeWithFreshIds(source);
+
+    // Shadow layer ids, like gradient stop ids, are local identities scoped
+    // to their own parent node's boxShadow array — never looked up
+    // globally — so preserving them verbatim on clone is safe; see this
+    // file's gradient stop test above for the identical precedent.
+    expect(clone.boxShadow).toEqual(source.boxShadow);
+  });
+
+  it("preserves visual effects (Checkpoint 4.7)", () => {
+    const source: EditorElementNode = {
+      id: "container-1",
+      tag: "div",
+      filters: { opacity: 80, blur: { value: 4, unit: "px" }, hueRotate: 90 },
+    };
+
+    const clone = cloneNodeWithFreshIds(source);
+
+    expect(clone.filters).toEqual(source.filters);
+  });
+
   it("does not mutate the source tree", () => {
     const source: EditorElementNode = {
       id: "container-1",

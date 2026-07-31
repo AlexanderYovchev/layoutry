@@ -7,6 +7,8 @@ import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttr
 import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
 import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderRadiusStyle";
 import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
+import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowStyle";
+import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolveMediaFitStyle } from "@/features/canvas/utils/resolveMediaFitStyle";
 import { cn, mergeRefs } from "@/lib/utils";
@@ -59,6 +61,8 @@ export function ImageElement({ node, parentId, parentLayoutMode, parentFlowDispl
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
         ...resolveBorderStyle(node),
         ...resolveBorderRadiusStyle(node),
+        ...resolveBoxShadowStyle(node),
+        ...resolveFilterStyle(node),
       }}
       {...listeners}
     >

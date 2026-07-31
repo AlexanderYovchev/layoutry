@@ -7,6 +7,8 @@ import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsS
 import { resolveBackgroundStyle } from "@/features/canvas/utils/resolveBackgroundStyle";
 import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderRadiusStyle";
 import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
+import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowStyle";
+import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
 import { cn, mergeRefs } from "@/lib/utils";
@@ -39,6 +41,8 @@ export function HeadingElement({ node, parentId, parentLayoutMode, parentFlowDis
         ...resolveBackgroundStyle(node),
         ...resolveBorderStyle(node),
         ...resolveBorderRadiusStyle(node),
+        ...resolveBoxShadowStyle(node),
+        ...resolveFilterStyle(node),
       }}
       {...listeners}
     >

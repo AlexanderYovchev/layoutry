@@ -19,6 +19,10 @@ export interface ElementCapabilities {
   supportsBorder: boolean;
   /** Whether a CSS border radius is meaningful on this tag (Checkpoint 4.5) — a separate flag from supportsBorder (a radius can round a background/media box's corners with no border present at all), but the same "meaningful on nearly every visual box" reasoning applies, so it shares supportsBorder's exact default-true / page-body-opt-out rule. */
   supportsBorderRadius: boolean;
+  /** Whether a CSS box shadow is meaningful on this tag (Checkpoint 4.6) — a shadow draws around a box's own edge regardless of what fills it, the same reasoning supportsBorder already uses (not supportsBackground's media-tag exclusion), so it shares supportsBorder/supportsBorderRadius's exact default-true / page-body-opt-out rule. */
+  supportsBoxShadow: boolean;
+  /** Whether CSS filters/opacity are meaningful on this tag (Checkpoint 4.7) — a filter/opacity affects a box's *entire* rendered output, including any media content inside it (unlike supportsBackground, which excludes media tags because their content already fills the box and a background would sit invisibly behind it — a filter has no such problem, since it applies on top of everything). Shares supportsBorder/supportsBorderRadius/supportsBoxShadow's exact default-true / page-body-opt-out rule. */
+  supportsFilters: boolean;
 }
 
 const DEFAULT_CAPABILITIES: ElementCapabilities = {
@@ -31,6 +35,8 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
   supportsBackground: false,
   supportsBorder: true,
   supportsBorderRadius: true,
+  supportsBoxShadow: true,
+  supportsFilters: true,
 };
 
 /**
@@ -52,8 +58,8 @@ const TEXT_BEARING_TAGS: ReadonlySet<string> = new Set(["h1", "h2", "h3", "h4", 
  * traits that vary per tag.
  */
 const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
-  page: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false },
-  body: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false },
+  page: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false },
+  body: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false },
 
   img: { supportsIntrinsicAspectRatio: true },
   video: { supportsIntrinsicAspectRatio: true },
