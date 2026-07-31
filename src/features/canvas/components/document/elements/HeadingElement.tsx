@@ -5,6 +5,7 @@ import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegi
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
 import { resolveBackgroundStyle } from "@/features/canvas/utils/resolveBackgroundStyle";
+import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
 import { cn, mergeRefs } from "@/lib/utils";
@@ -35,6 +36,7 @@ export function HeadingElement({ node, parentId, parentLayoutMode, parentFlowDis
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
         ...resolveTypographyStyle(node),
         ...resolveBackgroundStyle(node),
+        ...resolveBorderStyle(node),
       }}
       {...listeners}
     >

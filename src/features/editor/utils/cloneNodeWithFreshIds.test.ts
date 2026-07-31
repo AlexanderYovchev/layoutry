@@ -167,6 +167,21 @@ describe("cloneNodeWithFreshIds", () => {
     expect(clone.background).toEqual(source.background);
   });
 
+  it("preserves border, independently per side (Checkpoint 4.4)", () => {
+    const source: EditorElementNode = {
+      id: "container-1",
+      tag: "div",
+      border: {
+        top: { width: { value: 2, unit: "px" }, style: "solid", color: "#3366ff" },
+        left: { style: "dashed" },
+      },
+    };
+
+    const clone = cloneNodeWithFreshIds(source);
+
+    expect(clone.border).toEqual(source.border);
+  });
+
   it("does not mutate the source tree", () => {
     const source: EditorElementNode = {
       id: "container-1",

@@ -15,6 +15,8 @@ export interface ElementCapabilities {
   supportsIntrinsicAspectRatio: boolean;
   supportsTypography: boolean;
   supportsBackground: boolean;
+  /** Whether a CSS border is meaningful on this tag (Checkpoint 4.4). Unlike Background — which excludes media tags because their own rendered content already fills the box — a border draws around the box's own edge regardless of what's inside it, so it defaults to true for nearly every tag; only the structural page/body wrappers opt out (see CAPABILITY_OVERRIDES), matching their own selectable/resizable overrides. */
+  supportsBorder: boolean;
 }
 
 const DEFAULT_CAPABILITIES: ElementCapabilities = {
@@ -25,6 +27,7 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
   supportsIntrinsicAspectRatio: false,
   supportsTypography: false,
   supportsBackground: false,
+  supportsBorder: true,
 };
 
 /**
@@ -46,8 +49,8 @@ const TEXT_BEARING_TAGS: ReadonlySet<string> = new Set(["h1", "h2", "h3", "h4", 
  * traits that vary per tag.
  */
 const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
-  page: { selectable: false, resizableX: false, resizableY: false },
-  body: { selectable: false, resizableX: false, resizableY: false },
+  page: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false },
+  body: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false },
 
   img: { supportsIntrinsicAspectRatio: true },
   video: { supportsIntrinsicAspectRatio: true },

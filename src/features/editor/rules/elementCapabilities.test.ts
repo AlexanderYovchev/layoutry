@@ -65,6 +65,14 @@ describe("elementCapabilities", () => {
     }
   });
 
+  it("flags nearly every tag as supporting a border, including media tags; only page/body opt out", () => {
+    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table"]) {
+      expect(getElementCapabilities(tag).supportsBorder, tag).toBe(true);
+    }
+    expect(getElementCapabilities("page").supportsBorder).toBe(false);
+    expect(getElementCapabilities("body").supportsBorder).toBe(false);
+  });
+
   it("gives an entirely unknown tag the same sensible defaults as any other element", () => {
     const caps = getElementCapabilities("some-future-tag");
 

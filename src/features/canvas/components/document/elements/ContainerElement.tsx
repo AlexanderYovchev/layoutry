@@ -5,6 +5,7 @@ import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegi
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
 import { resolveBackgroundStyle } from "@/features/canvas/utils/resolveBackgroundStyle";
+import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolveFlowLayoutStyle } from "@/features/canvas/utils/resolveFlowLayoutStyle";
 import { cn, mergeRefs } from "@/lib/utils";
@@ -40,13 +41,22 @@ export function ContainerElement({
   // spacing, the data-driven inline styles below take over instead.
   const usesLegacyFlexClasses = !node.flowLayout;
   const usesLegacyPadding = !node.spacing;
+  // The faint "border border-zinc-100" class below predates real border
+  // data (Checkpoint 4.4) — pure editor chrome so an empty container
+  // still reads as a box in the builder. Once a node has explicit border
+  // settings, this chrome must get out of the way entirely (not just on
+  // whichever sides happen to be configured), so an "Individual Sides"
+  // border on only one edge doesn't leave the other three showing a
+  // phantom chrome border that looks like real, if very faint, data.
+  const usesLegacyBorderChrome = !node.border;
 
   return (
     <div
       ref={mergeRefs(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
       className={cn(
-        "rounded-lg border border-zinc-100 dark:border-zinc-900",
+        "rounded-lg",
+        usesLegacyBorderChrome && "border border-zinc-100 dark:border-zinc-900",
         usesLegacyFlexClasses && "flex flex-col items-start gap-4",
         usesLegacyPadding && "p-8",
         isDragging && "opacity-40",
@@ -57,6 +67,7 @@ export function ContainerElement({
         ...(ownLayoutMode === "flow" ? resolveFlowLayoutStyle(node) : undefined),
         ...(hostsOwnFreeChildren ? { position: "relative" } : {}),
         ...resolveBackgroundStyle(node),
+        ...resolveBorderStyle(node),
       }}
       {...listeners}
     >

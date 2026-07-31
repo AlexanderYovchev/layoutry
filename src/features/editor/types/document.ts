@@ -8,6 +8,7 @@ import type { ElementSpacing } from "@/features/editor/types/spacing";
 import type { MediaFitSettings } from "@/features/editor/types/mediaFit";
 import type { TypographySettings } from "@/features/editor/types/typography";
 import type { BackgroundSettings } from "@/features/editor/types/background";
+import type { BorderSettings } from "@/features/editor/types/border";
 
 export interface ElementDimensions {
   /**
@@ -108,4 +109,6 @@ export interface EditorElementNode {
   typography?: TypographySettings;
   /** This node's own background styling (Checkpoint 4.3) — only meaningful for a background-capable tag (see getElementCapabilities().supportsBackground). Like typography, unset fields here have no synthesized default — see getBackgroundSettings and resolveBackgroundStyle. */
   background?: BackgroundSettings;
+  /** This node's own border styling (Checkpoint 4.4) — only meaningful for a border-capable tag (see getElementCapabilities().supportsBorder). Like typography/background, unset fields here have no synthesized default — see getBorderSettings and resolveBorderStyle. */
+  border?: BorderSettings;
 }

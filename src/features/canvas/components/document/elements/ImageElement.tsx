@@ -5,6 +5,7 @@ import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
+import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolveMediaFitStyle } from "@/features/canvas/utils/resolveMediaFitStyle";
 import { cn, mergeRefs } from "@/lib/utils";
@@ -29,17 +30,27 @@ export function ImageElement({ node, parentId, parentLayoutMode, parentFlowDispl
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
 
+  // The dashed placeholder border predates real border data (Checkpoint
+  // 4.4) — pure editor chrome marking this as an editable image box, even
+  // once a real image is chosen. Once the node has explicit border
+  // settings, that chrome must get out of the way entirely (see the
+  // identical rationale on ContainerElement) so it never bleeds through
+  // as a phantom border on whichever sides the user didn't configure.
+  const usesLegacyBorderChrome = !node.border;
+
   return (
     <div
       ref={mergeRefs(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
       className={cn(
-        "flex h-40 w-full items-center justify-center overflow-hidden rounded-md border border-dashed border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900",
+        "flex h-40 w-full items-center justify-center overflow-hidden rounded-md bg-zinc-50 dark:bg-zinc-900",
+        usesLegacyBorderChrome && "border border-dashed border-zinc-200 dark:border-zinc-800",
         isDragging && "opacity-40",
       )}
       style={{
         ...elementPositionStyle(node, parentLayoutMode),
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
+        ...resolveBorderStyle(node),
       }}
       {...listeners}
     >

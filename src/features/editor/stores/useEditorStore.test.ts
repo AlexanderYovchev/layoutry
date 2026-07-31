@@ -873,6 +873,24 @@ describe("useEditorStore — Flow layout, spacing, Flex/Grid (Checkpoint 3.5)", 
     const redone = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
     expect(redone?.background).toEqual({ color: "#3366ff", repeat: "no-repeat" });
   });
+
+  it("setElementBorder pushes one history entry and is undoable/redoable", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    const border = { top: { width: { value: 2, unit: "px" as const }, style: "solid" as const } };
+    useEditorStore.getState().setElementBorder("section-1", border);
+
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(node?.border).toEqual(border);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+
+    useEditorStore.getState().undo();
+    const reverted = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(reverted?.border).toBeUndefined();
+
+    useEditorStore.getState().redo();
+    const redone = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(redone?.border).toEqual(border);
+  });
 });
 
 describe("useEditorStore — generic transactions (Checkpoint 4.3.1)", () => {

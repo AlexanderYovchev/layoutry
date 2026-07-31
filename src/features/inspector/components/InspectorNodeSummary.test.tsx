@@ -326,3 +326,38 @@ describe("InspectorNodeSummary — Background section (Checkpoint 4.3)", () => {
     expect(screen.queryByText("Background")).not.toBeInTheDocument();
   });
 });
+
+describe("InspectorNodeSummary — Border section (Checkpoint 4.4)", () => {
+  it("shows the Border section for a container tag", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "section-1", tag: "section" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Border")).toBeInTheDocument();
+  });
+
+  it("shows the Border section for a media tag, unlike Background", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "image-1", tag: "img" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Border")).toBeInTheDocument();
+  });
+
+  it("omits the Border section for the non-selectable document root", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "page-root", tag: "page" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.queryByText("Border")).not.toBeInTheDocument();
+  });
+});
