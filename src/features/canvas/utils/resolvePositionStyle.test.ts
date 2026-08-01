@@ -23,4 +23,61 @@ describe("resolvePositionStyle", () => {
     expect(() => resolvePositionStyle(node)).not.toThrow();
     expect(resolvePositionStyle(node)).toEqual({});
   });
+
+  describe("offsets (Checkpoint 5.2)", () => {
+    it.each(["top", "right", "bottom", "left"] as const)("resolves a %s length", (side) => {
+      const node: EditorElementNode = { id: "n1", tag: "div", position: { [side]: { value: 10, unit: "px" } } };
+      expect(resolvePositionStyle(node)).toEqual({ [side]: "10px" });
+    });
+
+    it.each(["top", "right", "bottom", "left"] as const)("resolves a %s of 'auto'", (side) => {
+      const node: EditorElementNode = { id: "n1", tag: "div", position: { [side]: "auto" } };
+      expect(resolvePositionStyle(node)).toEqual({ [side]: "auto" });
+    });
+
+    it("resolves every offset alongside position in one pass", () => {
+      const node: EditorElementNode = {
+        id: "n1",
+        tag: "div",
+        position: {
+          position: "absolute",
+          top: { value: 10, unit: "px" },
+          right: "auto",
+          bottom: { value: 50, unit: "%" },
+          left: { value: -4, unit: "rem" },
+        },
+      };
+      expect(resolvePositionStyle(node)).toEqual({
+        position: "absolute",
+        top: "10px",
+        right: "auto",
+        bottom: "50%",
+        left: "-4rem",
+      });
+    });
+
+    it("resolves negative offsets", () => {
+      const node: EditorElementNode = { id: "n1", tag: "div", position: { top: { value: -12, unit: "px" } } };
+      expect(resolvePositionStyle(node)).toEqual({ top: "-12px" });
+    });
+
+    it("resolves offsets even when position is static — CSS itself ignores them there; the Inspector, not this resolver, hides the control", () => {
+      const node: EditorElementNode = {
+        id: "n1",
+        tag: "div",
+        position: { position: "static", top: { value: 10, unit: "px" } },
+      };
+      expect(resolvePositionStyle(node)).toEqual({ position: "static", top: "10px" });
+    });
+
+    it("never throws on malformed offset data, and omits only the malformed side", () => {
+      const node = {
+        id: "n1",
+        tag: "div",
+        position: { top: { value: "10", unit: "px" }, right: { value: 5, unit: "px" } },
+      } as unknown as EditorElementNode;
+      expect(() => resolvePositionStyle(node)).not.toThrow();
+      expect(resolvePositionStyle(node)).toEqual({ right: "5px" });
+    });
+  });
 });

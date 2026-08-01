@@ -3,15 +3,20 @@
  * fully-optional settings-object shape typography/border/boxShadow/
  * filters/display already established (see EditorElementNode.position),
  * rather than a bare `position?: PositionValue` field directly on the
- * node — this checkpoint's own Future Architecture section names three
- * upcoming checkpoints (5.2 Insets, 5.3 Z-index) that plug straight into
- * this same PositionSettings object (an `inset`/`top`/`left`/... field,
- * a `zIndex` field) without migrating this one, exactly like
+ * node — Checkpoint 5.1's own Future Architecture section named upcoming
+ * checkpoints (5.2 Insets, 5.3 Z-index) that would plug straight into
+ * this same PositionSettings object without migrating it, exactly like
  * DisplaySettings already absorbed seven independent fields into one
  * object. `position` itself has no synthesized default — see
  * getPositionSettings/withPositionField, and resolvePositionStyle, which
- * only emits CSS when the field is actually present and structurally
+ * only emits CSS when a field is actually present and structurally
  * valid.
+ *
+ * Insets (Checkpoint 5.2) extended this same object with `top`/`right`/
+ * `bottom`/`left` — see OffsetValue/OFFSET_SIDES below. No migration was
+ * needed: withPositionField was already generic over `keyof
+ * PositionSettings`, exactly anticipating this. 5.3 (Z-index) is next in
+ * line for the same treatment.
  *
  * Ownership note: this is a *general* user-facing `position` control, and
  * it is not the only place in the app that ever writes the CSS
@@ -38,11 +43,50 @@
  * resolvePositionStyle.ts for the resolver side of this.
  */
 
+import { formatCssLength, type CssLengthValue, type CssUnit } from "@/features/editor/types/typography";
+
 export type PositionValue = "static" | "relative" | "absolute" | "fixed" | "sticky";
 export const POSITION_VALUES: readonly PositionValue[] = ["static", "relative", "absolute", "fixed", "sticky"];
 
+/** Offsets are only meaningful once an element has left `static` flow — CSS itself ignores top/right/bottom/left on a static element, and the Inspector's own Offsets subsection stays hidden for exactly this reason (Checkpoint 5.2's own "don't show beginners a control with no effect" requirement). Absent `position` (never explicitly set) behaves as `static` too, so offsets stay hidden then as well. */
+export function offsetsApply(position: PositionValue | undefined): boolean {
+  return position !== undefined && position !== "static";
+}
+
+export type OffsetSide = "top" | "right" | "bottom" | "left";
+export const OFFSET_SIDES: readonly OffsetSide[] = ["top", "right", "bottom", "left"];
+
+/**
+ * px/%/rem/em — the same four-unit "Length model" Border Radius already
+ * established (see BORDER_RADIUS_UNITS), reused here rather than
+ * typography's full CssUnit set: vw/vh/unitless/deg have no meaningful
+ * role as a top/right/bottom/left offset in this checkpoint. Declared
+ * independently of BORDER_RADIUS_UNITS (not imported from it) since the
+ * two are only coincidentally identical today — border-radius and inset
+ * offsets are unrelated CSS concepts that happen to share a unit set,
+ * not the same concept.
+ */
+export const OFFSET_UNITS: readonly CssUnit[] = ["px", "%", "rem", "em"];
+
+/**
+ * One offset's value — either the `auto` keyword (a real, explicit CSS
+ * value, e.g. `left: 0; right: auto` to anchor from one side only — see
+ * BackgroundSizeAxisValue's identical "auto is an explicit, deliberate
+ * choice distinct from the field being entirely absent" reasoning) or an
+ * explicit CssLengthValue. Reuses the app's one canonical Length model
+ * (typography.ts's CssLengthValue/formatCssLength) directly rather than
+ * a second, structurally-identical type — unlike BackgroundSizeAxisValue,
+ * which predates this reasoning being written down explicitly and
+ * duplicates the `{ value, unit }` shape inline.
+ */
+export type OffsetValue = CssLengthValue | "auto";
+
 export interface PositionSettings {
   position?: PositionValue;
+  top?: OffsetValue;
+  right?: OffsetValue;
+  bottom?: OffsetValue;
+  left?: OffsetValue;
 }
 
 /** A node with no position settings renders with none of this checkpoint's CSS at all — the tag's own default rendering (`static`) governs, exactly like filters/border/display. */
@@ -73,19 +117,78 @@ export function isValidPositionValue(value: string): value is PositionValue {
   return (POSITION_VALUES as readonly string[]).includes(value);
 }
 
+/** A stable key for one offset value — identically-absent (undefined) and "auto" each get their own distinct key, and two equal lengths (same value + unit) collapse to the same key. Used only by offsetSidesEqual below. */
+function offsetKey(value: OffsetValue | undefined): string {
+  if (value === undefined) return "";
+  if (value === "auto") return "auto";
+  return `${value.value}${value.unit}`;
+}
+
+/**
+ * True when every side holds an identical (or identically absent) offset
+ * — the same "does this already look uniform" heuristic
+ * borderRadiusCornersEqual/border.ts's borderSidesEqual use. Used once,
+ * per freshly-selected node, to decide whether the Offsets subsection's
+ * Linked/Unlinked toggle should default to Linked.
+ */
+export function offsetSidesEqual(settings: PositionSettings): boolean {
+  const [top, right, bottom, left] = OFFSET_SIDES.map((side) => settings[side]);
+  const key = offsetKey(top);
+  return offsetKey(right) === key && offsetKey(bottom) === key && offsetKey(left) === key;
+}
+
+/**
+ * Writes the same offset to all four sides (or, with `value` undefined,
+ * clears all four) in a single commit — the Offsets subsection's Linked
+ * mode, and its own "reset all offsets" action. Unlike
+ * withBorderRadiusAllCorners, this must preserve every other field on
+ * the same shared PositionSettings object (`position` itself, most
+ * importantly) — BorderRadiusSettings has no such unrelated field to
+ * preserve, since it exists solely to hold four corners.
+ */
+export function withAllOffsets(current: PositionSettings, value: OffsetValue | undefined): PositionSettings | undefined {
+  const next: PositionSettings = { ...current };
+  for (const side of OFFSET_SIDES) {
+    if (value === undefined) delete next[side];
+    else next[side] = value;
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+/** Renders an OffsetValue into its CSS text form — "auto" passes through verbatim, a length uses the shared formatCssLength (see OffsetValue's own doc comment on reusing typography's canonical Length model). */
+export function formatOffsetValue(value: OffsetValue): string {
+  return value === "auto" ? "auto" : formatCssLength(value);
+}
+
+/** Defensive shape check for a value that might be malformed loaded-document data — never throws, never repairs; see resolvePositionStyle. Mirrors isValidBorderRadiusCornerValue's exact shape check, widened to also accept the literal "auto" keyword. */
+export function isValidOffsetValue(value: unknown): value is OffsetValue {
+  if (value === "auto") return true;
+  if (typeof value !== "object" || value === null) return false;
+  const length = value as Partial<CssLengthValue>;
+  return typeof length.value === "number" && Number.isFinite(length.value) && typeof length.unit === "string";
+}
+
 /**
  * Defensive per-field check for a value that might be malformed loaded-
  * document data — this app has no persistence/import feature yet, but
  * the resolver must still never throw on bad data (see
  * isValidDisplayFieldValue's identical reasoning). Deliberately per-
- * *field*, not a single whole-object gate, so a future malformed inset/
- * zIndex field can't suppress an otherwise-valid `position` value.
+ * *field*, not a single whole-object gate, so one malformed offset can't
+ * suppress `position` (or another, still-valid offset). Branches by
+ * field rather than gating on `typeof value === "string"` up front the
+ * way Checkpoint 5.1's own version of this function did — `top`/`right`/
+ * `bottom`/`left` are objects (or the literal "auto"), not strings, once
+ * Checkpoint 5.2 added them.
  */
 export function isValidPositionFieldValue<K extends keyof PositionSettings>(field: K, value: unknown): boolean {
-  if (typeof value !== "string") return false;
   switch (field) {
     case "position":
-      return isValidPositionValue(value);
+      return typeof value === "string" && isValidPositionValue(value);
+    case "top":
+    case "right":
+    case "bottom":
+    case "left":
+      return isValidOffsetValue(value);
     default:
       return false;
   }

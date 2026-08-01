@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatOffsetValue,
   getPositionSettings,
+  isValidOffsetValue,
   isValidPositionFieldValue,
   isValidPositionValue,
+  offsetsApply,
+  offsetSidesEqual,
+  withAllOffsets,
   withPositionField,
+  OFFSET_SIDES,
+  OFFSET_UNITS,
   POSITION_VALUES,
 } from "./position";
 
@@ -53,14 +60,152 @@ describe("position model", () => {
       expect(isValidPositionFieldValue("position", "fixed-ish")).toBe(false);
     });
 
-    it("rejects a non-string value", () => {
+    it("rejects a non-string value for the position field", () => {
       expect(isValidPositionFieldValue("position", 1)).toBe(false);
       expect(isValidPositionFieldValue("position", null)).toBe(false);
       expect(isValidPositionFieldValue("position", undefined)).toBe(false);
     });
 
+    it("validates each offset field via isValidOffsetValue", () => {
+      expect(isValidPositionFieldValue("top", { value: 10, unit: "px" })).toBe(true);
+      expect(isValidPositionFieldValue("right", "auto")).toBe(true);
+      expect(isValidPositionFieldValue("bottom", "not-a-length")).toBe(false);
+      expect(isValidPositionFieldValue("left", { value: "10", unit: "px" })).toBe(false);
+    });
+
     it("rejects an unknown field name", () => {
       expect(isValidPositionFieldValue("zIndex" as never, "1")).toBe(false);
+    });
+  });
+
+  describe("offsetsApply", () => {
+    it("is false for static and for an unset position", () => {
+      expect(offsetsApply("static")).toBe(false);
+      expect(offsetsApply(undefined)).toBe(false);
+    });
+
+    it("is true for relative, absolute, fixed, and sticky", () => {
+      for (const value of ["relative", "absolute", "fixed", "sticky"] as const) {
+        expect(offsetsApply(value)).toBe(true);
+      }
+    });
+  });
+
+  describe("OFFSET_SIDES / OFFSET_UNITS", () => {
+    it("lists exactly the four inset sides", () => {
+      expect(OFFSET_SIDES).toEqual(["top", "right", "bottom", "left"]);
+    });
+
+    it("supports exactly px, %, rem, and em", () => {
+      expect(OFFSET_UNITS).toEqual(["px", "%", "rem", "em"]);
+    });
+  });
+
+  describe("offsetSidesEqual", () => {
+    it("is true when every side is identically absent", () => {
+      expect(offsetSidesEqual({})).toBe(true);
+    });
+
+    it("is true when every side holds an identical length", () => {
+      const value = { value: 10, unit: "px" as const };
+      expect(offsetSidesEqual({ top: value, right: value, bottom: value, left: value })).toBe(true);
+    });
+
+    it("is true when every side is 'auto'", () => {
+      expect(offsetSidesEqual({ top: "auto", right: "auto", bottom: "auto", left: "auto" })).toBe(true);
+    });
+
+    it("is false when one side differs in value", () => {
+      const value = { value: 10, unit: "px" as const };
+      expect(offsetSidesEqual({ top: value, right: value, bottom: value, left: { value: 20, unit: "px" } })).toBe(false);
+    });
+
+    it("is false when one side differs in unit only", () => {
+      expect(
+        offsetSidesEqual({
+          top: { value: 10, unit: "px" },
+          right: { value: 10, unit: "px" },
+          bottom: { value: 10, unit: "px" },
+          left: { value: 10, unit: "rem" },
+        }),
+      ).toBe(false);
+    });
+
+    it("distinguishes an unset side from an explicit 'auto' side", () => {
+      expect(offsetSidesEqual({ top: "auto", right: undefined, bottom: "auto", left: "auto" })).toBe(false);
+    });
+
+    it("ignores the unrelated position field", () => {
+      const value = { value: 5, unit: "%" as const };
+      expect(offsetSidesEqual({ position: "absolute", top: value, right: value, bottom: value, left: value })).toBe(true);
+    });
+  });
+
+  describe("withAllOffsets", () => {
+    it("sets all four sides to the same value in one write", () => {
+      const value = { value: 12, unit: "px" as const };
+      expect(withAllOffsets({}, value)).toEqual({ top: value, right: value, bottom: value, left: value });
+    });
+
+    it("preserves the unrelated position field", () => {
+      const value = { value: 12, unit: "px" as const };
+      expect(withAllOffsets({ position: "absolute" }, value)).toEqual({
+        position: "absolute",
+        top: value,
+        right: value,
+        bottom: value,
+        left: value,
+      });
+    });
+
+    it("clears all four sides when passed undefined, preserving position", () => {
+      const value = { value: 12, unit: "px" as const };
+      expect(withAllOffsets({ position: "fixed", top: value, right: value, bottom: value, left: value }, undefined)).toEqual({
+        position: "fixed",
+      });
+    });
+
+    it("collapses to undefined when clearing leaves nothing behind", () => {
+      const value = { value: 12, unit: "px" as const };
+      expect(withAllOffsets({ top: value, right: value, bottom: value, left: value }, undefined)).toBeUndefined();
+    });
+  });
+
+  describe("formatOffsetValue", () => {
+    it("passes 'auto' through verbatim", () => {
+      expect(formatOffsetValue("auto")).toBe("auto");
+    });
+
+    it("formats a length using the shared Length model", () => {
+      expect(formatOffsetValue({ value: 10, unit: "px" })).toBe("10px");
+      expect(formatOffsetValue({ value: 50, unit: "%" })).toBe("50%");
+      expect(formatOffsetValue({ value: -4, unit: "rem" })).toBe("-4rem");
+    });
+  });
+
+  describe("isValidOffsetValue", () => {
+    it("accepts 'auto'", () => {
+      expect(isValidOffsetValue("auto")).toBe(true);
+    });
+
+    it("accepts a well-formed length, including a negative one", () => {
+      expect(isValidOffsetValue({ value: 10, unit: "px" })).toBe(true);
+      expect(isValidOffsetValue({ value: -10, unit: "px" })).toBe(true);
+      expect(isValidOffsetValue({ value: 0, unit: "%" })).toBe(true);
+    });
+
+    it("rejects a non-finite or non-numeric value", () => {
+      expect(isValidOffsetValue({ value: Number.NaN, unit: "px" })).toBe(false);
+      expect(isValidOffsetValue({ value: Number.POSITIVE_INFINITY, unit: "px" })).toBe(false);
+      expect(isValidOffsetValue({ value: "10", unit: "px" })).toBe(false);
+    });
+
+    it("rejects a malformed shape", () => {
+      expect(isValidOffsetValue(null)).toBe(false);
+      expect(isValidOffsetValue(undefined)).toBe(false);
+      expect(isValidOffsetValue("relative")).toBe(false);
+      expect(isValidOffsetValue(10)).toBe(false);
+      expect(isValidOffsetValue({ value: 10 })).toBe(false);
     });
   });
 });
