@@ -2,6 +2,7 @@ import { InspectorBackgroundSection } from "@/features/inspector/components/Insp
 import { InspectorBorderRadiusSection } from "@/features/inspector/components/InspectorBorderRadiusSection";
 import { InspectorBorderSection } from "@/features/inspector/components/InspectorBorderSection";
 import { InspectorBoxShadowSection } from "@/features/inspector/components/InspectorBoxShadowSection";
+import { InspectorDisplaySection } from "@/features/inspector/components/InspectorDisplaySection";
 import { InspectorFiltersSection } from "@/features/inspector/components/InspectorFiltersSection";
 import { InspectorElementSummary } from "@/features/inspector/components/InspectorElementSummary";
 import { InspectorFieldRow } from "@/features/inspector/components/InspectorFieldRow";
@@ -125,6 +126,7 @@ export function InspectorNodeSummary({
       {getElementCapabilities(node.tag).supportsBorderRadius && <InspectorBorderRadiusSection node={node} />}
       {getElementCapabilities(node.tag).supportsBoxShadow && <InspectorBoxShadowSection node={node} />}
       {getElementCapabilities(node.tag).supportsFilters && <InspectorFiltersSection node={node} />}
+      {getElementCapabilities(node.tag).supportsDisplay && <InspectorDisplaySection node={node} />}
       <InspectorSpacingSection node={node} />
       {canContainChildren(node.tag) && <InspectorLayoutSection node={node} />}
     </div>

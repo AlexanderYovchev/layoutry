@@ -8,6 +8,7 @@ import { resolveBackgroundStyle } from "@/features/canvas/utils/resolveBackgroun
 import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderRadiusStyle";
 import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
 import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowStyle";
+import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle";
 import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
@@ -25,6 +26,15 @@ export function HeadingElement({ node, parentId, parentLayoutMode, parentFlowDis
   const Tag = isHeadingTag(node.tag) ? node.tag : "h2";
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
+  // elementPositionStyle's clipOverflowY sets the `overflow` shorthand —
+  // harmless on its own, but co-existing in the same style object as this
+  // checkpoint's explicit overflowX/overflowY longhands (Checkpoint 4.8)
+  // trips React's own "don't mix shorthand and non-shorthand for the same
+  // value" warning, and leaves the two genuinely fighting over the same
+  // box. Once either axis is explicitly set, this legacy resize-clip
+  // shorthand must get out of the way entirely, the same way every other
+  // pre-4.x chrome default already does once real data exists.
+  const usesLegacyOverflowClip = !node.display?.overflowX && !node.display?.overflowY;
 
   return (
     <Tag
@@ -35,7 +45,7 @@ export function HeadingElement({ node, parentId, parentLayoutMode, parentFlowDis
         isDragging && "opacity-40",
       )}
       style={{
-        ...elementPositionStyle(node, parentLayoutMode, { clipOverflowY: true }),
+        ...elementPositionStyle(node, parentLayoutMode, { clipOverflowY: usesLegacyOverflowClip }),
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
         ...resolveTypographyStyle(node),
         ...resolveBackgroundStyle(node),
@@ -43,6 +53,7 @@ export function HeadingElement({ node, parentId, parentLayoutMode, parentFlowDis
         ...resolveBorderRadiusStyle(node),
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
+        ...resolveDisplayStyle(node),
       }}
       {...listeners}
     >

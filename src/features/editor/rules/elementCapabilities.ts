@@ -23,6 +23,8 @@ export interface ElementCapabilities {
   supportsBoxShadow: boolean;
   /** Whether CSS filters/opacity are meaningful on this tag (Checkpoint 4.7) — a filter/opacity affects a box's *entire* rendered output, including any media content inside it (unlike supportsBackground, which excludes media tags because their content already fills the box and a background would sit invisibly behind it — a filter has no such problem, since it applies on top of everything). Shares supportsBorder/supportsBorderRadius/supportsBoxShadow's exact default-true / page-body-opt-out rule. */
   supportsFilters: boolean;
+  /** Whether display/visibility/overflow/interaction CSS is meaningful on this tag (Checkpoint 4.8) — same "applies to a box regardless of what's inside it" reasoning as supportsBorder/supportsBoxShadow/supportsFilters, so it shares their exact default-true / page-body-opt-out rule. */
+  supportsDisplay: boolean;
 }
 
 const DEFAULT_CAPABILITIES: ElementCapabilities = {
@@ -37,6 +39,7 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
   supportsBorderRadius: true,
   supportsBoxShadow: true,
   supportsFilters: true,
+  supportsDisplay: true,
 };
 
 /**
@@ -58,8 +61,8 @@ const TEXT_BEARING_TAGS: ReadonlySet<string> = new Set(["h1", "h2", "h3", "h4", 
  * traits that vary per tag.
  */
 const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
-  page: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false },
-  body: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false },
+  page: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false },
+  body: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false },
 
   img: { supportsIntrinsicAspectRatio: true },
   video: { supportsIntrinsicAspectRatio: true },

@@ -29,6 +29,7 @@ import { setBorderSettings as setBorderSettingsCommand } from "@/features/editor
 import { setBorderRadiusSettings as setBorderRadiusSettingsCommand } from "@/features/editor/commands/borderRadiusCommands";
 import { setBoxShadowSettings as setBoxShadowSettingsCommand } from "@/features/editor/commands/boxShadowCommands";
 import { setFilterSettings as setFilterSettingsCommand } from "@/features/editor/commands/filterCommands";
+import { setDisplaySettings as setDisplaySettingsCommand } from "@/features/editor/commands/displayCommands";
 import { clampGridChildPlacement } from "@/features/editor/utils/clampGridChildPlacement";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
 import { cloneNodeWithFreshIds } from "@/features/editor/utils/cloneNodeWithFreshIds";
@@ -57,6 +58,7 @@ import type { BorderSettings } from "@/features/editor/types/border";
 import type { BorderRadiusSettings } from "@/features/editor/types/borderRadius";
 import type { BoxShadowSettings } from "@/features/editor/types/boxShadow";
 import type { FilterSettings } from "@/features/editor/types/filters";
+import type { DisplaySettings } from "@/features/editor/types/display";
 
 interface EditorState {
   document: EditorElementNode;
@@ -127,6 +129,8 @@ interface EditorState {
   setElementBoxShadowLive: (nodeId: string, boxShadow: BoxShadowSettings | undefined) => void;
   /** This node's own visual effects (Checkpoint 4.7) — see resolveFilterStyle. `undefined` clears it entirely. No continuous-drag variant: every filter field is a discrete numeric commit, like Typography, not a draggable gesture. */
   setElementFilters: (nodeId: string, filters: FilterSettings | undefined) => void;
+  /** This node's own display/visibility/overflow/interaction settings (Checkpoint 4.8) — see resolveDisplayStyle. `undefined` clears it entirely. No continuous-drag variant: every field here is a discrete enum commit, like Filters, not a draggable gesture. */
+  setElementDisplay: (nodeId: string, display: DisplaySettings | undefined) => void;
 
   /**
    * Generic continuous-interaction transaction (Checkpoint 4.3.1) — the
@@ -399,6 +403,12 @@ export const useEditorStore = create<EditorState>()((set) => ({
     set((state) => ({
       ...pushHistory(state),
       document: setFilterSettingsCommand(state.document, nodeId, filters),
+    })),
+
+  setElementDisplay: (nodeId, display) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setDisplaySettingsCommand(state.document, nodeId, display),
     })),
 
   beginTransaction: () =>

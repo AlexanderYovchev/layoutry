@@ -12,6 +12,7 @@ import type { BorderSettings } from "@/features/editor/types/border";
 import type { BorderRadiusSettings } from "@/features/editor/types/borderRadius";
 import type { BoxShadowSettings } from "@/features/editor/types/boxShadow";
 import type { FilterSettings } from "@/features/editor/types/filters";
+import type { DisplaySettings } from "@/features/editor/types/display";
 
 export interface ElementDimensions {
   /**
@@ -120,4 +121,6 @@ export interface EditorElementNode {
   boxShadow?: BoxShadowSettings;
   /** This node's own visual effects (CSS filters + opacity, Checkpoint 4.7) — only meaningful for a filter-capable tag (see getElementCapabilities().supportsFilters). Like typography/border/boxShadow, unset fields here have no synthesized default — see getFilterSettings and resolveFilterStyle. */
   filters?: FilterSettings;
+  /** This node's own display/visibility/overflow/interaction CSS (Checkpoint 4.8) — only meaningful for a display-capable tag (see getElementCapabilities().supportsDisplay). Like filters, unset fields here have no synthesized default — see getDisplaySettings and resolveDisplayStyle. `display` deliberately excludes "flex"/"grid" — see types/display.ts's own doc comment for why those remain exclusive to flowLayout/resolveFlowLayoutStyle. */
+  display?: DisplaySettings;
 }

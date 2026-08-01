@@ -8,6 +8,7 @@ import { resolveBackgroundStyle } from "@/features/canvas/utils/resolveBackgroun
 import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderRadiusStyle";
 import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
 import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowStyle";
+import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle";
 import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolveFlowLayoutStyle } from "@/features/canvas/utils/resolveFlowLayoutStyle";
@@ -82,6 +83,7 @@ export function ContainerElement({
         ...resolveBorderRadiusStyle(node),
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
+        ...resolveDisplayStyle(node),
       }}
       {...listeners}
     >

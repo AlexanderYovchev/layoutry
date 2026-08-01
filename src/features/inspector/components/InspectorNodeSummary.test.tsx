@@ -145,7 +145,12 @@ describe("InspectorNodeSummary — Free layout (Checkpoint 3.4.4)", () => {
 
     expect(screen.getByLabelText("X")).toHaveValue(16);
     expect(screen.getByLabelText("Width")).toHaveValue(100);
-    expect(screen.queryByText("Auto")).not.toBeInTheDocument();
+    // DimensionRows' own read-only "Auto" value renders as a <span> — scoped
+    // to that element type since Checkpoint 4.8's Display & Visibility
+    // section (also rendered for this media node) legitimately has several
+    // unrelated "Auto" segmented-row <button> options (Pointer Events,
+    // Overflow X/Y, User Select) that must not false-positive this check.
+    expect(screen.queryByText("Auto", { selector: "span" })).not.toBeInTheDocument();
   });
 
   it("shows the Layout section for a container-capable node", () => {
@@ -464,5 +469,40 @@ describe("InspectorNodeSummary — Visual Effects section (Checkpoint 4.7)", () 
     );
 
     expect(screen.queryByText("Visual Effects")).not.toBeInTheDocument();
+  });
+});
+
+describe("InspectorNodeSummary — Display & Visibility section (Checkpoint 4.8)", () => {
+  it("shows the Display & Visibility section for a container tag", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "section-1", tag: "section" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Display & Visibility")).toBeInTheDocument();
+  });
+
+  it("shows the Display & Visibility section for a media tag", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "image-1", tag: "img" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Display & Visibility")).toBeInTheDocument();
+  });
+
+  it("omits the Display & Visibility section for the non-selectable document root", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "page-root", tag: "page" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.queryByText("Display & Visibility")).not.toBeInTheDocument();
   });
 });

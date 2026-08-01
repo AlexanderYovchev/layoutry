@@ -228,6 +228,18 @@ describe("cloneNodeWithFreshIds", () => {
     expect(clone.filters).toEqual(source.filters);
   });
 
+  it("preserves display/visibility/overflow/interaction settings (Checkpoint 4.8)", () => {
+    const source: EditorElementNode = {
+      id: "container-1",
+      tag: "div",
+      display: { display: "none", overflowX: "hidden", cursor: "pointer" },
+    };
+
+    const clone = cloneNodeWithFreshIds(source);
+
+    expect(clone.display).toEqual(source.display);
+  });
+
   it("does not mutate the source tree", () => {
     const source: EditorElementNode = {
       id: "container-1",
