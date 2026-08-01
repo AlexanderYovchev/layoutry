@@ -30,6 +30,7 @@ import { setBorderRadiusSettings as setBorderRadiusSettingsCommand } from "@/fea
 import { setBoxShadowSettings as setBoxShadowSettingsCommand } from "@/features/editor/commands/boxShadowCommands";
 import { setFilterSettings as setFilterSettingsCommand } from "@/features/editor/commands/filterCommands";
 import { setDisplaySettings as setDisplaySettingsCommand } from "@/features/editor/commands/displayCommands";
+import { setPositionSettings as setPositionSettingsCommand } from "@/features/editor/commands/positionCommands";
 import { clampGridChildPlacement } from "@/features/editor/utils/clampGridChildPlacement";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
 import { cloneNodeWithFreshIds } from "@/features/editor/utils/cloneNodeWithFreshIds";
@@ -59,6 +60,7 @@ import type { BorderRadiusSettings } from "@/features/editor/types/borderRadius"
 import type { BoxShadowSettings } from "@/features/editor/types/boxShadow";
 import type { FilterSettings } from "@/features/editor/types/filters";
 import type { DisplaySettings } from "@/features/editor/types/display";
+import type { PositionSettings } from "@/features/editor/types/position";
 
 interface EditorState {
   document: EditorElementNode;
@@ -131,6 +133,8 @@ interface EditorState {
   setElementFilters: (nodeId: string, filters: FilterSettings | undefined) => void;
   /** This node's own display/visibility/overflow/interaction settings (Checkpoint 4.8) — see resolveDisplayStyle. `undefined` clears it entirely. No continuous-drag variant: every field here is a discrete enum commit, like Filters, not a draggable gesture. */
   setElementDisplay: (nodeId: string, display: DisplaySettings | undefined) => void;
+  /** This node's own CSS `position` (Checkpoint 5.1) — see resolvePositionStyle. `undefined` clears it entirely. No continuous-drag variant: a single enum commit, like Display. */
+  setElementPosition: (nodeId: string, position: PositionSettings | undefined) => void;
 
   /**
    * Generic continuous-interaction transaction (Checkpoint 4.3.1) — the
@@ -409,6 +413,12 @@ export const useEditorStore = create<EditorState>()((set) => ({
     set((state) => ({
       ...pushHistory(state),
       document: setDisplaySettingsCommand(state.document, nodeId, display),
+    })),
+
+  setElementPosition: (nodeId, position) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setPositionSettingsCommand(state.document, nodeId, position),
     })),
 
   beginTransaction: () =>

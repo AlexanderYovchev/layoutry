@@ -11,6 +11,7 @@ import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowS
 import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle";
 import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
+import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
 import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
@@ -43,6 +44,13 @@ export function ParagraphElement({ node, parentId, parentLayoutMode, parentFlowD
         isDragging && "opacity-40",
       )}
       style={{
+        // resolvePositionStyle spread first, and elementPositionStyle after
+        // (Checkpoint 5.1) — a Free child's own position: absolute (see
+        // freeChildStyle, applied inside elementPositionStyle) must always
+        // win over this checkpoint's general Position control; see
+        // types/position.ts's own doc comment for the full ownership
+        // conflict this resolves.
+        ...resolvePositionStyle(node),
         ...elementPositionStyle(node, parentLayoutMode, { clipOverflowY: usesLegacyOverflowClip }),
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
         ...resolveTypographyStyle(node),

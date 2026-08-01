@@ -25,6 +25,8 @@ export interface ElementCapabilities {
   supportsFilters: boolean;
   /** Whether display/visibility/overflow/interaction CSS is meaningful on this tag (Checkpoint 4.8) — same "applies to a box regardless of what's inside it" reasoning as supportsBorder/supportsBoxShadow/supportsFilters, so it shares their exact default-true / page-body-opt-out rule. */
   supportsDisplay: boolean;
+  /** Whether CSS `position` is meaningful on this tag (Checkpoint 5.1) — same default-true / page-body-opt-out rule as supportsDisplay. This is a per-*tag* capability only; a per-*node* exception also exists (a Free-layout child or a Free-hosting container never shows the Position section regardless of tag, since Free layout already owns `position` on those specific nodes — see InspectorNodeSummary and types/position.ts's own doc comment). */
+  supportsPosition: boolean;
 }
 
 const DEFAULT_CAPABILITIES: ElementCapabilities = {
@@ -40,6 +42,7 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
   supportsBoxShadow: true,
   supportsFilters: true,
   supportsDisplay: true,
+  supportsPosition: true,
 };
 
 /**
@@ -61,8 +64,8 @@ const TEXT_BEARING_TAGS: ReadonlySet<string> = new Set(["h1", "h2", "h3", "h4", 
  * traits that vary per tag.
  */
 const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
-  page: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false },
-  body: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false },
+  page: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false, supportsPosition: false },
+  body: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false, supportsPosition: false },
 
   img: { supportsIntrinsicAspectRatio: true },
   video: { supportsIntrinsicAspectRatio: true },

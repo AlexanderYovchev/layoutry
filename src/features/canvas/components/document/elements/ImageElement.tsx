@@ -12,6 +12,7 @@ import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle
 import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolveMediaFitStyle } from "@/features/canvas/utils/resolveMediaFitStyle";
+import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -58,6 +59,13 @@ export function ImageElement({ node, parentId, parentLayoutMode, parentFlowDispl
         isDragging && "opacity-40",
       )}
       style={{
+        // resolvePositionStyle spread first, and elementPositionStyle after
+        // (Checkpoint 5.1) — a Free child's own position: absolute (see
+        // freeChildStyle, applied inside elementPositionStyle) must always
+        // win over this checkpoint's general Position control; see
+        // types/position.ts's own doc comment for the full ownership
+        // conflict this resolves.
+        ...resolvePositionStyle(node),
         ...elementPositionStyle(node, parentLayoutMode),
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
         ...resolveBorderStyle(node),

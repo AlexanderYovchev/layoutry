@@ -105,6 +105,14 @@ describe("elementCapabilities", () => {
     expect(getElementCapabilities("body").supportsDisplay).toBe(false);
   });
 
+  it("flags nearly every tag as supporting the Position control; only page/body opt out", () => {
+    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table"]) {
+      expect(getElementCapabilities(tag).supportsPosition, tag).toBe(true);
+    }
+    expect(getElementCapabilities("page").supportsPosition).toBe(false);
+    expect(getElementCapabilities("body").supportsPosition).toBe(false);
+  });
+
   it("gives an entirely unknown tag the same sensible defaults as any other element", () => {
     const caps = getElementCapabilities("some-future-tag");
 

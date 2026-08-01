@@ -12,6 +12,7 @@ import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle
 import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolveFlowLayoutStyle } from "@/features/canvas/utils/resolveFlowLayoutStyle";
+import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import { getLayoutMode } from "@/features/editor/types/layout";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
@@ -74,6 +75,14 @@ export function ContainerElement({
         isDragging && "opacity-40",
       )}
       style={{
+        // resolvePositionStyle spread first, and both elementPositionStyle
+        // and the hostsOwnFreeChildren override after (Checkpoint 5.1) — a
+        // Free child's own position: absolute (via elementPositionStyle)
+        // and a Free-hosting container's own position: relative (right
+        // below) must always win over this checkpoint's general Position
+        // control; see types/position.ts's own doc comment for the full
+        // ownership conflict this resolves.
+        ...resolvePositionStyle(node),
         ...elementPositionStyle(node, parentLayoutMode),
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
         ...(ownLayoutMode === "flow" ? resolveFlowLayoutStyle(node) : undefined),

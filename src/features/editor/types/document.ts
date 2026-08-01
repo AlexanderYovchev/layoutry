@@ -13,6 +13,7 @@ import type { BorderRadiusSettings } from "@/features/editor/types/borderRadius"
 import type { BoxShadowSettings } from "@/features/editor/types/boxShadow";
 import type { FilterSettings } from "@/features/editor/types/filters";
 import type { DisplaySettings } from "@/features/editor/types/display";
+import type { PositionSettings } from "@/features/editor/types/position";
 
 export interface ElementDimensions {
   /**
@@ -123,4 +124,6 @@ export interface EditorElementNode {
   filters?: FilterSettings;
   /** This node's own display/visibility/overflow/interaction CSS (Checkpoint 4.8) — only meaningful for a display-capable tag (see getElementCapabilities().supportsDisplay). Like filters, unset fields here have no synthesized default — see getDisplaySettings and resolveDisplayStyle. `display` deliberately excludes "flex"/"grid" — see types/display.ts's own doc comment for why those remain exclusive to flowLayout/resolveFlowLayoutStyle. */
   display?: DisplaySettings;
+  /** This node's own CSS `position` (Checkpoint 5.1) — only meaningful for a position-capable tag (see getElementCapabilities().supportsPosition). Like display, unset has no synthesized default — see getPositionSettings and resolvePositionStyle. Foundation only: no top/right/bottom/left/inset/z-index field exists yet (5.2/5.3) — see types/position.ts's own doc comment, including its documented ownership conflict with the pre-existing Free layout mechanism (Checkpoint 3.4.4). */
+  position?: PositionSettings;
 }

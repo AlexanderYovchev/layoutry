@@ -262,6 +262,59 @@ describe("InspectorNodeSummary — Media section (Checkpoint 3.5.1)", () => {
   });
 });
 
+describe("InspectorNodeSummary — Position section (Checkpoint 5.1)", () => {
+  it("shows the Position section for an ordinary Flow node", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "container-1", tag: "div" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByRole("group", { name: "Position" })).toBeInTheDocument();
+  });
+
+  it("omits the Position section for the document root/body wrapper (page/body opt out of supportsPosition)", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "page-1", tag: "page" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.queryByRole("group", { name: "Position" })).not.toBeInTheDocument();
+  });
+
+  it("omits the Position section for a Free-layout child — Free layout already owns CSS position on that node", () => {
+    // Deliberately a non-media tag: an img here would also carry the
+    // unrelated, pre-existing Media section's own "Position" control
+    // (object-position, Checkpoint 3.5.1), which would collide with this
+    // assertion's own accessible-name query despite being a different
+    // control entirely.
+    render(
+      <InspectorNodeSummary
+        node={{ id: "container-1", tag: "div", freeLayout: { x: 16, y: 16, width: 100, height: 80 } }}
+        parentId="section-1"
+        parentLayoutMode="free"
+        parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.queryByRole("group", { name: "Position" })).not.toBeInTheDocument();
+  });
+
+  it("omits the Position section for a container that hosts its own Free children — it already owns position: relative", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "section-1", tag: "section", layoutMode: "free" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.queryByRole("group", { name: "Position" })).not.toBeInTheDocument();
+  });
+});
+
 describe("InspectorNodeSummary — Typography section (Checkpoint 4.2)", () => {
   it("shows the Typography section for a text-bearing tag", () => {
     render(

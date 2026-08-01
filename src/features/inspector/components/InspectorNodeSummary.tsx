@@ -11,6 +11,7 @@ import { InspectorFreeGeometryFields } from "@/features/inspector/components/Ins
 import { InspectorGridChildSection } from "@/features/inspector/components/InspectorGridChildSection";
 import { InspectorLayoutSection } from "@/features/inspector/components/InspectorLayoutSection";
 import { InspectorMediaSection } from "@/features/inspector/components/InspectorMediaSection";
+import { InspectorPositionSection } from "@/features/inspector/components/InspectorPositionSection";
 import { InspectorSpacingSection } from "@/features/inspector/components/InspectorSpacingSection";
 import { InspectorTypographySection } from "@/features/inspector/components/InspectorTypographySection";
 import { canResizeElement, getElementCapabilities } from "@/features/editor/rules/elementCapabilities";
@@ -18,7 +19,7 @@ import { useRenderedNodeSize } from "@/features/editor/hooks/useRenderedNodeSize
 import { canContainChildren } from "@/features/editor/rules/insertionRules";
 import { getElementDisplayName } from "@/features/editor/utils/elementDisplayName";
 import type { EditorElementNode } from "@/features/editor/types/document";
-import type { ContainerLayoutMode } from "@/features/editor/types/layout";
+import { getLayoutMode, type ContainerLayoutMode } from "@/features/editor/types/layout";
 import type { FlowDisplayMode } from "@/features/editor/types/flowLayout";
 
 interface InspectorNodeSummaryProps {
@@ -90,6 +91,12 @@ export function InspectorNodeSummary({
 }: InspectorNodeSummaryProps) {
   const isResizable = canResizeElement(node.tag);
   const isFreeChild = parentLayoutMode === "free";
+  // The Position section (Checkpoint 5.1) never renders for either role
+  // the pre-existing Free layout mechanism already owns CSS `position`
+  // for — a Free child (forced position: absolute) or a container that
+  // hosts its own Free children (forced position: relative) — see
+  // types/position.ts's own doc comment for the full ownership conflict.
+  const isFreeContainer = getLayoutMode(node) === "free";
   const renderedSize = useRenderedNodeSize(isResizable && !isFreeChild ? node.id : null);
 
   return (
@@ -127,6 +134,9 @@ export function InspectorNodeSummary({
       {getElementCapabilities(node.tag).supportsBoxShadow && <InspectorBoxShadowSection node={node} />}
       {getElementCapabilities(node.tag).supportsFilters && <InspectorFiltersSection node={node} />}
       {getElementCapabilities(node.tag).supportsDisplay && <InspectorDisplaySection node={node} />}
+      {getElementCapabilities(node.tag).supportsPosition && !isFreeChild && !isFreeContainer && (
+        <InspectorPositionSection node={node} />
+      )}
       <InspectorSpacingSection node={node} />
       {canContainChildren(node.tag) && <InspectorLayoutSection node={node} />}
     </div>
