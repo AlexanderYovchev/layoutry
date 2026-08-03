@@ -28,15 +28,19 @@ function applyOffsetStyle(style: CSSProperties, side: OffsetSide, value: string)
 }
 
 /**
- * Pure Canvas resolver for a node's own CSS `position` and inset offsets
- * (Checkpoints 5.1/5.2) — same shape as resolveDisplayStyle/
- * resolveBorderRadiusStyle: emits CSS only for fields actually present
- * and structurally valid, never a guessed default, never throws on
- * malformed loaded-document data. `top`/`right`/`bottom`/`left` are
- * resolved independently of each other and of `position` itself — one
- * malformed offset never suppresses a still-valid sibling offset or the
- * position value (matching isValidPositionFieldValue's own per-field,
- * not per-object, validation).
+ * Pure Canvas resolver for a node's own CSS `position`, inset offsets,
+ * and z-index (Checkpoints 5.1/5.2/5.3) — same shape as
+ * resolveDisplayStyle/resolveBorderRadiusStyle: emits CSS only for
+ * fields actually present and structurally valid, never a guessed
+ * default, never throws on malformed loaded-document data.
+ * `top`/`right`/`bottom`/`left`/`zIndex` are all resolved independently
+ * of each other and of `position` itself — one malformed field never
+ * suppresses a still-valid sibling (matching isValidPositionFieldValue's
+ * own per-field, not per-object, validation). `zIndex` needs no
+ * per-field formatter or applyOffsetStyle-style switch, unlike an
+ * offset: React's own CSSProperties.zIndex already accepts `number |
+ * string` directly, so a valid ZIndexValue (a plain number, or the
+ * literal "auto") assigns straight through.
  *
  * Deliberately does NOT gate offset emission on `position` being
  * non-static here — CSS itself already ignores top/right/bottom/left on
@@ -72,6 +76,10 @@ export function resolvePositionStyle(node: EditorElementNode): CSSProperties {
     const value = settings[side];
     if (value === undefined || !isValidPositionFieldValue(side, value)) continue;
     applyOffsetStyle(style, side, formatOffsetValue(value));
+  }
+
+  if (settings.zIndex !== undefined && isValidPositionFieldValue("zIndex", settings.zIndex)) {
+    style.zIndex = settings.zIndex;
   }
 
   return style;

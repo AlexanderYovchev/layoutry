@@ -30,3 +30,28 @@ export function findParentId(
   }
   return null;
 }
+
+/**
+ * Every ancestor of nodeId, closest parent first and the document root
+ * last — empty if nodeId is the root itself or isn't found. Built from
+ * repeated findParentId/findNodeById lookups rather than a single
+ * root-to-target path walk: O(depth^2) in the worst case, but this app's
+ * in-memory documents are small enough that the simpler composition (no
+ * new traversal algorithm, just reusing the two lookups already above)
+ * is the right tradeoff — see findNodeById's own doc comment for the
+ * identical reasoning on when to graduate to an indexed structure.
+ */
+export function findAncestorChain(
+  root: EditorElementNode,
+  nodeId: string,
+): EditorElementNode[] {
+  const chain: EditorElementNode[] = [];
+  let currentId = findParentId(root, nodeId);
+  while (currentId !== null) {
+    const node = findNodeById(root, currentId);
+    if (!node) break;
+    chain.push(node);
+    currentId = findParentId(root, currentId);
+  }
+  return chain;
+}

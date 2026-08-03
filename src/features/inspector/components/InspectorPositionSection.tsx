@@ -21,7 +21,9 @@ import {
   type OffsetValue,
   type PositionSettings,
   type PositionValue,
+  type ZIndexValue,
 } from "@/features/editor/types/position";
+import { ancestorEstablishesStackingContext, establishesStackingContext } from "@/features/editor/utils/stackingContext";
 import type { CssUnit } from "@/features/editor/types/typography";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -209,6 +211,144 @@ function OffsetsSubsection({ offsets, nodeId, onCommit }: OffsetsSubsectionProps
   );
 }
 
+type ZIndexMode = "auto" | "custom";
+
+/**
+ * Structured per-value copy for the Z-index mode toggle (Checkpoint
+ * 5.3's own requirement, mirroring 5.1's identical one for Position
+ * itself — "must come from structured metadata... not scattered inline
+ * JSX prose"), consumed via InspectorSegmentedRow's optionTooltips.
+ * Deliberately avoids the incorrect "higher z-index always appears on
+ * top" claim the brief explicitly warns against — "usually" and "when
+ * elements participate in the same stacking context" are load-bearing
+ * words, not hedging.
+ */
+const ZINDEX_MODE_METADATA: Record<ZIndexMode, { label: string; description: string }> = {
+  auto: { label: "Auto", description: "Uses the browser's normal stacking order." },
+  custom: {
+    label: "Custom",
+    description: "Higher values usually appear in front of lower values when elements participate in the same stacking context.",
+  },
+};
+const ZINDEX_MODE_OPTIONS = (["auto", "custom"] as const).map((mode) => ZINDEX_MODE_METADATA[mode].label);
+const ZINDEX_MODE_LABEL_TO_MODE: Record<string, ZIndexMode> = { Auto: "auto", Custom: "custom" };
+const ZINDEX_MODE_TOOLTIPS = Object.fromEntries(
+  (["auto", "custom"] as const).map((mode) => [ZINDEX_MODE_METADATA[mode].label, ZINDEX_MODE_METADATA[mode].description]),
+);
+
+/** Row-level help (Checkpoint 5.3's own required caveat) — always visible via the row's help-icon tooltip, distinct from the *conditional* nearby-stacking-context note below, which only appears when it's actually relevant to the selected node. */
+const ZINDEX_HELP = "Z-index only compares elements within the same stacking context — it isn't one single global front-to-back ranking.";
+
+/**
+ * Shown only when establishesStackingContext(node) ||
+ * ancestorEstablishesStackingContext(document, node.id) is true (see
+ * StackingSubsection) — lightweight stacking-context *awareness*, not a
+ * diagnostic engine: it names the general categories of cause (per the
+ * brief's own wording) without attempting to compute or guarantee the
+ * actual resulting stacking order, which types/stackingContext.ts's own
+ * doc comment explains is deliberately out of scope.
+ */
+const NEARBY_STACKING_CONTEXT_NOTE =
+  "This element or a nearby ancestor already starts its own stacking context (for example: reduced opacity, a visual effect, or fixed/sticky position) — z-index here only competes within that scope.";
+
+interface StackingSubsectionProps {
+  node: EditorElementNode;
+  position: PositionSettings;
+  onCommit: (next: PositionSettings | undefined) => void;
+}
+
+/**
+ * The Stacking subsection (Checkpoint 5.3) — one property, Z-index, with
+ * a compact Auto/Custom mode toggle (InspectorSegmentedRow, the same
+ * primitive Checkpoint 3.5's InspectorGridChildSection already uses for
+ * an identical "number | auto" field shape — see its own Column/Row
+ * Start controls) plus a plain integer InspectorNumericValueControl
+ * (no unit — z-index has none — and no `allowAuto`: Auto/Custom is
+ * handled by the segmented toggle above, not the numeric field's own
+ * built-in "empty commits auto" mechanism, so there is exactly one way
+ * to reach Auto, not two competing ones).
+ *
+ * `mode` is fully derived from `position.zIndex`'s own type on every
+ * render (`typeof zIndex === "number" ? "custom" : "auto"`) — unlike
+ * Offsets' Linked/Unlinked, there is no separate local React state to
+ * re-derive on selection change, since the document itself is already
+ * the single source of truth for which mode is active.
+ *
+ * Selecting Auto commits the literal `"auto"` (a real, deliberate
+ * choice — see ZIndexValue's own doc comment); a separate Reset action
+ * clears the field back to genuinely absent. Selecting Custom commits 0
+ * unless a number is already stored (matching InspectorGridChildSection's
+ * identical `columnStart === "auto" ? 1 : columnStart` precedent) — it
+ * never tries to "remember" a prior custom value across an Auto detour,
+ * since by the time you're back on the toggle, if the value round-
+ * tripped through "auto", the prior number is genuinely gone from the
+ * data (the single `zIndex` field held one or the other, never both).
+ *
+ * Unlike Offsets, this subsection is NOT gated on
+ * offsetsApply(position.position)/Position being non-Static — see
+ * InspectorPositionSection's own doc comment for why: modern CSS lets
+ * z-index affect flex/grid items regardless of their own position value
+ * (this app already models Flex/Grid items — see flowLayout.ts), so
+ * hiding it for Static would incorrectly imply z-index is universally
+ * meaningless there.
+ */
+function StackingSubsection({ node, position, onCommit }: StackingSubsectionProps) {
+  const document = useEditorStore((state) => state.document);
+  const zIndex = position.zIndex;
+  const isSet = zIndex !== undefined;
+  const mode: ZIndexMode = typeof zIndex === "number" ? "custom" : "auto";
+  const nearbyStackingContext =
+    establishesStackingContext(node) || ancestorEstablishesStackingContext(document, node.id);
+
+  function handleModeSelect(label: string) {
+    const nextMode = ZINDEX_MODE_LABEL_TO_MODE[label];
+    const nextValue: ZIndexValue = nextMode === "auto" ? "auto" : typeof zIndex === "number" ? zIndex : 0;
+    onCommit(withPositionField(position, "zIndex", nextValue));
+  }
+
+  function handleValueCommit(next: NumericOrAuto) {
+    if (typeof next !== "number") return;
+    onCommit(withPositionField(position, "zIndex", Math.round(next)));
+  }
+
+  function handleReset() {
+    onCommit(withPositionField(position, "zIndex", undefined));
+  }
+
+  return (
+    <div className="border-t border-zinc-200 pt-2 dark:border-zinc-800">
+      <span className="text-[10px] font-medium tracking-wide text-zinc-400 uppercase dark:text-zinc-500">Stacking</span>
+      <InspectorPropertyRow
+        label="Z-index"
+        help={ZINDEX_HELP}
+        variant="stack"
+        state={isSet ? "set" : "unset"}
+        reset={<InspectorResetButton onReset={handleReset} disabled={!isSet} label="Reset z-index" />}
+      >
+        <div className="flex flex-col gap-1.5">
+          <InspectorSegmentedRow
+            label="Mode"
+            options={ZINDEX_MODE_OPTIONS}
+            activeOption={ZINDEX_MODE_METADATA[mode].label}
+            onSelect={handleModeSelect}
+            optionTooltips={ZINDEX_MODE_TOOLTIPS}
+          />
+          {mode === "custom" && (
+            <InspectorNumericValueControl
+              ariaLabel="Z-index value"
+              value={typeof zIndex === "number" ? zIndex : 0}
+              onCommit={handleValueCommit}
+            />
+          )}
+        </div>
+      </InspectorPropertyRow>
+      {nearbyStackingContext && (
+        <p className="mt-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">{NEARBY_STACKING_CONTEXT_NOTE}</p>
+      )}
+    </div>
+  );
+}
+
 /**
  * Structured per-value copy (Checkpoint 5.1's own requirement — "should
  * come from structured metadata, not hardcoded into the component"),
@@ -258,19 +398,30 @@ const NO_ACTIVE_OPTION = "";
  *
  * The Offsets subsection (top/right/bottom/left) only renders while
  * `offsetsApply(position.position)` is true — Static offsets are ignored
- * by CSS itself, and this checkpoint's own brief explicitly asks that
+ * by CSS itself, and Checkpoint 5.2's own brief explicitly asked that
  * beginners never see a control with no effect. This section still
- * renders no Inset-shorthand/logical-inset/Z-index controls — out of
- * scope for this checkpoint (see the brief's own Non-goals) and left for
- * 5.2.1/5.2.2/5.3 to add as new fields on this same PositionSettings
- * object.
+ * renders no Inset-shorthand/logical-inset controls — out of scope for
+ * this checkpoint (see the brief's own Non-goals) and left for
+ * 5.2.1/5.2.2 to add as new fields on this same PositionSettings object.
+ *
+ * The Stacking subsection (Z-index, Checkpoint 5.3) deliberately does
+ * *not* copy that same visibility rule — it renders whenever this whole
+ * Position section renders, regardless of `position.position`. Real CSS
+ * lets z-index affect a flex or grid item's stacking order even while
+ * that item is `position: static` (this app already models Flex/Grid
+ * items — see flowLayout.ts's FlexChildSettings/GridChildSettings), so
+ * hiding Z-index for Static would incorrectly imply it's universally
+ * meaningless there, unlike Offsets (which genuinely have zero effect on
+ * a static element, full stop). See StackingSubsection's own doc comment
+ * for the rest of this checkpoint's design.
  *
  * Callers must not render this section for a Free-layout child or a
  * Free-hosting container — see InspectorNodeSummary, which owns that
  * gating, and types/position.ts's own doc comment for why: Free layout
  * already owns the CSS `position` property (and, by extension, any
- * offset built on top of it) on those specific nodes. This section does
- * not duplicate that gating internally.
+ * offset or z-index built on top of it) on those specific nodes. This
+ * section does not duplicate that gating internally — Checkpoint 5.3
+ * inherits it for free, the same way Checkpoint 5.2 did.
  */
 export function InspectorPositionSection({ node }: InspectorPositionSectionProps) {
   const setElementPosition = useEditorStore((state) => state.setElementPosition);
@@ -301,6 +452,7 @@ export function InspectorPositionSection({ node }: InspectorPositionSectionProps
           <OffsetsSubsection offsets={position} nodeId={node.id} onCommit={(next) => setElementPosition(node.id, next)} />
         </div>
       )}
+      <StackingSubsection node={node} position={position} onCommit={(next) => setElementPosition(node.id, next)} />
     </InspectorSection>
   );
 }

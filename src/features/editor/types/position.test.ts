@@ -5,6 +5,7 @@ import {
   isValidOffsetValue,
   isValidPositionFieldValue,
   isValidPositionValue,
+  isValidZIndexValue,
   offsetsApply,
   offsetSidesEqual,
   withAllOffsets,
@@ -73,8 +74,16 @@ describe("position model", () => {
       expect(isValidPositionFieldValue("left", { value: "10", unit: "px" })).toBe(false);
     });
 
+    it("validates the zIndex field via isValidZIndexValue", () => {
+      expect(isValidPositionFieldValue("zIndex", "auto")).toBe(true);
+      expect(isValidPositionFieldValue("zIndex", 10)).toBe(true);
+      expect(isValidPositionFieldValue("zIndex", -1)).toBe(true);
+      expect(isValidPositionFieldValue("zIndex", 5.5)).toBe(false);
+      expect(isValidPositionFieldValue("zIndex", "5")).toBe(false);
+    });
+
     it("rejects an unknown field name", () => {
-      expect(isValidPositionFieldValue("zIndex" as never, "1")).toBe(false);
+      expect(isValidPositionFieldValue("opacity" as never, 1)).toBe(false);
     });
   });
 
@@ -206,6 +215,88 @@ describe("position model", () => {
       expect(isValidOffsetValue("relative")).toBe(false);
       expect(isValidOffsetValue(10)).toBe(false);
       expect(isValidOffsetValue({ value: 10 })).toBe(false);
+    });
+  });
+
+  describe("zIndex (Checkpoint 5.3)", () => {
+    describe("isValidZIndexValue", () => {
+      it("accepts 'auto'", () => {
+        expect(isValidZIndexValue("auto")).toBe(true);
+      });
+
+      it("accepts zero", () => {
+        expect(isValidZIndexValue(0)).toBe(true);
+      });
+
+      it("accepts positive safe integers", () => {
+        expect(isValidZIndexValue(1)).toBe(true);
+        expect(isValidZIndexValue(9999)).toBe(true);
+        expect(isValidZIndexValue(Number.MAX_SAFE_INTEGER)).toBe(true);
+      });
+
+      it("accepts negative safe integers", () => {
+        expect(isValidZIndexValue(-1)).toBe(true);
+        expect(isValidZIndexValue(-9999)).toBe(true);
+      });
+
+      it("rejects decimals", () => {
+        expect(isValidZIndexValue(1.5)).toBe(false);
+        expect(isValidZIndexValue(-0.5)).toBe(false);
+      });
+
+      it("rejects NaN and Infinity", () => {
+        expect(isValidZIndexValue(Number.NaN)).toBe(false);
+        expect(isValidZIndexValue(Number.POSITIVE_INFINITY)).toBe(false);
+        expect(isValidZIndexValue(Number.NEGATIVE_INFINITY)).toBe(false);
+      });
+
+      it("rejects an unsafe integer", () => {
+        expect(isValidZIndexValue(Number.MAX_SAFE_INTEGER + 1)).toBe(false);
+      });
+
+      it("rejects numeric strings and other keywords", () => {
+        expect(isValidZIndexValue("5")).toBe(false);
+        expect(isValidZIndexValue("-1")).toBe(false);
+        expect(isValidZIndexValue("initial")).toBe(false);
+        expect(isValidZIndexValue("")).toBe(false);
+      });
+
+      it("rejects malformed values", () => {
+        expect(isValidZIndexValue(null)).toBe(false);
+        expect(isValidZIndexValue(undefined)).toBe(false);
+        expect(isValidZIndexValue([])).toBe(false);
+        expect(isValidZIndexValue({})).toBe(false);
+        expect(isValidZIndexValue({ value: 5 })).toBe(false);
+      });
+    });
+
+    describe("withPositionField", () => {
+      it("sets zIndex to a number", () => {
+        expect(withPositionField({}, "zIndex", 5)).toEqual({ zIndex: 5 });
+      });
+
+      it("sets zIndex to 'auto'", () => {
+        expect(withPositionField({}, "zIndex", "auto")).toEqual({ zIndex: "auto" });
+      });
+
+      it("sets zIndex to a negative number", () => {
+        expect(withPositionField({}, "zIndex", -3)).toEqual({ zIndex: -3 });
+      });
+
+      it("clears zIndex while preserving other fields", () => {
+        expect(withPositionField({ position: "absolute", zIndex: 5 }, "zIndex", undefined)).toEqual({
+          position: "absolute",
+        });
+      });
+
+      it("preserves position and offsets when zIndex is set", () => {
+        const top = { value: 10, unit: "px" as const };
+        expect(withPositionField({ position: "absolute", top }, "zIndex", 5)).toEqual({
+          position: "absolute",
+          top,
+          zIndex: 5,
+        });
+      });
     });
   });
 });

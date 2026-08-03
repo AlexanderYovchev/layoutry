@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EditorElementNode } from "@/features/editor/types/document";
-import { findNodeById, findParentId } from "./findNodeById";
+import { findAncestorChain, findNodeById, findParentId } from "./findNodeById";
 
 const tree: EditorElementNode = {
   id: "root",
@@ -43,5 +43,26 @@ describe("findParentId", () => {
 
   it("returns null for an unknown id", () => {
     expect(findParentId(tree, "missing")).toBeNull();
+  });
+});
+
+describe("findAncestorChain", () => {
+  it("returns every ancestor, closest parent first, root last", () => {
+    expect(findAncestorChain(tree, "heading-1")).toEqual([
+      { id: "container-1", tag: "div", children: [{ id: "heading-1", tag: "h1", text: "Title" }] },
+      tree,
+    ]);
+  });
+
+  it("returns a single-element chain for a direct child of the root", () => {
+    expect(findAncestorChain(tree, "container-1")).toEqual([tree]);
+  });
+
+  it("returns an empty array for the root itself", () => {
+    expect(findAncestorChain(tree, "root")).toEqual([]);
+  });
+
+  it("returns an empty array for an unknown id", () => {
+    expect(findAncestorChain(tree, "missing")).toEqual([]);
   });
 });

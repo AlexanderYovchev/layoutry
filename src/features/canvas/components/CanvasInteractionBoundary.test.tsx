@@ -166,6 +166,24 @@ describe("CanvasInteractionBoundary", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("wraps the document tree in its own isolate stacking-context boundary, separate from the overlay layer (Checkpoint 5.3 editor-chrome protection)", () => {
+    const { container } = renderInWorkspace();
+
+    const documentRoot = container.querySelector('[data-node-id="page-root"]')!;
+    const isolateWrapper = documentRoot.parentElement!;
+    expect(isolateWrapper).toHaveClass("isolate");
+
+    // CanvasOverlay (the selection/hover/drop-indicator layer) must be a
+    // sibling of the isolate wrapper, not a descendant of it — otherwise
+    // a document node's own z-index could still climb over the overlay
+    // from *inside* the same stacking context.
+    const canvasRoot = isolateWrapper.parentElement!;
+    const overlayRoot = canvasRoot.querySelector(':scope > [aria-hidden="true"]');
+    expect(overlayRoot).not.toBeNull();
+    expect(isolateWrapper.contains(overlayRoot)).toBe(false);
+    expect(canvasRoot.contains(overlayRoot)).toBe(true);
+  });
+
   it("keeps the shared store in sync with the Structure panel", () => {
     // Both DocumentCanvas and StructureTree read state.document from the
     // same store, so seeding it with `tree` makes this a true end-to-end

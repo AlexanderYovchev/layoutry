@@ -15,8 +15,9 @@
  * Insets (Checkpoint 5.2) extended this same object with `top`/`right`/
  * `bottom`/`left` — see OffsetValue/OFFSET_SIDES below. No migration was
  * needed: withPositionField was already generic over `keyof
- * PositionSettings`, exactly anticipating this. 5.3 (Z-index) is next in
- * line for the same treatment.
+ * PositionSettings`, exactly anticipating this. Z-index (Checkpoint 5.3)
+ * extended it again with `zIndex` — see ZIndexValue below — the same way,
+ * again with no migration.
  *
  * Ownership note: this is a *general* user-facing `position` control, and
  * it is not the only place in the app that ever writes the CSS
@@ -81,12 +82,28 @@ export const OFFSET_UNITS: readonly CssUnit[] = ["px", "%", "rem", "em"];
  */
 export type OffsetValue = CssLengthValue | "auto";
 
+/**
+ * CSS `z-index` (Checkpoint 5.3) — either the `auto` keyword (the
+ * browser's own default stacking behavior) or a whole number. A plain
+ * `number`, not a CssLengthValue: unlike every offset, z-index has no
+ * unit — it's a bare stacking-order integer, positive, zero, or
+ * negative — so wrapping it in a `{ value, unit }` pair would invent a
+ * unit concept CSS itself doesn't have. "auto" is a real, explicit,
+ * deliberate choice here too, distinct from the field being entirely
+ * absent — same reasoning as OffsetValue's own "auto" and Position's own
+ * "Static": selecting Auto from the Inspector's mode toggle commits the
+ * literal string, it doesn't merely clear the field (a separate Reset
+ * action does that) — see InspectorPositionSection's StackingSubsection.
+ */
+export type ZIndexValue = number | "auto";
+
 export interface PositionSettings {
   position?: PositionValue;
   top?: OffsetValue;
   right?: OffsetValue;
   bottom?: OffsetValue;
   left?: OffsetValue;
+  zIndex?: ZIndexValue;
 }
 
 /** A node with no position settings renders with none of this checkpoint's CSS at all — the tag's own default rendering (`static`) governs, exactly like filters/border/display. */
@@ -169,16 +186,28 @@ export function isValidOffsetValue(value: unknown): value is OffsetValue {
 }
 
 /**
+ * Valid: "auto", or any safe integer (Number.isSafeInteger already
+ * rejects decimals, NaN, and Infinity in one call — a float, NaN, and
+ * ±Infinity all fail it). Invalid: numeric strings ("5"), null, arrays,
+ * objects, or any other keyword — z-index has exactly one keyword
+ * ("auto") and no unit, unlike every OffsetValue.
+ */
+export function isValidZIndexValue(value: unknown): value is ZIndexValue {
+  return value === "auto" || Number.isSafeInteger(value);
+}
+
+/**
  * Defensive per-field check for a value that might be malformed loaded-
  * document data — this app has no persistence/import feature yet, but
  * the resolver must still never throw on bad data (see
  * isValidDisplayFieldValue's identical reasoning). Deliberately per-
- * *field*, not a single whole-object gate, so one malformed offset can't
- * suppress `position` (or another, still-valid offset). Branches by
- * field rather than gating on `typeof value === "string"` up front the
- * way Checkpoint 5.1's own version of this function did — `top`/`right`/
- * `bottom`/`left` are objects (or the literal "auto"), not strings, once
- * Checkpoint 5.2 added them.
+ * *field*, not a single whole-object gate, so one malformed offset (or
+ * zIndex) can't suppress `position` or another, still-valid field.
+ * Branches by field rather than gating on `typeof value === "string"` up
+ * front the way Checkpoint 5.1's own version of this function did —
+ * `top`/`right`/`bottom`/`left` are objects (or the literal "auto"), and
+ * `zIndex` is a number (or "auto"), not strings, once Checkpoints
+ * 5.2/5.3 added them.
  */
 export function isValidPositionFieldValue<K extends keyof PositionSettings>(field: K, value: unknown): boolean {
   switch (field) {
@@ -189,6 +218,8 @@ export function isValidPositionFieldValue<K extends keyof PositionSettings>(fiel
     case "bottom":
     case "left":
       return isValidOffsetValue(value);
+    case "zIndex":
+      return isValidZIndexValue(value);
     default:
       return false;
   }

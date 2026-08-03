@@ -80,4 +80,61 @@ describe("resolvePositionStyle", () => {
       expect(resolvePositionStyle(node)).toEqual({ right: "5px" });
     });
   });
+
+  describe("zIndex (Checkpoint 5.3)", () => {
+    it("resolves 'auto'", () => {
+      const node: EditorElementNode = { id: "n1", tag: "div", position: { zIndex: "auto" } };
+      expect(resolvePositionStyle(node)).toEqual({ zIndex: "auto" });
+    });
+
+    it("resolves a positive integer", () => {
+      const node: EditorElementNode = { id: "n1", tag: "div", position: { zIndex: 10 } };
+      expect(resolvePositionStyle(node)).toEqual({ zIndex: 10 });
+    });
+
+    it("resolves zero", () => {
+      const node: EditorElementNode = { id: "n1", tag: "div", position: { zIndex: 0 } };
+      expect(resolvePositionStyle(node)).toEqual({ zIndex: 0 });
+    });
+
+    it("resolves a negative integer", () => {
+      const node: EditorElementNode = { id: "n1", tag: "div", position: { zIndex: -5 } };
+      expect(resolvePositionStyle(node)).toEqual({ zIndex: -5 });
+    });
+
+    it("resolves zIndex alongside position and every offset in one pass", () => {
+      const node: EditorElementNode = {
+        id: "n1",
+        tag: "div",
+        position: {
+          position: "absolute",
+          top: { value: 10, unit: "px" },
+          zIndex: 20,
+        },
+      };
+      expect(resolvePositionStyle(node)).toEqual({ position: "absolute", top: "10px", zIndex: 20 });
+    });
+
+    it("never throws on malformed zIndex data, and does not suppress position or offsets", () => {
+      const node = {
+        id: "n1",
+        tag: "div",
+        position: { position: "absolute", top: { value: 10, unit: "px" }, zIndex: 5.5 },
+      } as unknown as EditorElementNode;
+      expect(() => resolvePositionStyle(node)).not.toThrow();
+      expect(resolvePositionStyle(node)).toEqual({ position: "absolute", top: "10px" });
+    });
+
+    it.each(["5", null, [], {}, Number.NaN, Number.POSITIVE_INFINITY])(
+      "omits a malformed zIndex value (%s) while still resolving position",
+      (badValue) => {
+        const node = {
+          id: "n1",
+          tag: "div",
+          position: { position: "relative", zIndex: badValue },
+        } as unknown as EditorElementNode;
+        expect(resolvePositionStyle(node)).toEqual({ position: "relative" });
+      },
+    );
+  });
 });

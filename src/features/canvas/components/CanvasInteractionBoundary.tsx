@@ -114,12 +114,47 @@ export function CanvasInteractionBoundary({
       onPointerOver={handlePointerOver}
       onPointerOut={handlePointerOut}
     >
-      <DocumentNodeRenderer
-        node={documentModel}
-        parentId={null}
-        parentLayoutMode="flow"
-        parentFlowDisplay="block"
-      />
+      {/*
+       * isolate (CSS `isolation: isolate`) — editor-chrome/stacking-
+       * context boundary, Checkpoint 5.3. Before this, a document node
+       * given an explicit z-index (Position section, Checkpoint 5.3) and
+       * a non-static position could win the CSS stacking-order comparison
+       * against CanvasOverlay below (a `position: absolute` element with
+       * `z-index: auto`): per the CSS stacking spec, "positioned
+       * descendant with an explicit positive z-index" is a *later* paint
+       * bucket than "positioned descendant with z-index: auto", and
+       * neither this div nor CanvasInteractionBoundary's own root
+       * established a stacking context of its own to contain that
+       * comparison — a sufficiently high document z-index could paint a
+       * document element over the selection outline, resize handles, and
+       * hover/drop-indicator chrome (all of which live in CanvasOverlay,
+       * a plain later sibling, not a descendant, of the document tree).
+       *
+       * `isolation: isolate` on this wrapper (around the document tree
+       * only, not CanvasOverlay) forces every document descendant's own
+       * z-index to be compared *only* against its document siblings,
+       * inside this wrapper's own new stacking context — it can never
+       * again escape to compete with CanvasOverlay, no matter how large a
+       * z-index a document node is given, without clamping that value or
+       * touching CanvasOverlay at all. This is the smallest fix
+       * consistent with the existing architecture: CanvasOverlay was
+       * already correctly positioned as a later sibling (not a
+       * descendant) of the document tree; it only needed this boundary,
+       * not a rewrite. The Inspector panel, toolbar, Structure panel, and
+       * menus live in entirely separate DOM subtrees outside DocumentCanvas
+       * (see AppShell/EditorApp) and were never reachable by document
+       * z-index in the first place; native <dialog> modals (see
+       * components/ui/Dialog.tsx) render in the browser's own top layer,
+       * which no z-index of any kind can affect.
+       */}
+      <div className="isolate">
+        <DocumentNodeRenderer
+          node={documentModel}
+          parentId={null}
+          parentLayoutMode="flow"
+          parentFlowDisplay="block"
+        />
+      </div>
       <CanvasOverlay canvasRootRef={canvasRootRef} hoveredNodeId={hoveredNodeId} />
     </div>
   );
