@@ -21,13 +21,14 @@ export function ParagraphElement({ node, parentId, parentLayoutMode, parentFlowD
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   // elementPositionStyle's clipOverflowY sets the `overflow` shorthand —
   // harmless on its own, but co-existing in the same style object as this
-  // checkpoint's explicit overflowX/overflowY longhands (Checkpoint 4.8)
-  // trips React's own "don't mix shorthand and non-shorthand for the same
+  // checkpoint's explicit overflow/overflowX/overflowY fields (Checkpoint
+  // 4.8, extended with the unified `overflow` shorthand in 5.4) trips
+  // React's own "don't mix shorthand and non-shorthand for the same
   // value" warning, and leaves the two genuinely fighting over the same
-  // box. Once either axis is explicitly set, this legacy resize-clip
+  // box. Once any of the three is explicitly set, this legacy resize-clip
   // shorthand must get out of the way entirely, the same way every other
   // pre-4.x chrome default already does once real data exists.
-  const usesLegacyOverflowClip = !node.display?.overflowX && !node.display?.overflowY;
+  const usesLegacyOverflowClip = !node.display?.overflow && !node.display?.overflowX && !node.display?.overflowY;
 
   return (
     <p

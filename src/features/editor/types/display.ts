@@ -8,6 +8,15 @@
  * getDisplaySettings/withDisplayField, and resolveDisplayStyle, which
  * only emits CSS for fields actually present and structurally valid.
  *
+ * Overflow was upgraded in Checkpoint 5.4 from two always-independent
+ * axes to a shorthand/longhand pair: the unified `overflow` field (Linked
+ * mode) and the original overflowX/overflowY fields (Unlinked mode) are
+ * mutually exclusive storage for the same CSS concept — see
+ * overflowAxesEqual/withAllOverflow/withOverflowAxis below, and
+ * resolveDisplayStyle's own documented precedence. No existing 4.8
+ * document needs migrating: overflowX/overflowY keep working exactly as
+ * before, and `overflow` is a new, purely additive field.
+ *
  * `display` deliberately narrows the brief's own illustrative
  * block/inline/inline-block/flex/grid/none set down to
  * block/inline/inline-block/none — "flex" and "grid" are already fully
@@ -32,9 +41,9 @@ export const DISPLAY_VALUES: readonly DisplayValue[] = ["block", "inline", "inli
 export type VisibilityValue = "visible" | "hidden";
 export const VISIBILITY_VALUES: readonly VisibilityValue[] = ["visible", "hidden"];
 
-/** Shared by both Overflow X and Overflow Y — the same four keywords apply to either axis. */
-export type OverflowValue = "visible" | "hidden" | "auto" | "scroll";
-export const OVERFLOW_VALUES: readonly OverflowValue[] = ["visible", "hidden", "auto", "scroll"];
+/** Shared by the unified Overflow shorthand and both Overflow X/Overflow Y axes — the same five keywords apply to any of the three (Checkpoint 5.4 added "clip" to the original four). */
+export type OverflowValue = "visible" | "hidden" | "clip" | "auto" | "scroll";
+export const OVERFLOW_VALUES: readonly OverflowValue[] = ["visible", "hidden", "clip", "auto", "scroll"];
 
 export type PointerEventsValue = "auto" | "none";
 export const POINTER_EVENTS_VALUES: readonly PointerEventsValue[] = ["auto", "none"];
@@ -57,6 +66,15 @@ export const USER_SELECT_VALUES: readonly UserSelectValue[] = ["auto", "none", "
 export interface DisplaySettings {
   display?: DisplayValue;
   visibility?: VisibilityValue;
+  /**
+   * The unified CSS `overflow` shorthand (Checkpoint 5.4) — the Overflow
+   * subsection's Linked mode. Mutually exclusive with overflowX/overflowY
+   * by construction (see withAllOverflow/withOverflowAxis): a node's
+   * overflow data lives in exactly one of these two shapes at a time,
+   * never both at once. See resolveDisplayStyle for the resolver's own
+   * precedence when malformed/hand-edited data violates that invariant.
+   */
+  overflow?: OverflowValue;
   overflowX?: OverflowValue;
   overflowY?: OverflowValue;
   pointerEvents?: PointerEventsValue;
@@ -126,6 +144,7 @@ export function isValidDisplayFieldValue<K extends keyof DisplaySettings>(field:
       return isValidDisplayValue(value);
     case "visibility":
       return isValidVisibilityValue(value);
+    case "overflow":
     case "overflowX":
     case "overflowY":
       return isValidOverflowValue(value);
@@ -138,4 +157,75 @@ export function isValidDisplayFieldValue<K extends keyof DisplaySettings>(field:
     default:
       return false;
   }
+}
+
+/**
+ * True when Overflow X and Overflow Y already resolve to one effective
+ * value — including "the unified `overflow` shorthand is already the
+ * field in use" and "both axes are genuinely unset" — used once per
+ * freshly-selected node to decide whether the Overflow subsection's
+ * Linked/Unlinked toggle should default to Linked (Checkpoint 5.4), the
+ * same "does this already look uniform" heuristic offsetSidesEqual
+ * (position.ts) established for Offsets' own Linked/Unlinked default. A
+ * pre-5.4 document only ever has overflowX/overflowY (no shorthand
+ * field existed yet) — this still initializes it sensibly: identical
+ * axes default to Linked, differing axes default to Unlinked.
+ */
+export function overflowAxesEqual(display: DisplaySettings): boolean {
+  if (display.overflow !== undefined) return true;
+  return display.overflowX === display.overflowY;
+}
+
+/**
+ * Writes (or, with `value` undefined, clears) the unified Overflow
+ * shorthand — the Overflow subsection's Linked-mode commit, and its own
+ * "reset all overflow"/"reset both axes" action. Always clears
+ * overflowX/overflowY too, whether setting or resetting: the shorthand
+ * and the per-axis longhands are mutually exclusive storage for the same
+ * underlying CSS concept (see resolveDisplayStyle's own precedence), so
+ * committing a unified value must never leave a stale, contradictory
+ * per-axis value sitting alongside it. Preserves every other field on
+ * the same shared DisplaySettings object.
+ */
+export function withAllOverflow(current: DisplaySettings, value: OverflowValue | undefined): DisplaySettings | undefined {
+  const next: DisplaySettings = { ...current };
+  delete next.overflowX;
+  delete next.overflowY;
+  if (value === undefined) delete next.overflow;
+  else next.overflow = value;
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+/**
+ * Writes (or, with `value` undefined, clears) exactly one overflow axis —
+ * the Overflow subsection's Unlinked-mode commit. Always clears the
+ * unified `overflow` shorthand first: per resolveDisplayStyle's
+ * precedence, a present shorthand always wins over the per-axis
+ * longhands, so editing one axis while a shorthand value is still stored
+ * would otherwise be silently ignored by the Canvas the moment this
+ * commit lands. When the shorthand was the *only* overflow data present
+ * (the node was still in Linked-shaped storage when the user started
+ * editing one axis), its value is copied onto the *other*, untouched
+ * axis first — so switching to per-axis storage by editing just one axis
+ * never silently resets the other axis back to the browser's own
+ * "visible" default. This is the one point real document data changes
+ * shape between the two storage forms; the Link toggle itself never
+ * writes (see InspectorDisplaySection's OverflowSubsection), so this
+ * single commit is also where the brief's "use the current unified value
+ * as the starting point" rule actually takes effect.
+ */
+export function withOverflowAxis(
+  current: DisplaySettings,
+  axis: "overflowX" | "overflowY",
+  value: OverflowValue | undefined,
+): DisplaySettings | undefined {
+  const other = axis === "overflowX" ? "overflowY" : "overflowX";
+  const next: DisplaySettings = { ...current };
+  if (next.overflow !== undefined && next[other] === undefined) {
+    next[other] = next.overflow;
+  }
+  delete next.overflow;
+  if (value === undefined) delete next[axis];
+  else next[axis] = value;
+  return Object.keys(next).length > 0 ? next : undefined;
 }

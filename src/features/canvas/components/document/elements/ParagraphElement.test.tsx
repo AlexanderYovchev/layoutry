@@ -32,4 +32,25 @@ describe("ParagraphElement", () => {
     expect(paragraph.style.maxWidth).toBe("100%");
     expect(paragraph.style.overflow).toBe("hidden");
   });
+
+  it("defers to an explicit overflow value instead of the legacy resize-clip default (Checkpoint 5.4)", () => {
+    render(
+      <ParagraphElement
+        node={{
+          id: "p-1",
+          tag: "p",
+          text: "Body copy.",
+          dimensions: { preferredWidth: 800, preferredHeight: 120, offsetX: 0, offsetY: 0 },
+          display: { overflowY: "auto" },
+        }}
+        parentId="section-1"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+
+    const paragraph = screen.getByText("Body copy.");
+    expect(paragraph.style.overflow).toBe("");
+    expect(paragraph.style.overflowY).toBe("auto");
+  });
 });

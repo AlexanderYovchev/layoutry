@@ -30,4 +30,45 @@ describe("ButtonElement", () => {
     expect(button.style.height).toBe("50px");
     expect(button.style.overflow).toBe("hidden");
   });
+
+  it("defers to an explicit unified overflow value instead of the legacy resize-clip default (Checkpoint 5.4)", () => {
+    render(
+      <ButtonElement
+        node={{
+          id: "button-1",
+          tag: "button",
+          text: "Go",
+          dimensions: { preferredWidth: 200, preferredHeight: 50, offsetX: 0, offsetY: 0 },
+          display: { overflow: "visible" },
+        }}
+        parentId="section-1"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "Go" });
+    expect(button.style.overflow).toBe("visible");
+  });
+
+  it("defers to an explicit overflowX/overflowY axis instead of the legacy resize-clip default (Checkpoint 5.4)", () => {
+    render(
+      <ButtonElement
+        node={{
+          id: "button-1",
+          tag: "button",
+          text: "Go",
+          dimensions: { preferredWidth: 200, preferredHeight: 50, offsetX: 0, offsetY: 0 },
+          display: { overflowY: "auto" },
+        }}
+        parentId="section-1"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "Go" });
+    expect(button.style.overflow).toBe("");
+    expect(button.style.overflowY).toBe("auto");
+  });
 });

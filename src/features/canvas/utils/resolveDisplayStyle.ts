@@ -42,11 +42,32 @@ export function resolveDisplayStyle(node: EditorElementNode): CSSProperties {
   if (settings.visibility !== undefined && isValidDisplayFieldValue("visibility", settings.visibility)) {
     style.visibility = settings.visibility;
   }
-  if (settings.overflowX !== undefined && isValidDisplayFieldValue("overflowX", settings.overflowX)) {
-    style.overflowX = settings.overflowX;
-  }
-  if (settings.overflowY !== undefined && isValidDisplayFieldValue("overflowY", settings.overflowY)) {
-    style.overflowY = settings.overflowY;
+  // Overflow precedence (Checkpoint 5.4): a valid unified `overflow`
+  // shorthand always wins outright over overflowX/overflowY — by
+  // construction (withAllOverflow/withOverflowAxis) the two are mutually
+  // exclusive, so a valid shorthand means the per-axis fields, if present
+  // at all, are stale leftovers from before the node was last committed
+  // in Linked mode. Only when the shorthand is absent OR itself malformed
+  // does this fall back to the per-axis longhands, each validated and
+  // emitted fully independently — a malformed overflowX must never
+  // suppress a valid overflowY, or vice versa, and neither may suppress
+  // any other Display field above/below. This mirrors, rather than
+  // fights, React's own DOM behavior: setting `overflow` and
+  // `overflowX`/`overflowY` in the same inline style object is exactly
+  // the "shorthand plus longhand for the same box" pattern the legacy
+  // resize-clip default (see elementDimensionsStyle's clipOverflowY,
+  // gated off the moment any of these three fields is present — see
+  // HeadingElement/ParagraphElement/ButtonElement) was already written
+  // to avoid colliding with.
+  if (settings.overflow !== undefined && isValidDisplayFieldValue("overflow", settings.overflow)) {
+    style.overflow = settings.overflow;
+  } else {
+    if (settings.overflowX !== undefined && isValidDisplayFieldValue("overflowX", settings.overflowX)) {
+      style.overflowX = settings.overflowX;
+    }
+    if (settings.overflowY !== undefined && isValidDisplayFieldValue("overflowY", settings.overflowY)) {
+      style.overflowY = settings.overflowY;
+    }
   }
   if (settings.pointerEvents !== undefined && isValidDisplayFieldValue("pointerEvents", settings.pointerEvents)) {
     style.pointerEvents = settings.pointerEvents;

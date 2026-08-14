@@ -1,12 +1,17 @@
 "use client";
 
+import { useState } from "react";
+import { InspectorLinkToggle } from "@/features/inspector/components/InspectorLinkToggle";
 import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { InspectorSegmentedRow } from "@/features/inspector/components/InspectorSegmentedRow";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import {
   getDisplaySettings,
+  overflowAxesEqual,
+  withAllOverflow,
   withDisplayField,
+  withOverflowAxis,
   CURSOR_VALUES,
   DISPLAY_VALUES,
   OVERFLOW_VALUES,
@@ -14,6 +19,7 @@ import {
   USER_SELECT_VALUES,
   VISIBILITY_VALUES,
   type DisplaySettings,
+  type OverflowValue,
 } from "@/features/editor/types/display";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -46,7 +52,6 @@ function buildEnumMaps<T extends string>(values: readonly T[]) {
 
 const DISPLAY_MAPS = buildEnumMaps(DISPLAY_VALUES);
 const VISIBILITY_MAPS = buildEnumMaps(VISIBILITY_VALUES);
-const OVERFLOW_MAPS = buildEnumMaps(OVERFLOW_VALUES);
 const POINTER_EVENTS_MAPS = buildEnumMaps(POINTER_EVENTS_VALUES);
 const CURSOR_MAPS = buildEnumMaps(CURSOR_VALUES);
 const USER_SELECT_MAPS = buildEnumMaps(USER_SELECT_VALUES);
@@ -83,6 +88,142 @@ function renderEnumRow(config: EnumRowConfig) {
 }
 
 /**
+ * Structured per-value copy for every Overflow control (Checkpoint 5.4) —
+ * same "structured metadata, not inline JSX prose" requirement Position's
+ * POSITION_VALUE_METADATA/ZINDEX_MODE_METADATA already established.
+ * Deliberately distinguishes Hidden from Clip rather than treating them
+ * as synonyms — Hidden still permits programmatic scrolling in some
+ * browsers, Clip never creates a scroll container for that axis at all.
+ */
+const OVERFLOW_VALUE_METADATA: Record<OverflowValue, { label: string; description: string }> = {
+  visible: { label: "Visible", description: "Content may render outside the element's box." },
+  hidden: {
+    label: "Hidden",
+    description: "Overflowing content is clipped. Programmatic scrolling may still exist depending on browser behavior.",
+  },
+  clip: { label: "Clip", description: "Overflowing content is clipped without creating a scroll container for that axis." },
+  auto: { label: "Auto", description: "Scrollbars appear when overflow requires them." },
+  scroll: { label: "Scroll", description: "The element becomes scrollable and scrollbars may be shown even when content fits." },
+};
+const OVERFLOW_OPTIONS = OVERFLOW_VALUES.map((value) => OVERFLOW_VALUE_METADATA[value].label);
+const OVERFLOW_LABEL_TO_VALUE = Object.fromEntries(
+  OVERFLOW_VALUES.map((value) => [OVERFLOW_VALUE_METADATA[value].label, value]),
+) as Record<string, OverflowValue>;
+const OVERFLOW_VALUE_TO_LABEL = Object.fromEntries(
+  OVERFLOW_VALUES.map((value) => [value, OVERFLOW_VALUE_METADATA[value].label]),
+) as Record<OverflowValue, string>;
+const OVERFLOW_TOOLTIPS = Object.fromEntries(
+  OVERFLOW_VALUES.map((value) => [OVERFLOW_VALUE_METADATA[value].label, OVERFLOW_VALUE_METADATA[value].description]),
+);
+
+/** Matches no real option — same "don't falsely highlight an unset property" convention this file's own NO_ACTIVE_OPTION established for the other enum rows. */
+const OVERFLOW_NO_ACTIVE_OPTION = "";
+
+/** The effective value an axis displays in Unlinked mode — falls back to the unified `overflow` shorthand purely for *display* when the node hasn't actually been committed in per-axis form yet (see withOverflowAxis's own doc comment on why a commit is what actually performs that seed). */
+function axisDisplayValue(display: DisplaySettings, axis: "overflowX" | "overflowY"): OverflowValue | undefined {
+  return display[axis] ?? display.overflow;
+}
+
+interface OverflowSubsectionProps {
+  display: DisplaySettings;
+  nodeId: string;
+  onCommit: (next: DisplaySettings | undefined) => void;
+}
+
+/**
+ * The Overflow subsection (Checkpoint 5.4) — upgrades the flat Overflow
+ * X/Overflow Y rows from Checkpoint 4.8 in place (no second Overflow
+ * section, no duplicate CSS ownership) into a Linked/Unlinked editor,
+ * reusing the exact primitives OffsetsSubsection (Position, Checkpoint
+ * 5.2) already proved for a linked/unlinked grouped property:
+ * InspectorLinkToggle plus a per-axis InspectorSegmentedRow/reset pair.
+ *
+ * Unlike Offsets (which has no CSS shorthand and always stores all four
+ * sides as longhand), Overflow has a *real* CSS shorthand — so Linked and
+ * Unlinked here store data in two mutually exclusive shapes rather than
+ * one shape displayed two ways: Linked commits the unified `overflow`
+ * field (withAllOverflow); Unlinked commits overflowX/overflowY
+ * (withOverflowAxis). See types/display.ts's own doc comment on both
+ * helpers for the full mutual-exclusivity/seeding contract this relies
+ * on, and resolveDisplayStyle for the resolver's matching precedence.
+ *
+ * Linked/Unlinked is local Inspector UI state, never written to the
+ * document and never part of Undo/Redo on its own — re-derived via
+ * overflowAxesEqual only when the *selection* changes (the same
+ * lastNodeId pattern OffsetsSubsection/InspectorBorderRadiusSection
+ * already use), so unlinking and editing just one axis never snaps back
+ * to Linked just because that edit made the two axes differ. Toggling
+ * the mode is a pure view flip — it never itself calls onCommit, so it
+ * never creates a history entry; only an actual value edit does, and
+ * exactly one commit per edit (withOverflowAxis performs any needed
+ * shape migration inside that same single commit, never a second one).
+ */
+function OverflowSubsection({ display, nodeId, onCommit }: OverflowSubsectionProps) {
+  const [linked, setLinked] = useState(() => overflowAxesEqual(display));
+
+  const [lastNodeId, setLastNodeId] = useState(nodeId);
+  if (nodeId !== lastNodeId) {
+    setLastNodeId(nodeId);
+    setLinked(overflowAxesEqual(display));
+  }
+
+  const hasAnyOverflow = display.overflow !== undefined || display.overflowX !== undefined || display.overflowY !== undefined;
+  const linkedValue = display.overflow ?? display.overflowX;
+
+  function handleResetAll() {
+    onCommit(withAllOverflow(display, undefined));
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-zinc-200 pt-2 text-xs dark:border-zinc-800">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-zinc-500 dark:text-zinc-400">Overflow</span>
+        <div className="flex items-center gap-1">
+          <InspectorLinkToggle linked={linked} onToggle={() => setLinked((prev) => !prev)} />
+          <InspectorResetButton onReset={handleResetAll} disabled={!hasAnyOverflow} label="Reset overflow" />
+        </div>
+      </div>
+      {linked ? (
+        <InspectorSegmentedRow
+          label="Overflow"
+          options={OVERFLOW_OPTIONS}
+          activeOption={linkedValue ? OVERFLOW_VALUE_TO_LABEL[linkedValue] : OVERFLOW_NO_ACTIVE_OPTION}
+          onSelect={(label) => onCommit(withAllOverflow(display, OVERFLOW_LABEL_TO_VALUE[label]))}
+          optionTooltips={OVERFLOW_TOOLTIPS}
+          state={linkedValue !== undefined ? "set" : "unset"}
+        />
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {(["overflowX", "overflowY"] as const).map((axis) => {
+            const axisLabel = axis === "overflowX" ? "Horizontal (X)" : "Vertical (Y)";
+            const value = axisDisplayValue(display, axis);
+            const isSet = display[axis] !== undefined || display.overflow !== undefined;
+            return (
+              <InspectorSegmentedRow
+                key={axis}
+                label={axisLabel}
+                options={OVERFLOW_OPTIONS}
+                activeOption={value ? OVERFLOW_VALUE_TO_LABEL[value] : OVERFLOW_NO_ACTIVE_OPTION}
+                onSelect={(label) => onCommit(withOverflowAxis(display, axis, OVERFLOW_LABEL_TO_VALUE[label]))}
+                optionTooltips={OVERFLOW_TOOLTIPS}
+                state={isSet ? "set" : "unset"}
+                reset={
+                  <InspectorResetButton
+                    onReset={() => onCommit(withOverflowAxis(display, axis, undefined))}
+                    disabled={!isSet}
+                    label={`Reset ${axisLabel.toLowerCase()}`}
+                  />
+                }
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * The Display & Visibility Foundation section (Checkpoint 4.8) — built
  * entirely on the Checkpoint 4.1 shared primitives, same as Border/
  * Filters. Every field is a plain enum choice (no free-text entry, so no
@@ -97,7 +238,8 @@ function renderEnumRow(config: EnumRowConfig) {
  *
  * Grouped into four beginner-friendly sub-sections, in the brief's own
  * order: Rendering (Display, Visibility), Interaction (Pointer Events,
- * Cursor), Overflow (Overflow X, Overflow Y), Selection (User Select).
+ * Cursor), Overflow (Linked/Unlinked — see OverflowSubsection,
+ * Checkpoint 5.4), Selection (User Select).
  *
  * `display` deliberately offers only block/inline/inline-block/none —
  * see types/display.ts's own doc comment for why "flex"/"grid" stay
@@ -187,27 +329,7 @@ export function InspectorDisplaySection({ node }: InspectorDisplaySectionProps) 
         })}
       </div>
 
-      <div className="flex flex-col gap-1.5 border-t border-zinc-200 pt-2 text-xs dark:border-zinc-800">
-        <span className="text-zinc-500 dark:text-zinc-400">Overflow</span>
-        {renderEnumRow({
-          field: "overflowX",
-          label: "Overflow X",
-          options: OVERFLOW_MAPS.labels,
-          activeOption: display.overflowX ? OVERFLOW_MAPS.valueToLabel[display.overflowX] : NO_ACTIVE_OPTION,
-          onSelect: (label) => commitField("overflowX", OVERFLOW_MAPS.labelToValue[label]),
-          onReset: () => commitField("overflowX", undefined),
-          isSet: display.overflowX !== undefined,
-        })}
-        {renderEnumRow({
-          field: "overflowY",
-          label: "Overflow Y",
-          options: OVERFLOW_MAPS.labels,
-          activeOption: display.overflowY ? OVERFLOW_MAPS.valueToLabel[display.overflowY] : NO_ACTIVE_OPTION,
-          onSelect: (label) => commitField("overflowY", OVERFLOW_MAPS.labelToValue[label]),
-          onReset: () => commitField("overflowY", undefined),
-          isSet: display.overflowY !== undefined,
-        })}
-      </div>
+      <OverflowSubsection display={display} nodeId={node.id} onCommit={(next) => setElementDisplay(node.id, next)} />
 
       <div className="flex flex-col gap-1.5 border-t border-zinc-200 pt-2 text-xs dark:border-zinc-800">
         <span className="text-zinc-500 dark:text-zinc-400">Selection</span>
