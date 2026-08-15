@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type KeyboardEvent } from "react";
+import { useId, useRef, useState, type KeyboardEvent } from "react";
 import { InspectorUnitSelect, type CssUnit } from "@/features/inspector/components/InspectorUnitSelect";
 
 export type NumericOrAuto = number | "auto";
@@ -47,6 +47,25 @@ function formatDraft(value: NumericOrAuto): string {
  * or bounds should build on. Never bypasses the caller's onCommit — this
  * component holds only transient draft-text state, never the committed
  * value itself.
+ *
+ * Bug fix (Checkpoint 5.5 — found via this checkpoint's own real-browser
+ * undo/redo verification, but pre-existing since Checkpoint 4.1 and
+ * shared by every caller of this control, e.g. Position's Offsets/
+ * Z-index fields, not just Aspect Ratio): Enter and Escape both call
+ * event.currentTarget.blur() to visually release focus after handling
+ * the key. In a genuinely-focused real browser input, that .blur() call
+ * dispatches a real native blur event, which this same input's own
+ * onBlur handler previously treated as an *unrelated second* commit of
+ * the identical already-committed (Enter) or just-reverted (Escape)
+ * draft — silently doubling the undo/redo history entries for what a
+ * user experiences as one single action. Existing unit tests never
+ * caught this because a synthetic `fireEvent.keyDown` fired at an
+ * element that was never actually `.focus()`-ed leaves
+ * `document.activeElement` unchanged, so the follow-up `.blur()` call is
+ * a no-op in that context — see this file's own test suite for a
+ * regression test that explicitly focuses the input first, reproducing
+ * the real-browser condition. suppressNextBlurCommitRef fixes this at
+ * the root (this shared primitive), not per call site.
  */
 export function InspectorNumericValueControl({
   ariaLabel,
@@ -64,6 +83,16 @@ export function InspectorNumericValueControl({
 }: InspectorNumericValueControlProps) {
   const inputId = useId();
   const [draft, setDraft] = useState(() => formatDraft(value));
+  // Enter and Escape both call event.currentTarget.blur() to visually
+  // release focus after handling the key — in a real, genuinely-focused
+  // browser input (unlike a synthetic keyDown fired at an unfocused
+  // element in a test), that .blur() call dispatches a real native blur
+  // event, which the input's own onBlur={commit} handler would otherwise
+  // treat as an *unrelated* second commit of the same already-committed
+  // (or just-reverted) draft — silently doubling the undo/redo history
+  // entries for a single Enter/Escape keypress. This ref suppresses
+  // exactly that one following blur, and only that one.
+  const suppressNextBlurCommitRef = useRef(false);
 
   // Adjusts the draft when the external value changes (a live drag/resize
   // session elsewhere, an Undo/Redo, or another field's commit that also
@@ -101,12 +130,22 @@ export function InspectorNumericValueControl({
     onCommit(next);
   }
 
+  function handleBlur() {
+    if (suppressNextBlurCommitRef.current) {
+      suppressNextBlurCommitRef.current = false;
+      return;
+    }
+    commit();
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
       commit();
+      suppressNextBlurCommitRef.current = true;
       event.currentTarget.blur();
     } else if (event.key === "Escape") {
       setDraft(formatDraft(value));
+      suppressNextBlurCommitRef.current = true;
       event.currentTarget.blur();
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
@@ -127,7 +166,7 @@ export function InspectorNumericValueControl({
         placeholder={allowAuto ? "Auto" : undefined}
         disabled={disabled}
         onChange={(event) => setDraft(event.target.value)}
-        onBlur={commit}
+        onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         className="h-6 min-w-14 rounded-md border border-zinc-200 bg-zinc-50 px-2 text-right text-xs text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
       />

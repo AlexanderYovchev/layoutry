@@ -14,6 +14,7 @@ import type { BoxShadowSettings } from "@/features/editor/types/boxShadow";
 import type { FilterSettings } from "@/features/editor/types/filters";
 import type { DisplaySettings } from "@/features/editor/types/display";
 import type { PositionSettings } from "@/features/editor/types/position";
+import type { AspectRatioValue } from "@/features/editor/types/aspectRatio";
 
 export interface ElementDimensions {
   /**
@@ -87,7 +88,9 @@ export interface EditorElementNode {
    * Overrides the tag-based default aspect-ratio-lock behavior for corner
    * resizing and container-scale preservation. Unset resolves to
    * getElementCapabilities(tag).supportsIntrinsicAspectRatio (true for
-   * img/video/iframe by default).
+   * img/video/iframe by default). NOT the CSS `aspect-ratio` property —
+   * see `aspectRatio` below for that, and its own doc comment for the
+   * full distinction between the two similarly-named fields.
    */
   aspectRatioLocked?: boolean;
   /**
@@ -126,4 +129,15 @@ export interface EditorElementNode {
   display?: DisplaySettings;
   /** This node's own CSS `position`, and (Checkpoint 5.2) its top/right/bottom/left offsets — only meaningful for a position-capable tag (see getElementCapabilities().supportsPosition). Like display, unset has no synthesized default — see getPositionSettings and resolvePositionStyle. No inset-shorthand/logical-inset/z-index field exists yet (5.2.1/5.2.2/5.3) — see types/position.ts's own doc comment, including its documented ownership conflict with the pre-existing Free layout mechanism (Checkpoint 3.4.4). */
   position?: PositionSettings;
+  /**
+   * This node's own CSS `aspect-ratio` (Checkpoint 5.5) — only meaningful
+   * for an aspect-ratio-capable tag (see
+   * getElementCapabilities().supportsAspectRatio). Like display/position,
+   * unset has no synthesized default — see resolveAspectRatioStyle. NOT
+   * the same field as `aspectRatioLocked` above — see that field's own
+   * doc comment, and types/aspectRatio.ts's own top comment, for the full
+   * distinction between this real CSS box-sizing constraint and that
+   * unrelated resize-interaction flag.
+   */
+  aspectRatio?: AspectRatioValue;
 }

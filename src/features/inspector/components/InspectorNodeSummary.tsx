@@ -1,3 +1,4 @@
+import { InspectorAspectRatioSection } from "@/features/inspector/components/InspectorAspectRatioSection";
 import { InspectorBackgroundSection } from "@/features/inspector/components/InspectorBackgroundSection";
 import { InspectorBorderRadiusSection } from "@/features/inspector/components/InspectorBorderRadiusSection";
 import { InspectorBorderSection } from "@/features/inspector/components/InspectorBorderSection";
@@ -82,6 +83,14 @@ function DimensionRows({ label, preferred, rendered }: DimensionRowsProps) {
  * (Checkpoint 3.4.4) gets real editable X/Y/Width/Height fields instead
  * (see InspectorFreeGeometryFields), since Free geometry has no
  * "constrained by parent" ambiguity to display read-only.
+ *
+ * The "Size" section (Aspect Ratio, Checkpoint 5.5) renders directly
+ * after these read-only rows regardless of Flow/Free, gated only by
+ * getElementCapabilities().supportsAspectRatio — unlike Position, it
+ * needs no Free-child/Free-container exclusion: Free's own x/y/width/
+ * height ownership is untouched by CSS aspect-ratio (see
+ * InspectorAspectRatioSection/resolveAspectRatioStyle's own doc
+ * comments for why the two coexist safely).
  */
 export function InspectorNodeSummary({
   node,
@@ -124,6 +133,7 @@ export function InspectorNodeSummary({
           )
         )}
       </div>
+      {getElementCapabilities(node.tag).supportsAspectRatio && <InspectorAspectRatioSection node={node} />}
       {!isFreeChild && parentFlowDisplay === "flex" && <InspectorFlexChildSection node={node} />}
       {!isFreeChild && parentFlowDisplay === "grid" && <InspectorGridChildSection node={node} />}
       {getElementCapabilities(node.tag).supportsIntrinsicAspectRatio && <InspectorMediaSection node={node} />}

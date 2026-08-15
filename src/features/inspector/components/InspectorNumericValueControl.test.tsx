@@ -25,6 +25,23 @@ describe("InspectorNumericValueControl", () => {
     expect(onCommit).toHaveBeenCalledWith(200);
   });
 
+  it("Enter commits exactly once, even though it also blurs a genuinely-focused input (Checkpoint 5.5 regression — the blur must not fire a second, duplicate commit)", () => {
+    const onCommit = vi.fn();
+    render(<InspectorNumericValueControl ariaLabel="Width" value={10} onCommit={onCommit} />);
+
+    const input = screen.getByLabelText("Width");
+    // A real focus (not just a synthetic keyDown at an unfocused element)
+    // is what makes the Enter handler's own event.currentTarget.blur()
+    // call dispatch a genuine blur event in jsdom too — reproducing the
+    // exact real-browser condition this regression only shows up under.
+    input.focus();
+    fireEvent.change(input, { target: { value: "200" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith(200);
+  });
+
   it("reverts to the last committed value on Escape without calling onCommit", () => {
     const onCommit = vi.fn();
     render(<InspectorNumericValueControl ariaLabel="Width" value={10} onCommit={onCommit} />);
@@ -35,6 +52,31 @@ describe("InspectorNumericValueControl", () => {
 
     expect(onCommit).not.toHaveBeenCalled();
     expect(input).toHaveValue(10);
+  });
+
+  it("Escape never commits, even though it also blurs a genuinely-focused input (Checkpoint 5.5 regression)", () => {
+    const onCommit = vi.fn();
+    render(<InspectorNumericValueControl ariaLabel="Width" value={10} onCommit={onCommit} />);
+
+    const input = screen.getByLabelText("Width");
+    input.focus();
+    fireEvent.change(input, { target: { value: "999" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it("a plain blur (no preceding Enter/Escape) still commits normally", () => {
+    const onCommit = vi.fn();
+    render(<InspectorNumericValueControl ariaLabel="Width" value={10} onCommit={onCommit} />);
+
+    const input = screen.getByLabelText("Width");
+    input.focus();
+    fireEvent.change(input, { target: { value: "77" } });
+    fireEvent.blur(input);
+
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith(77);
   });
 
   it("discards an invalid draft on blur instead of committing NaN", () => {

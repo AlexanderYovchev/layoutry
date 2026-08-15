@@ -8,6 +8,7 @@ import { resolveBackgroundStyle } from "@/features/canvas/utils/resolveBackgroun
 import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderRadiusStyle";
 import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
 import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowStyle";
+import { resolveAspectRatioStyle } from "@/features/canvas/utils/resolveAspectRatioStyle";
 import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle";
 import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
@@ -84,6 +85,7 @@ export function ContainerElement({
         // ownership conflict this resolves.
         ...resolvePositionStyle(node),
         ...elementPositionStyle(node, parentLayoutMode),
+        ...resolveAspectRatioStyle(node),
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
         ...(ownLayoutMode === "flow" ? resolveFlowLayoutStyle(node) : undefined),
         ...(hostsOwnFreeChildren ? { position: "relative" } : {}),

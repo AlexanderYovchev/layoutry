@@ -88,4 +88,41 @@ describe("ImageElement", () => {
     expect(wrapper.style.width).toBe("100%");
     expect(wrapper.style.height).toBe("100%");
   });
+
+  it("applies an explicit aspect ratio to the outer wrapper, not the inner <img> (Checkpoint 5.5)", () => {
+    const { container } = render(
+      <ImageElement
+        node={{ id: "image-1", tag: "img", src: "data:image/svg+xml;utf8,<svg/>", aspectRatio: { mode: "ratio", width: 16, height: 9 } }}
+        parentId="section-1"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+
+    const img = container.querySelector("img") as HTMLImageElement;
+    const wrapper = img.parentElement as HTMLElement;
+    expect(wrapper.style.aspectRatio).toBe("16 / 9");
+    // The inner <img> keeps filling its wrapper via resolveMediaFitStyle —
+    // aspect-ratio shapes the *box* (the wrapper), object-fit/object-
+    // position (Checkpoint 5.6) will govern the *content* inside it, kept
+    // deliberately separate for that future checkpoint to build on.
+    expect(img.style.aspectRatio).toBe("");
+    expect(img.style.width).toBe("100%");
+    expect(img.style.height).toBe("100%");
+  });
+
+  it("preserves normal intrinsic image behavior with an explicit Auto aspect ratio", () => {
+    const { container } = render(
+      <ImageElement
+        node={{ id: "image-1", tag: "img", src: "data:image/svg+xml;utf8,<svg/>", aspectRatio: { mode: "auto" } }}
+        parentId="section-1"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+
+    const img = container.querySelector("img") as HTMLImageElement;
+    const wrapper = img.parentElement as HTMLElement;
+    expect(wrapper.style.aspectRatio).toBe("auto");
+  });
 });

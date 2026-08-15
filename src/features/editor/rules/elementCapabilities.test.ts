@@ -113,6 +113,25 @@ describe("elementCapabilities", () => {
     expect(getElementCapabilities("body").supportsPosition).toBe(false);
   });
 
+  it("flags nearly every tag as supporting the Aspect Ratio control; only page/body opt out", () => {
+    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table"]) {
+      expect(getElementCapabilities(tag).supportsAspectRatio, tag).toBe(true);
+    }
+    expect(getElementCapabilities("page").supportsAspectRatio).toBe(false);
+    expect(getElementCapabilities("body").supportsAspectRatio).toBe(false);
+  });
+
+  it("supportsAspectRatio and supportsIntrinsicAspectRatio are independent flags, not aliases", () => {
+    // A media tag gets both true (Checkpoint 5.5 + the pre-existing
+    // Checkpoint 3.5.1 flag); most others get supportsAspectRatio true
+    // while supportsIntrinsicAspectRatio stays false — proving the two
+    // capabilities are genuinely separate, not one repurposed as the other.
+    expect(getElementCapabilities("img").supportsAspectRatio).toBe(true);
+    expect(getElementCapabilities("img").supportsIntrinsicAspectRatio).toBe(true);
+    expect(getElementCapabilities("div").supportsAspectRatio).toBe(true);
+    expect(getElementCapabilities("div").supportsIntrinsicAspectRatio).toBe(false);
+  });
+
   it("gives an entirely unknown tag the same sensible defaults as any other element", () => {
     const caps = getElementCapabilities("some-future-tag");
 

@@ -27,6 +27,19 @@ export interface ElementCapabilities {
   supportsDisplay: boolean;
   /** Whether CSS `position` is meaningful on this tag (Checkpoint 5.1) — same default-true / page-body-opt-out rule as supportsDisplay. This is a per-*tag* capability only; a per-*node* exception also exists (a Free-layout child or a Free-hosting container never shows the Position section regardless of tag, since Free layout already owns `position` on those specific nodes — see InspectorNodeSummary and types/position.ts's own doc comment). */
   supportsPosition: boolean;
+  /**
+   * Whether CSS `aspect-ratio` is meaningful on this tag (Checkpoint
+   * 5.5) — same default-true / page-body-opt-out rule as supportsDisplay/
+   * supportsPosition: aspect-ratio is a box-sizing constraint that
+   * applies to a box regardless of what's inside it, the same reasoning
+   * those two already use. Deliberately a *separate* flag from
+   * supportsIntrinsicAspectRatio, which governs a different, pre-existing
+   * concern (default Free-resize corner-lock behavior and the Media
+   * section's own visibility) — see EditorElementNode.aspectRatio's own
+   * doc comment for the full distinction. Media tags (img/video/iframe)
+   * get both flags true; they are not mutually exclusive.
+   */
+  supportsAspectRatio: boolean;
 }
 
 const DEFAULT_CAPABILITIES: ElementCapabilities = {
@@ -43,6 +56,7 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
   supportsFilters: true,
   supportsDisplay: true,
   supportsPosition: true,
+  supportsAspectRatio: true,
 };
 
 /**
@@ -64,8 +78,8 @@ const TEXT_BEARING_TAGS: ReadonlySet<string> = new Set(["h1", "h2", "h3", "h4", 
  * traits that vary per tag.
  */
 const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
-  page: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false, supportsPosition: false },
-  body: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false, supportsPosition: false },
+  page: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false, supportsPosition: false, supportsAspectRatio: false },
+  body: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false, supportsPosition: false, supportsAspectRatio: false },
 
   img: { supportsIntrinsicAspectRatio: true },
   video: { supportsIntrinsicAspectRatio: true },

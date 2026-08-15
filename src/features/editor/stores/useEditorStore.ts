@@ -31,6 +31,7 @@ import { setBoxShadowSettings as setBoxShadowSettingsCommand } from "@/features/
 import { setFilterSettings as setFilterSettingsCommand } from "@/features/editor/commands/filterCommands";
 import { setDisplaySettings as setDisplaySettingsCommand } from "@/features/editor/commands/displayCommands";
 import { setPositionSettings as setPositionSettingsCommand } from "@/features/editor/commands/positionCommands";
+import { setAspectRatio as setAspectRatioCommand } from "@/features/editor/commands/aspectRatioCommands";
 import { clampGridChildPlacement } from "@/features/editor/utils/clampGridChildPlacement";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
 import { cloneNodeWithFreshIds } from "@/features/editor/utils/cloneNodeWithFreshIds";
@@ -61,6 +62,7 @@ import type { BoxShadowSettings } from "@/features/editor/types/boxShadow";
 import type { FilterSettings } from "@/features/editor/types/filters";
 import type { DisplaySettings } from "@/features/editor/types/display";
 import type { PositionSettings } from "@/features/editor/types/position";
+import type { AspectRatioValue } from "@/features/editor/types/aspectRatio";
 
 interface EditorState {
   document: EditorElementNode;
@@ -135,6 +137,8 @@ interface EditorState {
   setElementDisplay: (nodeId: string, display: DisplaySettings | undefined) => void;
   /** This node's own CSS `position` (Checkpoint 5.1) — see resolvePositionStyle. `undefined` clears it entirely. No continuous-drag variant: a single enum commit, like Display. */
   setElementPosition: (nodeId: string, position: PositionSettings | undefined) => void;
+  /** This node's own CSS `aspect-ratio` (Checkpoint 5.5) — see resolveAspectRatioStyle. `undefined` clears it entirely (distinct from an explicit `{ mode: "auto" }` — see types/aspectRatio.ts's own doc comment). No continuous-drag variant: a single preset/custom-value commit, like Position/Display. Not to be confused with the pre-existing `aspectRatioLocked` resize-interaction flag, which this action never touches. */
+  setElementAspectRatio: (nodeId: string, aspectRatio: AspectRatioValue | undefined) => void;
 
   /**
    * Generic continuous-interaction transaction (Checkpoint 4.3.1) — the
@@ -419,6 +423,12 @@ export const useEditorStore = create<EditorState>()((set) => ({
     set((state) => ({
       ...pushHistory(state),
       document: setPositionSettingsCommand(state.document, nodeId, position),
+    })),
+
+  setElementAspectRatio: (nodeId, aspectRatio) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setAspectRatioCommand(state.document, nodeId, aspectRatio),
     })),
 
   beginTransaction: () =>

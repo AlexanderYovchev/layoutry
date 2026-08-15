@@ -5,6 +5,7 @@ import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
+import { resolveAspectRatioStyle } from "@/features/canvas/utils/resolveAspectRatioStyle";
 import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderRadiusStyle";
 import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
 import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowStyle";
@@ -67,6 +68,7 @@ export function ImageElement({ node, parentId, parentLayoutMode, parentFlowDispl
         // conflict this resolves.
         ...resolvePositionStyle(node),
         ...elementPositionStyle(node, parentLayoutMode),
+        ...resolveAspectRatioStyle(node),
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
         ...resolveBorderStyle(node),
         ...resolveBorderRadiusStyle(node),

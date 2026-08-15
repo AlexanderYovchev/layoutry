@@ -8,6 +8,7 @@ import { resolveBackgroundStyle } from "@/features/canvas/utils/resolveBackgroun
 import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderRadiusStyle";
 import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
 import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowStyle";
+import { resolveAspectRatioStyle } from "@/features/canvas/utils/resolveAspectRatioStyle";
 import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle";
 import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
@@ -67,6 +68,7 @@ export function ButtonElement({ node, parentId, parentLayoutMode, parentFlowDisp
         // conflict this resolves.
         ...resolvePositionStyle(node),
         ...elementPositionStyle(node, parentLayoutMode, { clipOverflowY: usesLegacyOverflowClip }),
+        ...resolveAspectRatioStyle(node),
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
         ...resolveTypographyStyle(node),
         ...resolveBackgroundStyle(node),
