@@ -91,7 +91,7 @@ describe("cloneNodeWithFreshIds", () => {
       id: "image-1",
       tag: "img",
       src: "data:image/svg+xml;utf8,<svg/>",
-      mediaFit: { fit: "cover", position: "top", preserveAspectRatio: true },
+      mediaFit: { objectFit: "cover", objectPositionX: { value: 50, unit: "%" }, objectPositionY: { value: 0, unit: "%" } },
     };
 
     const clone = cloneNodeWithFreshIds(source);

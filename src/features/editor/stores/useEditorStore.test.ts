@@ -826,13 +826,13 @@ describe("useEditorStore — Flow layout, spacing, Flex/Grid (Checkpoint 3.5)", 
   it("setMediaFitSettings pushes one history entry and is undoable", () => {
     const pastLengthBefore = useEditorStore.getState().past.length;
     useEditorStore.getState().setMediaFitSettings("image-1", {
-      fit: "cover",
-      position: "top",
-      preserveAspectRatio: true,
+      objectFit: "cover",
+      objectPositionX: { value: 50, unit: "%" },
+      objectPositionY: { value: 0, unit: "%" },
     });
 
     const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-2")?.children?.find((c) => c.id === "image-1");
-    expect(node?.mediaFit).toEqual({ fit: "cover", position: "top", preserveAspectRatio: true });
+    expect(node?.mediaFit).toEqual({ objectFit: "cover", objectPositionX: { value: 50, unit: "%" }, objectPositionY: { value: 0, unit: "%" } });
     expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
 
     useEditorStore.getState().undo();

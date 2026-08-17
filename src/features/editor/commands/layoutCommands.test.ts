@@ -301,7 +301,7 @@ describe("convertToFreeLayout", () => {
               id: "image-1",
               tag: "img",
               src: "data:image/svg+xml;utf8,<svg/>",
-              mediaFit: { fit: "cover", position: "top", preserveAspectRatio: true },
+              mediaFit: { objectFit: "cover", objectPositionX: { value: 50, unit: "%" }, objectPositionY: { value: 0, unit: "%" } },
             },
           ],
         },
@@ -377,7 +377,7 @@ describe("convertToFlowLayout", () => {
   it("preserves a child's src and mediaFit across the Free -> Flow trip (Checkpoint 3.5.1)", () => {
     const root = freeTree();
     root.children![0].children![0].src = "data:image/svg+xml;utf8,<svg/>";
-    root.children![0].children![0].mediaFit = { fit: "cover", position: "top", preserveAspectRatio: true };
+    root.children![0].children![0].mediaFit = { objectFit: "cover", objectPositionX: { value: 50, unit: "%" }, objectPositionY: { value: 0, unit: "%" } };
 
     const result = convertToFlowLayout(root, "section-1");
 

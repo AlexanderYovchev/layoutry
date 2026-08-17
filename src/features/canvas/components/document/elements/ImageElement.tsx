@@ -48,13 +48,28 @@ export function ImageElement({ node, parentId, parentLayoutMode, parentFlowDispl
   // entirely once real radius data exists, not just on whichever corners
   // happen to be configured.
   const usesLegacyRadiusChrome = !node.borderRadius;
+  // The default placeholder height (h-40) predates Aspect Ratio
+  // (Checkpoint 5.5) and unconditionally fixed this wrapper's height —
+  // CSS aspect-ratio only influences a box's shape when at least one
+  // dimension isn't already fixed by something else, so a fixed h-40
+  // silently blocked an explicit ratio-mode aspect ratio from ever
+  // visibly reshaping an unresized Image (it kept rendering at h-40's
+  // fixed 160px height regardless of the chosen ratio). Found via
+  // Checkpoint 5.6's own real-browser verification of Aspect Ratio +
+  // Object Fit combinations. Same "legacy chrome gets out of the way
+  // once real data exists" rule as usesLegacyBorderChrome/
+  // usesLegacyRadiusChrome above — an explicit resize already overrides
+  // this class via elementDimensionsStyle's own inline height regardless,
+  // so this only needs to key off aspectRatio.
+  const usesLegacyHeightChrome = node.aspectRatio?.mode !== "ratio";
 
   return (
     <div
       ref={mergeRefs(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
       className={cn(
-        "flex h-40 w-full items-center justify-center overflow-hidden bg-zinc-50 dark:bg-zinc-900",
+        "flex w-full items-center justify-center overflow-hidden bg-zinc-50 dark:bg-zinc-900",
+        usesLegacyHeightChrome && "h-40",
         usesLegacyRadiusChrome && "rounded-md",
         usesLegacyBorderChrome && "border border-dashed border-zinc-200 dark:border-zinc-800",
         isDragging && "opacity-40",

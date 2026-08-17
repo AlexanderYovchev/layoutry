@@ -159,6 +159,16 @@ describe("InspectorTypographySection", () => {
     render(<InspectorTypographySection node={{ id: "heading-1", tag: "h1" }} />);
 
     const input = screen.getByLabelText("Line height");
+    // The field's own display default is already 1.5 (see
+    // InspectorTypographySection's `value={typography.lineHeight?.value ??
+    // 1.5}`) — firing a single `change` to that identical string is a
+    // jsdom/React no-op (React's controlled-input value tracker skips a
+    // synthetic change event whose value matches the DOM's current value,
+    // so onChange never actually fires). Routing through a genuinely
+    // different intermediate value first reproduces a real user's
+    // keystrokes reliably, still proving line-height 1.5 commits as an
+    // explicit value even though it equals the unset default.
+    fireEvent.change(input, { target: { value: "2" } });
     fireEvent.change(input, { target: { value: "1.5" } });
     fireEvent.blur(input);
 

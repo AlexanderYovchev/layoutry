@@ -66,6 +66,57 @@ describe("InspectorNumericValueControl", () => {
     expect(onCommit).not.toHaveBeenCalled();
   });
 
+  it("a blur with no edit at all never commits (Checkpoint 5.6 regression — tabbing through an unedited field must not push a spurious history entry)", () => {
+    const onCommit = vi.fn();
+    render(<InspectorNumericValueControl ariaLabel="Width" value={10} onCommit={onCommit} />);
+
+    const input = screen.getByLabelText("Width");
+    input.focus();
+    fireEvent.blur(input);
+
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it("re-typing the exact same already-committed value on blur still commits (a genuine edit, even to the same number, must not be silently dropped — e.g. it's how an implicit default becomes an explicit stored value)", () => {
+    const onCommit = vi.fn();
+    render(<InspectorNumericValueControl ariaLabel="Width" value={10} onCommit={onCommit} />);
+
+    const input = screen.getByLabelText("Width");
+    // Two changes, not one: firing a single `change` with a value
+    // identical to the DOM's current value is a jsdom/React no-op (React
+    // skips a controlled input's onChange when its value tracker sees no
+    // actual change), which would mask this test's real intent. Routing
+    // through a different intermediate value first reproduces a real
+    // user's keystrokes reliably.
+    fireEvent.change(input, { target: { value: "20" } });
+    fireEvent.change(input, { target: { value: "10" } });
+    fireEvent.blur(input);
+
+    expect(onCommit).toHaveBeenCalledWith(10);
+  });
+
+  it("a genuine edit that clamps to the current value still commits", () => {
+    const onCommit = vi.fn();
+    render(<InspectorNumericValueControl ariaLabel="Opacity" value={1} min={0} max={1} onCommit={onCommit} />);
+
+    const input = screen.getByLabelText("Opacity");
+    fireEvent.change(input, { target: { value: "5" } });
+    fireEvent.blur(input);
+
+    expect(onCommit).toHaveBeenCalledWith(1);
+  });
+
+  it("blurring an unedited allowAuto field already at 'auto' does not re-commit 'auto'", () => {
+    const onCommit = vi.fn();
+    render(<InspectorNumericValueControl ariaLabel="Width" value="auto" allowAuto onCommit={onCommit} />);
+
+    const input = screen.getByLabelText("Width");
+    input.focus();
+    fireEvent.blur(input);
+
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
   it("a plain blur (no preceding Enter/Escape) still commits normally", () => {
     const onCommit = vi.fn();
     render(<InspectorNumericValueControl ariaLabel="Width" value={10} onCommit={onCommit} />);

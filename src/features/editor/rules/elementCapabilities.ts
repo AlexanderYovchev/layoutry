@@ -12,7 +12,23 @@ export interface ElementCapabilities {
   resizableX: boolean;
   resizableY: boolean;
   canContainChildren: boolean;
+  /** Whether a Free-child corner resize defaults to preserving this tag's own width:height ratio (see useFreeChildResizeSession) — a resize-*interaction* concern only. Deliberately separate from supportsMediaFit (Checkpoint 5.6 split this out — see that flag's own doc comment): "this tag has an intrinsic ratio worth locking while resizing" and "this tag's rendered content supports object-fit/object-position" are genuinely different questions, even though every current media tag (img/video/iframe) happens to answer both the same way today. */
   supportsIntrinsicAspectRatio: boolean;
+  /**
+   * Whether CSS object-fit/object-position are meaningful on this tag
+   * (Checkpoint 5.6) — true only for a *replaced element* whose own
+   * rendered content can be fit/cropped/aligned within its box (img now;
+   * video/iframe once those exist). Split out from
+   * supportsIntrinsicAspectRatio (Checkpoint 3.5.1), which had
+   * conflated two different concerns: the Media Inspector section's own
+   * visibility, and the default Free-resize corner-lock behavior. The two
+   * flags currently co-occur for every existing media tag, but are
+   * architecturally independent — a future replaced element could in
+   * principle need one without the other (e.g. an intrinsic-ratio
+   * element whose content isn't a fittable replaced element, or a
+   * fittable element with no natural ratio worth resize-locking).
+   */
+  supportsMediaFit: boolean;
   supportsTypography: boolean;
   supportsBackground: boolean;
   /** Whether a CSS border is meaningful on this tag (Checkpoint 4.4). Unlike Background — which excludes media tags because their own rendered content already fills the box — a border draws around the box's own edge regardless of what's inside it, so it defaults to true for nearly every tag; only the structural page/body wrappers opt out (see CAPABILITY_OVERRIDES), matching their own selectable/resizable overrides. */
@@ -48,6 +64,7 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
   resizableY: true,
   canContainChildren: false,
   supportsIntrinsicAspectRatio: false,
+  supportsMediaFit: false,
   supportsTypography: false,
   supportsBackground: false,
   supportsBorder: true,
@@ -81,9 +98,9 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
   page: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false, supportsPosition: false, supportsAspectRatio: false },
   body: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false, supportsPosition: false, supportsAspectRatio: false },
 
-  img: { supportsIntrinsicAspectRatio: true },
-  video: { supportsIntrinsicAspectRatio: true },
-  iframe: { supportsIntrinsicAspectRatio: true },
+  img: { supportsIntrinsicAspectRatio: true, supportsMediaFit: true },
+  video: { supportsIntrinsicAspectRatio: true, supportsMediaFit: true },
+  iframe: { supportsIntrinsicAspectRatio: true, supportsMediaFit: true },
 };
 
 export function getElementCapabilities(tag: string): ElementCapabilities {

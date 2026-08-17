@@ -66,6 +66,24 @@ function formatDraft(value: NumericOrAuto): string {
  * regression test that explicitly focuses the input first, reproducing
  * the real-browser condition. suppressNextBlurCommitRef fixes this at
  * the root (this shared primitive), not per call site.
+ *
+ * Bug fix (Checkpoint 5.6 — found the same way, via this checkpoint's own
+ * real-browser undo/redo verification, this time of Object Position's
+ * tab-adjacent X/Y fields, but again pre-existing since Checkpoint 4.1
+ * and shared by every caller with more than one numeric field in tab
+ * order — Position's Offsets X/Y, Aspect Ratio's Custom width/height,
+ * Background's Custom size, not just Object Position): tabbing *into* a
+ * field without ever editing it, then blurring it by clicking elsewhere,
+ * still ran the full commit path and called onCommit with the value it
+ * already had — pushing a spurious, no-op history entry for a field the
+ * user never touched. `touched` (set only by a real onChange, cleared on
+ * every resync or successful commit) now guards commit() so it can tell
+ * "the user actually edited this field" apart from "focus merely passed
+ * through it" — deliberately not a `next !== value` equality check,
+ * which would also swallow a genuine edit that happens to resolve to the
+ * same number (e.g. Spacing's unset-padding-reads-as-0: typing "0" there
+ * must still commit, since that's how an implicit default becomes an
+ * explicit stored value).
  */
 export function InspectorNumericValueControl({
   ariaLabel,
@@ -94,6 +112,27 @@ export function InspectorNumericValueControl({
   // exactly that one following blur, and only that one.
   const suppressNextBlurCommitRef = useRef(false);
 
+  // Checkpoint 5.6 fix (found via this checkpoint's own real-browser
+  // undo/redo verification of Object Position's tab-adjacent X/Y fields,
+  // but pre-existing since Checkpoint 4.1 and shared by every caller with
+  // more than one numeric field in tab order — Position's Offsets X/Y,
+  // Aspect Ratio's Custom width/height, Background's Custom size, not
+  // just Object Position): tabbing *into* a field without ever editing
+  // it, then blurring it by clicking elsewhere, still ran the full commit
+  // path and called onCommit with the value it already had — pushing a
+  // spurious, no-op history entry for a field the user never touched.
+  // `touched` is set only by a real onChange, and cleared on every resync
+  // (external value change) or successful commit, so commit() can tell
+  // "the user actually edited this field" apart from "focus merely
+  // passed through it." Deliberately NOT a `next !== value` equality
+  // check instead: a caller may pass an *effective/defaulted* display
+  // value (e.g. Spacing's unset-padding reading as 0), where committing a
+  // genuinely-typed value that resolves to that same number is exactly
+  // how an implicit default becomes an explicit stored one — skipping
+  // that commit would silently break "make it explicit" flows. Only "no
+  // edit occurred at all" is safe to treat as a no-op.
+  const [touched, setTouched] = useState(false);
+
   // Adjusts the draft when the external value changes (a live drag/resize
   // session elsewhere, an Undo/Redo, or another field's commit that also
   // affects this one) — reset during render itself against the
@@ -103,9 +142,12 @@ export function InspectorNumericValueControl({
   if (value !== lastSyncedValue) {
     setLastSyncedValue(value);
     setDraft(formatDraft(value));
+    setTouched(false);
   }
 
   function commit() {
+    if (!touched) return;
+    setTouched(false);
     const trimmed = draft.trim();
     if (trimmed === "") {
       if (allowAuto) {
@@ -145,6 +187,7 @@ export function InspectorNumericValueControl({
       event.currentTarget.blur();
     } else if (event.key === "Escape") {
       setDraft(formatDraft(value));
+      setTouched(false);
       suppressNextBlurCommitRef.current = true;
       event.currentTarget.blur();
     } else if (event.key === "ArrowUp") {
@@ -165,7 +208,10 @@ export function InspectorNumericValueControl({
         value={draft}
         placeholder={allowAuto ? "Auto" : undefined}
         disabled={disabled}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setTouched(true);
+        }}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         className="h-6 min-w-14 rounded-md border border-zinc-200 bg-zinc-50 px-2 text-right text-xs text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"

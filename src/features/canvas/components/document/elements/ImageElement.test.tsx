@@ -16,7 +16,7 @@ describe("ImageElement", () => {
     expect(container.querySelector("img")).not.toBeInTheDocument();
   });
 
-  it("renders a real <img> with object-fit: contain by default when the node has a src", () => {
+  it("renders a real <img> with object-fit: contain, object-position: 50% 50% by default when the node has a src", () => {
     const { container } = render(
       <ImageElement
         node={{ id: "image-1", tag: "img", src: "data:image/svg+xml;utf8,<svg/>" }}
@@ -30,19 +30,19 @@ describe("ImageElement", () => {
     expect(img).not.toBeNull();
     expect(img.src).toContain("data:image/svg+xml");
     expect(img.style.objectFit).toBe("contain");
-    expect(img.style.objectPosition).toBe("center");
+    expect(img.style.objectPosition).toBe("50% 50%");
     expect(img.style.width).toBe("100%");
     expect(img.style.height).toBe("100%");
   });
 
-  it("applies the node's explicit mediaFit settings to the rendered <img>", () => {
+  it("applies the node's explicit mediaFit settings to the rendered <img> (Checkpoint 5.6)", () => {
     const { container } = render(
       <ImageElement
         node={{
           id: "image-1",
           tag: "img",
           src: "data:image/svg+xml;utf8,<svg/>",
-          mediaFit: { fit: "cover", position: "top", preserveAspectRatio: true },
+          mediaFit: { objectFit: "cover", objectPositionX: { value: 0, unit: "%" }, objectPositionY: { value: 0, unit: "%" } },
         }}
         parentId="section-1"
         parentLayoutMode="flow"
@@ -52,17 +52,32 @@ describe("ImageElement", () => {
 
     const img = container.querySelector("img") as HTMLImageElement;
     expect(img.style.objectFit).toBe("cover");
-    expect(img.style.objectPosition).toBe("top");
+    expect(img.style.objectPosition).toBe("0% 0%");
   });
 
-  it("forces object-fit: fill when preserveAspectRatio is false", () => {
+  it("supports the full Object Fit value set, including none/scale-down (Checkpoint 5.6)", () => {
+    for (const objectFit of ["fill", "contain", "cover", "none", "scale-down"] as const) {
+      const { container } = render(
+        <ImageElement
+          node={{ id: "image-1", tag: "img", src: "data:image/svg+xml;utf8,<svg/>", mediaFit: { objectFit } }}
+          parentId="section-1"
+          parentLayoutMode="flow"
+          parentFlowDisplay="block"
+        />,
+      );
+      const img = container.querySelector("img") as HTMLImageElement;
+      expect(img.style.objectFit).toBe(objectFit);
+    }
+  });
+
+  it("supports an out-of-range custom object position (Checkpoint 5.6 — CSS permits cropping/overflow on purpose)", () => {
     const { container } = render(
       <ImageElement
         node={{
           id: "image-1",
           tag: "img",
           src: "data:image/svg+xml;utf8,<svg/>",
-          mediaFit: { fit: "contain", position: "center", preserveAspectRatio: false },
+          mediaFit: { objectPositionX: { value: -20, unit: "%" }, objectPositionY: { value: 120, unit: "%" } },
         }}
         parentId="section-1"
         parentLayoutMode="flow"
@@ -71,7 +86,99 @@ describe("ImageElement", () => {
     );
 
     const img = container.querySelector("img") as HTMLImageElement;
-    expect(img.style.objectFit).toBe("fill");
+    expect(img.style.objectPosition).toBe("-20% 120%");
+  });
+
+  it("keeps objectFit/objectPosition off the outer wrapper and aspectRatio off the inner <img> (Checkpoint 5.6 — outer/inner ownership separation)", () => {
+    const { container } = render(
+      <ImageElement
+        node={{
+          id: "image-1",
+          tag: "img",
+          src: "data:image/svg+xml;utf8,<svg/>",
+          aspectRatio: { mode: "ratio", width: 1, height: 1 },
+          mediaFit: { objectFit: "cover", objectPositionX: { value: 0, unit: "%" }, objectPositionY: { value: 0, unit: "%" } },
+        }}
+        parentId="section-1"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+
+    const img = container.querySelector("img") as HTMLImageElement;
+    const wrapper = img.parentElement as HTMLElement;
+
+    expect(wrapper.style.aspectRatio).toBe("1 / 1");
+    expect(wrapper.style.objectFit).toBe("");
+    expect(wrapper.style.objectPosition).toBe("");
+
+    expect(img.style.objectFit).toBe("cover");
+    expect(img.style.objectPosition).toBe("0% 0%");
+    expect(img.style.aspectRatio).toBe("");
+  });
+
+  it("keeps the fixed h-40 placeholder height by default, so an unresized image still has a real box", () => {
+    const { container } = render(
+      <ImageElement node={{ id: "image-1", tag: "img" }} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+    const wrapper = container.querySelector('[data-node-id="image-1"]') as HTMLElement;
+    expect(wrapper.className).toContain("h-40");
+  });
+
+  it("drops the fixed h-40 placeholder height once an explicit ratio-mode aspect ratio is set, so the ratio can actually reshape the box (Checkpoint 5.6 fix — h-40 previously fixed height unconditionally, silently blocking Aspect Ratio's own visual effect on every unresized Image)", () => {
+    const { container } = render(
+      <ImageElement
+        node={{ id: "image-1", tag: "img", aspectRatio: { mode: "ratio", width: 1, height: 1 } }}
+        parentId="section-1"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+    const wrapper = container.querySelector('[data-node-id="image-1"]') as HTMLElement;
+    expect(wrapper.className).not.toContain("h-40");
+    expect(wrapper.style.aspectRatio).toBe("1 / 1");
+  });
+
+  it("keeps the fixed h-40 placeholder height for an explicit Auto aspect ratio (mode: 'auto' has no visual effect to unblock)", () => {
+    const { container } = render(
+      <ImageElement
+        node={{ id: "image-1", tag: "img", aspectRatio: { mode: "auto" } }}
+        parentId="section-1"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+    const wrapper = container.querySelector('[data-node-id="image-1"]') as HTMLElement;
+    expect(wrapper.className).toContain("h-40");
+  });
+
+  it("changing mediaFit never mutates aspectRatio and vice versa — independent properties on the same node (Checkpoint 5.6)", () => {
+    const node = {
+      id: "image-1",
+      tag: "img",
+      src: "data:image/svg+xml;utf8,<svg/>",
+      aspectRatio: { mode: "ratio" as const, width: 16, height: 9 },
+      mediaFit: { objectFit: "contain" as const },
+    };
+
+    const { container, rerender } = render(
+      <ImageElement node={node} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+    const wrapperBefore = (container.querySelector("img")!.parentElement as HTMLElement).style.aspectRatio;
+
+    rerender(
+      <ImageElement
+        node={{ ...node, mediaFit: { objectFit: "cover" } }}
+        parentId="section-1"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+    const img = container.querySelector("img") as HTMLImageElement;
+    const wrapper = img.parentElement as HTMLElement;
+    expect(img.style.objectFit).toBe("cover");
+    expect(wrapper.style.aspectRatio).toBe(wrapperBefore);
+    expect(wrapper.style.aspectRatio).toBe("16 / 9");
   });
 
   it("stretches the outer wrapper to fill its Grid track regardless of the image's own aspect ratio", () => {

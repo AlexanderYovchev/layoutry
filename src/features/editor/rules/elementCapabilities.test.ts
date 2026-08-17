@@ -47,6 +47,29 @@ describe("elementCapabilities", () => {
     expect(getElementCapabilities("div").supportsIntrinsicAspectRatio).toBe(false);
   });
 
+  it("flags img/video/iframe as supporting object-fit/object-position; ordinary elements don't (Checkpoint 5.6)", () => {
+    expect(getElementCapabilities("img").supportsMediaFit).toBe(true);
+    expect(getElementCapabilities("video").supportsMediaFit).toBe(true);
+    expect(getElementCapabilities("iframe").supportsMediaFit).toBe(true);
+    expect(getElementCapabilities("div").supportsMediaFit).toBe(false);
+  });
+
+  it("supportsMediaFit and supportsIntrinsicAspectRatio are independent flags, not aliases (Checkpoint 5.6 split them apart — see elementCapabilities.ts's own doc comment)", () => {
+    // Both flags happen to be set together on every current media tag —
+    // proving true divergence would need a future tag that answers the
+    // two questions differently, which doesn't exist yet. What's checked
+    // here is that the two are genuinely separate boolean fields on the
+    // capability object (a non-media tag has both false independently,
+    // not one derived from the other), not that CAPABILITY_OVERRIDES
+    // currently diverges them for any real tag.
+    const img = getElementCapabilities("img");
+    expect(img.supportsIntrinsicAspectRatio).toBe(true);
+    expect(img.supportsMediaFit).toBe(true);
+    const div = getElementCapabilities("div");
+    expect(div.supportsIntrinsicAspectRatio).toBe(false);
+    expect(div.supportsMediaFit).toBe(false);
+  });
+
   it("flags text-bearing tags (including ones with no factory yet) as supporting typography; structural/media tags don't", () => {
     for (const tag of ["h1", "h2", "h3", "h4", "h5", "h6", "p", "button", "a", "li", "blockquote"]) {
       expect(getElementCapabilities(tag).supportsTypography, tag).toBe(true);

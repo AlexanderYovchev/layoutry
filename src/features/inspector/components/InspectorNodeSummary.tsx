@@ -136,7 +136,7 @@ export function InspectorNodeSummary({
       {getElementCapabilities(node.tag).supportsAspectRatio && <InspectorAspectRatioSection node={node} />}
       {!isFreeChild && parentFlowDisplay === "flex" && <InspectorFlexChildSection node={node} />}
       {!isFreeChild && parentFlowDisplay === "grid" && <InspectorGridChildSection node={node} />}
-      {getElementCapabilities(node.tag).supportsIntrinsicAspectRatio && <InspectorMediaSection node={node} />}
+      {getElementCapabilities(node.tag).supportsMediaFit && <InspectorMediaSection node={node} />}
       {getElementCapabilities(node.tag).supportsTypography && <InspectorTypographySection node={node} />}
       {getElementCapabilities(node.tag).supportsBackground && <InspectorBackgroundSection node={node} />}
       {getElementCapabilities(node.tag).supportsBorder && <InspectorBorderSection node={node} />}

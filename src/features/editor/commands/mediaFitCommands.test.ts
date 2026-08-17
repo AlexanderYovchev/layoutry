@@ -16,7 +16,7 @@ function tree(): EditorElementNode {
 describe("setMediaFitSettings", () => {
   it("sets exactly one node's mediaFit, leaving siblings untouched", () => {
     const root = tree();
-    const settings = { fit: "cover" as const, position: "top" as const, preserveAspectRatio: true };
+    const settings = { objectFit: "cover" as const };
     const result = setMediaFitSettings(root, "image-1", settings);
 
     expect(result.children?.find((c) => c.id === "image-1")?.mediaFit).toEqual(settings);
@@ -25,7 +25,7 @@ describe("setMediaFitSettings", () => {
 
   it("keeps unrelated branches referentially unchanged", () => {
     const root = tree();
-    const settings = { fit: "cover" as const, position: "top" as const, preserveAspectRatio: true };
+    const settings = { objectFit: "cover" as const };
     const result = setMediaFitSettings(root, "image-1", settings);
 
     expect(result.children?.find((c) => c.id === "image-2")).toBe(
@@ -35,11 +35,7 @@ describe("setMediaFitSettings", () => {
 
   it("is a no-op (same reference) if the node doesn't exist", () => {
     const root = tree();
-    const result = setMediaFitSettings(root, "does-not-exist", {
-      fit: "cover",
-      position: "top",
-      preserveAspectRatio: true,
-    });
+    const result = setMediaFitSettings(root, "does-not-exist", { objectFit: "cover" });
     expect(result).toBe(root);
   });
 
@@ -47,13 +43,15 @@ describe("setMediaFitSettings", () => {
     const root: EditorElementNode = {
       id: "image-1",
       tag: "img",
-      mediaFit: { fit: "contain", position: "center", preserveAspectRatio: true },
+      mediaFit: { objectFit: "contain" },
     };
-    const result = setMediaFitSettings(root, "image-1", {
-      fit: "fill",
-      position: "bottom",
-      preserveAspectRatio: false,
-    });
-    expect(result.mediaFit).toEqual({ fit: "fill", position: "bottom", preserveAspectRatio: false });
+    const result = setMediaFitSettings(root, "image-1", { objectFit: "fill", objectPositionX: { value: 0, unit: "%" } });
+    expect(result.mediaFit).toEqual({ objectFit: "fill", objectPositionX: { value: 0, unit: "%" } });
+  });
+
+  it("clears mediaFit entirely when passed undefined", () => {
+    const root: EditorElementNode = { id: "image-1", tag: "img", mediaFit: { objectFit: "cover" } };
+    const result = setMediaFitSettings(root, "image-1", undefined);
+    expect(result.mediaFit).toBeUndefined();
   });
 });

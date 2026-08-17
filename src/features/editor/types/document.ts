@@ -111,7 +111,7 @@ export interface EditorElementNode {
   gridChild?: GridChildSettings;
   /** The media source URL (Checkpoint 3.5.1) — only meaningful for a media-capable tag (img; video/iframe once those exist). Unset renders an empty placeholder rather than a broken/missing image. */
   src?: string;
-  /** How this node's own visual content fits its rendered box (Checkpoint 3.5.1) — only meaningful for a media-capable tag (see getElementCapabilities().supportsIntrinsicAspectRatio). Unset means contain/center/preserveAspectRatio:true — see getMediaFitSettings. */
+  /** How this node's own visual content fits and aligns within its rendered box — object-fit/object-position (Checkpoint 3.5.1, restructured in Checkpoint 5.6) — only meaningful for a media-fit-capable tag (see getElementCapabilities().supportsMediaFit, a separate flag from supportsIntrinsicAspectRatio — see that flag's own doc comment). Each field (objectFit/objectPositionX/objectPositionY) is independently optional with no synthesized default stored here — see types/mediaFit.ts's own doc comment for the rendering-time fallback and the full distinction from `aspectRatio` below (aspect-ratio shapes the box itself; mediaFit shapes the content inside it — never merge the two). */
   mediaFit?: MediaFitSettings;
   /** This node's own text styling (Checkpoint 4.2) — only meaningful for a text-bearing tag (see getElementCapabilities().supportsTypography). Unlike mediaFit/spacing, unset fields here have no synthesized default; each is genuinely absent until explicitly set — see getTypographySettings and resolveTypographyStyle. */
   typography?: TypographySettings;

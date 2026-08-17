@@ -9,12 +9,18 @@ import type { EditorElementNode } from "@/features/editor/types/document";
  * exact same root reference. Meaningful only for a media-capable tag, but
  * stored unconditionally like every other retained per-node setting —
  * the resolver/UI layer is responsible for only reading/showing it where
- * relevant.
+ * relevant. `mediaFit` is the caller's complete next settings object
+ * (already the "unset -> undefined" result of withMediaFitField/
+ * withMediaFitPosition/clearMediaFitPosition for a reset/clear —
+ * Checkpoint 5.6), overwritten wholesale rather than merged here, exactly
+ * like setBackgroundSettings/setTypographySettings — merging semantics
+ * belong one layer up, at the Inspector row that knows which field(s)
+ * it's changing.
  */
 export function setMediaFitSettings(
   root: EditorElementNode,
   nodeId: string,
-  mediaFit: MediaFitSettings,
+  mediaFit: MediaFitSettings | undefined,
 ): EditorElementNode {
   if (root.id === nodeId) return { ...root, mediaFit };
 

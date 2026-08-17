@@ -117,8 +117,8 @@ interface EditorState {
   setFlexChildSettings: (nodeId: string, settings: FlexChildSettings) => void;
   /** Column/row start+span are clamped to the parent's current Grid track counts before being applied — see the implementation for why that happens here rather than in the pure command. */
   setGridChildSettings: (nodeId: string, settings: GridChildSettings) => void;
-  /** A node's own object-fit/object-position for intrinsic media (Checkpoint 3.5.1) — see resolveMediaFitStyle. */
-  setMediaFitSettings: (nodeId: string, settings: MediaFitSettings) => void;
+  /** A node's own object-fit/object-position for intrinsic media (Checkpoint 3.5.1, restructured in Checkpoint 5.6 — see types/mediaFit.ts's own doc comment). `undefined` clears it entirely (see withMediaFitField/withMediaFitPosition/clearMediaFitPosition). */
+  setMediaFitSettings: (nodeId: string, settings: MediaFitSettings | undefined) => void;
   /** A node's own text styling (Checkpoint 4.2) — see resolveTypographyStyle. `undefined` clears it entirely (see withTypographyField). */
   setElementTypography: (nodeId: string, typography: TypographySettings | undefined) => void;
   /** A node's own background styling (Checkpoint 4.3) — see resolveBackgroundStyle. `undefined` clears it entirely (see withBackgroundField/withBackgroundSize). */
