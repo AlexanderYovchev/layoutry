@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { InspectorNodeSummary } from "./InspectorNodeSummary";
 
@@ -39,7 +39,7 @@ describe("InspectorNodeSummary", () => {
     expect(screen.queryByText("Parent ID")).not.toBeInTheDocument();
   });
 
-  it("shows Width/Height as Auto for a resizable node that hasn't been resized yet", () => {
+  it("shows Width/Height as editable Auto fields for a resizable node that hasn't been resized yet (Checkpoint 5.7 — was read-only text)", () => {
     render(
       <InspectorNodeSummary
         node={{ id: "section-1", tag: "section" }}
@@ -47,37 +47,28 @@ describe("InspectorNodeSummary", () => {
       />,
     );
 
-    const widthRow = screen.getByText("Width").parentElement;
-    const heightRow = screen.getByText("Height").parentElement;
-    expect(widthRow).not.toBeNull();
-    expect(heightRow).not.toBeNull();
-    // Scoped to each dimension row specifically (rather than a page-wide
-    // getAllByText("Auto") count) — the Background section's Size control
-    // (Checkpoint 4.3) also has a literal "Auto" option, which would
-    // otherwise inflate an unscoped count and make this assertion fragile
-    // against unrelated Inspector sections.
-    expect(within(widthRow!).getByText("Auto")).toBeInTheDocument();
-    expect(within(heightRow!).getByText("Auto")).toBeInTheDocument();
+    expect(screen.getByLabelText("Width")).toHaveValue(null);
+    expect(screen.getByLabelText("Height")).toHaveValue(null);
   });
 
-  it("shows the current pixel dimensions for a resized node", () => {
+  it("shows the current pixel dimensions for a resized node as editable field values", () => {
     render(
       <InspectorNodeSummary
         node={{
           id: "section-1",
           tag: "section",
-          dimensions: { preferredWidth: 320.4, preferredHeight: 180, offsetX: 0, offsetY: 0 },
+          dimensions: { preferredWidth: 320, preferredHeight: 180, offsetX: 0, offsetY: 0 },
         }}
         parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
       />,
     );
 
-    expect(screen.getByText("320px")).toBeInTheDocument();
-    expect(screen.getByText("180px")).toBeInTheDocument();
-    expect(screen.queryByText("Constrained")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Width")).toHaveValue(320);
+    expect(screen.getByLabelText("Height")).toHaveValue(180);
+    expect(screen.queryByText(/constrained/i)).not.toBeInTheDocument();
   });
 
-  it("shows Width/Height rows for a text element (heading) — universal resize, Checkpoint 3.4.3", () => {
+  it("shows editable Width/Height fields for a text element (heading) — universal resize, Checkpoint 3.4.3", () => {
     render(
       <InspectorNodeSummary
         node={{
@@ -89,11 +80,11 @@ describe("InspectorNodeSummary", () => {
       />,
     );
 
-    expect(screen.getByText("400px")).toBeInTheDocument();
-    expect(screen.getByText("60px")).toBeInTheDocument();
+    expect(screen.getByLabelText("Width")).toHaveValue(400);
+    expect(screen.getByLabelText("Height")).toHaveValue(60);
   });
 
-  it("omits Width/Height rows for a non-resizable node (the document root)", () => {
+  it("omits the Size section (and its Width/Height fields) for a non-resizable node (the document root)", () => {
     render(
       <InspectorNodeSummary
         node={{ id: "page-root", tag: "page" }}
@@ -101,11 +92,11 @@ describe("InspectorNodeSummary", () => {
       />,
     );
 
-    expect(screen.queryByText("Width")).not.toBeInTheDocument();
-    expect(screen.queryByText("Height")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Width")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Height")).not.toBeInTheDocument();
   });
 
-  it("shows the effective rendered size plus 'Constrained by parent' when the DOM box is smaller than preferred", () => {
+  it("shows the effective rendered size plus a constrained-by-parent note when the DOM box is smaller than preferred", () => {
     const node = {
       id: "image-1",
       tag: "img",
@@ -120,13 +111,13 @@ describe("InspectorNodeSummary", () => {
       <InspectorNodeSummary node={node} parentId="section-2" parentLayoutMode="flow" parentFlowDisplay="block" />,
     );
 
-    expect(screen.getByText("350px")).toBeInTheDocument();
-    expect(screen.getByText("Preferred width")).toBeInTheDocument();
-    expect(screen.getByText("600px")).toBeInTheDocument();
-    expect(screen.getByText("Constrained")).toBeInTheDocument();
-    expect(screen.getByText("By parent")).toBeInTheDocument();
-    // Height wasn't constrained (200 rendered == 200 preferred) — no extra rows for it.
-    expect(screen.queryByText("Preferred height")).not.toBeInTheDocument();
+    // The field itself still shows the user's own preferred value (never
+    // silently rewritten by the live rendered size) — only the caption
+    // beneath it reports the current constrained rendered size.
+    expect(screen.getByLabelText("Width")).toHaveValue(600);
+    expect(screen.getByText(/renders at 350px/i)).toBeInTheDocument();
+    // Height wasn't constrained (200 rendered == 200 preferred) — no caption for it.
+    expect(screen.queryByText(/renders at 200px/i)).not.toBeInTheDocument();
 
     document.body.innerHTML = "";
   });

@@ -15,7 +15,7 @@ describe("InspectorFreeGeometryFields", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("shows the current X/Y/Width/Height values", () => {
+  it("shows the current X/Y values (Width/Height moved to InspectorSizeSection in Checkpoint 5.7)", () => {
     render(
       <InspectorFreeGeometryFields
         node={{ id: "n1", tag: "img", freeLayout: { x: 16, y: 32, width: 100, height: 80 } }}
@@ -24,8 +24,8 @@ describe("InspectorFreeGeometryFields", () => {
 
     expect(screen.getByLabelText("X")).toHaveValue(16);
     expect(screen.getByLabelText("Y")).toHaveValue(32);
-    expect(screen.getByLabelText("Width")).toHaveValue(100);
-    expect(screen.getByLabelText("Height")).toHaveValue(80);
+    expect(screen.queryByLabelText("Width")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Height")).not.toBeInTheDocument();
   });
 
   it("commits an edited field through the same setFreeChildGeometry action drag/resize use", () => {

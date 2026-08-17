@@ -50,6 +50,14 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
   const startRef = useRef<FreeChildMoveStart | null>(null);
   const latestPointerRef = useRef({ x: 0, y: 0 });
   const frameRef = useRef<number | null>(null);
+  // Checkpoint 5.7 bug fix (found via that checkpoint's own real-browser
+  // undo/redo verification — a plain click, no drag, on a Free child
+  // (e.g. simply to select it) was pushing a real, undoable history
+  // entry purely from a pointerdown+pointerup with zero pointermove
+  // events in between, exactly the same class of bug found and fixed in
+  // useResizeSession/useFreeChildResizeSession's own endSession — see
+  // their identical comments). See endSession's own comment for the fix.
+  const didMoveRef = useRef(false);
 
   const commit = useCallback(() => {
     frameRef.current = null;
@@ -69,6 +77,7 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
       event.stopPropagation();
       event.currentTarget.setPointerCapture(event.pointerId);
       useEditorStore.getState().beginResizeTransaction();
+      didMoveRef.current = false;
 
       const targetEl = window.document.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(nodeId)}"]`);
       const containerEl = targetEl?.parentElement?.closest<HTMLElement>("[data-node-id]") ?? null;
@@ -97,6 +106,7 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
   const onPointerMove = useCallback(
     (event: ReactPointerEvent<Element>) => {
       if (!startRef.current) return;
+      didMoveRef.current = true;
       latestPointerRef.current = { x: event.clientX, y: event.clientY };
       scheduleCommit();
     },
@@ -111,8 +121,18 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
         cancelAnimationFrame(frameRef.current);
         frameRef.current = null;
       }
-      commit();
-      useEditorStore.getState().commitResizeTransaction();
+      // A plain click (pointerdown immediately followed by pointerup, no
+      // pointermove in between — e.g. simply selecting the node) has
+      // nothing to commit (Checkpoint 5.7 fix — see didMoveRef's own doc
+      // comment). Cancelling (not committing) the transaction here means
+      // no history entry is pushed for a click that was never actually a
+      // move.
+      if (didMoveRef.current) {
+        commit();
+        useEditorStore.getState().commitResizeTransaction();
+      } else {
+        useEditorStore.getState().cancelResizeTransaction();
+      }
 
       event.currentTarget.releasePointerCapture(event.pointerId);
       startRef.current = null;

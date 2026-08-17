@@ -420,6 +420,19 @@ describe("ResizeHandles history transactions (Checkpoint 3.4.3)", () => {
     expect(useEditorStore.getState().past).toHaveLength(1);
   });
 
+  it("a plain click on the handle (pointerdown immediately followed by pointerup, no pointermove) commits nothing and records no history (Checkpoint 5.7 regression — found live via undo/redo verification: this previously materialized explicit dimensions from the node's current rendered size and pushed a spurious history entry)", () => {
+    renderHandles();
+    const handle = document.querySelector('[data-resize-handle="e"]') as Element;
+    const pastLengthBefore = useEditorStore.getState().past.length;
+
+    fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 500, clientY: 300, pointerId: 1 });
+
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);
+    const current = findNodeById(useEditorStore.getState().document, "heading-1");
+    expect(current?.dimensions).toBeUndefined();
+  });
+
   it("undo after a completed resize drag reverts the entire drag in one step", () => {
     renderHandles();
     const handle = document.querySelector('[data-resize-handle="e"]') as Element;

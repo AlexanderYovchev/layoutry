@@ -4,6 +4,8 @@ import {
   moveNode,
   removeNode,
   resizeNode,
+  setAspectRatioLocked as setAspectRatioLockedCommand,
+  setElementDimensions as setElementDimensionsCommand,
   type InsertPosition,
 } from "@/features/editor/commands/documentCommands";
 import {
@@ -32,6 +34,7 @@ import { setFilterSettings as setFilterSettingsCommand } from "@/features/editor
 import { setDisplaySettings as setDisplaySettingsCommand } from "@/features/editor/commands/displayCommands";
 import { setPositionSettings as setPositionSettingsCommand } from "@/features/editor/commands/positionCommands";
 import { setAspectRatio as setAspectRatioCommand } from "@/features/editor/commands/aspectRatioCommands";
+import { setSizeConstraints as setSizeConstraintsCommand } from "@/features/editor/commands/sizeConstraintsCommands";
 import { clampGridChildPlacement } from "@/features/editor/utils/clampGridChildPlacement";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
 import { cloneNodeWithFreshIds } from "@/features/editor/utils/cloneNodeWithFreshIds";
@@ -63,6 +66,7 @@ import type { FilterSettings } from "@/features/editor/types/filters";
 import type { DisplaySettings } from "@/features/editor/types/display";
 import type { PositionSettings } from "@/features/editor/types/position";
 import type { AspectRatioValue } from "@/features/editor/types/aspectRatio";
+import type { SizeConstraints } from "@/features/editor/types/sizeConstraints";
 
 interface EditorState {
   document: EditorElementNode;
@@ -139,6 +143,12 @@ interface EditorState {
   setElementPosition: (nodeId: string, position: PositionSettings | undefined) => void;
   /** This node's own CSS `aspect-ratio` (Checkpoint 5.5) — see resolveAspectRatioStyle. `undefined` clears it entirely (distinct from an explicit `{ mode: "auto" }` — see types/aspectRatio.ts's own doc comment). No continuous-drag variant: a single preset/custom-value commit, like Position/Display. Not to be confused with the pre-existing `aspectRatioLocked` resize-interaction flag, which this action never touches. */
   setElementAspectRatio: (nodeId: string, aspectRatio: AspectRatioValue | undefined) => void;
+  /** This node's own CSS min/max sizing constraints (Checkpoint 5.7) — see resolveSizeConstraintsStyle. `undefined` clears them entirely (see withSizeConstraintField). */
+  setSizeConstraints: (nodeId: string, constraints: SizeConstraints | undefined) => void;
+  /** One-shot Flow Width/Height edit (Checkpoint 5.7 — the Inspector's own Size section, as opposed to resizeElement's per-frame pointer-drag writes) — pushes its own single history entry. `undefined` clears both axes back to natural Flow sizing (ElementDimensions stays atomic — see setElementDimensions's own doc comment). */
+  setElementDimensions: (nodeId: string, dimensions: ElementDimensions | undefined) => void;
+  /** Overrides the tag-based default resize-proportion-lock behavior (Checkpoint 5.7 — see EditorElementNode.aspectRatioLocked's own doc comment, and getEffectiveAspectRatioLocked for how `undefined` resolves). Only meaningful for a Free child's corner resize handles today — see useFreeChildResizeSession. `undefined` clears the override and returns to the tag's own capability-derived default. */
+  setAspectRatioLocked: (nodeId: string, locked: boolean | undefined) => void;
 
   /**
    * Generic continuous-interaction transaction (Checkpoint 4.3.1) — the
@@ -429,6 +439,24 @@ export const useEditorStore = create<EditorState>()((set) => ({
     set((state) => ({
       ...pushHistory(state),
       document: setAspectRatioCommand(state.document, nodeId, aspectRatio),
+    })),
+
+  setSizeConstraints: (nodeId, constraints) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setSizeConstraintsCommand(state.document, nodeId, constraints),
+    })),
+
+  setElementDimensions: (nodeId, dimensions) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setElementDimensionsCommand(state.document, nodeId, dimensions),
+    })),
+
+  setAspectRatioLocked: (nodeId, locked) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setAspectRatioLockedCommand(state.document, nodeId, locked),
     })),
 
   beginTransaction: () =>

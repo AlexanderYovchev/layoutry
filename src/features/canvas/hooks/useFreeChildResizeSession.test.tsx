@@ -153,6 +153,21 @@ describe("useFreeChildResizeSession", () => {
     expect(useEditorStore.getState().past).toHaveLength(1);
   });
 
+  it("a plain click on the handle (pointerdown immediately followed by pointerup, no pointermove) commits nothing and records no history (Checkpoint 5.7 regression)", () => {
+    const { target } = setupDom();
+    const handle = target.parentElement!.querySelector('[data-testid="handle"]') as HTMLElement;
+
+    fireEvent.pointerDown(handle, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 200, clientY: 200, pointerId: 1 });
+
+    const image = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "free-container-1")
+      ?.children?.find((c) => c.id === "free-image-1");
+    expect(image?.freeLayout).toEqual({ x: 16, y: 16, width: 100, height: 80 });
+    expect(useEditorStore.getState().past).toHaveLength(0);
+  });
+
   it("Escape mid-drag cancels the resize and records no history", () => {
     const { target } = setupDom();
     const handle = target.parentElement!.querySelector('[data-testid="handle"]') as HTMLElement;

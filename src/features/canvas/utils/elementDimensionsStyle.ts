@@ -38,20 +38,16 @@ import type { ContainerLayoutMode, FreeLayoutGeometry } from "@/features/editor/
  * Margin is omitted entirely when the composed total is 0 on that axis,
  * rather than emitting a redundant `margin: 0px`.
  *
- * maxWidth/maxHeight: "100%" (Checkpoint 3.4.3) is what keeps a child
- * dependent on its parent's current usable content box without ever
- * mutating the stored preferredWidth/preferredHeight: percentages resolve
- * against the immediate containing block's content box (already net of
- * that parent's own border/padding, since the app's global box-sizing is
- * border-box), so this needs no manual parent measurement. Critically,
- * `max-height: 100%` against a parent whose own height is auto (not
- * explicitly set) resolves to no constraint at all per the CSS
- * percentage-height rules — exactly "don't create an artificial bottom
- * ceiling" for the common auto-height case — while a parent with a real,
- * explicit height still clamps correctly. Because the preferred value
- * itself is never rewritten, a child that's currently visually
- * constrained returns to its full preferred size the instant the parent
- * grows enough to fit it again — no separate "restore" step needed.
+ * maxWidth/maxHeight ownership moved to resolveSizeConstraintsStyle in
+ * Checkpoint 5.7 — this function no longer sets either property itself.
+ * A resized Flow node still gets the exact same "clamp to the parent's
+ * current content box" containment it always has (Checkpoint 3.4.3's
+ * `max-width/height: 100%`), it's just resolved (and, since 5.7,
+ * composed with any user-authored CSS max-width/height via `min()`)
+ * by that dedicated resolver instead of here — see its own doc comment
+ * for the full reasoning behind the split. Every other caller of this
+ * function is unaffected: width/height/flexShrink/margin/overflow are
+ * still resolved exactly as before.
  *
  * clipOverflowY hides content that no longer fits once an explicit height
  * shrinks a text-bearing element below its natural content height (see
@@ -76,8 +72,6 @@ export function elementDimensionsStyle(
   const style: CSSProperties = {
     width: dimensions.preferredWidth,
     height: dimensions.preferredHeight,
-    maxWidth: "100%",
-    maxHeight: "100%",
     flexShrink: 0,
   };
 

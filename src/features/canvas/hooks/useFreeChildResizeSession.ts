@@ -15,7 +15,7 @@ import {
 import { measureFreeContainerBounds } from "@/features/canvas/utils/measureFreeContainerBounds";
 import { resolveContainerScalingSnapshot, type ContainerScalingSnapshot } from "@/features/canvas/utils/resolveContainerScalingSnapshot";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
-import { getElementCapabilities } from "@/features/editor/rules/elementCapabilities";
+import { getEffectiveAspectRatioLocked } from "@/features/editor/rules/elementCapabilities";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
 import { getResizeConstraintsForTag, type ElementResizeConstraints } from "@/features/editor/types/layout";
 import { RESIZE_HANDLE_CURSORS, type ResizeDirection } from "@/features/editor/types/resize";
@@ -67,6 +67,14 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
   const containerScalingRef = useRef<ContainerScalingSnapshot | null>(null);
   const latestPointerRef = useRef({ x: 0, y: 0 });
   const frameRef = useRef<number | null>(null);
+  // Checkpoint 5.7 bug fix (found via this checkpoint's own real-browser
+  // undo/redo verification — a plain click, no drag, on a resize handle
+  // was materializing explicit dimensions from whatever the node's
+  // current rendered size happened to be, AND pushing a real, undoable
+  // history entry, purely from a pointerdown+pointerup with zero
+  // pointermove events in between). See endSession's own comment for the
+  // fix.
+  const didMoveRef = useRef(false);
 
   const commit = useCallback(() => {
     frameRef.current = null;
@@ -124,6 +132,7 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
         event.preventDefault();
         event.currentTarget.setPointerCapture(event.pointerId);
         useEditorStore.getState().beginResizeTransaction();
+        didMoveRef.current = false;
 
         const targetEl = window.document.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(nodeId)}"]`);
         const tag = targetEl?.getAttribute("data-node-type") ?? "";
@@ -162,6 +171,7 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
   const onHandlePointerMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (!sessionRef.current) return;
+      didMoveRef.current = true;
       latestPointerRef.current = { x: event.clientX, y: event.clientY };
       scheduleCommit();
     },
@@ -176,8 +186,18 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
         cancelAnimationFrame(frameRef.current);
         frameRef.current = null;
       }
-      commit();
-      useEditorStore.getState().commitResizeTransaction();
+      // A plain click (pointerdown immediately followed by pointerup, no
+      // pointermove in between) has nothing to commit — see didMoveRef's
+      // own doc comment. Cancelling (not committing) the transaction here
+      // means no history entry is pushed and no dimensions are silently
+      // materialized from whatever the node currently happens to render
+      // at.
+      if (didMoveRef.current) {
+        commit();
+        useEditorStore.getState().commitResizeTransaction();
+      } else {
+        useEditorStore.getState().cancelResizeTransaction();
+      }
 
       event.currentTarget.releasePointerCapture(event.pointerId);
       sessionRef.current = null;
@@ -226,9 +246,8 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
   };
 }
 
-/** node.aspectRatioLocked if explicitly set, else the tag's own default (see EditorElementNode.aspectRatioLocked). */
+/** Looks up the live node by id, then delegates to the shared effective-value resolution (see getEffectiveAspectRatioLocked's own doc comment — Checkpoint 5.7 extracted that pure logic so the Inspector's Resize Proportions control resolves the identical effective state). */
 function resolveAspectRatioLocked(nodeId: string, tag: string): boolean {
   const node = findNodeById(useEditorStore.getState().document, nodeId);
-  if (node?.aspectRatioLocked !== undefined) return node.aspectRatioLocked;
-  return getElementCapabilities(tag).supportsIntrinsicAspectRatio;
+  return getEffectiveAspectRatioLocked({ aspectRatioLocked: node?.aspectRatioLocked, tag });
 }

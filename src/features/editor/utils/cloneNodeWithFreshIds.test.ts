@@ -240,6 +240,22 @@ describe("cloneNodeWithFreshIds", () => {
     expect(clone.display).toEqual(source.display);
   });
 
+  it("preserves sizeConstraints and an explicit resize lock override (Checkpoint 5.7)", () => {
+    const source: EditorElementNode = {
+      id: "container-1",
+      tag: "div",
+      sizeConstraints: { minWidth: 100, maxWidth: 800 },
+      aspectRatioLocked: true,
+      dimensions: { preferredWidth: 320, preferredHeight: 180, offsetX: 0, offsetY: 0 },
+    };
+
+    const clone = cloneNodeWithFreshIds(source);
+
+    expect(clone.sizeConstraints).toEqual(source.sizeConstraints);
+    expect(clone.aspectRatioLocked).toBe(true);
+    expect(clone.dimensions).toEqual(source.dimensions);
+  });
+
   it("does not mutate the source tree", () => {
     const source: EditorElementNode = {
       id: "container-1",

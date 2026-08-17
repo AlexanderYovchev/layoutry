@@ -9,6 +9,7 @@ import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderR
 import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
 import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowStyle";
 import { resolveAspectRatioStyle } from "@/features/canvas/utils/resolveAspectRatioStyle";
+import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
 import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle";
 import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
@@ -70,6 +71,11 @@ export function ButtonElement({ node, parentId, parentLayoutMode, parentFlowDisp
         ...elementPositionStyle(node, parentLayoutMode, { clipOverflowY: usesLegacyOverflowClip }),
         ...resolveAspectRatioStyle(node),
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
+        // Spread AFTER resolveFlexOrGridChildStyle deliberately (Checkpoint
+        // 5.7) — see HeadingElement's identical comment for the full
+        // reasoning (an explicit user min-width/min-height must win over
+        // that resolver's own Flex/Grid containment default of 0).
+        ...resolveSizeConstraintsStyle(node, parentLayoutMode),
         ...resolveTypographyStyle(node),
         ...resolveBackgroundStyle(node),
         ...resolveBorderStyle(node),

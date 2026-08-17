@@ -120,4 +120,41 @@ describe("useNodeDragSource — Free move session wiring (Checkpoint 3.4.4)", ()
       ?.children?.find((c) => c.id === "free-image-1");
     expect(updated?.freeLayout).toEqual({ x: 40, y: 30, width: 64, height: 64 });
   });
+
+  it("a plain click on a Free child (pointerdown immediately followed by pointerup, no pointermove — e.g. simply selecting it) commits nothing and records no history (Checkpoint 5.7 regression — found live via undo/redo verification: this previously pushed a spurious history entry on every plain click, not just an actual drag)", () => {
+    useEditorStore.setState((state) => ({
+      document: {
+        ...state.document,
+        children: [
+          {
+            id: "free-container-1",
+            tag: "div",
+            layoutMode: "free",
+            children: [
+              { id: "free-image-1", tag: "img", freeLayout: { x: 10, y: 10, width: 64, height: 64 } },
+            ],
+          },
+        ],
+      },
+    }));
+
+    const { container } = render(<FreeChildHarness />);
+    const containerEl = container.querySelector('[data-node-id="free-container-1"]') as HTMLElement;
+    const target = container.querySelector('[data-node-id="free-image-1"]') as HTMLElement;
+    stubRect(containerEl, { left: 0, top: 0, right: 400, bottom: 300 });
+    stubRect(target, { left: 10, top: 10, right: 74, bottom: 74 });
+    Object.defineProperty(containerEl, "clientWidth", { value: 400, configurable: true });
+    Object.defineProperty(containerEl, "clientHeight", { value: 300, configurable: true });
+    const pastLengthBefore = useEditorStore.getState().past.length;
+
+    fireEvent.pointerDown(target, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(target, { clientX: 100, clientY: 100, pointerId: 1 });
+
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);
+    const updated = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "free-container-1")
+      ?.children?.find((c) => c.id === "free-image-1");
+    expect(updated?.freeLayout).toEqual({ x: 10, y: 10, width: 64, height: 64 });
+  });
 });

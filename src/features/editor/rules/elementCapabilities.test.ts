@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canResizeElement,
+  getEffectiveAspectRatioLocked,
   getElementCapabilities,
   isSelectableElement,
 } from "./elementCapabilities";
@@ -186,6 +187,24 @@ describe("elementCapabilities", () => {
     it("is false for the document root and body wrapper", () => {
       expect(isSelectableElement("page")).toBe(false);
       expect(isSelectableElement("body")).toBe(false);
+    });
+  });
+
+  describe("getEffectiveAspectRatioLocked (Checkpoint 5.7)", () => {
+    it("uses the tag's own capability default when unset (img defaults locked)", () => {
+      expect(getEffectiveAspectRatioLocked({ tag: "img" })).toBe(true);
+    });
+
+    it("uses the tag's own capability default when unset (a generic container defaults unlocked)", () => {
+      expect(getEffectiveAspectRatioLocked({ tag: "div" })).toBe(false);
+    });
+
+    it("an explicit true override wins over the tag's own false default", () => {
+      expect(getEffectiveAspectRatioLocked({ tag: "div", aspectRatioLocked: true })).toBe(true);
+    });
+
+    it("an explicit false override wins over the tag's own true default", () => {
+      expect(getEffectiveAspectRatioLocked({ tag: "img", aspectRatioLocked: false })).toBe(false);
     });
   });
 });

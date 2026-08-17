@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { InspectorNumericValueControl, type NumericOrAuto } from "@/features/inspector/components/InspectorNumericValueControl";
 import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
-import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { InspectorSegmentedRow } from "@/features/inspector/components/InspectorSegmentedRow";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import {
@@ -15,7 +14,7 @@ import {
 } from "@/features/editor/types/aspectRatio";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
-interface InspectorAspectRatioSectionProps {
+interface InspectorAspectRatioFieldsProps {
   node: EditorElementNode;
 }
 
@@ -46,14 +45,15 @@ const MIN_RATIO_COMPONENT = 0.01;
 const DEFAULT_CUSTOM_RATIO: Extract<AspectRatioValue, { mode: "ratio" }> = { mode: "ratio", width: 1, height: 1 };
 
 /**
- * The Aspect Ratio control (Checkpoint 5.5) — lives in its own "Size"
- * section, rendered directly after InspectorNodeSummary's own read-only
- * Width/Height rows (see that component's own render order): repository
- * inspection found no existing editable Width/Height/Min/Max Inspector
- * section to extend (Width/Height there are plain read-only text, not
- * InspectorPropertyRow-shaped controls — real numeric size editing is
- * still future scope), so "Size" is a genuinely new section, not a
- * duplicate of one that already existed.
+ * The Aspect Ratio control (Checkpoint 5.5) — the row/custom-fields
+ * content only, no section wrapper of its own: Checkpoint 5.7 folded
+ * this into the shared "Size" InspectorSection alongside Width/Height/
+ * Min/Max/Resize Proportions (see InspectorSizeSection, this
+ * component's only caller) rather than each owning a separate
+ * accordion — "expand the same section, don't duplicate it." Renamed
+ * from InspectorAspectRatioSection (Checkpoint 5.5's own name) to make
+ * the "fields only" contract explicit; the row/preset/custom-field logic
+ * below is otherwise byte-for-byte what 5.5 shipped.
  *
  * Mode is derived from the document, plus one piece of local, node-keyed
  * UI state (`customMode`) for exactly one case: entering Custom while the
@@ -62,8 +62,8 @@ const DEFAULT_CUSTOM_RATIO: Extract<AspectRatioValue, { mode: "ratio" }> = { mod
  * row's own active option must still show "Custom" the instant the user
  * clicks it, even before that commit's store update round-trips back
  * through `node`. Re-derived only when the *selection* changes (the same
- * lastNodeId pattern OffsetsSubsection/OverflowSubsection already use),
- * so editing the custom fields into a shape that no longer matches a
+ * lastNodeId pattern OffsetsSubsection/OverflowSubsection use), so
+ * editing the custom fields into a shape that no longer matches a
  * preset never snaps the view back to a named preset.
  *
  * Preset detection (detectAspectRatioPreset) recognizes a
@@ -71,7 +71,7 @@ const DEFAULT_CUSTOM_RATIO: Extract<AspectRatioValue, { mode: "ratio" }> = { mod
  * rewriting the stored value — only an actual preset click or a real
  * edit to the custom fields ever calls onCommit.
  */
-export function InspectorAspectRatioSection({ node }: InspectorAspectRatioSectionProps) {
+export function InspectorAspectRatioFields({ node }: InspectorAspectRatioFieldsProps) {
   const setElementAspectRatio = useEditorStore((state) => state.setElementAspectRatio);
   const value = node.aspectRatio;
   const isSet = value !== undefined && isValidAspectRatioValue(value);
@@ -80,7 +80,7 @@ export function InspectorAspectRatioSection({ node }: InspectorAspectRatioSectio
   const [customMode, setCustomMode] = useState(() => detectedKey === "custom");
   // Re-derives on a genuine *selection* change (lastNodeId, the same
   // pattern OffsetsSubsection/OverflowSubsection use) — but also, found
-  // via this checkpoint's own real-browser Undo/Redo verification, on any
+  // via Checkpoint 5.5's own real-browser Undo/Redo verification, on any
   // change to the *value itself* while the same node stays selected
   // (lastValue): Undo/Redo mutate the store directly, bypassing this
   // component's own commit functions entirely, so a value that was
@@ -164,7 +164,7 @@ export function InspectorAspectRatioSection({ node }: InspectorAspectRatioSectio
   }
 
   return (
-    <InspectorSection label="Size" defaultOpen>
+    <>
       <InspectorSegmentedRow
         label="Aspect Ratio"
         help={ASPECT_RATIO_HELP}
@@ -196,6 +196,6 @@ export function InspectorAspectRatioSection({ node }: InspectorAspectRatioSectio
           />
         </div>
       )}
-    </InspectorSection>
+    </>
   );
 }

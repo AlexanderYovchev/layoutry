@@ -983,6 +983,48 @@ describe("useEditorStore — Flow layout, spacing, Flex/Grid (Checkpoint 3.5)", 
   });
 });
 
+describe("useEditorStore — Resize & Sizing (Checkpoint 5.7)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("setElementDimensions pushes one history entry and is undoable", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setElementDimensions("section-1", { preferredWidth: 320, preferredHeight: 180, offsetX: 0, offsetY: 0 });
+
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(node?.dimensions).toEqual({ preferredWidth: 320, preferredHeight: 180, offsetX: 0, offsetY: 0 });
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+
+    useEditorStore.getState().undo();
+    expect(useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.dimensions).toBeUndefined();
+  });
+
+  it("setSizeConstraints pushes one history entry and is undoable", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setSizeConstraints("section-1", { minWidth: 100, maxWidth: 800 });
+
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(node?.sizeConstraints).toEqual({ minWidth: 100, maxWidth: 800 });
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+
+    useEditorStore.getState().undo();
+    expect(useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.sizeConstraints).toBeUndefined();
+  });
+
+  it("setAspectRatioLocked pushes one history entry and is undoable", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setAspectRatioLocked("section-1", true);
+
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(node?.aspectRatioLocked).toBe(true);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+
+    useEditorStore.getState().undo();
+    expect(useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.aspectRatioLocked).toBeUndefined();
+  });
+});
+
 describe("useEditorStore — generic transactions (Checkpoint 4.3.1)", () => {
   afterEach(() => {
     useEditorStore.setState(initialState, true);

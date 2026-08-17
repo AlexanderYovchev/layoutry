@@ -6,6 +6,7 @@ import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegi
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
 import { resolveAspectRatioStyle } from "@/features/canvas/utils/resolveAspectRatioStyle";
+import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
 import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderRadiusStyle";
 import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
 import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowStyle";
@@ -85,6 +86,11 @@ export function ImageElement({ node, parentId, parentLayoutMode, parentFlowDispl
         ...elementPositionStyle(node, parentLayoutMode),
         ...resolveAspectRatioStyle(node),
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
+        // Spread AFTER resolveFlexOrGridChildStyle deliberately (Checkpoint
+        // 5.7) — see HeadingElement's identical comment for the full
+        // reasoning (an explicit user min-width/min-height must win over
+        // that resolver's own Flex/Grid containment default of 0).
+        ...resolveSizeConstraintsStyle(node, parentLayoutMode),
         ...resolveBorderStyle(node),
         ...resolveBorderRadiusStyle(node),
         ...resolveBoxShadowStyle(node),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EditorElementNode } from "@/features/editor/types/document";
-import { insertNode, moveNode, removeNode, resizeNode } from "./documentCommands";
+import { insertNode, moveNode, removeNode, resizeNode, setElementDimensions } from "./documentCommands";
 
 const tree: EditorElementNode = {
   id: "root",
@@ -388,6 +388,55 @@ describe("resizeNode", () => {
 
     const container = result.children?.find((child) => child.id === "container-1");
     expect(container?.dimensions).toEqual({ preferredWidth: 320, preferredHeight: 180, offsetX: 0, offsetY: 0 });
+  });
+});
+
+describe("setElementDimensions", () => {
+  const sizingTree: EditorElementNode = {
+    id: "root",
+    tag: "page",
+    children: [{ id: "container-1", tag: "div", children: [] }],
+  };
+
+  it("sets dimensions with the same tag-based floor clamp resizeNode applies", () => {
+    const result = setElementDimensions(sizingTree, "container-1", {
+      preferredWidth: 10,
+      preferredHeight: 10,
+      offsetX: 0,
+      offsetY: 0,
+    });
+
+    const container = result.children?.find((child) => child.id === "container-1");
+    // Container floor is 160x120 (see resizeNode's own test suite).
+    expect(container?.dimensions).toEqual({ preferredWidth: 160, preferredHeight: 120, offsetX: 0, offsetY: 0 });
+  });
+
+  it("clears dimensions entirely (both axes) when passed undefined", () => {
+    const resized = setElementDimensions(sizingTree, "container-1", {
+      preferredWidth: 320,
+      preferredHeight: 180,
+      offsetX: 0,
+      offsetY: 0,
+    });
+
+    const result = setElementDimensions(resized, "container-1", undefined);
+    const container = result.children?.find((child) => child.id === "container-1");
+    expect(container?.dimensions).toBeUndefined();
+  });
+
+  it("is a no-op (same reference) when clearing a node that's already Auto", () => {
+    const result = setElementDimensions(sizingTree, "container-1", undefined);
+    expect(result).toBe(sizingTree);
+  });
+
+  it("is a no-op (same reference) if the node doesn't exist", () => {
+    const result = setElementDimensions(sizingTree, "does-not-exist", {
+      preferredWidth: 320,
+      preferredHeight: 180,
+      offsetX: 0,
+      offsetY: 0,
+    });
+    expect(result).toBe(sizingTree);
   });
 });
 

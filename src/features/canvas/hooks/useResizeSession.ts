@@ -92,6 +92,14 @@ export function useResizeSession(
   const containerScalingRef = useRef<ContainerScalingSnapshot | null>(null);
   const latestPointerRef = useRef({ x: 0, y: 0 });
   const frameRef = useRef<number | null>(null);
+  // Checkpoint 5.7 bug fix (found via this checkpoint's own real-browser
+  // undo/redo verification — a plain click, no drag, on a resize handle
+  // was materializing explicit dimensions from whatever the node's
+  // current rendered size happened to be, AND pushing a real, undoable
+  // history entry, purely from a pointerdown+pointerup with zero
+  // pointermove events in between). See endSession's own comment for the
+  // fix.
+  const didMoveRef = useRef(false);
 
   const commit = useCallback(() => {
     frameRef.current = null;
@@ -150,6 +158,7 @@ export function useResizeSession(
         event.preventDefault();
         event.currentTarget.setPointerCapture(event.pointerId);
         useEditorStore.getState().beginResizeTransaction();
+        didMoveRef.current = false;
 
         const canvasRoot = canvasRootRef.current;
         const targetEl = canvasRoot?.querySelector<HTMLElement>(
@@ -191,6 +200,7 @@ export function useResizeSession(
   const onHandlePointerMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (!sessionRef.current) return;
+      didMoveRef.current = true;
       latestPointerRef.current = { x: event.clientX, y: event.clientY };
       scheduleCommit();
     },
@@ -205,11 +215,21 @@ export function useResizeSession(
         cancelAnimationFrame(frameRef.current);
         frameRef.current = null;
       }
-      // Always commit the final pointer position on release, even if it
-      // arrived in the same tick as a still-pending frame — otherwise the
-      // last few pixels of a fast drag could be dropped.
-      commit();
-      useEditorStore.getState().commitResizeTransaction();
+      // A plain click (pointerdown immediately followed by pointerup, no
+      // pointermove in between) has nothing to commit (Checkpoint 5.7 fix
+      // — see didMoveRef's own doc comment). Cancelling (not committing)
+      // the transaction here means no history entry is pushed and no
+      // dimensions are silently materialized from whatever the node
+      // currently happens to render at. Always commit the final pointer
+      // position on a *genuine* release, even if it arrived in the same
+      // tick as a still-pending frame — otherwise the last few pixels of
+      // a fast drag could be dropped.
+      if (didMoveRef.current) {
+        commit();
+        useEditorStore.getState().commitResizeTransaction();
+      } else {
+        useEditorStore.getState().cancelResizeTransaction();
+      }
 
       event.currentTarget.releasePointerCapture(event.pointerId);
       sessionRef.current = null;

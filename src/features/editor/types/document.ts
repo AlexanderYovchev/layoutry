@@ -15,6 +15,7 @@ import type { FilterSettings } from "@/features/editor/types/filters";
 import type { DisplaySettings } from "@/features/editor/types/display";
 import type { PositionSettings } from "@/features/editor/types/position";
 import type { AspectRatioValue } from "@/features/editor/types/aspectRatio";
+import type { SizeConstraints } from "@/features/editor/types/sizeConstraints";
 
 export interface ElementDimensions {
   /**
@@ -140,4 +141,17 @@ export interface EditorElementNode {
    * unrelated resize-interaction flag.
    */
   aspectRatio?: AspectRatioValue;
+  /**
+   * This node's own CSS min-width/min-height/max-width/max-height
+   * (Checkpoint 5.7) — only meaningful for a sizing-capable tag (see
+   * getElementCapabilities().supportsAspectRatio, which also gates this
+   * — see that flag's own doc comment). Like aspect-ratio/display/
+   * position, unset has no synthesized default — see getSizeConstraints
+   * and resolveSizeConstraintsStyle. NOT the same as the pre-existing
+   * `ElementResizeConstraints` (types/layout.ts) — that is a pointer-drag
+   * interaction floor, never serialized as CSS; this is real, exported
+   * CSS min/max — see types/sizeConstraints.ts's own top comment for the
+   * full distinction.
+   */
+  sizeConstraints?: SizeConstraints;
 }

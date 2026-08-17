@@ -158,3 +158,73 @@ export function resizeNode(
 
   return changed ? { ...root, children } : root;
 }
+
+/**
+ * One-shot Flow dimension edit (Checkpoint 5.7) — the Inspector's own
+ * Width/Height fields, as opposed to resizeNode/resizeElement's
+ * per-frame pointer-drag writes. Setting `dimensions` delegates straight
+ * to resizeNode, so an Inspector-typed value gets the exact same
+ * tag-based floor clamp a drag would (see resizeNode's own doc comment)
+ * — there is no separate, weaker validation path for typed input.
+ * `dimensions: undefined` clears the node back to natural Flow sizing on
+ * BOTH axes at once: ElementDimensions stays deliberately atomic (see
+ * this checkpoint's own report for the audit behind that decision), so
+ * there is no way to represent "Auto width, explicit height" — Reset
+ * Width and Reset Height are documented and tested to both perform this
+ * same full clear, never a partial one.
+ */
+export function setElementDimensions(
+  root: EditorElementNode,
+  nodeId: string,
+  dimensions: ElementDimensions | undefined,
+): EditorElementNode {
+  if (dimensions !== undefined) return resizeNode(root, nodeId, dimensions);
+
+  if (root.id === nodeId) {
+    if (root.dimensions === undefined) return root;
+    return { ...root, dimensions: undefined };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementDimensions(child, nodeId, dimensions);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
+ * Overrides (or clears, via `locked: undefined`) a node's own resize-
+ * proportion-lock (Checkpoint 5.7 — the Inspector's Resize Proportions
+ * control). Purely a document write; it never validates against the
+ * node's tag, since every tag can meaningfully carry an override even if
+ * only Free-child corner resizing currently reads it (see
+ * useFreeChildResizeSession) — the same "store unconditionally, let the
+ * consuming layer decide relevance" convention every other retained
+ * per-node setting in this app already follows (e.g. mediaFit).
+ */
+export function setAspectRatioLocked(
+  root: EditorElementNode,
+  nodeId: string,
+  locked: boolean | undefined,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.aspectRatioLocked === locked) return root;
+    return { ...root, aspectRatioLocked: locked };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setAspectRatioLocked(child, nodeId, locked);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}

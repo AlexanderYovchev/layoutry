@@ -9,6 +9,7 @@ import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderR
 import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
 import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowStyle";
 import { resolveAspectRatioStyle } from "@/features/canvas/utils/resolveAspectRatioStyle";
+import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
 import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle";
 import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
@@ -58,6 +59,14 @@ export function HeadingElement({ node, parentId, parentLayoutMode, parentFlowDis
         ...elementPositionStyle(node, parentLayoutMode, { clipOverflowY: usesLegacyOverflowClip }),
         ...resolveAspectRatioStyle(node),
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
+        // Spread AFTER resolveFlexOrGridChildStyle deliberately (Checkpoint
+        // 5.7): that resolver's own minWidth/minHeight: 0 is a Flex/Grid
+        // *containment default*, not a real user choice — an explicit CSS
+        // min-width/min-height the user actually set here must always win
+        // over it. Only the two min* keys are ever contested (Flex/Grid
+        // never sets max-width/max-height), so this ordering-based
+        // precedence is correct with no extra composition logic needed.
+        ...resolveSizeConstraintsStyle(node, parentLayoutMode),
         ...resolveTypographyStyle(node),
         ...resolveBackgroundStyle(node),
         ...resolveBorderStyle(node),

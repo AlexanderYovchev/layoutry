@@ -7,14 +7,12 @@ describe("elementDimensionsStyle", () => {
     expect(elementDimensionsStyle(undefined)).toBeUndefined();
   });
 
-  it("converts dimensions into inline width/height with a 100% max clamp and flexShrink pinned to 0, no margin when offset is zero", () => {
+  it("converts dimensions into inline width/height with flexShrink pinned to 0, no margin when offset is zero (Checkpoint 5.7: maxWidth/maxHeight ownership moved to resolveSizeConstraintsStyle)", () => {
     expect(
       elementDimensionsStyle({ preferredWidth: 320, preferredHeight: 180, offsetX: 0, offsetY: 0 }),
     ).toEqual({
       width: 320,
       height: 180,
-      maxWidth: "100%",
-      maxHeight: "100%",
       flexShrink: 0,
     });
   });
@@ -25,8 +23,6 @@ describe("elementDimensionsStyle", () => {
     ).toEqual({
       width: 320,
       height: 180,
-      maxWidth: "100%",
-      maxHeight: "100%",
       flexShrink: 0,
       marginLeft: -40,
       marginTop: -20,
@@ -98,8 +94,6 @@ describe("elementPositionStyle", () => {
     expect(elementPositionStyle(node, "flow")).toEqual({
       width: 320,
       height: 180,
-      maxWidth: "100%",
-      maxHeight: "100%",
       flexShrink: 0,
     });
   });

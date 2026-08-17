@@ -14,6 +14,7 @@ import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolveFlowLayoutStyle } from "@/features/canvas/utils/resolveFlowLayoutStyle";
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
+import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import { getLayoutMode } from "@/features/editor/types/layout";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
@@ -87,6 +88,11 @@ export function ContainerElement({
         ...elementPositionStyle(node, parentLayoutMode),
         ...resolveAspectRatioStyle(node),
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
+        // Spread AFTER resolveFlexOrGridChildStyle deliberately (Checkpoint
+        // 5.7) — see HeadingElement's identical comment for the full
+        // reasoning (an explicit user min-width/min-height must win over
+        // that resolver's own Flex/Grid containment default of 0).
+        ...resolveSizeConstraintsStyle(node, parentLayoutMode),
         ...(ownLayoutMode === "flow" ? resolveFlowLayoutStyle(node) : undefined),
         ...(hostsOwnFreeChildren ? { position: "relative" } : {}),
         ...resolveBackgroundStyle(node),

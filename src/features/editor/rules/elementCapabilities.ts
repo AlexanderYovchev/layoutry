@@ -54,8 +54,34 @@ export interface ElementCapabilities {
    * section's own visibility) — see EditorElementNode.aspectRatio's own
    * doc comment for the full distinction. Media tags (img/video/iframe)
    * get both flags true; they are not mutually exclusive.
+   *
+   * Checkpoint 5.7 widened this flag's role: it now also gates the
+   * entire consolidated Inspector "Size" section (Width/Height/Min/Max/
+   * Aspect Ratio/Resize Proportions — see InspectorSizeSection), not just
+   * the Aspect Ratio control alone. No new flag was introduced for this —
+   * Width/Height/Min/Max are exactly the same category of "box-sizing
+   * constraint that applies regardless of content" this flag already
+   * represents, and every existing tag already answers both questions
+   * identically, so a separate `supportsSizing` flag would only have
+   * been a same-truth-table synonym (unlike the genuine
+   * supportsIntrinsicAspectRatio/supportsMediaFit split in 5.5/5.6, which
+   * existed because those two questions had actually come apart).
    */
   supportsAspectRatio: boolean;
+}
+
+/**
+ * node.aspectRatioLocked if explicitly set, else the tag's own default
+ * (see EditorElementNode.aspectRatioLocked's own doc comment) — the pure
+ * "effective value" resolution shared by both the live Free-resize
+ * session (useFreeChildResizeSession, which additionally needs a
+ * store/DOM node lookup this function itself doesn't do) and the
+ * Inspector's Resize Proportions control (Checkpoint 5.7), so the two
+ * can never disagree about what "the current lock state" actually is.
+ */
+export function getEffectiveAspectRatioLocked(node: { aspectRatioLocked?: boolean; tag: string }): boolean {
+  if (node.aspectRatioLocked !== undefined) return node.aspectRatioLocked;
+  return getElementCapabilities(node.tag).supportsIntrinsicAspectRatio;
 }
 
 const DEFAULT_CAPABILITIES: ElementCapabilities = {
