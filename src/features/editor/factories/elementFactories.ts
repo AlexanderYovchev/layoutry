@@ -17,6 +17,7 @@ const DEFAULT_CONTAINER_SPACING: ElementSpacing = {
  */
 export type InsertableElementType =
   | "container"
+  | "section"
   | "heading"
   | "paragraph"
   | "button"
@@ -26,6 +27,22 @@ export function createContainerNode(): EditorElementNode {
   return {
     id: generateNodeId("div"),
     tag: "div",
+    children: [],
+    flowLayout: { display: "block" },
+    spacing: DEFAULT_CONTAINER_SPACING,
+  };
+}
+
+/**
+ * Section shares Container's exact structural defaults (Block display,
+ * 16px padding, zero margin) — same editor-usability philosophy, only the
+ * semantic tag differs. See ContainerElement, which both tags render
+ * through.
+ */
+export function createSectionNode(): EditorElementNode {
+  return {
+    id: generateNodeId("section"),
+    tag: "section",
     children: [],
     flowLayout: { display: "block" },
     spacing: DEFAULT_CONTAINER_SPACING,
@@ -67,6 +84,7 @@ export function createImageNode(): EditorElementNode {
 
 const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> = {
   container: createContainerNode,
+  section: createSectionNode,
   heading: createHeadingNode,
   paragraph: createParagraphNode,
   button: createButtonNode,
@@ -92,6 +110,7 @@ export function isInsertableElementType(value: string): value is InsertableEleme
  */
 const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; height: number }> = {
   container: { width: 200, height: 150 },
+  section: { width: 200, height: 150 },
   heading: { width: 240, height: 48 },
   paragraph: { width: 240, height: 80 },
   button: { width: 120, height: 40 },
@@ -103,6 +122,7 @@ const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };
 /** Reverse of FACTORIES_BY_TYPE's tag choice, for resolving a default size from a tag alone (see getDefaultFreeElementSize). */
 const INSERTABLE_TYPE_BY_TAG: Record<string, InsertableElementType> = {
   div: "container",
+  section: "section",
   h1: "heading",
   p: "paragraph",
   button: "button",

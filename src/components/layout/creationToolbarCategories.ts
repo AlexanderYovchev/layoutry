@@ -7,6 +7,7 @@
  */
 export type InsertableCardType =
   | "container"
+  | "section"
   | "heading"
   | "paragraph"
   | "button"
@@ -70,7 +71,11 @@ function htmlCategory(): ToolbarCategoryContent {
           description: "Generic layout container",
           elementType: "container",
         },
-        { name: "Section", description: "Generic content section" },
+        {
+          name: "Section",
+          description: "Generic content section",
+          elementType: "section",
+        },
       ]),
       section(id, "typography", "Typography", [
         { name: "Heading", description: "Page heading", elementType: "heading" },

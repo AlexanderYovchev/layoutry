@@ -138,6 +138,35 @@ describe("useInsertElement", () => {
     expect(section?.children?.at(-1)?.tag).toBe("button");
   });
 
+  it("inserts a Container into a Section (Checkpoint 1.2 — both tags accept the same insertable types via the shared containment rule)", () => {
+    const { result } = renderHook(() => useInsertElement());
+
+    result.current("container", "section-1");
+
+    const section = useEditorStore
+      .getState()
+      .document.children?.find((child) => child.id === "section-1");
+    expect(section?.children?.at(-1)?.tag).toBe("div");
+  });
+
+  it("inserts a Section into a Container", () => {
+    // Two separate renderHook calls, not one reused across both inserts —
+    // the hook closes over the store snapshot from its own render, so a
+    // second insert needs a fresh render to see the first insert's result
+    // (the store itself, read directly below, is always current).
+    const { result: insertContainer } = renderHook(() => useInsertElement());
+    insertContainer.current("container");
+    const newContainerId = useEditorStore.getState().document.children?.at(-1)?.id;
+
+    const { result: insertSection } = renderHook(() => useInsertElement());
+    insertSection.current("section", newContainerId);
+
+    const container = useEditorStore
+      .getState()
+      .document.children?.find((child) => child.id === newContainerId);
+    expect(container?.children?.at(-1)?.tag).toBe("section");
+  });
+
   it("falls back to the default container when a before/after target is the document root", () => {
     const { result } = renderHook(() => useInsertElement());
 

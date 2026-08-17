@@ -6,6 +6,7 @@ import {
   createHeadingNode,
   createImageNode,
   createParagraphNode,
+  createSectionNode,
   isInsertableElementType,
 } from "./elementFactories";
 
@@ -24,6 +25,20 @@ describe("element factories", () => {
       margin: { top: 0, right: 0, bottom: 0, left: 0 },
       padding: { top: 16, right: 16, bottom: 16, left: 16 },
     });
+  });
+
+  it("createSectionNode produces an empty, childable section (Checkpoint 1.2)", () => {
+    const node = createSectionNode();
+    expect(node.tag).toBe("section");
+    expect(node.children).toEqual([]);
+    expect(node.id).toMatch(/^section-/);
+  });
+
+  it("createSectionNode shares Container's exact structural defaults", () => {
+    const section = createSectionNode();
+    const container = createContainerNode();
+    expect(section.flowLayout).toEqual(container.flowLayout);
+    expect(section.spacing).toEqual(container.spacing);
   });
 
   it("leaf factories leave flowLayout/spacing unset (defaults come from the resolver, not stamped data)", () => {
@@ -71,6 +86,7 @@ describe("element factories", () => {
   describe("createElementNode", () => {
     it("dispatches to the matching factory for every insertable type", () => {
       expect(createElementNode("container").tag).toBe("div");
+      expect(createElementNode("section").tag).toBe("section");
       expect(createElementNode("heading").tag).toBe("h1");
       expect(createElementNode("paragraph").tag).toBe("p");
       expect(createElementNode("button").tag).toBe("button");
@@ -80,7 +96,7 @@ describe("element factories", () => {
 
   describe("isInsertableElementType", () => {
     it("recognizes every real insertable type", () => {
-      for (const type of ["container", "heading", "paragraph", "button", "image"]) {
+      for (const type of ["container", "section", "heading", "paragraph", "button", "image"]) {
         expect(isInsertableElementType(type)).toBe(true);
       }
     });

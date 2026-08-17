@@ -67,6 +67,56 @@ describe("DocumentNodeRenderer", () => {
     expect(screen.getByRole("heading", { name: "Title" })).toBeInTheDocument();
   });
 
+  it("renders nested Section/Container structures with correct semantic tags at every level (Checkpoint 1.2)", () => {
+    const tree: EditorElementNode = {
+      id: "section-1",
+      tag: "section",
+      children: [
+        {
+          id: "container-1",
+          tag: "div",
+          children: [
+            { id: "heading-1", tag: "h1", text: "Nested heading" },
+            { id: "paragraph-1", tag: "p", text: "Nested paragraph" },
+          ],
+        },
+      ],
+    };
+
+    const { container } = render(
+      <DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+
+    expect(container.querySelector('[data-node-id="section-1"]')?.tagName).toBe("SECTION");
+    expect(container.querySelector('[data-node-id="container-1"]')?.tagName).toBe("DIV");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Nested heading" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Nested paragraph")).toBeInTheDocument();
+  });
+
+  it("renders a Container nested inside a Section nested inside another Container (Checkpoint 1.2)", () => {
+    const tree: EditorElementNode = {
+      id: "outer-container",
+      tag: "div",
+      children: [
+        {
+          id: "inner-section",
+          tag: "section",
+          children: [{ id: "image-1", tag: "img" }],
+        },
+      ],
+    };
+
+    const { container } = render(
+      <DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+
+    expect(container.querySelector('[data-node-id="outer-container"]')?.tagName).toBe("DIV");
+    expect(container.querySelector('[data-node-id="inner-section"]')?.tagName).toBe("SECTION");
+    expect(container.querySelector('[data-node-id="image-1"]')).toBeInTheDocument();
+  });
+
   it("renders an img node as an empty-image placeholder rather than nothing", () => {
     const tree: EditorElementNode = { id: "image-1", tag: "img" };
 

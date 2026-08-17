@@ -10,6 +10,7 @@ describe("getElementDisplayName", () => {
     expect(getElementDisplayName({ id: "2", tag: "h1" })).toBe("Heading");
     expect(getElementDisplayName({ id: "3", tag: "p" })).toBe("Paragraph");
     expect(getElementDisplayName({ id: "4", tag: "img" })).toBe("Image");
+    expect(getElementDisplayName({ id: "5", tag: "section" })).toBe("Section");
   });
 
   it("prefers an explicit displayName over the tag mapping", () => {

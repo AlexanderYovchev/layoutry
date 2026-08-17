@@ -65,9 +65,17 @@ export function ContainerElement({
   // identical) data.
   const usesLegacyRadiusChrome = !node.borderRadius;
 
+  // Container (div) and Section (section) are the two tags registered to
+  // this component (see documentNodeComponents.ts) — both share every
+  // style/behavior below and differ only in semantic DOM identity, so the
+  // real element tag is chosen from the document node rather than
+  // hardcoded, keeping generated markup a genuine <section> instead of a
+  // <div> standing in for one.
+  const Tag = node.tag === "section" ? "section" : "div";
+
   return (
-    <div
-      ref={mergeRefs(dropRef, dragRef)}
+    <Tag
+      ref={mergeRefs<HTMLElement>(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
       className={cn(
         usesLegacyRadiusChrome && "rounded-lg",
@@ -105,6 +113,6 @@ export function ContainerElement({
       {...listeners}
     >
       {children}
-    </div>
+    </Tag>
   );
 }
