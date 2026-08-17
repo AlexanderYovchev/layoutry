@@ -1,5 +1,6 @@
 "use client";
 
+import { useEditableText } from "@/features/canvas/hooks/useEditableText";
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
@@ -29,6 +30,7 @@ export function HeadingElement({ node, parentId, parentLayoutMode, parentFlowDis
   const Tag = isHeadingTag(node.tag) ? node.tag : "h2";
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
+  const editable = useEditableText(node);
   // elementPositionStyle's clipOverflowY sets the `overflow` shorthand —
   // harmless on its own, but co-existing in the same style object as this
   // checkpoint's explicit overflow/overflowX/overflowY fields (Checkpoint
@@ -42,10 +44,12 @@ export function HeadingElement({ node, parentId, parentLayoutMode, parentFlowDis
 
   return (
     <Tag
-      ref={mergeRefs(dropRef, dragRef)}
+      ref={mergeRefs<HTMLElement>(dropRef, dragRef, editable.elementRef)}
       {...documentNodeAttributes(node, parentId)}
+      {...editable.editableProps}
       className={cn(
         "text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50",
+        editable.isEditing && "outline-none",
         isDragging && "opacity-40",
       )}
       style={{
@@ -75,7 +79,7 @@ export function HeadingElement({ node, parentId, parentLayoutMode, parentFlowDis
         ...resolveFilterStyle(node),
         ...resolveDisplayStyle(node),
       }}
-      {...listeners}
+      {...(editable.isEditing ? undefined : listeners)}
     >
       {node.text}
     </Tag>

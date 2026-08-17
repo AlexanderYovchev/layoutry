@@ -1023,6 +1023,32 @@ describe("useEditorStore — Resize & Sizing (Checkpoint 5.7)", () => {
     useEditorStore.getState().undo();
     expect(useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.aspectRatioLocked).toBeUndefined();
   });
+
+  it("setElementText pushes exactly one history entry per commit and is undoable/redoable (Checkpoint 1.3)", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setElementText("heading-1", "Build visually with Layoutry");
+
+    const node = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === "heading-1");
+    expect(node?.text).toBe("Build visually with Layoutry");
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+
+    useEditorStore.getState().undo();
+    const reverted = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === "heading-1");
+    expect(reverted?.text).toBe("Build layouts visually. Own the code.");
+
+    useEditorStore.getState().redo();
+    const redone = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === "heading-1");
+    expect(redone?.text).toBe("Build visually with Layoutry");
+  });
 });
 
 describe("useEditorStore — generic transactions (Checkpoint 4.3.1)", () => {

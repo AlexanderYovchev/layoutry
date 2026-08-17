@@ -6,6 +6,7 @@ import {
   resizeNode,
   setAspectRatioLocked as setAspectRatioLockedCommand,
   setElementDimensions as setElementDimensionsCommand,
+  setElementText as setElementTextCommand,
   type InsertPosition,
 } from "@/features/editor/commands/documentCommands";
 import {
@@ -149,6 +150,17 @@ interface EditorState {
   setElementDimensions: (nodeId: string, dimensions: ElementDimensions | undefined) => void;
   /** Overrides the tag-based default resize-proportion-lock behavior (Checkpoint 5.7 — see EditorElementNode.aspectRatioLocked's own doc comment, and getEffectiveAspectRatioLocked for how `undefined` resolves). Only meaningful for a Free child's corner resize handles today — see useFreeChildResizeSession. `undefined` clears the override and returns to the tag's own capability-derived default. */
   setAspectRatioLocked: (nodeId: string, locked: boolean | undefined) => void;
+  /**
+   * One-shot text-content edit (Checkpoint 1.3 — Canvas double-click text
+   * editing). Pushes exactly one history entry per call, same shape as
+   * every other one-shot command here; the Canvas editing session itself
+   * (see useEditableText) is what guarantees this is called at most once
+   * per edit — while the user types, nothing is written to the store at
+   * all (native contentEditable owns the DOM until commit), so an
+   * editing session is always one undo step, never one per keystroke.
+   * Tag-agnostic — see setElementText's own doc comment.
+   */
+  setElementText: (nodeId: string, text: string) => void;
 
   /**
    * Generic continuous-interaction transaction (Checkpoint 4.3.1) — the
@@ -457,6 +469,12 @@ export const useEditorStore = create<EditorState>()((set) => ({
     set((state) => ({
       ...pushHistory(state),
       document: setAspectRatioLockedCommand(state.document, nodeId, locked),
+    })),
+
+  setElementText: (nodeId, text) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setElementTextCommand(state.document, nodeId, text),
     })),
 
   beginTransaction: () =>

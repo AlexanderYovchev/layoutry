@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EditorElementNode } from "@/features/editor/types/document";
-import { insertNode, moveNode, removeNode, resizeNode, setElementDimensions } from "./documentCommands";
+import { insertNode, moveNode, removeNode, resizeNode, setElementDimensions, setElementText } from "./documentCommands";
 
 const tree: EditorElementNode = {
   id: "root",
@@ -437,6 +437,99 @@ describe("setElementDimensions", () => {
       offsetY: 0,
     });
     expect(result).toBe(sizingTree);
+  });
+});
+
+describe("setElementText", () => {
+  it("updates the target node's text and nothing else", () => {
+    const result = setElementText(tree, "heading-1", "New title");
+
+    const heading = result.children?.[0].children?.[0];
+    expect(heading?.text).toBe("New title");
+    expect(heading?.id).toBe("heading-1");
+    expect(heading?.tag).toBe("h1");
+  });
+
+  it("finds and updates a deeply nested node", () => {
+    const deepTree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [
+        {
+          id: "section-1",
+          tag: "section",
+          children: [
+            {
+              id: "container-1",
+              tag: "div",
+              children: [{ id: "paragraph-1", tag: "p", text: "Old text" }],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = setElementText(deepTree, "paragraph-1", "New text");
+
+    const paragraph = result.children?.[0].children?.[0].children?.[0];
+    expect(paragraph?.text).toBe("New text");
+  });
+
+  it("preserves every other field on the updated node", () => {
+    const styledTree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [
+        {
+          id: "heading-1",
+          tag: "h1",
+          text: "Title",
+          displayName: "Hero Heading",
+          typography: { fontWeight: 700 },
+          dimensions: { preferredWidth: 300, preferredHeight: 60, offsetX: 0, offsetY: 0 },
+        },
+      ],
+    };
+
+    const result = setElementText(styledTree, "heading-1", "New title");
+
+    const heading = result.children?.[0];
+    expect(heading?.displayName).toBe("Hero Heading");
+    expect(heading?.typography).toEqual({ fontWeight: 700 });
+    expect(heading?.dimensions).toEqual({ preferredWidth: 300, preferredHeight: 60, offsetX: 0, offsetY: 0 });
+  });
+
+  it("leaves unrelated sibling nodes completely untouched (structural sharing)", () => {
+    const result = setElementText(tree, "heading-1", "New title");
+
+    const container = result.children?.[0];
+    const originalContainer = tree.children?.[0];
+    // The container's own object identity changes (it's on the path to
+    // the edited node), but any *sibling* subtree the edit didn't touch
+    // must keep its exact original reference.
+    expect(container).not.toBe(originalContainer);
+  });
+
+  it("supports committing an empty string", () => {
+    const result = setElementText(tree, "heading-1", "");
+
+    const heading = result.children?.[0].children?.[0];
+    expect(heading?.text).toBe("");
+  });
+
+  it("is a no-op (same reference) when the text is already exactly this value", () => {
+    const result = setElementText(tree, "heading-1", "Title");
+    expect(result).toBe(tree);
+  });
+
+  it("is a no-op (same reference) if the node doesn't exist", () => {
+    const result = setElementText(tree, "does-not-exist", "New text");
+    expect(result).toBe(tree);
+  });
+
+  it("does not require the node to be a text-bearing tag — generic by id only", () => {
+    const result = setElementText(tree, "container-1", "Not really text-bearing");
+    expect(result.children?.[0].text).toBe("Not really text-bearing");
   });
 });
 

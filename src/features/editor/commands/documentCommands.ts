@@ -198,6 +198,42 @@ export function setElementDimensions(
 }
 
 /**
+ * Sets nodeId's literal text content (Checkpoint 1.3 — Canvas text
+ * editing). Deliberately tag-agnostic: this is the same generic
+ * "locate by id, update immutably, preserve everything else" shape as
+ * every other command in this file, with no knowledge of Heading or
+ * Paragraph specifically, so a future Button/Link/List Item label can
+ * call this unchanged. `text` is always a plain string (an intentionally
+ * emptied node commits `""`, never reverts to `undefined` — that value
+ * means "not a text-bearing node at all," which editing a real
+ * text-bearing node never changes it back to). No-ops (same reference
+ * returned) when the text is already exactly this value, so committing
+ * an editing session that didn't actually change anything never pushes
+ * a spurious history entry.
+ */
+export function setElementText(
+  root: EditorElementNode,
+  nodeId: string,
+  text: string,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.text === text) return root;
+    return { ...root, text };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementText(child, nodeId, text);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
  * Overrides (or clears, via `locked: undefined`) a node's own resize-
  * proportion-lock (Checkpoint 5.7 — the Inspector's Resize Proportions
  * control). Purely a document write; it never validates against the

@@ -1,8 +1,54 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { HeadingElement } from "./HeadingElement";
 
+const initialState = useEditorStore.getState();
+
 describe("HeadingElement", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("is not editable until double-clicked (Checkpoint 1.3)", () => {
+    render(<HeadingElement node={{ id: "heading-1", tag: "h1", text: "Title" }} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+
+    expect(screen.getByRole("heading", { name: "Title" })).toHaveAttribute("contenteditable", "false");
+  });
+
+  it("double-click enters editing mode while remaining a real <h1> (Checkpoint 1.3 — semantic tag preserved)", () => {
+    render(<HeadingElement node={{ id: "heading-1", tag: "h1", text: "Title" }} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+
+    const heading = screen.getByRole("heading", { name: "Title" });
+    fireEvent.doubleClick(heading);
+
+    expect(heading.tagName).toBe("H1");
+    expect(heading).toHaveAttribute("contenteditable", "true");
+  });
+
+  it("preserves an h1-h6 level while editing, not just the h2 fallback", () => {
+    render(<HeadingElement node={{ id: "heading-1", tag: "h3", text: "Subtitle" }} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+
+    const heading = screen.getByRole("heading", { level: 3, name: "Subtitle" });
+    fireEvent.doubleClick(heading);
+
+    expect(heading.tagName).toBe("H3");
+  });
+
+  it("commits edited text through the store and exits editing on blur", () => {
+    render(<HeadingElement node={{ id: "heading-1", tag: "h1", text: "Title" }} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+    const spy = vi.spyOn(useEditorStore.getState(), "setElementText");
+
+    const heading = screen.getByRole("heading", { name: "Title" });
+    fireEvent.doubleClick(heading);
+    heading.textContent = "New heading text";
+    fireEvent.blur(heading);
+
+    expect(spy).toHaveBeenCalledWith("heading-1", "New heading text");
+    expect(heading).toHaveAttribute("contenteditable", "false");
+  });
+
   it("renders its text content with no inline size when not resized", () => {
     render(<HeadingElement node={{ id: "heading-1", tag: "h1", text: "Title" }} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
 
