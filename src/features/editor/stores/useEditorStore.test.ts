@@ -1051,6 +1051,25 @@ describe("useEditorStore — Resize & Sizing (Checkpoint 5.7)", () => {
     expect(redone?.text).toBe("Build visually with Layoutry");
   });
 
+  it("setElementText on a Button label pushes exactly one history entry and is undoable/redoable (Checkpoint 1.5 — same tag-agnostic command as Heading/Paragraph/Link)", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setElementText("button-1", "Start Building");
+
+    const findButton = () =>
+      useEditorStore
+        .getState()
+        .document.children?.find((c) => c.id === "section-1")
+        ?.children?.find((c) => c.id === "button-1");
+    expect(findButton()?.text).toBe("Start Building");
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+
+    useEditorStore.getState().undo();
+    expect(findButton()?.text).toBe("Get Started");
+
+    useEditorStore.getState().redo();
+    expect(findButton()?.text).toBe("Start Building");
+  });
+
   it("setElementHref pushes exactly one history entry per commit and is undoable/redoable (Checkpoint 1.4)", () => {
     useEditorStore.getState().insertElement("section-1", createLinkNode());
     const linkId = useEditorStore.getState().selectedElementId!;

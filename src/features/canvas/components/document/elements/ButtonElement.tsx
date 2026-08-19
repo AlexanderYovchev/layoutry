@@ -1,5 +1,6 @@
 "use client";
 
+import { useEditableText } from "@/features/canvas/hooks/useEditableText";
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
@@ -21,6 +22,7 @@ import type { DocumentElementProps } from "@/features/canvas/types/documentRende
 export function ButtonElement({ node, parentId, parentLayoutMode, parentFlowDisplay }: DocumentElementProps) {
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
+  const editable = useEditableText(node);
 
   // The button's own default "rounded-md" look (Checkpoint 4.5) is
   // gated the same way Container/Image's chrome rounding is: a Tailwind
@@ -52,12 +54,14 @@ export function ButtonElement({ node, parentId, parentLayoutMode, parentFlowDisp
   return (
     <button
       type="button"
-      ref={mergeRefs(dropRef, dragRef)}
+      ref={mergeRefs<HTMLElement>(dropRef, dragRef, editable.elementRef)}
       {...documentNodeAttributes(node, parentId)}
+      {...editable.editableProps}
       className={cn(
         "inline-flex w-fit items-center justify-center bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-50 dark:text-zinc-900",
         usesLegacyRadiusChrome && "rounded-md",
         usesLegacyShadowChrome && "shadow-sm",
+        editable.isEditing && "outline-none",
         isDragging && "opacity-40",
       )}
       style={{
@@ -84,7 +88,7 @@ export function ButtonElement({ node, parentId, parentLayoutMode, parentFlowDisp
         ...resolveFilterStyle(node),
         ...resolveDisplayStyle(node),
       }}
-      {...listeners}
+      {...(editable.isEditing ? undefined : listeners)}
     >
       {node.text}
     </button>
