@@ -14,6 +14,7 @@ const TAG_DISPLAY_NAMES: Record<string, string> = {
   p: "Paragraph",
   button: "Button",
   img: "Image",
+  a: "Link",
   nav: "Navigation",
   header: "Header",
   footer: "Footer",

@@ -11,6 +11,7 @@ describe("getElementDisplayName", () => {
     expect(getElementDisplayName({ id: "3", tag: "p" })).toBe("Paragraph");
     expect(getElementDisplayName({ id: "4", tag: "img" })).toBe("Image");
     expect(getElementDisplayName({ id: "5", tag: "section" })).toBe("Section");
+    expect(getElementDisplayName({ id: "6", tag: "a" })).toBe("Link");
   });
 
   it("prefers an explicit displayName over the tag mapping", () => {

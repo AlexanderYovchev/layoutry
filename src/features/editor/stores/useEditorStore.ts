@@ -6,6 +6,7 @@ import {
   resizeNode,
   setAspectRatioLocked as setAspectRatioLockedCommand,
   setElementDimensions as setElementDimensionsCommand,
+  setElementHref as setElementHrefCommand,
   setElementText as setElementTextCommand,
   type InsertPosition,
 } from "@/features/editor/commands/documentCommands";
@@ -161,6 +162,14 @@ interface EditorState {
    * Tag-agnostic — see setElementText's own doc comment.
    */
   setElementText: (nodeId: string, text: string) => void;
+  /**
+   * One-shot link-destination edit (Checkpoint 1.4 — the Inspector's
+   * Link section). Same one-history-entry-per-call shape as every other
+   * one-shot command here; `undefined` clears an explicit override back
+   * to the tag's own safe default (see types/link.ts's getLinkHref).
+   * Tag-agnostic — see setElementHref's own doc comment.
+   */
+  setElementHref: (nodeId: string, href: string | undefined) => void;
 
   /**
    * Generic continuous-interaction transaction (Checkpoint 4.3.1) — the
@@ -475,6 +484,12 @@ export const useEditorStore = create<EditorState>()((set) => ({
     set((state) => ({
       ...pushHistory(state),
       document: setElementTextCommand(state.document, nodeId, text),
+    })),
+
+  setElementHref: (nodeId, href) =>
+    set((state) => ({
+      ...pushHistory(state),
+      document: setElementHrefCommand(state.document, nodeId, href),
     })),
 
   beginTransaction: () =>

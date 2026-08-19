@@ -4,6 +4,7 @@ import { ContainerElement } from "@/features/canvas/components/document/elements
 import { DocumentRootElement } from "@/features/canvas/components/document/elements/DocumentRootElement";
 import { HeadingElement } from "@/features/canvas/components/document/elements/HeadingElement";
 import { ImageElement } from "@/features/canvas/components/document/elements/ImageElement";
+import { LinkElement } from "@/features/canvas/components/document/elements/LinkElement";
 import { ParagraphElement } from "@/features/canvas/components/document/elements/ParagraphElement";
 import type { DocumentElementComponent } from "@/features/canvas/types/documentRenderer";
 
@@ -28,4 +29,5 @@ export const documentNodeComponents: Record<string, DocumentElementComponent> =
     p: ParagraphElement,
     button: ButtonElement,
     img: ImageElement,
+    a: LinkElement,
   };

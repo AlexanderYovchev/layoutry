@@ -75,4 +75,31 @@ describe("EditorApp", () => {
     expect(selectedRows).toHaveLength(1);
     expect(selectedRows[0]).toHaveAttribute("title", "Section");
   });
+
+  it("clicking the Link catalog card inserts a real <a>, selects it, and syncs Canvas and Structure (Checkpoint 1.4)", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<EditorApp />);
+
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("menuitem", { name: /^Link/ }));
+
+    const state = useEditorStore.getState();
+    const insertedId = state.selectedElementId;
+    expect(insertedId).toMatch(/^a-/);
+    expect(state.document.children?.at(-1)?.tag).toBe("a");
+    expect(state.document.children?.at(-1)?.href).toBe("#");
+
+    // Canvas: the new node is a genuine <a> element with a real href.
+    const rendered = container.querySelector(`[data-node-id="${insertedId}"]`);
+    expect(rendered?.tagName).toBe("A");
+    expect(rendered).toHaveAttribute("href", "#");
+
+    // Structure: the selected row is labeled "Link".
+    await user.click(screen.getByRole("tab", { name: "Structure" }));
+    const selectedRows = screen
+      .getAllByRole("treeitem")
+      .filter((row) => row.getAttribute("aria-selected") === "true");
+    expect(selectedRows).toHaveLength(1);
+    expect(selectedRows[0]).toHaveAttribute("title", "Link");
+  });
 });

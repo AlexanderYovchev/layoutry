@@ -112,6 +112,17 @@ export interface EditorElementNode {
   gridChild?: GridChildSettings;
   /** The media source URL (Checkpoint 3.5.1) — only meaningful for a media-capable tag (img; video/iframe once those exist). Unset renders an empty placeholder rather than a broken/missing image. */
   src?: string;
+  /**
+   * This node's own link destination (Checkpoint 1.4) — only meaningful
+   * for a link-capable tag (see getElementCapabilities().supportsHref).
+   * A single dedicated field, the same "one field per distinct semantic
+   * concern" shape `src` above already established for Image, not a
+   * generic HTML-attribute bag — see types/link.ts's own top comment for
+   * why. Unset falls back to a safe placeholder (see getLinkHref) rather
+   * than an absent href, so a Link node is always a real, focusable
+   * anchor from the moment it's created.
+   */
+  href?: string;
   /** How this node's own visual content fits and aligns within its rendered box — object-fit/object-position (Checkpoint 3.5.1, restructured in Checkpoint 5.6) — only meaningful for a media-fit-capable tag (see getElementCapabilities().supportsMediaFit, a separate flag from supportsIntrinsicAspectRatio — see that flag's own doc comment). Each field (objectFit/objectPositionX/objectPositionY) is independently optional with no synthesized default stored here — see types/mediaFit.ts's own doc comment for the rendering-time fallback and the full distinction from `aspectRatio` below (aspect-ratio shapes the box itself; mediaFit shapes the content inside it — never merge the two). */
   mediaFit?: MediaFitSettings;
   /** This node's own text styling (Checkpoint 4.2) — only meaningful for a text-bearing tag (see getElementCapabilities().supportsTypography). Unlike mediaFit/spacing, unset fields here have no synthesized default; each is genuinely absent until explicitly set — see getTypographySettings and resolveTypographyStyle. */

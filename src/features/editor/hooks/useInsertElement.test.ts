@@ -167,6 +167,31 @@ describe("useInsertElement", () => {
     expect(container?.children?.at(-1)?.tag).toBe("section");
   });
 
+  it("inserts a Link into a Section (Checkpoint 1.4 — reuses the same shared containment rule, no Link-specific nesting logic)", () => {
+    const { result } = renderHook(() => useInsertElement());
+
+    result.current("link", "section-1");
+
+    const section = useEditorStore
+      .getState()
+      .document.children?.find((child) => child.id === "section-1");
+    expect(section?.children?.at(-1)?.tag).toBe("a");
+  });
+
+  it("inserts a Link into a Container", () => {
+    const { result: insertContainer } = renderHook(() => useInsertElement());
+    insertContainer.current("container");
+    const newContainerId = useEditorStore.getState().document.children?.at(-1)?.id;
+
+    const { result: insertLink } = renderHook(() => useInsertElement());
+    insertLink.current("link", newContainerId);
+
+    const container = useEditorStore
+      .getState()
+      .document.children?.find((child) => child.id === newContainerId);
+    expect(container?.children?.at(-1)?.tag).toBe("a");
+  });
+
   it("falls back to the default container when a before/after target is the document root", () => {
     const { result } = renderHook(() => useInsertElement());
 

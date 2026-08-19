@@ -5,6 +5,7 @@ import {
   createElementNode,
   createHeadingNode,
   createImageNode,
+  createLinkNode,
   createParagraphNode,
   createSectionNode,
   isInsertableElementType,
@@ -77,6 +78,19 @@ describe("element factories", () => {
     expect(node.mediaFit).toBeUndefined();
   });
 
+  it("createLinkNode produces a real anchor with default text and a safe destination (Checkpoint 1.4)", () => {
+    const node = createLinkNode();
+    expect(node.tag).toBe("a");
+    expect(node.text).toBe("Link text");
+    expect(node.href).toBe("#");
+    expect(node.id).toMatch(/^a-/);
+  });
+
+  it("createLinkNode leaves flowLayout/spacing unset, matching every other leaf primitive", () => {
+    expect(createLinkNode().flowLayout).toBeUndefined();
+    expect(createLinkNode().spacing).toBeUndefined();
+  });
+
   it("every factory produces a unique id per call", () => {
     const first = createButtonNode();
     const second = createButtonNode();
@@ -91,12 +105,13 @@ describe("element factories", () => {
       expect(createElementNode("paragraph").tag).toBe("p");
       expect(createElementNode("button").tag).toBe("button");
       expect(createElementNode("image").tag).toBe("img");
+      expect(createElementNode("link").tag).toBe("a");
     });
   });
 
   describe("isInsertableElementType", () => {
     it("recognizes every real insertable type", () => {
-      for (const type of ["container", "section", "heading", "paragraph", "button", "image"]) {
+      for (const type of ["container", "section", "heading", "paragraph", "button", "image", "link"]) {
         expect(isInsertableElementType(type)).toBe(true);
       }
     });

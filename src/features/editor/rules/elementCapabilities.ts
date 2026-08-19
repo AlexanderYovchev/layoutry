@@ -68,6 +68,8 @@ export interface ElementCapabilities {
    * existed because those two questions had actually come apart).
    */
   supportsAspectRatio: boolean;
+  /** Whether this tag has a link destination worth exposing in the Inspector (Checkpoint 1.4 — see InspectorLinkSection and types/link.ts). True only for `a`; not a text-bearing-tag default, since most text-bearing tags (h1, p, button) have no href concept at all. */
+  supportsHref: boolean;
 }
 
 /**
@@ -100,6 +102,7 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
   supportsDisplay: true,
   supportsPosition: true,
   supportsAspectRatio: true,
+  supportsHref: false,
 };
 
 /**
@@ -127,6 +130,8 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
   img: { supportsIntrinsicAspectRatio: true, supportsMediaFit: true },
   video: { supportsIntrinsicAspectRatio: true, supportsMediaFit: true },
   iframe: { supportsIntrinsicAspectRatio: true, supportsMediaFit: true },
+
+  a: { supportsHref: true },
 };
 
 export function getElementCapabilities(tag: string): ElementCapabilities {

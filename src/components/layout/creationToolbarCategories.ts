@@ -11,7 +11,8 @@ export type InsertableCardType =
   | "heading"
   | "paragraph"
   | "button"
-  | "image";
+  | "image"
+  | "link";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -86,7 +87,7 @@ function htmlCategory(): ToolbarCategoryContent {
         },
       ]),
       section(id, "navigation", "Navigation", [
-        { name: "Link", description: "Navigable link" },
+        { name: "Link", description: "Navigable link", elementType: "link" },
         { name: "Menu", description: "Navigation menu" },
       ]),
       section(id, "lists", "Lists", [

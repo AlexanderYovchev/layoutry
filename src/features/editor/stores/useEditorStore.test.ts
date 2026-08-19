@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { createLinkNode } from "@/features/editor/factories/elementFactories";
 import { useEditorStore } from "./useEditorStore";
 
 const initialState = useEditorStore.getState();
@@ -1048,6 +1049,29 @@ describe("useEditorStore — Resize & Sizing (Checkpoint 5.7)", () => {
       .document.children?.find((c) => c.id === "section-1")
       ?.children?.find((c) => c.id === "heading-1");
     expect(redone?.text).toBe("Build visually with Layoutry");
+  });
+
+  it("setElementHref pushes exactly one history entry per commit and is undoable/redoable (Checkpoint 1.4)", () => {
+    useEditorStore.getState().insertElement("section-1", createLinkNode());
+    const linkId = useEditorStore.getState().selectedElementId!;
+    const pastLengthBefore = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().setElementHref(linkId, "/pricing");
+
+    const findLink = () =>
+      useEditorStore
+        .getState()
+        .document.children?.find((c) => c.id === "section-1")
+        ?.children?.find((c) => c.id === linkId);
+
+    expect(findLink()?.href).toBe("/pricing");
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+
+    useEditorStore.getState().undo();
+    expect(findLink()?.href).toBe("#");
+
+    useEditorStore.getState().redo();
+    expect(findLink()?.href).toBe("/pricing");
   });
 });
 

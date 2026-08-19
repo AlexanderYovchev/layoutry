@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EditorElementNode } from "@/features/editor/types/document";
-import { insertNode, moveNode, removeNode, resizeNode, setElementDimensions, setElementText } from "./documentCommands";
+import { insertNode, moveNode, removeNode, resizeNode, setElementDimensions, setElementHref, setElementText } from "./documentCommands";
 
 const tree: EditorElementNode = {
   id: "root",
@@ -530,6 +530,106 @@ describe("setElementText", () => {
   it("does not require the node to be a text-bearing tag — generic by id only", () => {
     const result = setElementText(tree, "container-1", "Not really text-bearing");
     expect(result.children?.[0].text).toBe("Not really text-bearing");
+  });
+});
+
+describe("setElementHref", () => {
+  const linkTree: EditorElementNode = {
+    id: "root",
+    tag: "page",
+    children: [
+      {
+        id: "container-1",
+        tag: "div",
+        children: [{ id: "link-1", tag: "a", text: "Link text", href: "#" }],
+      },
+    ],
+  };
+
+  it("updates the target node's href and nothing else", () => {
+    const result = setElementHref(linkTree, "link-1", "/about");
+
+    const link = result.children?.[0].children?.[0];
+    expect(link?.href).toBe("/about");
+    expect(link?.id).toBe("link-1");
+    expect(link?.text).toBe("Link text");
+  });
+
+  it("finds and updates a deeply nested node", () => {
+    const deepTree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [
+        {
+          id: "section-1",
+          tag: "section",
+          children: [
+            {
+              id: "container-1",
+              tag: "div",
+              children: [{ id: "link-1", tag: "a", text: "Link text", href: "#" }],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = setElementHref(deepTree, "link-1", "https://example.com");
+
+    const link = result.children?.[0].children?.[0].children?.[0];
+    expect(link?.href).toBe("https://example.com");
+  });
+
+  it("preserves every other field on the updated node", () => {
+    const styledTree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [
+        {
+          id: "link-1",
+          tag: "a",
+          text: "Link text",
+          href: "#",
+          typography: { fontWeight: 700 },
+        },
+      ],
+    };
+
+    const result = setElementHref(styledTree, "link-1", "/pricing");
+
+    const link = result.children?.[0];
+    expect(link?.text).toBe("Link text");
+    expect(link?.typography).toEqual({ fontWeight: 700 });
+  });
+
+  it("leaves unrelated sibling nodes completely untouched (structural sharing)", () => {
+    const result = setElementHref(linkTree, "link-1", "/about");
+
+    const container = result.children?.[0];
+    const originalContainer = linkTree.children?.[0];
+    expect(container).not.toBe(originalContainer);
+  });
+
+  it("clears an explicit href back to undefined", () => {
+    const result = setElementHref(linkTree, "link-1", undefined);
+
+    const link = result.children?.[0].children?.[0];
+    expect(link?.href).toBeUndefined();
+  });
+
+  it("is a no-op (same reference) when the value is already exactly this value", () => {
+    const result = setElementHref(linkTree, "link-1", "#");
+    expect(result).toBe(linkTree);
+  });
+
+  it("is a no-op (same reference) if the node doesn't exist", () => {
+    const result = setElementHref(linkTree, "does-not-exist", "/about");
+    expect(result).toBe(linkTree);
+  });
+
+  it("does not require the node to be an `a` tag — generic by id only", () => {
+    const result = setElementHref(linkTree, "container-1", "/about");
+    expect(result.children?.[0].href).toBe("/about");
   });
 });
 

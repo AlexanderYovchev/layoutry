@@ -100,6 +100,23 @@ describe("cloneNodeWithFreshIds", () => {
     expect(clone.mediaFit).toEqual(source.mediaFit);
   });
 
+  it("preserves a Link's text and href, with a fresh id (Checkpoint 1.4)", () => {
+    const source: EditorElementNode = {
+      id: "link-1",
+      tag: "a",
+      text: "Learn more",
+      href: "/about",
+      typography: { fontWeight: 700 },
+    };
+
+    const clone = cloneNodeWithFreshIds(source);
+
+    expect(clone.id).not.toBe(source.id);
+    expect(clone.text).toBe("Learn more");
+    expect(clone.href).toBe("/about");
+    expect(clone.typography).toEqual({ fontWeight: 700 });
+  });
+
   it("preserves typography (Checkpoint 4.2)", () => {
     const source: EditorElementNode = {
       id: "heading-1",

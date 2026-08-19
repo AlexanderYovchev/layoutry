@@ -1,4 +1,5 @@
 import { generateNodeId } from "@/features/editor/utils/generateNodeId";
+import { DEFAULT_LINK_HREF } from "@/features/editor/types/link";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { ElementSpacing } from "@/features/editor/types/spacing";
 
@@ -21,7 +22,8 @@ export type InsertableElementType =
   | "heading"
   | "paragraph"
   | "button"
-  | "image";
+  | "image"
+  | "link";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -62,6 +64,17 @@ export function createButtonNode(): EditorElementNode {
 }
 
 /**
+ * Stamps a real, concrete href immediately (mirroring createImageNode's
+ * own concrete placeholder src, not left unset for a resolver to fill
+ * in) — a Link is only genuinely a link, semantically and for keyboard
+ * focus, once it has a real destination; see types/link.ts's own doc
+ * comment for why DEFAULT_LINK_HREF ("#") is a safe, inert choice.
+ */
+export function createLinkNode(): EditorElementNode {
+  return { id: generateNodeId("a"), tag: "a", text: "Link text", href: DEFAULT_LINK_HREF };
+}
+
+/**
  * A generic placeholder photo, not a real asset — this app has no image
  * upload/picker yet (out of scope for Checkpoint 3.5.1). An inline SVG
  * with explicit width/height gives the <img> a real, non-square intrinsic
@@ -89,6 +102,7 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   paragraph: createParagraphNode,
   button: createButtonNode,
   image: createImageNode,
+  link: createLinkNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -115,6 +129,7 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   paragraph: { width: 240, height: 80 },
   button: { width: 120, height: 40 },
   image: { width: 200, height: 150 },
+  link: { width: 120, height: 32 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };
@@ -127,6 +142,7 @@ const INSERTABLE_TYPE_BY_TAG: Record<string, InsertableElementType> = {
   p: "paragraph",
   button: "button",
   img: "image",
+  a: "link",
 };
 
 /** Falls back to a generic size for a tag with no InsertableElementType entry (e.g. a pasted/duplicated node whose tag isn't one of the five catalog types). */

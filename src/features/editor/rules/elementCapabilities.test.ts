@@ -156,6 +156,13 @@ describe("elementCapabilities", () => {
     expect(getElementCapabilities("div").supportsIntrinsicAspectRatio).toBe(false);
   });
 
+  it("flags only `a` as supporting a link destination (Checkpoint 1.4); other text-bearing tags don't", () => {
+    expect(getElementCapabilities("a").supportsHref).toBe(true);
+    for (const tag of ["h1", "p", "button", "li", "blockquote", "div", "img"]) {
+      expect(getElementCapabilities(tag).supportsHref, tag).toBe(false);
+    }
+  });
+
   it("gives an entirely unknown tag the same sensible defaults as any other element", () => {
     const caps = getElementCapabilities("some-future-tag");
 

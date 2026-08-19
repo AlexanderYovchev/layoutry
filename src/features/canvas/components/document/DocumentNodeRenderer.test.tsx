@@ -117,6 +117,36 @@ describe("DocumentNodeRenderer", () => {
     expect(container.querySelector('[data-node-id="image-1"]')).toBeInTheDocument();
   });
 
+  it("renders Link alongside existing primitives inside a Container, and nested inside a Section (Checkpoint 1.4)", () => {
+    const tree: EditorElementNode = {
+      id: "section-1",
+      tag: "section",
+      children: [
+        {
+          id: "container-1",
+          tag: "div",
+          children: [
+            { id: "heading-1", tag: "h1", text: "Title" },
+            { id: "paragraph-1", tag: "p", text: "Body copy" },
+            { id: "link-1", tag: "a", text: "Learn more", href: "/about" },
+            { id: "image-1", tag: "img" },
+          ],
+        },
+      ],
+    };
+
+    const { container } = render(
+      <DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+
+    expect(container.querySelector('[data-node-id="section-1"]')?.tagName).toBe("SECTION");
+    expect(container.querySelector('[data-node-id="container-1"]')?.tagName).toBe("DIV");
+    const link = container.querySelector('[data-node-id="link-1"]');
+    expect(link?.tagName).toBe("A");
+    expect(link).toHaveAttribute("href", "/about");
+    expect(screen.getByRole("link", { name: "Learn more" })).toBeInTheDocument();
+  });
+
   it("renders an img node as an empty-image placeholder rather than nothing", () => {
     const tree: EditorElementNode = { id: "image-1", tag: "img" };
 

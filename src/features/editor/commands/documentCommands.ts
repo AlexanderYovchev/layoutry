@@ -234,6 +234,41 @@ export function setElementText(
 }
 
 /**
+ * Sets (or clears, via `href: undefined`) nodeId's link destination
+ * (Checkpoint 1.4). Same generic, tag-agnostic shape as setElementText —
+ * this command has no knowledge of the `a` tag specifically, matching
+ * this checkpoint's own instruction not to bake element-type assumptions
+ * into the document-mutation layer. `undefined` clears an explicit
+ * override back to getLinkHref's own safe default, the same "store
+ * unconditionally, let the consuming layer resolve the effective value"
+ * convention mediaFit/typography/etc. already use. No-ops (same
+ * reference) when the value is already exactly this, so the Inspector's
+ * own draft/commit field never pushes a spurious history entry for an
+ * unchanged destination.
+ */
+export function setElementHref(
+  root: EditorElementNode,
+  nodeId: string,
+  href: string | undefined,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.href === href) return root;
+    return { ...root, href };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementHref(child, nodeId, href);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
  * Overrides (or clears, via `locked: undefined`) a node's own resize-
  * proportion-lock (Checkpoint 5.7 — the Inspector's Resize Proportions
  * control). Purely a document write; it never validates against the
