@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EditorElementNode } from "@/features/editor/types/document";
-import { insertNode, moveNode, removeNode, resizeNode, setElementDimensions, setElementHref, setElementText } from "./documentCommands";
+import { insertNode, moveNode, removeNode, resizeNode, setElementDimensions, setElementHref, setElementTag, setElementText } from "./documentCommands";
 
 const tree: EditorElementNode = {
   id: "root",
@@ -666,6 +666,93 @@ describe("setElementHref", () => {
   it("does not require the node to be an `a` tag — generic by id only", () => {
     const result = setElementHref(linkTree, "container-1", "/about");
     expect(result.children?.[0].href).toBe("/about");
+  });
+});
+
+describe("setElementTag (Checkpoint 1.7)", () => {
+  it("updates the target node's tag and nothing else", () => {
+    const result = setElementTag(tree, "heading-1", "h2");
+
+    const heading = result.children?.[0].children?.[0];
+    expect(heading?.tag).toBe("h2");
+    expect(heading?.id).toBe("heading-1");
+    expect(heading?.text).toBe("Title");
+  });
+
+  it("finds and updates a deeply nested node", () => {
+    const deepTree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [
+        {
+          id: "section-1",
+          tag: "section",
+          children: [
+            {
+              id: "container-1",
+              tag: "div",
+              children: [{ id: "heading-1", tag: "h1", text: "Title" }],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = setElementTag(deepTree, "heading-1", "h4");
+
+    const heading = result.children?.[0].children?.[0].children?.[0];
+    expect(heading?.tag).toBe("h4");
+  });
+
+  it("preserves every other field on the updated node — text, styles, layout, dimensions", () => {
+    const styledTree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [
+        {
+          id: "heading-1",
+          tag: "h1",
+          text: "Pricing",
+          displayName: "Hero Heading",
+          typography: { fontWeight: 700, color: "#3366ff" },
+          spacing: { margin: { top: 4, right: 0, bottom: 4, left: 0 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } },
+          dimensions: { preferredWidth: 300, preferredHeight: 60, offsetX: 0, offsetY: 0 },
+        },
+      ],
+    };
+
+    const result = setElementTag(styledTree, "heading-1", "h2");
+
+    const heading = result.children?.[0];
+    expect(heading?.tag).toBe("h2");
+    expect(heading?.text).toBe("Pricing");
+    expect(heading?.displayName).toBe("Hero Heading");
+    expect(heading?.typography).toEqual({ fontWeight: 700, color: "#3366ff" });
+    expect(heading?.spacing).toEqual(styledTree.children?.[0].spacing);
+    expect(heading?.dimensions).toEqual({ preferredWidth: 300, preferredHeight: 60, offsetX: 0, offsetY: 0 });
+  });
+
+  it("leaves unrelated sibling nodes completely untouched (structural sharing)", () => {
+    const result = setElementTag(tree, "heading-1", "h3");
+
+    const container = result.children?.[0];
+    const originalContainer = tree.children?.[0];
+    expect(container).not.toBe(originalContainer);
+  });
+
+  it("is a no-op (same reference) when the tag is already exactly this value", () => {
+    const result = setElementTag(tree, "heading-1", "h1");
+    expect(result).toBe(tree);
+  });
+
+  it("is a no-op (same reference) if the node doesn't exist", () => {
+    const result = setElementTag(tree, "does-not-exist", "h2");
+    expect(result).toBe(tree);
+  });
+
+  it("does not restrict which tags are reachable — generic, tag-agnostic by design (UI-level validation is the Inspector control's job, not this command's)", () => {
+    const result = setElementTag(tree, "heading-1", "h6");
+    expect(result.children?.[0].children?.[0].tag).toBe("h6");
   });
 });
 

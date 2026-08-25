@@ -1115,6 +1115,53 @@ describe("useEditorStore — Resize & Sizing (Checkpoint 5.7)", () => {
   });
 });
 
+describe("useEditorStore — setElementTag (Checkpoint 1.7)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  function findHeading() {
+    return useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === "heading-1");
+  }
+
+  it("pushes exactly one history entry per commit and is undoable/redoable", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().setElementTag("heading-1", "h3");
+
+    expect(findHeading()?.tag).toBe("h3");
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+
+    useEditorStore.getState().undo();
+    expect(findHeading()?.tag).toBe("h1");
+
+    useEditorStore.getState().redo();
+    expect(findHeading()?.tag).toBe("h3");
+  });
+
+  it("does not push a history entry when the tag is already the current one (selecting the already-active level does nothing)", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().setElementTag("heading-1", "h1");
+
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);
+  });
+
+  it("preserves text, styles, and selection across a level change", () => {
+    useEditorStore.getState().selectElement("heading-1");
+    useEditorStore.getState().setElementTypography("heading-1", { fontWeight: 700 });
+
+    useEditorStore.getState().setElementTag("heading-1", "h2");
+
+    expect(findHeading()?.text).toBe("Build layouts visually. Own the code.");
+    expect(findHeading()?.typography).toEqual({ fontWeight: 700 });
+    expect(useEditorStore.getState().selectedElementId).toBe("heading-1");
+  });
+});
+
 describe("useEditorStore — Lists (Checkpoint 1.6)", () => {
   afterEach(() => {
     useEditorStore.setState(initialState, true);

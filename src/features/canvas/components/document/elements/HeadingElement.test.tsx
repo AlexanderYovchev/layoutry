@@ -36,6 +36,13 @@ describe("HeadingElement", () => {
     expect(heading.tagName).toBe("H3");
   });
 
+  it("renders a genuine <h6> for the lowest heading level, with text unchanged (Checkpoint 1.7)", () => {
+    render(<HeadingElement node={{ id: "heading-1", tag: "h6", text: "Fine print" }} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+
+    const heading = screen.getByRole("heading", { level: 6, name: "Fine print" });
+    expect(heading.tagName).toBe("H6");
+  });
+
   it("commits edited text through the store and exits editing on blur", () => {
     render(<HeadingElement node={{ id: "heading-1", tag: "h1", text: "Title" }} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
     const spy = vi.spyOn(useEditorStore.getState(), "setElementText");

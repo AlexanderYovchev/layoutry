@@ -1,4 +1,5 @@
 import { canContainChildren } from "@/features/editor/rules/insertionRules";
+import { isHeadingTag } from "@/features/editor/types/heading";
 
 /**
  * What a tag can do on the Canvas — the single source every selection,
@@ -70,6 +71,8 @@ export interface ElementCapabilities {
   supportsAspectRatio: boolean;
   /** Whether this tag has a link destination worth exposing in the Inspector (Checkpoint 1.4 — see InspectorLinkSection and types/link.ts). True only for `a`; not a text-bearing-tag default, since most text-bearing tags (h1, p, button) have no href concept at all. */
   supportsHref: boolean;
+  /** Whether this tag has a semantic Heading level worth exposing in the Inspector (Checkpoint 1.7 — see InspectorHeadingLevelSection and types/heading.ts). True only for h1–h6; deliberately a separate flag from supportsTypography, which every text-bearing tag (including button/a, neither of which has a "level") already gets. */
+  supportsHeadingLevel: boolean;
 }
 
 /**
@@ -103,6 +106,7 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
   supportsPosition: true,
   supportsAspectRatio: true,
   supportsHref: false,
+  supportsHeadingLevel: false,
 };
 
 /**
@@ -149,6 +153,7 @@ export function getElementCapabilities(tag: string): ElementCapabilities {
     // are already both false, so this already excludes media tags with no
     // override needed; CAPABILITY_OVERRIDES intentionally adds none for them.
     supportsBackground: canContainChildren(tag) || TEXT_BEARING_TAGS.has(tag),
+    supportsHeadingLevel: isHeadingTag(tag),
     ...CAPABILITY_OVERRIDES[tag],
   };
 }

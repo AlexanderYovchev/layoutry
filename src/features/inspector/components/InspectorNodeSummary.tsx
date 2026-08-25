@@ -9,6 +9,7 @@ import { InspectorFieldRow } from "@/features/inspector/components/InspectorFiel
 import { InspectorFlexChildSection } from "@/features/inspector/components/InspectorFlexChildSection";
 import { InspectorFreeGeometryFields } from "@/features/inspector/components/InspectorFreeGeometryFields";
 import { InspectorGridChildSection } from "@/features/inspector/components/InspectorGridChildSection";
+import { InspectorHeadingLevelSection } from "@/features/inspector/components/InspectorHeadingLevelSection";
 import { InspectorLayoutSection } from "@/features/inspector/components/InspectorLayoutSection";
 import { InspectorLinkSection } from "@/features/inspector/components/InspectorLinkSection";
 import { InspectorMediaSection } from "@/features/inspector/components/InspectorMediaSection";
@@ -81,6 +82,7 @@ export function InspectorNodeSummary({
       {!isFreeChild && parentFlowDisplay === "grid" && <InspectorGridChildSection node={node} />}
       {getElementCapabilities(node.tag).supportsMediaFit && <InspectorMediaSection node={node} />}
       {getElementCapabilities(node.tag).supportsHref && <InspectorLinkSection node={node} />}
+      {getElementCapabilities(node.tag).supportsHeadingLevel && <InspectorHeadingLevelSection node={node} />}
       {getElementCapabilities(node.tag).supportsTypography && <InspectorTypographySection node={node} />}
       {getElementCapabilities(node.tag).supportsBackground && <InspectorBackgroundSection node={node} />}
       {getElementCapabilities(node.tag).supportsBorder && <InspectorBorderSection node={node} />}

@@ -341,6 +341,59 @@ describe("InspectorNodeSummary — Typography section (Checkpoint 4.2)", () => {
   });
 });
 
+describe("InspectorNodeSummary — Heading Level section (Checkpoint 1.7)", () => {
+  it("shows the Heading Level section for a Heading", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "heading-1", tag: "h1" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Heading Level")).toBeInTheDocument();
+  });
+
+  it("shows the Heading Level section for every h1-h6 level", () => {
+    for (const tag of ["h2", "h3", "h4", "h5", "h6"]) {
+      const { unmount } = render(
+        <InspectorNodeSummary
+          node={{ id: "heading-1", tag }}
+          parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+        />,
+      );
+      expect(screen.getByText("Heading Level")).toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("omits the Heading Level section for Paragraph, Button, Link, and Image", () => {
+    for (const node of [
+      { id: "p-1", tag: "p" },
+      { id: "button-1", tag: "button" },
+      { id: "a-1", tag: "a", href: "#" },
+      { id: "img-1", tag: "img" },
+    ]) {
+      const { unmount } = render(
+        <InspectorNodeSummary node={node} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+      );
+      expect(screen.queryByText("Heading Level")).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("does not render the Heading Level section under/above Typography ambiguously — both appear, distinct sections", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "heading-1", tag: "h1" }}
+        parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Heading Level")).toBeInTheDocument();
+    expect(screen.getByText("Typography")).toBeInTheDocument();
+  });
+});
+
 describe("InspectorNodeSummary — Background section (Checkpoint 4.3)", () => {
   it("shows the Background section for a container tag", () => {
     render(

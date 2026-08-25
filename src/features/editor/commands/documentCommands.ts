@@ -247,6 +247,42 @@ export function setElementText(
 }
 
 /**
+ * Changes nodeId's own semantic HTML tag in place — every other field
+ * (text, styles, layout, dimensions, children, ids) is preserved
+ * untouched by the `{...root, tag}` spread (Checkpoint 1.7 — the
+ * Inspector's Heading Level control). Deliberately generic and
+ * tag-agnostic, exactly like setElementText/setElementHref: this command
+ * has no notion of "heading" at all and accepts any string, the same way
+ * the document model itself is tag-based rather than a discriminated
+ * union — restricting *which* tags are actually reachable through the UI
+ * is the calling Inspector control's job (a fixed H1–H6 option set, never
+ * free text), not this command's. No-ops (same reference) when the tag
+ * is already exactly this, matching setElementText/setElementHref's own
+ * no-op convention.
+ */
+export function setElementTag(
+  root: EditorElementNode,
+  nodeId: string,
+  tag: string,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.tag === tag) return root;
+    return { ...root, tag };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementTag(child, nodeId, tag);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
  * Sets (or clears, via `href: undefined`) nodeId's link destination
  * (Checkpoint 1.4). Same generic, tag-agnostic shape as setElementText —
  * this command has no knowledge of the `a` tag specifically, matching

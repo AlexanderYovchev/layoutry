@@ -7,6 +7,7 @@ import {
   setAspectRatioLocked as setAspectRatioLockedCommand,
   setElementDimensions as setElementDimensionsCommand,
   setElementHref as setElementHrefCommand,
+  setElementTag as setElementTagCommand,
   setElementText as setElementTextCommand,
   type InsertPosition,
 } from "@/features/editor/commands/documentCommands";
@@ -170,6 +171,18 @@ interface EditorState {
    * Tag-agnostic — see setElementHref's own doc comment.
    */
   setElementHref: (nodeId: string, href: string | undefined) => void;
+
+  /**
+   * Changes nodeId's own semantic HTML tag (Checkpoint 1.7 — the
+   * Inspector's Heading Level control). Unlike setElementText/
+   * setElementHref, this one guards against a no-op tag at the action
+   * level (not just the command level) — see this action's own
+   * definition for why: this checkpoint's own requirement ("no history
+   * entry if tag is unchanged") is explicit, so it's enforced here
+   * directly rather than relying on every future caller to self-guard
+   * the way Inspector text/href fields already do.
+   */
+  setElementTag: (nodeId: string, tag: string) => void;
 
   /**
    * Generic continuous-interaction transaction (Checkpoint 4.3.1) — the
@@ -499,6 +512,13 @@ export const useEditorStore = create<EditorState>()((set) => ({
       ...pushHistory(state),
       document: setElementHrefCommand(state.document, nodeId, href),
     })),
+
+  setElementTag: (nodeId, tag) =>
+    set((state) => {
+      const document = setElementTagCommand(state.document, nodeId, tag);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
 
   beginTransaction: () =>
     set((state) => (state.transactionSnapshot ? {} : { transactionSnapshot: snapshot(state) })),

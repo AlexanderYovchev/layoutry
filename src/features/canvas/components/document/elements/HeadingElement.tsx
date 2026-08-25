@@ -16,15 +16,9 @@ import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
 import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
+import { isHeadingTag } from "@/features/editor/types/heading";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
-
-const HEADING_TAGS = ["h1", "h2", "h3", "h4", "h5", "h6"] as const;
-type HeadingTag = (typeof HEADING_TAGS)[number];
-
-function isHeadingTag(tag: string): tag is HeadingTag {
-  return (HEADING_TAGS as readonly string[]).includes(tag);
-}
 
 export function HeadingElement({ node, parentId, parentLayoutMode, parentFlowDisplay }: DocumentElementProps) {
   const Tag = isHeadingTag(node.tag) ? node.tag : "h2";

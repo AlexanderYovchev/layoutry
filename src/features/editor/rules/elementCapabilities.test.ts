@@ -170,6 +170,21 @@ describe("elementCapabilities", () => {
     }
   });
 
+  it("flags only h1-h6 as supporting a Heading Level control (Checkpoint 1.7); other text-bearing tags don't", () => {
+    for (const tag of ["h1", "h2", "h3", "h4", "h5", "h6"]) {
+      expect(getElementCapabilities(tag).supportsHeadingLevel, tag).toBe(true);
+    }
+    for (const tag of ["p", "button", "a", "li", "blockquote", "div", "img"]) {
+      expect(getElementCapabilities(tag).supportsHeadingLevel, tag).toBe(false);
+    }
+  });
+
+  it("gives every h1-h6 tag identical capabilities otherwise — changing level must not alter Inspector availability", () => {
+    const h1 = getElementCapabilities("h1");
+    const h6 = getElementCapabilities("h6");
+    expect(h6).toEqual(h1);
+  });
+
   it("gives an entirely unknown tag the same sensible defaults as any other element", () => {
     const caps = getElementCapabilities("some-future-tag");
 
