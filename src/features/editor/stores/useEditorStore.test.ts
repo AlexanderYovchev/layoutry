@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createLinkNode } from "@/features/editor/factories/elementFactories";
+import { createLinkNode, createListItemNode, createUnorderedListNode } from "@/features/editor/factories/elementFactories";
 import { useEditorStore } from "./useEditorStore";
 
 const initialState = useEditorStore.getState();
@@ -84,6 +84,27 @@ describe("useEditorStore", () => {
     useEditorStore.getState().moveElement("section-1", "heading-1", "inside");
 
     expect(useEditorStore.getState().document).toBe(before);
+  });
+
+  it("rejects an invalid move without pushing a spurious history entry (Checkpoint 1.6 — insertElement/moveElement no-op guard)", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().moveElement("section-1", "heading-1", "inside");
+
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);
+  });
+
+  it("an insertion rejected by constrained list nesting does not alter the document, push history, or change selection (Checkpoint 1.6)", () => {
+    const before = useEditorStore.getState().document;
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().selectElement("heading-1");
+
+    // A List Item aimed at an ordinary Section — invalid outside a ul/ol.
+    useEditorStore.getState().insertElement("section-1", createListItemNode());
+
+    expect(useEditorStore.getState().document).toBe(before);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);
+    expect(useEditorStore.getState().selectedElementId).toBe("heading-1");
   });
 
   it("resizes a node without changing selection", () => {
@@ -1091,6 +1112,97 @@ describe("useEditorStore — Resize & Sizing (Checkpoint 5.7)", () => {
 
     useEditorStore.getState().redo();
     expect(findLink()?.href).toBe("/pricing");
+  });
+});
+
+describe("useEditorStore — Lists (Checkpoint 1.6)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("inserts a starter unordered list as one logical insertion — one history entry for the whole ul + 3 li subtree", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
+
+    const listId = useEditorStore.getState().selectedElementId!;
+    const list = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === listId);
+    expect(list?.tag).toBe("ul");
+    expect(list?.children).toHaveLength(3);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+  });
+
+  it("inserting a List Item while the list itself is selected appends it into that list (a practical, un-hacky add-item path)", () => {
+    useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
+    const listId = useEditorStore.getState().selectedElementId!;
+    // selection is already the ul after insertElement (see comment above insertElement's own definition)
+
+    useEditorStore.getState().insertElement(listId, createListItemNode());
+
+    const list = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === listId);
+    expect(list?.children).toHaveLength(4);
+  });
+
+  it("setElementText on a list item's label pushes exactly one history entry and is undoable/redoable, same tag-agnostic command as every other primitive", () => {
+    useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
+    const listId = useEditorStore.getState().selectedElementId!;
+    const findList = () =>
+      useEditorStore
+        .getState()
+        .document.children?.find((c) => c.id === "section-1")
+        ?.children?.find((c) => c.id === listId);
+    const firstItemId = findList()!.children![0].id;
+    const pastLengthBefore = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().setElementText(firstItemId, "First item");
+
+    expect(findList()?.children?.[0]?.text).toBe("First item");
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+
+    useEditorStore.getState().undo();
+    expect(findList()?.children?.[0]?.text).toBe("List item");
+
+    useEditorStore.getState().redo();
+    expect(findList()?.children?.[0]?.text).toBe("First item");
+  });
+
+  it("duplicating an entire list clones every item recursively with fresh ids (reuses cloneNodeWithFreshIds — no list-specific clone logic)", () => {
+    useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
+    const listId = useEditorStore.getState().selectedElementId!;
+
+    useEditorStore.getState().duplicateSelection();
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    const lists = section?.children?.filter((c) => c.tag === "ul") ?? [];
+    expect(lists).toHaveLength(2);
+    const [original, duplicate] = lists;
+    expect(duplicate.id).not.toBe(original.id);
+    expect(duplicate.children).toHaveLength(3);
+    expect(original.id).toBe(listId);
+    const originalItemIds = original.children?.map((c) => c.id) ?? [];
+    const duplicateItemIds = duplicate.children?.map((c) => c.id) ?? [];
+    expect(duplicateItemIds.some((id) => originalItemIds.includes(id))).toBe(false);
+  });
+
+  it("reordering list items via moveElement changes document order (drives native OL numbering/UL bullet order)", () => {
+    useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
+    const listId = useEditorStore.getState().selectedElementId!;
+    const findList = () =>
+      useEditorStore
+        .getState()
+        .document.children?.find((c) => c.id === "section-1")
+        ?.children?.find((c) => c.id === listId);
+    const [first, second, third] = findList()?.children ?? [];
+
+    useEditorStore.getState().moveElement(third.id, first.id, "before");
+
+    expect(findList()?.children?.map((c) => c.id)).toEqual([third.id, first.id, second.id]);
   });
 });
 

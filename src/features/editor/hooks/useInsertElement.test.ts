@@ -202,6 +202,134 @@ describe("useInsertElement", () => {
   });
 });
 
+describe("useInsertElement — constrained list nesting (Checkpoint 1.6)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("inserts an Unordered List into a Container", () => {
+    const { result: insertContainer } = renderHook(() => useInsertElement());
+    insertContainer.current("container");
+    const containerId = useEditorStore.getState().document.children?.at(-1)?.id;
+
+    const { result: insertList } = renderHook(() => useInsertElement());
+    insertList.current("unorderedList", containerId);
+
+    const container = useEditorStore.getState().document.children?.find((c) => c.id === containerId);
+    expect(container?.children?.at(-1)?.tag).toBe("ul");
+  });
+
+  it("inserts an Ordered List into a Section", () => {
+    const { result } = renderHook(() => useInsertElement());
+
+    result.current("orderedList", "section-1");
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(section?.children?.at(-1)?.tag).toBe("ol");
+  });
+
+  it("inserts a List Item into a UL", () => {
+    const { result: insertList } = renderHook(() => useInsertElement());
+    insertList.current("unorderedList", "section-1");
+    const listId = useEditorStore.getState().selectedElementId;
+
+    const { result: insertItem } = renderHook(() => useInsertElement());
+    insertItem.current("listItem", listId!);
+
+    const list = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === listId);
+    expect(list?.children).toHaveLength(4);
+    expect(list?.children?.at(-1)?.tag).toBe("li");
+  });
+
+  it("inserts a List Item into an OL", () => {
+    const { result: insertList } = renderHook(() => useInsertElement());
+    insertList.current("orderedList", "section-1");
+    const listId = useEditorStore.getState().selectedElementId;
+
+    const { result: insertItem } = renderHook(() => useInsertElement());
+    insertItem.current("listItem", listId!);
+
+    const list = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === listId);
+    expect(list?.children).toHaveLength(4);
+  });
+
+  it("rejects inserting a List Item directly into a Container — invalid HTML, silently no-ops rather than corrupting the tree", () => {
+    const { result: insertContainer } = renderHook(() => useInsertElement());
+    insertContainer.current("container");
+    const containerId = useEditorStore.getState().document.children?.at(-1)?.id;
+    const before = useEditorStore.getState().document;
+
+    const { result: insertItem } = renderHook(() => useInsertElement());
+    insertItem.current("listItem", containerId);
+
+    expect(useEditorStore.getState().document).toBe(before);
+  });
+
+  it("rejects inserting a List Item directly into a Section", () => {
+    const before = useEditorStore.getState().document;
+    const { result } = renderHook(() => useInsertElement());
+
+    result.current("listItem", "section-1");
+
+    expect(useEditorStore.getState().document).toBe(before);
+  });
+
+  it("rejects inserting a Heading directly into a UL", () => {
+    const { result: insertList } = renderHook(() => useInsertElement());
+    insertList.current("unorderedList", "section-1");
+    const listId = useEditorStore.getState().selectedElementId;
+    const before = useEditorStore.getState().document;
+
+    const { result: insertHeading } = renderHook(() => useInsertElement());
+    insertHeading.current("heading", listId!);
+
+    expect(useEditorStore.getState().document).toBe(before);
+  });
+
+  it("rejects inserting an Image directly into an OL", () => {
+    const { result: insertList } = renderHook(() => useInsertElement());
+    insertList.current("orderedList", "section-1");
+    const listId = useEditorStore.getState().selectedElementId;
+    const before = useEditorStore.getState().document;
+
+    const { result: insertImage } = renderHook(() => useInsertElement());
+    insertImage.current("image", listId!);
+
+    expect(useEditorStore.getState().document).toBe(before);
+  });
+
+  it("rejects a List Item aimed at a leaf target that would otherwise fall back to the document root", () => {
+    // Mirrors "falls back to the document root when the requested target
+    // cannot accept children" above for an ordinary tag — but a List Item
+    // has no meaning at the document root either, so this must reject
+    // rather than fall back and corrupt the tree with a bare <li> under
+    // <page>.
+    const before = useEditorStore.getState().document;
+    const { result } = renderHook(() => useInsertElement());
+
+    result.current("listItem", "heading-1");
+
+    expect(useEditorStore.getState().document).toBe(before);
+  });
+
+  it("confirms existing Container/Section relationships remain unrestricted after the list nesting extension (regression)", () => {
+    const { result } = renderHook(() => useInsertElement());
+
+    result.current("heading", "section-1");
+    result.current("image", "section-1");
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(section?.children?.some((c) => c.tag === "h1")).toBe(true);
+    expect(section?.children?.some((c) => c.tag === "img")).toBe(true);
+  });
+});
+
 describe("useInsertElement — Free destinations (Checkpoint 3.4.4)", () => {
   const initialState = useEditorStore.getState();
 

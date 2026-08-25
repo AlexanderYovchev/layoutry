@@ -116,6 +116,42 @@ describe("insertNode", () => {
 
     expect(result.children?.[0].children?.at(-1)?.id).toBe("new");
   });
+
+  describe("constrained list nesting (Checkpoint 1.6)", () => {
+    it("inserts an li into a ul", () => {
+      const listTree: EditorElementNode = { id: "root", tag: "page", children: [{ id: "list-1", tag: "ul", children: [] }] };
+      const newLi: EditorElementNode = { id: "li-1", tag: "li", text: "Alpha" };
+
+      const result = insertNode(listTree, "list-1", newLi);
+
+      expect(result.children?.[0].children).toEqual([newLi]);
+    });
+
+    it("is a no-op (same reference) when inserting an li into a non-list container", () => {
+      const newLi: EditorElementNode = { id: "li-1", tag: "li", text: "Alpha" };
+
+      const result = insertNode(tree, "container-1", newLi);
+
+      expect(result).toBe(tree);
+    });
+
+    it("is a no-op (same reference) when inserting a non-li element into a ul", () => {
+      const listTree: EditorElementNode = { id: "root", tag: "page", children: [{ id: "list-1", tag: "ul", children: [] }] };
+      const newHeading: EditorElementNode = { id: "heading-1", tag: "h1", text: "Title" };
+
+      const result = insertNode(listTree, "list-1", newHeading);
+
+      expect(result).toBe(listTree);
+    });
+
+    it("still allows inserting a whole ul into an ordinary container", () => {
+      const newList: EditorElementNode = { id: "list-1", tag: "ul", children: [] };
+
+      const result = insertNode(tree, "container-1", newList);
+
+      expect(result.children?.[0].children?.at(-1)).toEqual(newList);
+    });
+  });
 });
 
 describe("removeNode", () => {

@@ -117,6 +117,31 @@ describe("cloneNodeWithFreshIds", () => {
     expect(clone.typography).toEqual({ fontWeight: 700 });
   });
 
+  it("clones an entire list (ul + li children) recursively with fresh ids for every node (Checkpoint 1.6)", () => {
+    const source: EditorElementNode = {
+      id: "list-1",
+      tag: "ul",
+      children: [
+        { id: "li-1", tag: "li", text: "Alpha" },
+        { id: "li-2", tag: "li", text: "Beta" },
+        { id: "li-3", tag: "li", text: "Gamma" },
+      ],
+    };
+
+    const clone = cloneNodeWithFreshIds(source);
+
+    expect(clone.id).not.toBe(source.id);
+    expect(clone.tag).toBe("ul");
+    expect(clone.children).toHaveLength(3);
+    expect(clone.children?.map((c) => c.text)).toEqual(["Alpha", "Beta", "Gamma"]);
+    const sourceIds = collectIds(source);
+    const cloneIds = collectIds(clone);
+    expect(new Set(cloneIds).size).toBe(cloneIds.length);
+    for (const id of cloneIds) {
+      expect(sourceIds).not.toContain(id);
+    }
+  });
+
   it("preserves typography (Checkpoint 4.2)", () => {
     const source: EditorElementNode = {
       id: "heading-1",

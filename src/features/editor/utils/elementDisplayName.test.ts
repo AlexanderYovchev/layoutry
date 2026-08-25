@@ -12,6 +12,9 @@ describe("getElementDisplayName", () => {
     expect(getElementDisplayName({ id: "4", tag: "img" })).toBe("Image");
     expect(getElementDisplayName({ id: "5", tag: "section" })).toBe("Section");
     expect(getElementDisplayName({ id: "6", tag: "a" })).toBe("Link");
+    expect(getElementDisplayName({ id: "7", tag: "ul" })).toBe("Unordered List");
+    expect(getElementDisplayName({ id: "8", tag: "ol" })).toBe("Ordered List");
+    expect(getElementDisplayName({ id: "9", tag: "li" })).toBe("List Item");
   });
 
   it("prefers an explicit displayName over the tag mapping", () => {

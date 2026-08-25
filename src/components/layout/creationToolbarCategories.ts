@@ -12,7 +12,10 @@ export type InsertableCardType =
   | "paragraph"
   | "button"
   | "image"
-  | "link";
+  | "link"
+  | "unorderedList"
+  | "orderedList"
+  | "listItem";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -91,8 +94,21 @@ function htmlCategory(): ToolbarCategoryContent {
         { name: "Menu", description: "Navigation menu" },
       ]),
       section(id, "lists", "Lists", [
-        { name: "List", description: "Ordered or unordered list" },
-        { name: "List Item", description: "Single list entry" },
+        {
+          name: "Unordered List",
+          description: "Bulleted list",
+          elementType: "unorderedList",
+        },
+        {
+          name: "Ordered List",
+          description: "Numbered list",
+          elementType: "orderedList",
+        },
+        {
+          name: "List Item",
+          description: "Single list entry",
+          elementType: "listItem",
+        },
       ]),
       section(id, "forms", "Forms", [
         { name: "Input", description: "Single-line text field" },

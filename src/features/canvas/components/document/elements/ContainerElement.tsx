@@ -19,6 +19,8 @@ import { cn, mergeRefs } from "@/lib/utils";
 import { getLayoutMode } from "@/features/editor/types/layout";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
+const SEMANTIC_TAGS = new Set(["section", "ul", "ol"]);
+
 export function ContainerElement({
   node,
   parentId,
@@ -65,13 +67,26 @@ export function ContainerElement({
   // identical) data.
   const usesLegacyRadiusChrome = !node.borderRadius;
 
-  // Container (div) and Section (section) are the two tags registered to
-  // this component (see documentNodeComponents.ts) — both share every
-  // style/behavior below and differ only in semantic DOM identity, so the
-  // real element tag is chosen from the document node rather than
-  // hardcoded, keeping generated markup a genuine <section> instead of a
-  // <div> standing in for one.
-  const Tag = node.tag === "section" ? "section" : "div";
+  // Tailwind's Preflight resets ul/ol to list-style: none (a common CSS-
+  // reset default, applied globally, not something this checkpoint
+  // controls) — left alone, a <ul>/<ol> would render with no visible
+  // bullets/numbers at all, defeating the point of the primitive. There
+  // is no list-style Inspector control yet (out of scope — see this
+  // checkpoint's report), so the className below applies a plain,
+  // unconditional default rather than something a real setting could
+  // override; list-inside keeps the marker within the content box
+  // regardless of the 16px starter padding, so it never depends on
+  // tuning a separate indent.
+
+  // Container (div), Section (section), Unordered List (ul), and Ordered
+  // List (ol) are the tags registered to this component (see
+  // documentNodeComponents.ts) — all share every style/behavior below
+  // (structural containers with the same Block-display starter defaults,
+  // see createUnorderedListNode/createOrderedListNode) and differ only in
+  // semantic DOM identity, so the real element tag is chosen from the
+  // document node rather than hardcoded, keeping generated markup a
+  // genuine <ul>/<ol>/<section> instead of a <div> standing in for one.
+  const Tag = SEMANTIC_TAGS.has(node.tag) ? (node.tag as "section" | "ul" | "ol") : "div";
 
   return (
     <Tag
@@ -82,6 +97,8 @@ export function ContainerElement({
         usesLegacyBorderChrome && "border border-zinc-100 dark:border-zinc-900",
         usesLegacyFlexClasses && "flex flex-col items-start gap-4",
         usesLegacyPadding && "p-8",
+        node.tag === "ul" && "list-disc list-inside",
+        node.tag === "ol" && "list-decimal list-inside",
         isDragging && "opacity-40",
       )}
       style={{

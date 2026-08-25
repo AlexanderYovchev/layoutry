@@ -1,5 +1,5 @@
-import { canContainChildren } from "@/features/editor/rules/insertionRules";
-import { findNodeById } from "@/features/editor/utils/findNodeById";
+import { canParentAcceptChild } from "@/features/editor/rules/insertionRules";
+import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
 import type { DropZone } from "@/features/editor/utils/resolveDropZone";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -8,6 +8,14 @@ import type { EditorElementNode } from "@/features/editor/types/document";
  * decide whether a live drop indicator should even appear (Canvas) and
  * inside moveNode itself (the actual mutation), so a target that's
  * rejected during the drag can never somehow succeed at drop time.
+ *
+ * Checkpoint 1.6: the parent the moved node would actually land in — the
+ * target itself for an "inside" drop, or the target's own parent for a
+ * before/after sibling drop — must accept the dragged node's tag per the
+ * centralized canParentAcceptChild rule (insertionRules.ts). This is the
+ * same rule insertNode itself enforces as a second, independent check;
+ * checking it here too means an invalid drag never even shows as a valid
+ * drop target, rather than silently no-opping only once dropped.
  */
 export function isValidMoveTarget(
   root: EditorElementNode,
@@ -30,7 +38,13 @@ export function isValidMoveTarget(
   const targetNode = findNodeById(root, targetId);
   if (!targetNode) return false;
 
-  if (zone === "inside" && !canContainChildren(targetNode.tag)) return false;
+  if (zone === "inside") {
+    if (!canParentAcceptChild(targetNode.tag, draggedNode.tag)) return false;
+  } else {
+    const targetParentId = findParentId(root, targetId);
+    const targetParent = targetParentId ? findNodeById(root, targetParentId) : undefined;
+    if (!targetParent || !canParentAcceptChild(targetParent.tag, draggedNode.tag)) return false;
+  }
 
   return true;
 }

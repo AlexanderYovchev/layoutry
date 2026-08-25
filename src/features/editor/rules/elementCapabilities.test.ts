@@ -41,6 +41,13 @@ describe("elementCapabilities", () => {
     expect(getElementCapabilities("img").canContainChildren).toBe(false);
   });
 
+  it("marks ul/ol as containers but li as a text-bearing leaf (Checkpoint 1.6)", () => {
+    expect(getElementCapabilities("ul").canContainChildren).toBe(true);
+    expect(getElementCapabilities("ol").canContainChildren).toBe(true);
+    expect(getElementCapabilities("li").canContainChildren).toBe(false);
+    expect(getElementCapabilities("li").supportsTypography).toBe(true);
+  });
+
   it("flags img/video/iframe as supporting an intrinsic aspect ratio; ordinary elements don't", () => {
     expect(getElementCapabilities("img").supportsIntrinsicAspectRatio).toBe(true);
     expect(getElementCapabilities("video").supportsIntrinsicAspectRatio).toBe(true);

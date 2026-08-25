@@ -23,7 +23,10 @@ export type InsertableElementType =
   | "paragraph"
   | "button"
   | "image"
-  | "link";
+  | "link"
+  | "unorderedList"
+  | "orderedList"
+  | "listItem";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -74,6 +77,46 @@ export function createLinkNode(): EditorElementNode {
   return { id: generateNodeId("a"), tag: "a", text: "Link text", href: DEFAULT_LINK_HREF };
 }
 
+/** A single, freshly-created list item — used both standalone (the "List Item" catalog entry) and as list-starter content below. */
+export function createListItemNode(): EditorElementNode {
+  return { id: generateNodeId("li"), tag: "li", text: "List item" };
+}
+
+/**
+ * A newly inserted list ships with three starter items so it's
+ * immediately understandable and usable (Checkpoint 1.6) rather than an
+ * empty <ul>/<ol> the user must first learn how to populate. The starter
+ * items are ordinary children created inline on the returned node, not a
+ * separate insertion step — one insertElement call (one history entry)
+ * is all that's needed, since insertNode already inserts a node's full
+ * subtree in one immutable write. Shares Container/Section's exact
+ * structural defaults (Block display, 16px padding, zero margin) for the
+ * same editor-usability reasons — see DEFAULT_CONTAINER_SPACING above.
+ */
+function createStarterListItems(): EditorElementNode[] {
+  return [createListItemNode(), createListItemNode(), createListItemNode()];
+}
+
+export function createUnorderedListNode(): EditorElementNode {
+  return {
+    id: generateNodeId("ul"),
+    tag: "ul",
+    children: createStarterListItems(),
+    flowLayout: { display: "block" },
+    spacing: DEFAULT_CONTAINER_SPACING,
+  };
+}
+
+export function createOrderedListNode(): EditorElementNode {
+  return {
+    id: generateNodeId("ol"),
+    tag: "ol",
+    children: createStarterListItems(),
+    flowLayout: { display: "block" },
+    spacing: DEFAULT_CONTAINER_SPACING,
+  };
+}
+
 /**
  * A generic placeholder photo, not a real asset — this app has no image
  * upload/picker yet (out of scope for Checkpoint 3.5.1). An inline SVG
@@ -103,6 +146,9 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   button: createButtonNode,
   image: createImageNode,
   link: createLinkNode,
+  unorderedList: createUnorderedListNode,
+  orderedList: createOrderedListNode,
+  listItem: createListItemNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -130,6 +176,9 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   button: { width: 120, height: 40 },
   image: { width: 200, height: 150 },
   link: { width: 120, height: 32 },
+  unorderedList: { width: 220, height: 150 },
+  orderedList: { width: 220, height: 150 },
+  listItem: { width: 160, height: 32 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };
@@ -143,6 +192,9 @@ const INSERTABLE_TYPE_BY_TAG: Record<string, InsertableElementType> = {
   button: "button",
   img: "image",
   a: "link",
+  ul: "unorderedList",
+  ol: "orderedList",
+  li: "listItem",
 };
 
 /** Falls back to a generic size for a tag with no InsertableElementType entry (e.g. a pasted/duplicated node whose tag isn't one of the five catalog types). */

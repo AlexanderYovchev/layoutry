@@ -1,4 +1,5 @@
 import { isValidMoveTarget } from "@/features/editor/rules/moveValidationRules";
+import { canParentAcceptChild } from "@/features/editor/rules/insertionRules";
 import { canResizeElement } from "@/features/editor/rules/elementCapabilities";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
 import { getResizeConstraintsForTag } from "@/features/editor/types/layout";
@@ -24,6 +25,16 @@ export interface InsertPosition {
   placement: "before" | "after";
 }
 
+/**
+ * Self-validating the same way resizeNode/moveNode already are (see
+ * their own doc comments) — never trust the caller alone. This is the
+ * ONE place every insertion path (click-insert, drag-insert, paste, and
+ * moveNode's own re-insertion step below) ultimately funnels through, so
+ * a single canParentAcceptChild check here (Checkpoint 1.6) protects all
+ * of them at once, rather than each caller needing its own copy. A
+ * rejected insertion is a no-op — the original, completely unmodified
+ * root is returned, exactly like an invalid move.
+ */
 export function insertNode(
   root: EditorElementNode,
   parentId: string,
@@ -31,6 +42,8 @@ export function insertNode(
   position?: InsertPosition,
 ): EditorElementNode {
   if (root.id === parentId) {
+    if (!canParentAcceptChild(root.tag, newNode.tag)) return root;
+
     const children = root.children ?? [];
 
     if (!position) {

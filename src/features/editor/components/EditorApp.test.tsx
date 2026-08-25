@@ -102,4 +102,74 @@ describe("EditorApp", () => {
     expect(selectedRows).toHaveLength(1);
     expect(selectedRows[0]).toHaveAttribute("title", "Link");
   });
+
+  it("clicking the Unordered List catalog card inserts a real <ul> with three starter <li> children, selects it, and syncs Structure (Checkpoint 1.6)", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<EditorApp />);
+
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("menuitem", { name: /^Unordered List/ }));
+
+    const state = useEditorStore.getState();
+    const insertedId = state.selectedElementId;
+    expect(insertedId).toMatch(/^ul-/);
+    const insertedNode = state.document.children?.at(-1);
+    expect(insertedNode?.tag).toBe("ul");
+    expect(insertedNode?.children).toHaveLength(3);
+
+    const rendered = container.querySelector(`[data-node-id="${insertedId}"]`);
+    expect(rendered?.tagName).toBe("UL");
+    expect(rendered?.querySelectorAll("li")).toHaveLength(3);
+
+    await user.click(screen.getByRole("tab", { name: "Structure" }));
+    const selectedRows = screen
+      .getAllByRole("treeitem")
+      .filter((row) => row.getAttribute("aria-selected") === "true");
+    expect(selectedRows).toHaveLength(1);
+    expect(selectedRows[0]).toHaveAttribute("title", "Unordered List");
+  });
+
+  it("clicking the Ordered List catalog card inserts a real <ol> (Checkpoint 1.6)", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<EditorApp />);
+
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("menuitem", { name: /^Ordered List/ }));
+
+    const state = useEditorStore.getState();
+    const insertedId = state.selectedElementId;
+    expect(state.document.children?.at(-1)?.tag).toBe("ol");
+    const rendered = container.querySelector(`[data-node-id="${insertedId}"]`);
+    expect(rendered?.tagName).toBe("OL");
+  });
+
+  it("clicking List Item while an Unordered List is selected appends another <li> into it — the practical add-item path (Checkpoint 1.6)", async () => {
+    const user = userEvent.setup();
+    render(<EditorApp />);
+
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("menuitem", { name: /^Unordered List/ }));
+    // The freshly inserted ul is already selected.
+
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("menuitem", { name: /^List Item/ }));
+
+    const state = useEditorStore.getState();
+    const list = state.document.children?.find((c) => c.tag === "ul");
+    expect(list?.children).toHaveLength(4);
+  });
+
+  it("clicking List Item while a plain Container is selected does not insert anything — invalid outside a list (Checkpoint 1.6)", async () => {
+    const user = userEvent.setup();
+    render(<EditorApp />);
+
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("menuitem", { name: /^Container/ }));
+    const before = useEditorStore.getState().document;
+
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("menuitem", { name: /^List Item/ }));
+
+    expect(useEditorStore.getState().document).toBe(before);
+  });
 });

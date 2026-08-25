@@ -6,8 +6,11 @@ import {
   createHeadingNode,
   createImageNode,
   createLinkNode,
+  createListItemNode,
+  createOrderedListNode,
   createParagraphNode,
   createSectionNode,
+  createUnorderedListNode,
   isInsertableElementType,
 } from "./elementFactories";
 
@@ -97,6 +100,49 @@ describe("element factories", () => {
     expect(first.id).not.toBe(second.id);
   });
 
+  it("createListItemNode produces a real, text-bearing leaf <li> (Checkpoint 1.6)", () => {
+    const node = createListItemNode();
+    expect(node.tag).toBe("li");
+    expect(node.text).toBe("List item");
+    expect(node.id).toMatch(/^li-/);
+    expect(node.children).toBeUndefined();
+  });
+
+  it("createUnorderedListNode produces a <ul> with three starter <li> children as one logical node (Checkpoint 1.6)", () => {
+    const node = createUnorderedListNode();
+    expect(node.tag).toBe("ul");
+    expect(node.children).toHaveLength(3);
+    expect(node.children?.every((child) => child.tag === "li")).toBe(true);
+  });
+
+  it("createOrderedListNode produces an <ol> with three starter <li> children (Checkpoint 1.6)", () => {
+    const node = createOrderedListNode();
+    expect(node.tag).toBe("ol");
+    expect(node.children).toHaveLength(3);
+    expect(node.children?.every((child) => child.tag === "li")).toBe(true);
+  });
+
+  it("createUnorderedListNode/createOrderedListNode share Container's exact structural defaults", () => {
+    const ul = createUnorderedListNode();
+    const container = createContainerNode();
+    expect(ul.flowLayout).toEqual(container.flowLayout);
+    expect(ul.spacing).toEqual(container.spacing);
+  });
+
+  it("every starter list item gets its own fresh, unique id", () => {
+    const node = createUnorderedListNode();
+    const ids = node.children?.map((child) => child.id) ?? [];
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("two separately created lists never share starter item ids", () => {
+    const first = createUnorderedListNode();
+    const second = createUnorderedListNode();
+    const firstIds = first.children?.map((child) => child.id) ?? [];
+    const secondIds = second.children?.map((child) => child.id) ?? [];
+    expect(firstIds.some((id) => secondIds.includes(id))).toBe(false);
+  });
+
   describe("createElementNode", () => {
     it("dispatches to the matching factory for every insertable type", () => {
       expect(createElementNode("container").tag).toBe("div");
@@ -106,12 +152,26 @@ describe("element factories", () => {
       expect(createElementNode("button").tag).toBe("button");
       expect(createElementNode("image").tag).toBe("img");
       expect(createElementNode("link").tag).toBe("a");
+      expect(createElementNode("unorderedList").tag).toBe("ul");
+      expect(createElementNode("orderedList").tag).toBe("ol");
+      expect(createElementNode("listItem").tag).toBe("li");
     });
   });
 
   describe("isInsertableElementType", () => {
     it("recognizes every real insertable type", () => {
-      for (const type of ["container", "section", "heading", "paragraph", "button", "image", "link"]) {
+      for (const type of [
+        "container",
+        "section",
+        "heading",
+        "paragraph",
+        "button",
+        "image",
+        "link",
+        "unorderedList",
+        "orderedList",
+        "listItem",
+      ]) {
         expect(isInsertableElementType(type)).toBe(true);
       }
     });

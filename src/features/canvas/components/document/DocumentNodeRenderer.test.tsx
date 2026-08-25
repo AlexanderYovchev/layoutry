@@ -147,6 +147,65 @@ describe("DocumentNodeRenderer", () => {
     expect(screen.getByRole("link", { name: "Learn more" })).toBeInTheDocument();
   });
 
+  it("renders a full Unordered List with List Items, nested inside Section > Container (Checkpoint 1.6)", () => {
+    const tree: EditorElementNode = {
+      id: "section-1",
+      tag: "section",
+      children: [
+        {
+          id: "container-1",
+          tag: "div",
+          children: [
+            { id: "heading-1", tag: "h1", text: "Title" },
+            { id: "paragraph-1", tag: "p", text: "Body copy" },
+            {
+              id: "list-1",
+              tag: "ul",
+              children: [
+                { id: "li-1", tag: "li", text: "Alpha" },
+                { id: "li-2", tag: "li", text: "Beta" },
+                { id: "li-3", tag: "li", text: "Gamma" },
+              ],
+            },
+            { id: "link-1", tag: "a", text: "Learn more", href: "/about" },
+            { id: "button-1", tag: "button", text: "Go" },
+          ],
+        },
+      ],
+    };
+
+    const { container } = render(
+      <DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+
+    expect(container.querySelector('[data-node-id="section-1"]')?.tagName).toBe("SECTION");
+    expect(container.querySelector('[data-node-id="container-1"]')?.tagName).toBe("DIV");
+    const list = container.querySelector('[data-node-id="list-1"]');
+    expect(list?.tagName).toBe("UL");
+    const items = list?.querySelectorAll("li") ?? [];
+    expect(items).toHaveLength(3);
+    expect(Array.from(items).map((item) => item.textContent)).toEqual(["Alpha", "Beta", "Gamma"]);
+    // Every li's own data-parent-id points at the ul, not the outer Container.
+    for (const item of items) {
+      expect(item).toHaveAttribute("data-parent-id", "list-1");
+    }
+  });
+
+  it("renders a real <ol> as its genuine semantic tag, not a <ul> or <div> standing in for one (Checkpoint 1.6)", () => {
+    const tree: EditorElementNode = {
+      id: "list-1",
+      tag: "ol",
+      children: [{ id: "li-1", tag: "li", text: "First" }],
+    };
+
+    const { container } = render(
+      <DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+
+    expect(container.querySelector('[data-node-id="list-1"]')?.tagName).toBe("OL");
+    expect(container.querySelector('[data-node-id="li-1"]')?.tagName).toBe("LI");
+  });
+
   it("renders an img node as an empty-image placeholder rather than nothing", () => {
     const tree: EditorElementNode = { id: "image-1", tag: "img" };
 

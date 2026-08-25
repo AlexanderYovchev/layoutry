@@ -255,25 +255,33 @@ export const useEditorStore = create<EditorState>()((set) => ({
   // Insertion and selecting the newly inserted node are one atomic
   // update — every insertion method (click, drag) goes through this
   // single action so "select what you just inserted" can never drift
-  // out of sync with "what got inserted."
+  // out of sync with "what got inserted." insertNode is itself
+  // self-validating (Checkpoint 1.6 — see its own doc comment) and
+  // returns the same document reference when the target legitimately
+  // rejects the new node's tag (e.g. a List Item aimed at a plain
+  // Container); this action must recognize that no-op rather than
+  // blindly pushing a spurious history entry and selecting a node id
+  // that was never actually inserted into the tree — a real bug this
+  // checkpoint's own constrained-nesting rejections newly made reachable
+  // (insertNode could never reject anything before Checkpoint 1.6).
   insertElement: (parentId, node, position) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: insertNode(state.document, parentId, node, position),
-      selectedElementId: node.id,
-    })),
+    set((state) => {
+      const document = insertNode(state.document, parentId, node, position);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document, selectedElementId: node.id };
+    }),
 
-  // Same shape as insertElement: the move and re-selecting the moved
-  // node are one atomic update, so selection can never lag behind (or
-  // survive) a move that was actually rejected by moveNode's own
-  // validation — if moveNode no-ops, selectedElementId simply gets
-  // reset to the id it already was.
+  // Same shape as insertElement, and the same no-op guard: moveNode
+  // already gates through isValidMoveTarget (which useMoveElement also
+  // checks before ever calling this action), but this action must not
+  // trust that double-gating alone — a rejected move must not push a
+  // spurious no-diff history entry either.
   moveElement: (nodeId, targetId, zone) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: moveNode(state.document, nodeId, targetId, zone),
-      selectedElementId: nodeId,
-    })),
+    set((state) => {
+      const document = moveNode(state.document, nodeId, targetId, zone);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document, selectedElementId: nodeId };
+    }),
 
   // Resizing never changes selection — the resized node was already
   // selected (handles only render for the current selection) and stays
