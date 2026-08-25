@@ -74,6 +74,49 @@ describe("ContainerElement", () => {
     expect(olContainer.querySelector('[data-node-id="list-2"]')?.className).toContain("list-decimal");
   });
 
+  it("renders every semantic sectioning tag as its genuine native element (Checkpoint 1.8)", () => {
+    const tagToDomTag: Record<string, string> = {
+      header: "HEADER",
+      nav: "NAV",
+      main: "MAIN",
+      article: "ARTICLE",
+      aside: "ASIDE",
+      footer: "FOOTER",
+    };
+
+    for (const [tag, domTag] of Object.entries(tagToDomTag)) {
+      const { container, unmount } = render(
+        <ContainerElement
+          node={{ id: `node-${tag}`, tag, children: [] }}
+          parentId="page-root"
+          parentLayoutMode="flow"
+          parentFlowDisplay="block"
+        />,
+      );
+
+      const element = container.querySelector(`[data-node-id="node-${tag}"]`);
+      expect(element?.tagName, tag).toBe(domTag);
+      expect(element).toHaveAttribute("data-node-type", tag);
+      unmount();
+    }
+  });
+
+  it("applies the same style resolvers to a semantic sectioning element as to a div (e.g. background) — same component, only the DOM tag differs", () => {
+    const backgroundNode = { background: { color: "#3366ff" } };
+
+    const { container: divContainer } = render(
+      <ContainerElement node={{ id: "div-1", tag: "div", ...backgroundNode }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+    const { container: footerContainer } = render(
+      <ContainerElement node={{ id: "footer-1", tag: "footer", ...backgroundNode }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+
+    const divEl = divContainer.querySelector('[data-node-id="div-1"]') as HTMLElement;
+    const footerEl = footerContainer.querySelector('[data-node-id="footer-1"]') as HTMLElement;
+    expect(footerEl.style.backgroundColor).not.toBe("");
+    expect(footerEl.style.backgroundColor).toBe(divEl.style.backgroundColor);
+  });
+
   it("renders its children regardless of which semantic tag it resolves to", () => {
     render(
       <ContainerElement

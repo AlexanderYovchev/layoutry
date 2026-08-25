@@ -185,6 +185,22 @@ describe("elementCapabilities", () => {
     expect(h6).toEqual(h1);
   });
 
+  it("gives the semantic sectioning family (header/nav/main/article/aside/footer) the same structural capabilities as div/section (Checkpoint 1.8)", () => {
+    const structuralTags = ["header", "nav", "main", "article", "aside", "footer"];
+    const div = getElementCapabilities("div");
+
+    for (const tag of structuralTags) {
+      const caps = getElementCapabilities(tag);
+      expect(caps.canContainChildren, tag).toBe(true);
+      expect(caps.supportsTypography, tag).toBe(false);
+      expect(caps.supportsHref, tag).toBe(false);
+      expect(caps.supportsHeadingLevel, tag).toBe(false);
+      // Every other structural CSS capability matches div's exactly —
+      // no CAPABILITY_OVERRIDES entry was needed for any of these six.
+      expect(caps).toEqual(div);
+    }
+  });
+
   it("gives an entirely unknown tag the same sensible defaults as any other element", () => {
     const caps = getElementCapabilities("some-future-tag");
 

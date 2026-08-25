@@ -330,6 +330,144 @@ describe("useInsertElement — constrained list nesting (Checkpoint 1.6)", () =>
   });
 });
 
+describe("useInsertElement — semantic sectioning family (Checkpoint 1.8)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("inserts a Header into a Section", () => {
+    const { result } = renderHook(() => useInsertElement());
+
+    result.current("header", "section-1");
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(section?.children?.at(-1)?.tag).toBe("header");
+  });
+
+  it("inserts a Container into a Header", () => {
+    const { result: insertHeader } = renderHook(() => useInsertElement());
+    insertHeader.current("header", "section-1");
+    const headerId = useEditorStore.getState().selectedElementId;
+
+    const { result: insertContainer } = renderHook(() => useInsertElement());
+    insertContainer.current("container", headerId!);
+
+    const header = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === headerId);
+    expect(header?.children?.at(-1)?.tag).toBe("div");
+  });
+
+  it("inserts a Nav into a Header, and a Link into that Nav", () => {
+    const { result: insertHeader } = renderHook(() => useInsertElement());
+    insertHeader.current("header", "section-1");
+    const headerId = useEditorStore.getState().selectedElementId;
+
+    const { result: insertNav } = renderHook(() => useInsertElement());
+    insertNav.current("nav", headerId!);
+    const navId = useEditorStore.getState().selectedElementId;
+
+    const { result: insertLink } = renderHook(() => useInsertElement());
+    insertLink.current("link", navId!);
+
+    const nav = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === headerId)
+      ?.children?.find((c) => c.id === navId);
+    expect(nav?.children?.at(-1)?.tag).toBe("a");
+  });
+
+  it("inserts a Main into a Section, and a Section into that Main", () => {
+    const { result: insertMain } = renderHook(() => useInsertElement());
+    insertMain.current("main", "section-1");
+    const mainId = useEditorStore.getState().selectedElementId;
+
+    const { result: insertSection } = renderHook(() => useInsertElement());
+    insertSection.current("section", mainId!);
+
+    const main = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === mainId);
+    expect(main?.children?.at(-1)?.tag).toBe("section");
+  });
+
+  it("inserts an Article with a Heading and a Paragraph", () => {
+    const { result: insertArticle } = renderHook(() => useInsertElement());
+    insertArticle.current("article", "section-1");
+    const articleId = useEditorStore.getState().selectedElementId;
+
+    const { result: insertHeading } = renderHook(() => useInsertElement());
+    insertHeading.current("heading", articleId!);
+    const { result: insertParagraph } = renderHook(() => useInsertElement());
+    insertParagraph.current("paragraph", articleId!);
+
+    const article = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === articleId);
+    expect(article?.children?.map((c) => c.tag)).toEqual(["h1", "p"]);
+  });
+
+  it("inserts an Aside with a Paragraph", () => {
+    const { result: insertAside } = renderHook(() => useInsertElement());
+    insertAside.current("aside", "section-1");
+    const asideId = useEditorStore.getState().selectedElementId;
+
+    const { result: insertParagraph } = renderHook(() => useInsertElement());
+    insertParagraph.current("paragraph", asideId!);
+
+    const aside = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === asideId);
+    expect(aside?.children?.at(-1)?.tag).toBe("p");
+  });
+
+  it("inserts a Footer with a Container inside it", () => {
+    const { result: insertFooter } = renderHook(() => useInsertElement());
+    insertFooter.current("footer", "section-1");
+    const footerId = useEditorStore.getState().selectedElementId;
+
+    const { result: insertContainer } = renderHook(() => useInsertElement());
+    insertContainer.current("container", footerId!);
+
+    const footer = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === footerId);
+    expect(footer?.children?.at(-1)?.tag).toBe("div");
+  });
+
+  it("still rejects a List Item inserted directly into any of the six semantic containers (Checkpoint 1.6's constraint remains intact)", () => {
+    for (const semanticType of ["header", "nav", "main", "article", "aside", "footer"] as const) {
+      const { result: insertSemantic } = renderHook(() => useInsertElement());
+      insertSemantic.current(semanticType, "section-1");
+      const semanticId = useEditorStore.getState().selectedElementId;
+      const before = useEditorStore.getState().document;
+
+      const { result: insertItem } = renderHook(() => useInsertElement());
+      insertItem.current("listItem", semanticId!);
+
+      expect(useEditorStore.getState().document, semanticType).toBe(before);
+    }
+  });
+
+  it("still rejects an arbitrary semantic container inserted directly into a UL/OL (only li is a valid list child)", () => {
+    const { result: insertList } = renderHook(() => useInsertElement());
+    insertList.current("unorderedList", "section-1");
+    const listId = useEditorStore.getState().selectedElementId;
+    const before = useEditorStore.getState().document;
+
+    const { result: insertArticle } = renderHook(() => useInsertElement());
+    insertArticle.current("article", listId!);
+
+    expect(useEditorStore.getState().document).toBe(before);
+  });
+});
+
 describe("useInsertElement — Free destinations (Checkpoint 3.4.4)", () => {
   const initialState = useEditorStore.getState();
 

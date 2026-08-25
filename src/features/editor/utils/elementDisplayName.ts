@@ -20,6 +20,9 @@ const TAG_DISPLAY_NAMES: Record<string, string> = {
   li: "List Item",
   nav: "Navigation",
   header: "Header",
+  main: "Main",
+  article: "Article",
+  aside: "Aside",
   footer: "Footer",
   form: "Form",
 };

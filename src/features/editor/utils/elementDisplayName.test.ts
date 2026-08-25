@@ -15,6 +15,12 @@ describe("getElementDisplayName", () => {
     expect(getElementDisplayName({ id: "7", tag: "ul" })).toBe("Unordered List");
     expect(getElementDisplayName({ id: "8", tag: "ol" })).toBe("Ordered List");
     expect(getElementDisplayName({ id: "9", tag: "li" })).toBe("List Item");
+    expect(getElementDisplayName({ id: "10", tag: "header" })).toBe("Header");
+    expect(getElementDisplayName({ id: "11", tag: "nav" })).toBe("Navigation");
+    expect(getElementDisplayName({ id: "12", tag: "main" })).toBe("Main");
+    expect(getElementDisplayName({ id: "13", tag: "article" })).toBe("Article");
+    expect(getElementDisplayName({ id: "14", tag: "aside" })).toBe("Aside");
+    expect(getElementDisplayName({ id: "15", tag: "footer" })).toBe("Footer");
   });
 
   it("prefers an explicit displayName over the tag mapping", () => {

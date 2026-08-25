@@ -172,4 +172,49 @@ describe("EditorApp", () => {
 
     expect(useEditorStore.getState().document).toBe(before);
   });
+
+  it("clicking each semantic sectioning catalog card inserts its genuine native element, selects it, and syncs Structure (Checkpoint 1.8)", async () => {
+    // Six full insert+verify rounds through real userEvent interactions —
+    // comfortably under 2s alone, but occasionally exceeds Vitest's
+    // default 5000ms per-test budget under full-suite parallel load; a
+    // generous explicit timeout avoids a resource-contention flake
+    // without reducing coverage back down to six separate tests.
+    const user = userEvent.setup();
+    const { container } = render(<EditorApp />);
+
+    const cases: Array<{ menuName: string; tag: string; domTag: string; structureLabel: string }> = [
+      { menuName: "^Header", tag: "header", domTag: "HEADER", structureLabel: "Header" },
+      { menuName: "^Nav", tag: "nav", domTag: "NAV", structureLabel: "Navigation" },
+      { menuName: "^Main", tag: "main", domTag: "MAIN", structureLabel: "Main" },
+      { menuName: "^Article", tag: "article", domTag: "ARTICLE", structureLabel: "Article" },
+      { menuName: "^Aside", tag: "aside", domTag: "ASIDE", structureLabel: "Aside" },
+      { menuName: "^Footer", tag: "footer", domTag: "FOOTER", structureLabel: "Footer" },
+    ];
+
+    for (const { menuName, tag, domTag, structureLabel } of cases) {
+      // Clear selection before each insertion — otherwise the previous
+      // iteration's inserted (and still-selected) semantic container
+      // would become this insertion's destination parent instead of the
+      // document root, since every one of these six tags can contain
+      // children (see resolveDestinationParent).
+      useEditorStore.getState().clearSelection();
+
+      await user.click(screen.getByRole("button", { name: "HTML" }));
+      await user.click(screen.getByRole("menuitem", { name: new RegExp(menuName) }));
+
+      const state = useEditorStore.getState();
+      const insertedId = state.selectedElementId;
+      expect(state.document.children?.at(-1)?.tag, tag).toBe(tag);
+
+      const rendered = container.querySelector(`[data-node-id="${insertedId}"]`);
+      expect(rendered?.tagName, tag).toBe(domTag);
+
+      await user.click(screen.getByRole("tab", { name: "Structure" }));
+      const selectedRows = screen
+        .getAllByRole("treeitem")
+        .filter((row) => row.getAttribute("aria-selected") === "true");
+      expect(selectedRows, tag).toHaveLength(1);
+      expect(selectedRows[0], tag).toHaveAttribute("title", structureLabel);
+    }
+  }, 15000);
 });

@@ -26,7 +26,13 @@ export type InsertableElementType =
   | "link"
   | "unorderedList"
   | "orderedList"
-  | "listItem";
+  | "listItem"
+  | "header"
+  | "nav"
+  | "main"
+  | "article"
+  | "aside"
+  | "footer";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -118,6 +124,75 @@ export function createOrderedListNode(): EditorElementNode {
 }
 
 /**
+ * The semantic sectioning family (Checkpoint 1.8) — Header/Nav/Main/
+ * Article/Aside/Footer. Each is a primitive semantic HTML container, not
+ * a designed composition (no logo/menu/copyright/newsletter content is
+ * stamped in) — see this checkpoint's report for why. All six share
+ * Container/Section's exact structural defaults (Block display, 16px
+ * padding, zero margin) for the same editor-usability reasons; only the
+ * semantic tag differs, matching Section's own precedent.
+ */
+export function createHeaderNode(): EditorElementNode {
+  return {
+    id: generateNodeId("header"),
+    tag: "header",
+    children: [],
+    flowLayout: { display: "block" },
+    spacing: DEFAULT_CONTAINER_SPACING,
+  };
+}
+
+export function createNavNode(): EditorElementNode {
+  return {
+    id: generateNodeId("nav"),
+    tag: "nav",
+    children: [],
+    flowLayout: { display: "block" },
+    spacing: DEFAULT_CONTAINER_SPACING,
+  };
+}
+
+export function createMainNode(): EditorElementNode {
+  return {
+    id: generateNodeId("main"),
+    tag: "main",
+    children: [],
+    flowLayout: { display: "block" },
+    spacing: DEFAULT_CONTAINER_SPACING,
+  };
+}
+
+export function createArticleNode(): EditorElementNode {
+  return {
+    id: generateNodeId("article"),
+    tag: "article",
+    children: [],
+    flowLayout: { display: "block" },
+    spacing: DEFAULT_CONTAINER_SPACING,
+  };
+}
+
+export function createAsideNode(): EditorElementNode {
+  return {
+    id: generateNodeId("aside"),
+    tag: "aside",
+    children: [],
+    flowLayout: { display: "block" },
+    spacing: DEFAULT_CONTAINER_SPACING,
+  };
+}
+
+export function createFooterNode(): EditorElementNode {
+  return {
+    id: generateNodeId("footer"),
+    tag: "footer",
+    children: [],
+    flowLayout: { display: "block" },
+    spacing: DEFAULT_CONTAINER_SPACING,
+  };
+}
+
+/**
  * A generic placeholder photo, not a real asset — this app has no image
  * upload/picker yet (out of scope for Checkpoint 3.5.1). An inline SVG
  * with explicit width/height gives the <img> a real, non-square intrinsic
@@ -149,6 +224,12 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   unorderedList: createUnorderedListNode,
   orderedList: createOrderedListNode,
   listItem: createListItemNode,
+  header: createHeaderNode,
+  nav: createNavNode,
+  main: createMainNode,
+  article: createArticleNode,
+  aside: createAsideNode,
+  footer: createFooterNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -179,6 +260,12 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   unorderedList: { width: 220, height: 150 },
   orderedList: { width: 220, height: 150 },
   listItem: { width: 160, height: 32 },
+  header: { width: 200, height: 150 },
+  nav: { width: 200, height: 150 },
+  main: { width: 200, height: 150 },
+  article: { width: 200, height: 150 },
+  aside: { width: 200, height: 150 },
+  footer: { width: 200, height: 150 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };
@@ -195,6 +282,12 @@ const INSERTABLE_TYPE_BY_TAG: Record<string, InsertableElementType> = {
   ul: "unorderedList",
   ol: "orderedList",
   li: "listItem",
+  header: "header",
+  nav: "nav",
+  main: "main",
+  article: "article",
+  aside: "aside",
+  footer: "footer",
 };
 
 /** Falls back to a generic size for a tag with no InsertableElementType entry (e.g. a pasted/duplicated node whose tag isn't one of the five catalog types). */

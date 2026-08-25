@@ -43,8 +43,8 @@ describe("DocumentNodeRenderer", () => {
 
   it("degrades an unregistered node type to a transparent wrapper that still renders its children", () => {
     const tree: EditorElementNode = {
-      id: "nav-1",
-      tag: "nav",
+      id: "table-1",
+      tag: "table",
       children: [{ id: "paragraph-1", tag: "p", text: "Still visible" }],
     };
 
@@ -204,6 +204,66 @@ describe("DocumentNodeRenderer", () => {
 
     expect(container.querySelector('[data-node-id="list-1"]')?.tagName).toBe("OL");
     expect(container.querySelector('[data-node-id="li-1"]')?.tagName).toBe("LI");
+  });
+
+  it("renders a full semantic page skeleton — Header/Nav, Main/Section/Article/Aside, Footer — all as genuine native tags (Checkpoint 1.8)", () => {
+    const tree: EditorElementNode = {
+      id: "page-root",
+      tag: "page",
+      children: [
+        {
+          id: "header-1",
+          tag: "header",
+          children: [
+            { id: "heading-1", tag: "h1", text: "Site Title" },
+            {
+              id: "nav-1",
+              tag: "nav",
+              children: [{ id: "link-1", tag: "a", text: "Home", href: "/" }],
+            },
+          ],
+        },
+        {
+          id: "main-1",
+          tag: "main",
+          children: [
+            {
+              id: "article-1",
+              tag: "article",
+              children: [
+                { id: "heading-2", tag: "h2", text: "Article Title" },
+                { id: "paragraph-1", tag: "p", text: "Article body" },
+              ],
+            },
+            {
+              id: "aside-1",
+              tag: "aside",
+              children: [{ id: "paragraph-2", tag: "p", text: "Related content" }],
+            },
+          ],
+        },
+        {
+          id: "footer-1",
+          tag: "footer",
+          children: [{ id: "paragraph-3", tag: "p", text: "Copyright" }],
+        },
+      ],
+    };
+
+    const { container } = render(
+      <DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+
+    expect(container.querySelector('[data-node-id="header-1"]')?.tagName).toBe("HEADER");
+    expect(container.querySelector('[data-node-id="nav-1"]')?.tagName).toBe("NAV");
+    expect(container.querySelector('[data-node-id="main-1"]')?.tagName).toBe("MAIN");
+    expect(container.querySelector('[data-node-id="article-1"]')?.tagName).toBe("ARTICLE");
+    expect(container.querySelector('[data-node-id="aside-1"]')?.tagName).toBe("ASIDE");
+    expect(container.querySelector('[data-node-id="footer-1"]')?.tagName).toBe("FOOTER");
+    expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
+    expect(screen.getByText("Article body")).toBeInTheDocument();
+    expect(screen.getByText("Related content")).toBeInTheDocument();
+    expect(screen.getByText("Copyright")).toBeInTheDocument();
   });
 
   it("renders an img node as an empty-image placeholder rather than nothing", () => {

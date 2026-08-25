@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  createArticleNode,
+  createAsideNode,
   createButtonNode,
   createContainerNode,
   createElementNode,
+  createFooterNode,
+  createHeaderNode,
   createHeadingNode,
   createImageNode,
   createLinkNode,
   createListItemNode,
+  createMainNode,
+  createNavNode,
   createOrderedListNode,
   createParagraphNode,
   createSectionNode,
@@ -143,6 +149,35 @@ describe("element factories", () => {
     expect(firstIds.some((id) => secondIds.includes(id))).toBe(false);
   });
 
+  describe("the semantic sectioning family (Checkpoint 1.8)", () => {
+    const factories = {
+      header: createHeaderNode,
+      nav: createNavNode,
+      main: createMainNode,
+      article: createArticleNode,
+      aside: createAsideNode,
+      footer: createFooterNode,
+    } as const;
+
+    for (const [tag, factory] of Object.entries(factories)) {
+      it(`create${tag[0].toUpperCase()}${tag.slice(1)}Node produces an empty, childable <${tag}> sharing Container's exact structural defaults`, () => {
+        const node = factory();
+        const container = createContainerNode();
+
+        expect(node.tag).toBe(tag);
+        expect(node.children).toEqual([]);
+        expect(node.id).toMatch(new RegExp(`^${tag}-`));
+        expect(node.flowLayout).toEqual(container.flowLayout);
+        expect(node.spacing).toEqual(container.spacing);
+      });
+    }
+
+    it("every factory produces a unique id per call", () => {
+      expect(createHeaderNode().id).not.toBe(createHeaderNode().id);
+      expect(createFooterNode().id).not.toBe(createFooterNode().id);
+    });
+  });
+
   describe("createElementNode", () => {
     it("dispatches to the matching factory for every insertable type", () => {
       expect(createElementNode("container").tag).toBe("div");
@@ -155,6 +190,12 @@ describe("element factories", () => {
       expect(createElementNode("unorderedList").tag).toBe("ul");
       expect(createElementNode("orderedList").tag).toBe("ol");
       expect(createElementNode("listItem").tag).toBe("li");
+      expect(createElementNode("header").tag).toBe("header");
+      expect(createElementNode("nav").tag).toBe("nav");
+      expect(createElementNode("main").tag).toBe("main");
+      expect(createElementNode("article").tag).toBe("article");
+      expect(createElementNode("aside").tag).toBe("aside");
+      expect(createElementNode("footer").tag).toBe("footer");
     });
   });
 
@@ -171,6 +212,12 @@ describe("element factories", () => {
         "unorderedList",
         "orderedList",
         "listItem",
+        "header",
+        "nav",
+        "main",
+        "article",
+        "aside",
+        "footer",
       ]) {
         expect(isInsertableElementType(type)).toBe(true);
       }

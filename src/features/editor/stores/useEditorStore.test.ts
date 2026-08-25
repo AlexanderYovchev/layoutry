@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createLinkNode, createListItemNode, createUnorderedListNode } from "@/features/editor/factories/elementFactories";
+import {
+  createContainerNode,
+  createFooterNode,
+  createHeadingNode,
+  createLinkNode,
+  createListItemNode,
+  createUnorderedListNode,
+} from "@/features/editor/factories/elementFactories";
 import { useEditorStore } from "./useEditorStore";
 
 const initialState = useEditorStore.getState();
@@ -1252,6 +1259,47 @@ describe("useEditorStore — Lists (Checkpoint 1.6)", () => {
     expect(findList()?.children?.map((c) => c.id)).toEqual([third.id, first.id, second.id]);
   });
 });
+
+describe("useEditorStore — semantic sectioning family (Checkpoint 1.8)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("duplicates a Footer subtree (Footer > Container > Heading) recursively with fresh ids, and the duplicate is undoable/redoable", () => {
+    useEditorStore.getState().insertElement("section-1", createFooterNode());
+    const footerId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement(footerId, createContainerNode());
+    const containerId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement(containerId, createHeadingNode());
+
+    useEditorStore.getState().selectElement(footerId);
+    useEditorStore.getState().duplicateSelection();
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    const footers = section?.children?.filter((c) => c.tag === "footer") ?? [];
+    expect(footers).toHaveLength(2);
+    const [original, duplicate] = footers;
+    expect(duplicate.id).not.toBe(original.id);
+
+    const originalIds = collectIds(original);
+    const duplicateIds = collectIds(duplicate);
+    expect(duplicateIds).toHaveLength(originalIds.length);
+    expect(duplicateIds.some((id) => originalIds.includes(id))).toBe(false);
+    // Structure preserved: the duplicate's own Container still holds a Heading.
+    expect(duplicate.children?.[0]?.tag).toBe("div");
+    expect(duplicate.children?.[0]?.children?.[0]?.tag).toBe("h1");
+
+    useEditorStore.getState().undo();
+    expect(useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.filter((c) => c.tag === "footer")).toHaveLength(1);
+
+    useEditorStore.getState().redo();
+    expect(useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.filter((c) => c.tag === "footer")).toHaveLength(2);
+  });
+});
+
+function collectIds(node: { id: string; children?: { id: string; children?: unknown }[] }): string[] {
+  return [node.id, ...(node.children ?? []).flatMap((child) => collectIds(child as never))];
+}
 
 describe("useEditorStore — generic transactions (Checkpoint 4.3.1)", () => {
   afterEach(() => {

@@ -15,7 +15,13 @@ export type InsertableCardType =
   | "link"
   | "unorderedList"
   | "orderedList"
-  | "listItem";
+  | "listItem"
+  | "header"
+  | "nav"
+  | "main"
+  | "article"
+  | "aside"
+  | "footer";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -127,8 +133,36 @@ function htmlCategory(): ToolbarCategoryContent {
         { name: "Table Row", description: "Single table row" },
       ]),
       section(id, "semantic", "Semantic Elements", [
-        { name: "Article", description: "Self-contained content" },
-        { name: "Header", description: "Page or section header" },
+        {
+          name: "Header",
+          description: "Page or section header",
+          elementType: "header",
+        },
+        {
+          name: "Nav",
+          description: "Navigation links",
+          elementType: "nav",
+        },
+        {
+          name: "Main",
+          description: "Primary page content",
+          elementType: "main",
+        },
+        {
+          name: "Article",
+          description: "Self-contained content",
+          elementType: "article",
+        },
+        {
+          name: "Aside",
+          description: "Related or tangential content",
+          elementType: "aside",
+        },
+        {
+          name: "Footer",
+          description: "Page or section footer",
+          elementType: "footer",
+        },
       ]),
     ],
   };

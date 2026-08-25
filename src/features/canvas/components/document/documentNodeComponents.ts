@@ -34,4 +34,10 @@ export const documentNodeComponents: Record<string, DocumentElementComponent> =
     ul: ContainerElement,
     ol: ContainerElement,
     li: ListItemElement,
+    header: ContainerElement,
+    nav: ContainerElement,
+    main: ContainerElement,
+    article: ContainerElement,
+    aside: ContainerElement,
+    footer: ContainerElement,
   };

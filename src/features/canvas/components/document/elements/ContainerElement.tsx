@@ -19,7 +19,8 @@ import { cn, mergeRefs } from "@/lib/utils";
 import { getLayoutMode } from "@/features/editor/types/layout";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
-const SEMANTIC_TAGS = new Set(["section", "ul", "ol"]);
+const SEMANTIC_TAGS = new Set(["section", "ul", "ol", "header", "nav", "main", "article", "aside", "footer"]);
+type SemanticTag = "section" | "ul" | "ol" | "header" | "nav" | "main" | "article" | "aside" | "footer";
 
 export function ContainerElement({
   node,
@@ -78,15 +79,18 @@ export function ContainerElement({
   // regardless of the 16px starter padding, so it never depends on
   // tuning a separate indent.
 
-  // Container (div), Section (section), Unordered List (ul), and Ordered
-  // List (ol) are the tags registered to this component (see
-  // documentNodeComponents.ts) — all share every style/behavior below
-  // (structural containers with the same Block-display starter defaults,
-  // see createUnorderedListNode/createOrderedListNode) and differ only in
-  // semantic DOM identity, so the real element tag is chosen from the
-  // document node rather than hardcoded, keeping generated markup a
-  // genuine <ul>/<ol>/<section> instead of a <div> standing in for one.
-  const Tag = SEMANTIC_TAGS.has(node.tag) ? (node.tag as "section" | "ul" | "ol") : "div";
+  // Container (div), Section (section), Unordered/Ordered List (ul/ol),
+  // and the semantic sectioning family (header/nav/main/article/aside/
+  // footer — Checkpoint 1.8) are all the tags registered to this
+  // component (see documentNodeComponents.ts) — every one of them shares
+  // the exact same structural-container style/behavior below (the same
+  // Block-display starter defaults; see createUnorderedListNode/
+  // createHeaderNode/etc.) and differs only in semantic DOM identity, so
+  // the real element tag is chosen from the document node rather than
+  // hardcoded, keeping generated markup a genuine <header>/<nav>/<main>/
+  // <article>/<aside>/<footer>/<ul>/<ol>/<section> instead of a <div>
+  // standing in for one.
+  const Tag = SEMANTIC_TAGS.has(node.tag) ? (node.tag as SemanticTag) : "div";
 
   return (
     <Tag
