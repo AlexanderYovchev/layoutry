@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ContainerElement } from "./ContainerElement";
 
@@ -156,5 +156,86 @@ describe("ContainerElement", () => {
     const sectionEl = sectionContainer.querySelector('[data-node-id="section-1"]') as HTMLElement;
     expect(sectionEl.style.backgroundColor).not.toBe("");
     expect(sectionEl.style.backgroundColor).toBe(divEl.style.backgroundColor);
+  });
+
+  it("renders a form-tagged node as a real <form>, not a div standing in for one (Checkpoint 1.10)", () => {
+    const { container } = render(
+      <ContainerElement node={{ id: "form-1", tag: "form", children: [] }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+
+    const element = container.querySelector('[data-node-id="form-1"]');
+    expect(element?.tagName).toBe("FORM");
+    expect(element).toHaveAttribute("data-node-type", "form");
+  });
+
+  it("prevents a real <form>'s native submission inside the editor (Checkpoint 1.10)", () => {
+    const { container } = render(
+      <ContainerElement node={{ id: "form-1", tag: "form", children: [] }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+
+    const form = container.querySelector('[data-node-id="form-1"]') as HTMLFormElement;
+    // fireEvent.submit returns false exactly when preventDefault() was
+    // called by a handler — the same signal a native dispatchEvent gives
+    // (mirrors LinkElement's own navigation-prevention test).
+    const notCancelled = fireEvent.submit(form);
+
+    expect(notCancelled).toBe(false);
+  });
+
+  it("does not attach a submit handler to non-form semantic tags", () => {
+    const { container } = render(
+      <ContainerElement node={{ id: "div-1", tag: "div", children: [] }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+
+    const div = container.querySelector('[data-node-id="div-1"]') as HTMLElement;
+    const notCancelled = fireEvent.submit(div);
+
+    expect(notCancelled).toBe(true);
+  });
+
+  it("renders a label-tagged node as a real <label>, not a div standing in for one (Checkpoint 1.11)", () => {
+    const { container } = render(
+      <ContainerElement node={{ id: "label-1", tag: "label", children: [] }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+
+    const element = container.querySelector('[data-node-id="label-1"]');
+    expect(element?.tagName).toBe("LABEL");
+    expect(element).toHaveAttribute("data-node-type", "label");
+  });
+
+  it("renders its children inside a real <label> — Label wrapping an ordinary child element", () => {
+    render(
+      <ContainerElement node={{ id: "label-1", tag: "label", children: [] }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block">
+        <input type="text" />
+      </ContainerElement>,
+    );
+
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+  });
+
+  it("prevents a real <label>'s native click-activation of a wrapped control (Checkpoint 1.11)", () => {
+    const { container } = render(
+      <ContainerElement node={{ id: "label-1", tag: "label", children: [] }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+
+    const label = container.querySelector('[data-node-id="label-1"]') as HTMLLabelElement;
+    // fireEvent.click returns false exactly when preventDefault() was
+    // called by a handler — the same signal used for Link's own
+    // navigation-prevention test and Form's own submission-prevention
+    // test above.
+    const notCancelled = fireEvent.click(label);
+
+    expect(notCancelled).toBe(false);
+  });
+
+  it("does not attach a click-activation guard to non-label semantic tags", () => {
+    const { container } = render(
+      <ContainerElement node={{ id: "form-1", tag: "form", children: [] }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+
+    const form = container.querySelector('[data-node-id="form-1"]') as HTMLElement;
+    const notCancelled = fireEvent.click(form);
+
+    expect(notCancelled).toBe(true);
   });
 });

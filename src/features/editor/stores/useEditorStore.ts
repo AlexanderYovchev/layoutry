@@ -7,10 +7,15 @@ import {
   setAspectRatioLocked as setAspectRatioLockedCommand,
   setElementDimensions as setElementDimensionsCommand,
   setElementHref as setElementHrefCommand,
+  setElementInputType as setElementInputTypeCommand,
+  setElementName as setElementNameCommand,
+  setElementPlaceholder as setElementPlaceholderCommand,
   setElementTag as setElementTagCommand,
   setElementText as setElementTextCommand,
+  setElementValue as setElementValueCommand,
   type InsertPosition,
 } from "@/features/editor/commands/documentCommands";
+import type { InputType } from "@/features/editor/types/input";
 import {
   applyFreeContainerChildGeometries,
   convertToFlowLayout,
@@ -183,6 +188,24 @@ interface EditorState {
    * the way Inspector text/href fields already do.
    */
   setElementTag: (nodeId: string, tag: string) => void;
+
+  /**
+   * One-shot authored/default form-value edit (Checkpoint 1.10 —
+   * useNativeInputEditing's commit boundary and the Form Control
+   * Inspector's Default Value field). Guards against a no-op value at
+   * the action level, the same stricter shape setElementTag already
+   * established (not the older setElementText/setElementHref
+   * convention) — this checkpoint's own history requirement ("unchanged
+   * commit should not create unnecessary history") is explicit, so it's
+   * enforced here directly.
+   */
+  setElementValue: (nodeId: string, value: string | undefined) => void;
+  /** One-shot `name` attribute edit (Checkpoint 1.10 — the Form Control Inspector's Name field). Same action-level no-op guard as setElementValue. */
+  setElementName: (nodeId: string, name: string | undefined) => void;
+  /** One-shot `placeholder` attribute edit (Checkpoint 1.10 — the Form Control Inspector's Placeholder field). Same action-level no-op guard as setElementValue. */
+  setElementPlaceholder: (nodeId: string, placeholder: string | undefined) => void;
+  /** One-shot Input Type edit (Checkpoint 1.11 — the Form Control Inspector's Type selector). Same action-level no-op guard as setElementValue/setElementTag. */
+  setElementInputType: (nodeId: string, inputType: InputType) => void;
 
   /**
    * Generic continuous-interaction transaction (Checkpoint 4.3.1) — the
@@ -516,6 +539,34 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setElementTag: (nodeId, tag) =>
     set((state) => {
       const document = setElementTagCommand(state.document, nodeId, tag);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setElementValue: (nodeId, value) =>
+    set((state) => {
+      const document = setElementValueCommand(state.document, nodeId, value);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setElementName: (nodeId, name) =>
+    set((state) => {
+      const document = setElementNameCommand(state.document, nodeId, name);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setElementPlaceholder: (nodeId, placeholder) =>
+    set((state) => {
+      const document = setElementPlaceholderCommand(state.document, nodeId, placeholder);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setElementInputType: (nodeId, inputType) =>
+    set((state) => {
+      const document = setElementInputTypeCommand(state.document, nodeId, inputType);
       if (document === state.document) return {};
       return { ...pushHistory(state), document };
     }),

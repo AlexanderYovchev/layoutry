@@ -6,10 +6,11 @@
  * canParentAcceptChild below for the one place that's no longer quite
  * true). Reused by click-insert, drag-insert, Canvas drop-target
  * highlighting, and elementCapabilities.ts so the rule is never
- * duplicated. Includes tags with no catalog factory yet (form, semantic
- * sectioning elements, table) so containment — and, via
- * elementCapabilities, resizing — is already correct the moment a factory
- * for one of them is added, with no change required here.
+ * duplicated. Still includes "table" (no catalog factory yet) so
+ * containment — and, via elementCapabilities, resizing — is already
+ * correct the moment a factory for it is added, with no change required
+ * here; "form" and the semantic sectioning elements were the same kind of
+ * forward declaration until Checkpoints 1.8/1.10 gave them real factories.
  *
  * "li" is deliberately NOT here (Checkpoint 1.6) — early groundwork
  * speculatively included it as a general-purpose container, but List
@@ -28,6 +29,7 @@ const CONTAINER_TAGS: ReadonlySet<string> = new Set([
   "div",
   "section",
   "form",
+  "label",
   "ul",
   "ol",
   "header",

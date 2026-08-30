@@ -603,3 +603,70 @@ describe("InspectorNodeSummary — Display & Visibility section (Checkpoint 4.8)
     expect(screen.queryByText("Display & Visibility")).not.toBeInTheDocument();
   });
 });
+
+describe("InspectorNodeSummary — Form Control section (Checkpoint 1.10)", () => {
+  it("shows the Form Control section for an Input", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "input-1", tag: "input", inputType: "text" }}
+        parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Form Control")).toBeInTheDocument();
+  });
+
+  it("omits the Form Control section for unrelated elements (a container, a heading, a button, a form, a label)", () => {
+    for (const node of [
+      { id: "div-1", tag: "div" },
+      { id: "heading-1", tag: "h1" },
+      { id: "button-1", tag: "button" },
+      { id: "form-1", tag: "form" },
+      { id: "label-1", tag: "label" },
+    ]) {
+      const { unmount } = render(
+        <InspectorNodeSummary node={node} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+      );
+      expect(screen.queryByText("Form Control")).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("does not render the Form Control section ambiguously against Typography — both appear, distinct sections", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "input-1", tag: "input", inputType: "text" }}
+        parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Form Control")).toBeInTheDocument();
+    expect(screen.getByText("Typography")).toBeInTheDocument();
+  });
+});
+
+describe("InspectorNodeSummary — Label (Checkpoint 1.11)", () => {
+  it("shows the Layout section for Label — it's a real container, no Label-specific CSS controls", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "label-1", tag: "label" }}
+        parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Layout")).toBeInTheDocument();
+    expect(screen.getByText("Background")).toBeInTheDocument();
+  });
+
+  it("omits the Heading Level and Form Control sections for Label", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "label-1", tag: "label" }}
+        parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.queryByText("Heading Level")).not.toBeInTheDocument();
+    expect(screen.queryByText("Form Control")).not.toBeInTheDocument();
+  });
+});

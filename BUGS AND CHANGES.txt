@@ -1,0 +1,14 @@
+Lists should have a field in the css inspection menu where the user can pick the count of the list entries instead of selecting them from the Menu one by one.
+
+Instead of showing all adjustable percantage numbers 0% by default should be 100% at the css inspection tab.
+
+
+
+
+
+FUNCTIONALITY CHANGES:
+The user should be able to make multiple pages that are connected via button redirection by his choice. The website should provide a guidance and availability for this to happen. My idea is to have additional tab
+from the aside menu where the user can easily connect 1 page ref to other through a button or other interactive element he picked. There should also be a nav bar at the bottom for the pages to be easily accessed.
+
+
+Making the Containers different shapes not only default rectangular ones.

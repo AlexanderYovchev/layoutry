@@ -16,6 +16,7 @@ import type { DisplaySettings } from "@/features/editor/types/display";
 import type { PositionSettings } from "@/features/editor/types/position";
 import type { AspectRatioValue } from "@/features/editor/types/aspectRatio";
 import type { SizeConstraints } from "@/features/editor/types/sizeConstraints";
+import type { InputType } from "@/features/editor/types/input";
 
 export interface ElementDimensions {
   /**
@@ -165,4 +166,49 @@ export interface EditorElementNode {
    * full distinction.
    */
   sizeConstraints?: SizeConstraints;
+  /**
+   * This node's own native form-control type (Checkpoint 1.10) — only
+   * meaningful for `tag: "input"`. Deliberately a separate field from
+   * `tag` itself: the node stays a genuine `input` element regardless of
+   * variant, exactly the way Heading Level (Checkpoint 1.7) keeps `tag`
+   * as the single source of truth for h1–h6 rather than introducing a
+   * parallel field — inputType is the input-specific analogue, not a
+   * second copy of that same idea. Unset defaults to "text" (see
+   * getInputType in types/input.ts) rather than requiring every factory
+   * caller to stamp it explicitly. Only "text" is reachable through the
+   * UI this checkpoint — the type is a real union (not a bare string) so
+   * later checkpoints extend the allowed set without touching this
+   * field's shape.
+   */
+  inputType?: InputType;
+  /**
+   * This node's own `name` attribute (Checkpoint 1.10) — only meaningful
+   * for a form-control-capable tag (see
+   * getElementCapabilities().supportsFormControl). Same dedicated,
+   * single-field-per-concern shape `href`/`src` already established;
+   * deliberately not a generic attribute bag — see this checkpoint's own
+   * report for why. Unset renders no `name` attribute at all.
+   */
+  name?: string;
+  /**
+   * This node's own `placeholder` attribute (Checkpoint 1.10) — only
+   * meaningful for a form-control-capable tag. Unset renders no
+   * `placeholder` attribute.
+   */
+  placeholder?: string;
+  /**
+   * This node's own AUTHORED/DEFAULT value (Checkpoint 1.10) — only
+   * meaningful for a form-control-capable tag. Deliberately NOT live,
+   * continuously-synchronized runtime state: Layoutry is a visual page
+   * editor, not a running application, so this field represents the
+   * initial value a real `<input>` would carry (rendered via
+   * `defaultValue`, an uncontrolled DOM prop — see InputElement's own
+   * doc comment), never the transient text a user is mid-typing on the
+   * Canvas. Committed only at a deliberate edit-session boundary (blur/
+   * Enter) via setElementValue — see useNativeInputEditing. Unset
+   * renders no `value` attribute (an empty, unfilled field), the same
+   * "store unconditionally, no synthesized default" convention `href`
+   * already uses via getLinkHref.
+   */
+  value?: string;
 }

@@ -24,6 +24,10 @@ describe("canContainChildren", () => {
   it("rejects li — a text-bearing leaf, not a container (Checkpoint 1.6)", () => {
     expect(canContainChildren("li")).toBe(false);
   });
+
+  it("rejects input — a leaf, not a container (Checkpoint 1.10)", () => {
+    expect(canContainChildren("input")).toBe(false);
+  });
 });
 
 describe("canParentAcceptChild (Checkpoint 1.6)", () => {
@@ -66,5 +70,57 @@ describe("canParentAcceptChild (Checkpoint 1.6)", () => {
   it("lets a whole ul/ol be nested into an ordinary container", () => {
     expect(canParentAcceptChild("div", "ul")).toBe(true);
     expect(canParentAcceptChild("section", "ol")).toBe(true);
+  });
+});
+
+describe("Form + Input containment (Checkpoint 1.10)", () => {
+  it("lets Form accept Input, exactly like any other unrestricted container", () => {
+    expect(canParentAcceptChild("form", "input")).toBe(true);
+  });
+
+  it("lets every existing structural container accept Input — no Form-only restriction is introduced", () => {
+    for (const parentTag of ["div", "section", "header", "nav", "main", "article", "aside", "footer"]) {
+      expect(canParentAcceptChild(parentTag, "input")).toBe(true);
+    }
+  });
+
+  it("still rejects Input inside a List — Checkpoint 1.6's ul/ol allowlist remains intact and unweakened", () => {
+    expect(canParentAcceptChild("ul", "input")).toBe(false);
+    expect(canParentAcceptChild("ol", "input")).toBe(false);
+  });
+
+  it("rejects Input as a parent regardless of child tag — Input is a leaf", () => {
+    expect(canParentAcceptChild("input", "div")).toBe(false);
+    expect(canParentAcceptChild("input", "li")).toBe(false);
+  });
+});
+
+describe("Label containment (Checkpoint 1.11)", () => {
+  it("is a real container — accepts children", () => {
+    expect(canContainChildren("label")).toBe(true);
+  });
+
+  it("accepts Input, matching the wrapping association model", () => {
+    expect(canParentAcceptChild("label", "input")).toBe(true);
+  });
+
+  it("accepts other ordinary leaf/container content, following the same broad philosophy every other structural primitive uses", () => {
+    expect(canParentAcceptChild("label", "img")).toBe(true);
+    expect(canParentAcceptChild("label", "div")).toBe(true);
+    expect(canParentAcceptChild("label", "p")).toBe(true);
+  });
+
+  it("Form accepts Label, and Container accepts Label — no Form-only restriction", () => {
+    expect(canParentAcceptChild("form", "label")).toBe(true);
+    expect(canParentAcceptChild("div", "label")).toBe(true);
+  });
+
+  it("is rejected directly inside UL/OL — Checkpoint 1.6's li-only allowlist remains unweakened", () => {
+    expect(canParentAcceptChild("ul", "label")).toBe(false);
+    expect(canParentAcceptChild("ol", "label")).toBe(false);
+  });
+
+  it("still rejects li — Label's own child policy doesn't touch the ul/ol allowlist", () => {
+    expect(canParentAcceptChild("label", "li")).toBe(false);
   });
 });

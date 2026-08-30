@@ -21,7 +21,16 @@ export type InsertableCardType =
   | "main"
   | "article"
   | "aside"
-  | "footer";
+  | "footer"
+  | "form"
+  | "input"
+  | "emailInput"
+  | "passwordInput"
+  | "numberInput"
+  | "searchInput"
+  | "urlInput"
+  | "telInput"
+  | "label";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -117,7 +126,51 @@ function htmlCategory(): ToolbarCategoryContent {
         },
       ]),
       section(id, "forms", "Forms", [
-        { name: "Input", description: "Single-line text field" },
+        {
+          name: "Form",
+          description: "Form container",
+          elementType: "form",
+        },
+        {
+          name: "Label",
+          description: "Wraps and labels a control",
+          elementType: "label",
+        },
+        {
+          name: "Text Input",
+          description: "Single-line text field",
+          elementType: "input",
+        },
+        {
+          name: "Email Input",
+          description: "Email address field",
+          elementType: "emailInput",
+        },
+        {
+          name: "Password Input",
+          description: "Masked password field",
+          elementType: "passwordInput",
+        },
+        {
+          name: "Number Input",
+          description: "Numeric field",
+          elementType: "numberInput",
+        },
+        {
+          name: "Search Input",
+          description: "Search query field",
+          elementType: "searchInput",
+        },
+        {
+          name: "URL Input",
+          description: "Web address field",
+          elementType: "urlInput",
+        },
+        {
+          name: "Tel Input",
+          description: "Phone number field",
+          elementType: "telInput",
+        },
         {
           name: "Button",
           description: "Interactive button",

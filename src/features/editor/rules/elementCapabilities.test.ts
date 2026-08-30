@@ -26,7 +26,7 @@ describe("elementCapabilities", () => {
   });
 
   it("makes every other known tag selectable and resizable by default — no hardcoded 3-tag allowlist", () => {
-    for (const tag of ["div", "section", "h1", "h2", "p", "button", "img", "form", "table"]) {
+    for (const tag of ["div", "section", "h1", "h2", "p", "button", "img", "form", "table", "input"]) {
       const caps = getElementCapabilities(tag);
       expect(caps.selectable, tag).toBe(true);
       expect(caps.resizableX, tag).toBe(true);
@@ -97,7 +97,7 @@ describe("elementCapabilities", () => {
   });
 
   it("flags nearly every tag as supporting a border, including media tags; only page/body opt out", () => {
-    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table"]) {
+    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table", "input"]) {
       expect(getElementCapabilities(tag).supportsBorder, tag).toBe(true);
     }
     expect(getElementCapabilities("page").supportsBorder).toBe(false);
@@ -105,7 +105,7 @@ describe("elementCapabilities", () => {
   });
 
   it("flags nearly every tag as supporting border radius, including media tags; only page/body opt out", () => {
-    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table"]) {
+    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table", "input"]) {
       expect(getElementCapabilities(tag).supportsBorderRadius, tag).toBe(true);
     }
     expect(getElementCapabilities("page").supportsBorderRadius).toBe(false);
@@ -113,7 +113,7 @@ describe("elementCapabilities", () => {
   });
 
   it("flags nearly every tag as supporting box shadow, including media tags; only page/body opt out", () => {
-    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table"]) {
+    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table", "input"]) {
       expect(getElementCapabilities(tag).supportsBoxShadow, tag).toBe(true);
     }
     expect(getElementCapabilities("page").supportsBoxShadow).toBe(false);
@@ -121,7 +121,7 @@ describe("elementCapabilities", () => {
   });
 
   it("flags nearly every tag as supporting filters, including media tags; only page/body opt out", () => {
-    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table"]) {
+    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table", "input"]) {
       expect(getElementCapabilities(tag).supportsFilters, tag).toBe(true);
     }
     expect(getElementCapabilities("page").supportsFilters).toBe(false);
@@ -129,7 +129,7 @@ describe("elementCapabilities", () => {
   });
 
   it("flags nearly every tag as supporting display/visibility/overflow/interaction controls; only page/body opt out", () => {
-    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table"]) {
+    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table", "input"]) {
       expect(getElementCapabilities(tag).supportsDisplay, tag).toBe(true);
     }
     expect(getElementCapabilities("page").supportsDisplay).toBe(false);
@@ -137,7 +137,7 @@ describe("elementCapabilities", () => {
   });
 
   it("flags nearly every tag as supporting the Position control; only page/body opt out", () => {
-    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table"]) {
+    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table", "input"]) {
       expect(getElementCapabilities(tag).supportsPosition, tag).toBe(true);
     }
     expect(getElementCapabilities("page").supportsPosition).toBe(false);
@@ -145,7 +145,7 @@ describe("elementCapabilities", () => {
   });
 
   it("flags nearly every tag as supporting the Aspect Ratio control; only page/body opt out", () => {
-    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table"]) {
+    for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table", "input"]) {
       expect(getElementCapabilities(tag).supportsAspectRatio, tag).toBe(true);
     }
     expect(getElementCapabilities("page").supportsAspectRatio).toBe(false);
@@ -199,6 +199,51 @@ describe("elementCapabilities", () => {
       // no CAPABILITY_OVERRIDES entry was needed for any of these six.
       expect(caps).toEqual(div);
     }
+  });
+
+  it("Input is a leaf that gets Typography/Background via an explicit override, not TEXT_BEARING_TAGS/canContainChildren (Checkpoint 1.10)", () => {
+    const caps = getElementCapabilities("input");
+
+    expect(caps.canContainChildren).toBe(false);
+    expect(caps.supportsTypography).toBe(true);
+    expect(caps.supportsBackground).toBe(true);
+    expect(caps.supportsFormControl).toBe(true);
+  });
+
+  it("flags only Input as supporting the Form Control section (Checkpoint 1.10); other tags don't", () => {
+    expect(getElementCapabilities("input").supportsFormControl).toBe(true);
+    for (const tag of ["h1", "p", "button", "a", "li", "div", "img", "form", "section"]) {
+      expect(getElementCapabilities(tag).supportsFormControl, tag).toBe(false);
+    }
+  });
+
+  it("gives Input every other default structural capability (border/border radius/box shadow/filters/display/position/aspect ratio), same as any ordinary visual tag", () => {
+    const caps = getElementCapabilities("input");
+    expect(caps.supportsBorder).toBe(true);
+    expect(caps.supportsBorderRadius).toBe(true);
+    expect(caps.supportsBoxShadow).toBe(true);
+    expect(caps.supportsFilters).toBe(true);
+    expect(caps.supportsDisplay).toBe(true);
+    expect(caps.supportsPosition).toBe(true);
+    expect(caps.supportsAspectRatio).toBe(true);
+    expect(caps.supportsHref).toBe(false);
+    expect(caps.supportsHeadingLevel).toBe(false);
+    expect(caps.supportsIntrinsicAspectRatio).toBe(false);
+    expect(caps.supportsMediaFit).toBe(false);
+  });
+
+  it("gives Label (Checkpoint 1.11) the same structural capabilities as div/section — a real container, no CAPABILITY_OVERRIDES entry needed", () => {
+    const label = getElementCapabilities("label");
+    const div = getElementCapabilities("div");
+
+    expect(label.canContainChildren).toBe(true);
+    expect(label.supportsTypography).toBe(false);
+    expect(label.supportsFormControl).toBe(false);
+    expect(label).toEqual(div);
+  });
+
+  it("Input's capabilities key off tag alone, never inputType — the function has no node to read inputType from in the first place, so every variant (email/password/number/search/url/tel) is architecturally guaranteed to share Input's one capability set", () => {
+    expect(getElementCapabilities("input").supportsFormControl).toBe(true);
   });
 
   it("gives an entirely unknown tag the same sensible defaults as any other element", () => {

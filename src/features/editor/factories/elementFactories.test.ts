@@ -5,18 +5,27 @@ import {
   createButtonNode,
   createContainerNode,
   createElementNode,
+  createEmailInputNode,
   createFooterNode,
+  createFormNode,
   createHeaderNode,
   createHeadingNode,
   createImageNode,
+  createInputNode,
+  createLabelNode,
   createLinkNode,
   createListItemNode,
   createMainNode,
   createNavNode,
+  createNumberInputNode,
   createOrderedListNode,
   createParagraphNode,
+  createPasswordInputNode,
+  createSearchInputNode,
   createSectionNode,
+  createTelInputNode,
   createUnorderedListNode,
+  createUrlInputNode,
   isInsertableElementType,
 } from "./elementFactories";
 
@@ -178,6 +187,97 @@ describe("element factories", () => {
     });
   });
 
+  describe("Form + Text Input foundation (Checkpoint 1.10)", () => {
+    it("createFormNode produces an empty, childable <form> sharing Container's exact structural defaults", () => {
+      const node = createFormNode();
+      const container = createContainerNode();
+
+      expect(node.tag).toBe("form");
+      expect(node.children).toEqual([]);
+      expect(node.id).toMatch(/^form-/);
+      expect(node.flowLayout).toEqual(container.flowLayout);
+      expect(node.spacing).toEqual(container.spacing);
+    });
+
+    it("createFormNode produces a unique id per call", () => {
+      expect(createFormNode().id).not.toBe(createFormNode().id);
+    });
+
+    it("createInputNode produces a real, leaf <input> with a text type and a placeholder, but no children and no authored value", () => {
+      const node = createInputNode();
+
+      expect(node.tag).toBe("input");
+      expect(node.inputType).toBe("text");
+      expect(node.placeholder).toBe("Enter text");
+      expect(node.value).toBeUndefined();
+      expect(node.children).toBeUndefined();
+      expect(node.id).toMatch(/^input-/);
+    });
+
+    it("createInputNode leaves flowLayout/spacing unset, matching every other leaf primitive", () => {
+      expect(createInputNode().flowLayout).toBeUndefined();
+      expect(createInputNode().spacing).toBeUndefined();
+    });
+
+    it("createInputNode produces a unique id per call", () => {
+      expect(createInputNode().id).not.toBe(createInputNode().id);
+    });
+  });
+
+  describe("Label + expanded text-like Input types (Checkpoint 1.11)", () => {
+    const textLikeFactories = {
+      email: createEmailInputNode,
+      password: createPasswordInputNode,
+      number: createNumberInputNode,
+      search: createSearchInputNode,
+      url: createUrlInputNode,
+      tel: createTelInputNode,
+    } as const;
+
+    for (const [inputType, factory] of Object.entries(textLikeFactories)) {
+      it(`create${inputType[0].toUpperCase()}${inputType.slice(1)}InputNode produces a real, leaf <input> with inputType "${inputType}", a sensible placeholder, but no children and no authored value`, () => {
+        const node = factory();
+
+        expect(node.tag).toBe("input");
+        expect(node.inputType, inputType).toBe(inputType);
+        expect(typeof node.placeholder, inputType).toBe("string");
+        expect((node.placeholder ?? "").length, inputType).toBeGreaterThan(0);
+        expect(node.value, inputType).toBeUndefined();
+        expect(node.children, inputType).toBeUndefined();
+        expect(node.id, inputType).toMatch(/^input-/);
+      });
+    }
+
+    it("every text-like Input factory produces a unique id per call", () => {
+      expect(createEmailInputNode().id).not.toBe(createEmailInputNode().id);
+    });
+
+    it("all seven Input variants share the exact same tag and node shape — differing only in inputType/placeholder", () => {
+      const variants = [createInputNode(), ...Object.values(textLikeFactories).map((f) => f())];
+      for (const node of variants) {
+        expect(node.tag).toBe("input");
+        expect(node.children).toBeUndefined();
+        expect(node.flowLayout).toBeUndefined();
+        expect(node.spacing).toBeUndefined();
+      }
+    });
+
+    it("createLabelNode produces an empty, childable <label> sharing Container's exact structural defaults", () => {
+      const node = createLabelNode();
+      const container = createContainerNode();
+
+      expect(node.tag).toBe("label");
+      expect(node.children).toEqual([]);
+      expect(node.id).toMatch(/^label-/);
+      expect(node.flowLayout).toEqual(container.flowLayout);
+      expect(node.spacing).toEqual(container.spacing);
+    });
+
+    it("createLabelNode produces a unique id per call", () => {
+      expect(createLabelNode().id).not.toBe(createLabelNode().id);
+    });
+  });
+
   describe("createElementNode", () => {
     it("dispatches to the matching factory for every insertable type", () => {
       expect(createElementNode("container").tag).toBe("div");
@@ -196,6 +296,15 @@ describe("element factories", () => {
       expect(createElementNode("article").tag).toBe("article");
       expect(createElementNode("aside").tag).toBe("aside");
       expect(createElementNode("footer").tag).toBe("footer");
+      expect(createElementNode("form").tag).toBe("form");
+      expect(createElementNode("input").tag).toBe("input");
+      expect(createElementNode("emailInput").inputType).toBe("email");
+      expect(createElementNode("passwordInput").inputType).toBe("password");
+      expect(createElementNode("numberInput").inputType).toBe("number");
+      expect(createElementNode("searchInput").inputType).toBe("search");
+      expect(createElementNode("urlInput").inputType).toBe("url");
+      expect(createElementNode("telInput").inputType).toBe("tel");
+      expect(createElementNode("label").tag).toBe("label");
     });
   });
 
@@ -218,6 +327,15 @@ describe("element factories", () => {
         "article",
         "aside",
         "footer",
+        "form",
+        "input",
+        "emailInput",
+        "passwordInput",
+        "numberInput",
+        "searchInput",
+        "urlInput",
+        "telInput",
+        "label",
       ]) {
         expect(isInsertableElementType(type)).toBe(true);
       }

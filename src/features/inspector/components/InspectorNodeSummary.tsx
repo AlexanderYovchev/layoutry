@@ -7,6 +7,7 @@ import { InspectorFiltersSection } from "@/features/inspector/components/Inspect
 import { InspectorElementSummary } from "@/features/inspector/components/InspectorElementSummary";
 import { InspectorFieldRow } from "@/features/inspector/components/InspectorFieldRow";
 import { InspectorFlexChildSection } from "@/features/inspector/components/InspectorFlexChildSection";
+import { InspectorFormControlSection } from "@/features/inspector/components/InspectorFormControlSection";
 import { InspectorFreeGeometryFields } from "@/features/inspector/components/InspectorFreeGeometryFields";
 import { InspectorGridChildSection } from "@/features/inspector/components/InspectorGridChildSection";
 import { InspectorHeadingLevelSection } from "@/features/inspector/components/InspectorHeadingLevelSection";
@@ -83,6 +84,7 @@ export function InspectorNodeSummary({
       {getElementCapabilities(node.tag).supportsMediaFit && <InspectorMediaSection node={node} />}
       {getElementCapabilities(node.tag).supportsHref && <InspectorLinkSection node={node} />}
       {getElementCapabilities(node.tag).supportsHeadingLevel && <InspectorHeadingLevelSection node={node} />}
+      {getElementCapabilities(node.tag).supportsFormControl && <InspectorFormControlSection node={node} />}
       {getElementCapabilities(node.tag).supportsTypography && <InspectorTypographySection node={node} />}
       {getElementCapabilities(node.tag).supportsBackground && <InspectorBackgroundSection node={node} />}
       {getElementCapabilities(node.tag).supportsBorder && <InspectorBorderSection node={node} />}

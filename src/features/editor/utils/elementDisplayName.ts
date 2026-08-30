@@ -1,4 +1,24 @@
+import { getInputType, type InputType } from "@/features/editor/types/input";
 import type { EditorElementNode } from "@/features/editor/types/document";
+
+/**
+ * Subtype-aware Structure names for Input (Checkpoint 1.11) — now that
+ * `inputType` actually varies, a bare tag-only lookup ("Input" for
+ * every variant) stopped being the most useful label the Structure
+ * panel could show. Kept separate from TAG_DISPLAY_NAMES rather than
+ * folded into it: this one needs the whole node (to read inputType),
+ * not just the tag, the same "node, not tag, if it's cheap" reasoning
+ * getElementDisplayName's own signature already allowed for.
+ */
+const INPUT_TYPE_DISPLAY_NAMES: Record<InputType, string> = {
+  text: "Text Input",
+  email: "Email Input",
+  password: "Password Input",
+  number: "Number Input",
+  search: "Search Input",
+  url: "URL Input",
+  tel: "Tel Input",
+};
 
 const TAG_DISPLAY_NAMES: Record<string, string> = {
   page: "Page",
@@ -25,16 +45,23 @@ const TAG_DISPLAY_NAMES: Record<string, string> = {
   aside: "Aside",
   footer: "Footer",
   form: "Form",
+  input: "Input",
+  label: "Label",
 };
 
 /**
  * The single friendly-name source for the document tree. A node's own
- * displayName (e.g. a component's assigned label) always wins; otherwise
- * this falls back to the tag mapping, then the raw tag itself for
+ * displayName (e.g. a component's assigned label) always wins; Input is
+ * resolved through its own inputType-aware table (see
+ * INPUT_TYPE_DISPLAY_NAMES above — "Email Input"/"Password Input"/etc.,
+ * not a single generic "Input" regardless of variant); everything else
+ * falls back to the plain tag mapping, then the raw tag itself for
  * anything unrecognized.
  */
 export function getElementDisplayName(node: EditorElementNode): string {
-  return node.displayName ?? TAG_DISPLAY_NAMES[node.tag] ?? node.tag;
+  if (node.displayName) return node.displayName;
+  if (node.tag === "input") return INPUT_TYPE_DISPLAY_NAMES[getInputType(node)];
+  return TAG_DISPLAY_NAMES[node.tag] ?? node.tag;
 }
 
 /**

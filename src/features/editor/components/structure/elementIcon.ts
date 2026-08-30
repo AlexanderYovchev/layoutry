@@ -17,6 +17,8 @@ import {
   PanelRight,
   PanelTop,
   Rows3,
+  Tag,
+  TextCursorInput,
   Type,
   type LucideIcon,
 } from "lucide-react";
@@ -49,4 +51,6 @@ export const TAG_ICONS: Record<string, LucideIcon> = {
   aside: PanelRight,
   footer: PanelBottom,
   form: ClipboardList,
+  input: TextCursorInput,
+  label: Tag,
 };

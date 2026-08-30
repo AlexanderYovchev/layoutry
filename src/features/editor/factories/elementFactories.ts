@@ -32,7 +32,16 @@ export type InsertableElementType =
   | "main"
   | "article"
   | "aside"
-  | "footer";
+  | "footer"
+  | "form"
+  | "input"
+  | "emailInput"
+  | "passwordInput"
+  | "numberInput"
+  | "searchInput"
+  | "urlInput"
+  | "telInput"
+  | "label";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -193,6 +202,94 @@ export function createFooterNode(): EditorElementNode {
 }
 
 /**
+ * Form (Checkpoint 1.10) shares Container/Section/the semantic sectioning
+ * family's exact structural defaults — same editor-usability philosophy,
+ * only the semantic tag differs (see ContainerElement, which all of them
+ * render through). A newly inserted Form is an empty structural
+ * primitive; it never auto-creates an Input child.
+ */
+export function createFormNode(): EditorElementNode {
+  return {
+    id: generateNodeId("form"),
+    tag: "form",
+    children: [],
+    flowLayout: { display: "block" },
+    spacing: DEFAULT_CONTAINER_SPACING,
+  };
+}
+
+/**
+ * Every text-like Input variant (Checkpoint 1.10's Text, widened to the
+ * full text-like family in Checkpoint 1.11: Email/Password/Number/
+ * Search/URL/Tel) is the exact same `tag: "input"` leaf, differing only
+ * in `inputType` and its own sensible starter placeholder — never a
+ * second tag or a dedicated node concept per variant (see
+ * types/input.ts's own top comment). `value` is deliberately left unset
+ * rather than pre-populated: it represents an authored default a real
+ * form would submit, and a freshly inserted control has no meaningful
+ * default yet — `placeholder` alone (inert, native, immediately visible
+ * on the Canvas) is what makes an empty Input legible without inventing
+ * fake authored data. No opinionated visual styling, matching every
+ * other primitive factory in this file.
+ */
+function createInputNodeWithType(inputType: EditorElementNode["inputType"], placeholder: string): EditorElementNode {
+  return {
+    id: generateNodeId("input"),
+    tag: "input",
+    inputType,
+    placeholder,
+  };
+}
+
+export function createInputNode(): EditorElementNode {
+  return createInputNodeWithType("text", "Enter text");
+}
+
+export function createEmailInputNode(): EditorElementNode {
+  return createInputNodeWithType("email", "Enter email");
+}
+
+export function createPasswordInputNode(): EditorElementNode {
+  return createInputNodeWithType("password", "Enter password");
+}
+
+export function createNumberInputNode(): EditorElementNode {
+  return createInputNodeWithType("number", "Enter number");
+}
+
+export function createSearchInputNode(): EditorElementNode {
+  return createInputNodeWithType("search", "Search…");
+}
+
+export function createUrlInputNode(): EditorElementNode {
+  return createInputNodeWithType("url", "https://example.com");
+}
+
+export function createTelInputNode(): EditorElementNode {
+  return createInputNodeWithType("tel", "Enter phone number");
+}
+
+/**
+ * Label (Checkpoint 1.11) — a childable semantic container sharing
+ * Container/Section/Form's exact structural defaults, exactly like the
+ * Checkpoint 1.8 semantic sectioning family. Phase one is deliberately
+ * childable-only, never text-editable (see types/document.ts's own
+ * label-related doc comments and this checkpoint's report): wrapping an
+ * Input is the only supported association model for now — no `for`/`id`
+ * yet. A newly inserted Label is empty; it never auto-creates an Input
+ * child, matching Form's own "empty structural primitive" precedent.
+ */
+export function createLabelNode(): EditorElementNode {
+  return {
+    id: generateNodeId("label"),
+    tag: "label",
+    children: [],
+    flowLayout: { display: "block" },
+    spacing: DEFAULT_CONTAINER_SPACING,
+  };
+}
+
+/**
  * A generic placeholder photo, not a real asset — this app has no image
  * upload/picker yet (out of scope for Checkpoint 3.5.1). An inline SVG
  * with explicit width/height gives the <img> a real, non-square intrinsic
@@ -230,6 +327,15 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   article: createArticleNode,
   aside: createAsideNode,
   footer: createFooterNode,
+  form: createFormNode,
+  input: createInputNode,
+  emailInput: createEmailInputNode,
+  passwordInput: createPasswordInputNode,
+  numberInput: createNumberInputNode,
+  searchInput: createSearchInputNode,
+  urlInput: createUrlInputNode,
+  telInput: createTelInputNode,
+  label: createLabelNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -266,6 +372,15 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   article: { width: 200, height: 150 },
   aside: { width: 200, height: 150 },
   footer: { width: 200, height: 150 },
+  form: { width: 200, height: 150 },
+  input: { width: 200, height: 40 },
+  emailInput: { width: 200, height: 40 },
+  passwordInput: { width: 200, height: 40 },
+  numberInput: { width: 200, height: 40 },
+  searchInput: { width: 200, height: 40 },
+  urlInput: { width: 200, height: 40 },
+  telInput: { width: 200, height: 40 },
+  label: { width: 220, height: 60 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };
@@ -288,6 +403,9 @@ const INSERTABLE_TYPE_BY_TAG: Record<string, InsertableElementType> = {
   article: "article",
   aside: "aside",
   footer: "footer",
+  form: "form",
+  input: "input",
+  label: "label",
 };
 
 /** Falls back to a generic size for a tag with no InsertableElementType entry (e.g. a pasted/duplicated node whose tag isn't one of the five catalog types). */

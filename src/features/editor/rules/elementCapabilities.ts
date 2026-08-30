@@ -73,6 +73,8 @@ export interface ElementCapabilities {
   supportsHref: boolean;
   /** Whether this tag has a semantic Heading level worth exposing in the Inspector (Checkpoint 1.7 — see InspectorHeadingLevelSection and types/heading.ts). True only for h1–h6; deliberately a separate flag from supportsTypography, which every text-bearing tag (including button/a, neither of which has a "level") already gets. */
   supportsHeadingLevel: boolean;
+  /** Whether this tag has form-control semantics (Name/Placeholder/Default Value) worth exposing in the Inspector (Checkpoint 1.10 — see InspectorFormControlSection). True only for `input`; the same "own capability flag per semantic Inspector section" precedent supportsHref/supportsHeadingLevel already established, rather than an inline tag comparison in InspectorNodeSummary. */
+  supportsFormControl: boolean;
 }
 
 /**
@@ -107,6 +109,7 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
   supportsAspectRatio: true,
   supportsHref: false,
   supportsHeadingLevel: false,
+  supportsFormControl: false,
 };
 
 /**
@@ -136,6 +139,19 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
   iframe: { supportsIntrinsicAspectRatio: true, supportsMediaFit: true },
 
   a: { supportsHref: true },
+
+  /**
+   * Input (Checkpoint 1.10) is neither a container nor in
+   * TEXT_BEARING_TAGS (its visible text comes from node.value/
+   * node.placeholder, not node.text — see types/input.ts), so it needs
+   * an explicit override rather than qualifying for supportsTypography/
+   * supportsBackground through either generic rule. Everything else it
+   * needs (border/border radius/box shadow/filters/display/position/
+   * aspect-ratio-and-sizing) is already true via DEFAULT_CAPABILITIES,
+   * the same "applies to a box regardless of what's inside it" reasoning
+   * every other visual tag already gets.
+   */
+  input: { supportsTypography: true, supportsBackground: true, supportsFormControl: true },
 };
 
 export function getElementCapabilities(tag: string): ElementCapabilities {

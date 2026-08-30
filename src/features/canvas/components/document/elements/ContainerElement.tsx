@@ -18,9 +18,45 @@ import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSize
 import { cn, mergeRefs } from "@/lib/utils";
 import { getLayoutMode } from "@/features/editor/types/layout";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
+import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
 
-const SEMANTIC_TAGS = new Set(["section", "ul", "ol", "header", "nav", "main", "article", "aside", "footer"]);
-type SemanticTag = "section" | "ul" | "ol" | "header" | "nav" | "main" | "article" | "aside" | "footer";
+const SEMANTIC_TAGS = new Set(["section", "ul", "ol", "header", "nav", "main", "article", "aside", "footer", "form", "label"]);
+type SemanticTag = "section" | "ul" | "ol" | "header" | "nav" | "main" | "article" | "aside" | "footer" | "form" | "label";
+
+/**
+ * A real `<form>` submits (navigating/reloading the page) on Enter-in-a-
+ * text-field or a submit button click — never appropriate while designing
+ * a page (Checkpoint 1.10). The same preventDefault-only fix
+ * LinkElement's preventEditorNavigation already uses for anchor
+ * navigation: it stops the browser's default submission behavior without
+ * touching event propagation (so the click/submit still bubbles normally)
+ * and without faking the markup — the rendered element stays a genuine
+ * `<form>`. Form's own `action`/`method` are out of this checkpoint's
+ * scope (see this checkpoint's report), so there is nothing else for a
+ * real submission to do here even if it weren't prevented.
+ */
+function preventEditorFormSubmission(event: FormEvent) {
+  event.preventDefault();
+}
+
+/**
+ * A real `<label>` wrapping a labelable control (e.g. an Input) has a
+ * browser-native "activation behavior": clicking anywhere in the label
+ * redirects focus/activation to that descendant control (Checkpoint
+ * 1.11). Inside the editor this would fight ordinary Canvas selection —
+ * clicking a Label to select it must not also silently focus its child
+ * Input, which would both look like unintended activation AND hand the
+ * child real DOM focus outside a deliberate useNativeInputEditing
+ * session (the same isEditableTarget/keyboard-shortcut hazard Checkpoint
+ * 1.10 already had to design around for a plain click on Input itself).
+ * preventDefault() on the label's own click is the standard, minimal way
+ * to suppress just that native redirect — MDN documents this explicitly
+ * — without touching propagation (selection still bubbles normally) or
+ * faking the markup.
+ */
+function preventEditorLabelActivation(event: ReactMouseEvent) {
+  event.preventDefault();
+}
 
 export function ContainerElement({
   node,
@@ -80,22 +116,26 @@ export function ContainerElement({
   // tuning a separate indent.
 
   // Container (div), Section (section), Unordered/Ordered List (ul/ol),
-  // and the semantic sectioning family (header/nav/main/article/aside/
-  // footer — Checkpoint 1.8) are all the tags registered to this
-  // component (see documentNodeComponents.ts) — every one of them shares
-  // the exact same structural-container style/behavior below (the same
-  // Block-display starter defaults; see createUnorderedListNode/
-  // createHeaderNode/etc.) and differs only in semantic DOM identity, so
+  // the semantic sectioning family (header/nav/main/article/aside/
+  // footer — Checkpoint 1.8), Form (form — Checkpoint 1.10), and Label
+  // (label — Checkpoint 1.11) are all the tags registered to this
+  // component (see documentNodeComponents.ts) — every one of them
+  // shares the exact same structural-container style/behavior below
+  // (the same Block-display starter defaults; see
+  // createUnorderedListNode/createHeaderNode/createFormNode/
+  // createLabelNode/etc.) and differs only in semantic DOM identity, so
   // the real element tag is chosen from the document node rather than
   // hardcoded, keeping generated markup a genuine <header>/<nav>/<main>/
-  // <article>/<aside>/<footer>/<ul>/<ol>/<section> instead of a <div>
-  // standing in for one.
+  // <article>/<aside>/<footer>/<ul>/<ol>/<section>/<form>/<label>
+  // instead of a <div> standing in for one.
   const Tag = SEMANTIC_TAGS.has(node.tag) ? (node.tag as SemanticTag) : "div";
 
   return (
     <Tag
       ref={mergeRefs<HTMLElement>(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
+      {...(node.tag === "form" ? { onSubmit: preventEditorFormSubmission } : undefined)}
+      {...(node.tag === "label" ? { onClick: preventEditorLabelActivation } : undefined)}
       className={cn(
         usesLegacyRadiusChrome && "rounded-lg",
         usesLegacyBorderChrome && "border border-zinc-100 dark:border-zinc-900",

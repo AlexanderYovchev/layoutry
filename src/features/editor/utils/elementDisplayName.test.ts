@@ -21,6 +21,22 @@ describe("getElementDisplayName", () => {
     expect(getElementDisplayName({ id: "13", tag: "article" })).toBe("Article");
     expect(getElementDisplayName({ id: "14", tag: "aside" })).toBe("Aside");
     expect(getElementDisplayName({ id: "15", tag: "footer" })).toBe("Footer");
+    expect(getElementDisplayName({ id: "16", tag: "form" })).toBe("Form");
+    expect(getElementDisplayName({ id: "17", tag: "label" })).toBe("Label");
+  });
+
+  it("resolves Input's display name from its inputType, not a single generic name (Checkpoint 1.11)", () => {
+    expect(getElementDisplayName({ id: "1", tag: "input", inputType: "text" })).toBe("Text Input");
+    expect(getElementDisplayName({ id: "2", tag: "input", inputType: "email" })).toBe("Email Input");
+    expect(getElementDisplayName({ id: "3", tag: "input", inputType: "password" })).toBe("Password Input");
+    expect(getElementDisplayName({ id: "4", tag: "input", inputType: "number" })).toBe("Number Input");
+    expect(getElementDisplayName({ id: "5", tag: "input", inputType: "search" })).toBe("Search Input");
+    expect(getElementDisplayName({ id: "6", tag: "input", inputType: "url" })).toBe("URL Input");
+    expect(getElementDisplayName({ id: "7", tag: "input", inputType: "tel" })).toBe("Tel Input");
+  });
+
+  it("defaults an Input with no explicit inputType to Text Input, matching getInputType's own default", () => {
+    expect(getElementDisplayName({ id: "1", tag: "input" })).toBe("Text Input");
   });
 
   it("prefers an explicit displayName over the tag mapping", () => {

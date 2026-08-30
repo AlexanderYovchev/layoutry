@@ -217,4 +217,88 @@ describe("EditorApp", () => {
       expect(selectedRows[0], tag).toHaveAttribute("title", structureLabel);
     }
   }, 15000);
+
+  it("clicking the Form catalog card inserts a real <form>, selects it, and syncs Structure (Checkpoint 1.10)", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<EditorApp />);
+
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("menuitem", { name: /^Form/ }));
+
+    const state = useEditorStore.getState();
+    const insertedId = state.selectedElementId;
+    expect(state.document.children?.at(-1)?.tag).toBe("form");
+
+    const rendered = container.querySelector(`[data-node-id="${insertedId}"]`);
+    expect(rendered?.tagName).toBe("FORM");
+
+    await user.click(screen.getByRole("tab", { name: "Structure" }));
+    const selectedRows = screen
+      .getAllByRole("treeitem")
+      .filter((row) => row.getAttribute("aria-selected") === "true");
+    expect(selectedRows).toHaveLength(1);
+    expect(selectedRows[0]).toHaveAttribute("title", "Form");
+  });
+
+  it("clicking Text Input while a Form is selected inserts a real <input type=\"text\"> inside it — Form > Input (Checkpoint 1.10)", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<EditorApp />);
+
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("menuitem", { name: /^Form/ }));
+    // The freshly inserted form is already selected.
+
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("menuitem", { name: /^Text Input/ }));
+
+    const state = useEditorStore.getState();
+    const form = state.document.children?.find((c) => c.tag === "form");
+    expect(form?.children).toHaveLength(1);
+    expect(form?.children?.[0]?.tag).toBe("input");
+    expect(form?.children?.[0]?.inputType).toBe("text");
+
+    const inputId = state.selectedElementId;
+    const rendered = container.querySelector(`[data-node-id="${inputId}"]`);
+    expect(rendered?.tagName).toBe("INPUT");
+    expect(rendered).toHaveAttribute("type", "text");
+
+    await user.click(screen.getByRole("tab", { name: "Structure" }));
+    const selectedRows = screen
+      .getAllByRole("treeitem")
+      .filter((row) => row.getAttribute("aria-selected") === "true");
+    expect(selectedRows).toHaveLength(1);
+    expect(selectedRows[0]).toHaveAttribute("title", "Text Input");
+  });
+
+  it("clicking Label then Email Input inserts a real <label><input type=\"email\"></label>, syncing Structure with the subtype-aware name (Checkpoint 1.11)", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<EditorApp />);
+
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("menuitem", { name: /^Label/ }));
+    const labelId = useEditorStore.getState().selectedElementId;
+    // The freshly inserted label is already selected.
+
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("menuitem", { name: /^Email Input/ }));
+
+    const state = useEditorStore.getState();
+    const label = state.document.children?.find((c) => c.id === labelId);
+    expect(label?.tag).toBe("label");
+    expect(label?.children).toHaveLength(1);
+    expect(label?.children?.[0]?.tag).toBe("input");
+    expect(label?.children?.[0]?.inputType).toBe("email");
+
+    const labelRendered = container.querySelector(`[data-node-id="${labelId}"]`);
+    expect(labelRendered?.tagName).toBe("LABEL");
+    const inputRendered = labelRendered?.querySelector('input[data-node-type="input"]');
+    expect(inputRendered).toHaveAttribute("type", "email");
+
+    await user.click(screen.getByRole("tab", { name: "Structure" }));
+    const selectedRows = screen
+      .getAllByRole("treeitem")
+      .filter((row) => row.getAttribute("aria-selected") === "true");
+    expect(selectedRows).toHaveLength(1);
+    expect(selectedRows[0]).toHaveAttribute("title", "Email Input");
+  });
 });

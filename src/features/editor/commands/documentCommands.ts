@@ -5,6 +5,7 @@ import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById
 import { getResizeConstraintsForTag } from "@/features/editor/types/layout";
 import type { DropZone } from "@/features/editor/utils/resolveDropZone";
 import type { ElementDimensions, EditorElementNode } from "@/features/editor/types/document";
+import type { InputType } from "@/features/editor/types/input";
 
 /**
  * Document mutation layer — the only place the document tree is ever
@@ -310,6 +311,127 @@ export function setElementHref(
   let changed = false;
   const children = root.children.map((child) => {
     const updatedChild = setElementHref(child, nodeId, href);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
+ * Sets nodeId's native form-control type (Checkpoint 1.11 — the Form
+ * Control Inspector's Type selector, deferred by Checkpoint 1.10 since
+ * nothing could change it yet). Same generic, no-op-guarded shape as
+ * every other one-field command here — but unlike setElementTag/
+ * setElementHref (deliberately `string`, since `tag`/`href` are
+ * themselves plain strings on the document), this one is typed as the
+ * real InputType union: `inputType` is intentionally NOT a free-form
+ * field at the document-model level (see types/input.ts's own top
+ * comment) — accepting a bare string here would require an unsound
+ * cast to satisfy EditorElementNode's own field type, not just an
+ * unrestricted-but-honest one.
+ */
+export function setElementInputType(
+  root: EditorElementNode,
+  nodeId: string,
+  inputType: InputType,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.inputType === inputType) return root;
+    return { ...root, inputType };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementInputType(child, nodeId, inputType);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
+ * Sets (or clears, via `value: undefined`) nodeId's authored/default form
+ * value (Checkpoint 1.10) — same generic, tag-agnostic, no-op-guarded
+ * shape as setElementHref. Deliberately NOT a live-runtime-state write:
+ * this is the document's own authored value, committed only at a
+ * deliberate edit-session boundary (see useNativeInputEditing), never
+ * synchronized on every keystroke. No-ops (same reference) when the
+ * value is already exactly this, matching setElementHref/setElementTag's
+ * own no-op convention.
+ */
+export function setElementValue(
+  root: EditorElementNode,
+  nodeId: string,
+  value: string | undefined,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.value === value) return root;
+    return { ...root, value };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementValue(child, nodeId, value);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
+ * Sets (or clears, via `name: undefined`) nodeId's `name` attribute
+ * (Checkpoint 1.10) — same generic, tag-agnostic, no-op-guarded shape as
+ * setElementValue/setElementHref.
+ */
+export function setElementName(
+  root: EditorElementNode,
+  nodeId: string,
+  name: string | undefined,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.name === name) return root;
+    return { ...root, name };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementName(child, nodeId, name);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
+ * Sets (or clears, via `placeholder: undefined`) nodeId's `placeholder`
+ * attribute (Checkpoint 1.10) — same generic, tag-agnostic, no-op-guarded
+ * shape as setElementValue/setElementHref.
+ */
+export function setElementPlaceholder(
+  root: EditorElementNode,
+  nodeId: string,
+  placeholder: string | undefined,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.placeholder === placeholder) return root;
+    return { ...root, placeholder };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementPlaceholder(child, nodeId, placeholder);
     if (updatedChild !== child) changed = true;
     return updatedChild;
   });

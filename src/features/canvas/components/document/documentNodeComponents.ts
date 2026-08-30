@@ -4,6 +4,7 @@ import { ContainerElement } from "@/features/canvas/components/document/elements
 import { DocumentRootElement } from "@/features/canvas/components/document/elements/DocumentRootElement";
 import { HeadingElement } from "@/features/canvas/components/document/elements/HeadingElement";
 import { ImageElement } from "@/features/canvas/components/document/elements/ImageElement";
+import { InputElement } from "@/features/canvas/components/document/elements/InputElement";
 import { LinkElement } from "@/features/canvas/components/document/elements/LinkElement";
 import { ListItemElement } from "@/features/canvas/components/document/elements/ListItemElement";
 import { ParagraphElement } from "@/features/canvas/components/document/elements/ParagraphElement";
@@ -40,4 +41,7 @@ export const documentNodeComponents: Record<string, DocumentElementComponent> =
     article: ContainerElement,
     aside: ContainerElement,
     footer: ContainerElement,
+    form: ContainerElement,
+    label: ContainerElement,
+    input: InputElement,
   };

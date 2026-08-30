@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createContainerNode,
+  createEmailInputNode,
   createFooterNode,
+  createFormNode,
   createHeadingNode,
+  createInputNode,
+  createLabelNode,
   createLinkNode,
   createListItemNode,
   createUnorderedListNode,
@@ -1294,6 +1298,187 @@ describe("useEditorStore — semantic sectioning family (Checkpoint 1.8)", () =>
 
     useEditorStore.getState().redo();
     expect(useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.filter((c) => c.tag === "footer")).toHaveLength(2);
+  });
+});
+
+describe("useEditorStore — Form + Text Input foundation (Checkpoint 1.10)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("setElementValue/setElementName/setElementPlaceholder each push exactly one history entry per completed edit, and undo restores the previous value", () => {
+    useEditorStore.getState().insertElement("section-1", createFormNode());
+    const formId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement(formId, createInputNode());
+    const inputId = useEditorStore.getState().selectedElementId!;
+
+    const findInput = () => useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === formId)?.children?.find((c) => c.id === inputId);
+
+    useEditorStore.getState().setElementValue(inputId, "test@example.com");
+    expect(findInput()?.value).toBe("test@example.com");
+
+    useEditorStore.getState().undo();
+    expect(findInput()?.value).toBeUndefined();
+
+    useEditorStore.getState().redo();
+    expect(findInput()?.value).toBe("test@example.com");
+
+    useEditorStore.getState().setElementName(inputId, "email");
+    expect(findInput()?.name).toBe("email");
+    useEditorStore.getState().undo();
+    expect(findInput()?.name).toBeUndefined();
+
+    useEditorStore.getState().setElementPlaceholder(inputId, "you@example.com");
+    expect(findInput()?.placeholder).toBe("you@example.com");
+    useEditorStore.getState().undo();
+    expect(findInput()?.placeholder).toBe("Enter text");
+  });
+
+  it("setElementValue/setElementName/setElementPlaceholder push no history entry when the value is unchanged (strongest no-op guard, same shape as setElementTag)", () => {
+    useEditorStore.getState().insertElement("section-1", createInputNode());
+    const inputId = useEditorStore.getState().selectedElementId!;
+    const beforeDocument = useEditorStore.getState().document;
+
+    useEditorStore.getState().setElementPlaceholder(inputId, "Enter text");
+    useEditorStore.getState().setElementName(inputId, undefined);
+    useEditorStore.getState().setElementValue(inputId, undefined);
+
+    expect(useEditorStore.getState().document).toBe(beforeDocument);
+    expect(useEditorStore.getState().past).toHaveLength(1); // only the original insertElement entry
+  });
+
+  it("a Text Input can be inserted into Form and into an ordinary Container — no Form-only restriction (Section 21)", () => {
+    for (const factory of [createFormNode, createContainerNode]) {
+      useEditorStore.setState(initialState, true);
+      useEditorStore.getState().insertElement("section-1", factory());
+      const parentId = useEditorStore.getState().selectedElementId!;
+      useEditorStore.getState().insertElement(parentId, createInputNode());
+
+      const parent = useEditorStore
+        .getState()
+        .document.children?.find((c) => c.id === "section-1")
+        ?.children?.find((c) => c.id === parentId);
+      expect(parent?.children?.some((c) => c.tag === "input"), parent?.tag).toBe(true);
+    }
+  });
+
+  it("duplicates a Form subtree (Form > Input) recursively with fresh ids, preserving inputType/name/placeholder/value, and the duplicate can be edited independently", () => {
+    useEditorStore.getState().insertElement("section-1", createFormNode());
+    const formId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement(formId, createInputNode());
+    const inputId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().setElementName(inputId, "email");
+    useEditorStore.getState().setElementValue(inputId, "test@example.com");
+
+    useEditorStore.getState().selectElement(formId);
+    useEditorStore.getState().duplicateSelection();
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    const forms = section?.children?.filter((c) => c.tag === "form") ?? [];
+    expect(forms).toHaveLength(2);
+    const [original, duplicate] = forms;
+    expect(duplicate.id).not.toBe(original.id);
+
+    const duplicateInput = duplicate.children?.[0];
+    const originalInput = original.children?.[0];
+    expect(duplicateInput?.id).not.toBe(originalInput?.id);
+    expect(duplicateInput?.tag).toBe("input");
+    expect(duplicateInput?.inputType).toBe("text");
+    expect(duplicateInput?.name).toBe("email");
+    expect(duplicateInput?.value).toBe("test@example.com");
+    expect(duplicateInput?.placeholder).toBe(originalInput?.placeholder);
+
+    // Editing the duplicate never touches the original (independent nodes).
+    useEditorStore.getState().setElementValue(duplicateInput!.id, "changed@example.com");
+    const refreshedOriginal = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === original.id)?.children?.[0];
+    expect(refreshedOriginal?.value).toBe("test@example.com");
+  });
+});
+
+describe("useEditorStore — Label + expanded text-like Input types (Checkpoint 1.11)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("setElementInputType pushes exactly one history entry per change, no entry on no-op, and undo restores the previous type", () => {
+    useEditorStore.getState().insertElement("section-1", createInputNode());
+    const inputId = useEditorStore.getState().selectedElementId!;
+    const findInput = () => useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === inputId);
+    const pastLengthAfterInsert = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().setElementInputType(inputId, "email");
+    expect(findInput()?.inputType).toBe("email");
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthAfterInsert + 1);
+
+    useEditorStore.getState().setElementInputType(inputId, "email");
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthAfterInsert + 1); // no-op, no new entry
+
+    useEditorStore.getState().undo();
+    expect(findInput()?.inputType).toBe("text");
+  });
+
+  it("Label can be inserted into Form and into an ordinary Container, and can itself contain an Input — Form > Label > Input", () => {
+    useEditorStore.getState().insertElement("section-1", createFormNode());
+    const formId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement(formId, createLabelNode());
+    const labelId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement(labelId, createEmailInputNode());
+
+    const form = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === formId);
+    expect(form?.tag).toBe("form");
+    const label = form?.children?.find((c) => c.id === labelId);
+    expect(label?.tag).toBe("label");
+    expect(label?.children).toHaveLength(1);
+    expect(label?.children?.[0]?.tag).toBe("input");
+    expect(label?.children?.[0]?.inputType).toBe("email");
+  });
+
+  it("Label rejects insertion into a List — Checkpoint 1.6's UL/OL li-only rule remains intact", () => {
+    useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
+    const listId = useEditorStore.getState().selectedElementId!;
+    const beforeDocument = useEditorStore.getState().document;
+
+    useEditorStore.getState().insertElement(listId, createLabelNode());
+
+    expect(useEditorStore.getState().document).toBe(beforeDocument);
+  });
+
+  it("duplicates a Form > Label > Email Input subtree recursively with fresh ids, preserving inputType and independent post-duplicate editing", () => {
+    useEditorStore.getState().insertElement("section-1", createFormNode());
+    const formId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement(formId, createLabelNode());
+    const labelId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement(labelId, createEmailInputNode());
+    const inputId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().setElementName(inputId, "email");
+
+    useEditorStore.getState().selectElement(labelId);
+    useEditorStore.getState().duplicateSelection();
+
+    const form = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === formId);
+    const labels = form?.children?.filter((c) => c.tag === "label") ?? [];
+    expect(labels).toHaveLength(2);
+    const [original, duplicate] = labels;
+
+    expect(duplicate.id).not.toBe(original.id);
+    const duplicateInput = duplicate.children?.[0];
+    const originalInput = original.children?.[0];
+    expect(duplicateInput?.id).not.toBe(originalInput?.id);
+    expect(duplicateInput?.tag).toBe("input");
+    expect(duplicateInput?.inputType).toBe("email");
+    expect(duplicateInput?.name).toBe("email");
+
+    // Editing the duplicate's Input never touches the original.
+    useEditorStore.getState().setElementInputType(duplicateInput!.id, "tel");
+    const refreshedOriginalInput = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === formId)
+      ?.children?.find((c) => c.id === original.id)?.children?.[0];
+    expect(refreshedOriginalInput?.inputType).toBe("email");
   });
 });
 

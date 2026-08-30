@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { EditorElementNode } from "@/features/editor/types/document";
-import { insertNode, moveNode, removeNode, resizeNode, setElementDimensions, setElementHref, setElementTag, setElementText } from "./documentCommands";
+import {
+  insertNode,
+  moveNode,
+  removeNode,
+  resizeNode,
+  setElementDimensions,
+  setElementHref,
+  setElementInputType,
+  setElementName,
+  setElementPlaceholder,
+  setElementTag,
+  setElementText,
+  setElementValue,
+} from "./documentCommands";
 
 const tree: EditorElementNode = {
   id: "root",
@@ -753,6 +766,174 @@ describe("setElementTag (Checkpoint 1.7)", () => {
   it("does not restrict which tags are reachable — generic, tag-agnostic by design (UI-level validation is the Inspector control's job, not this command's)", () => {
     const result = setElementTag(tree, "heading-1", "h6");
     expect(result.children?.[0].children?.[0].tag).toBe("h6");
+  });
+});
+
+describe("setElementValue / setElementName / setElementPlaceholder (Checkpoint 1.10)", () => {
+  const inputTree: EditorElementNode = {
+    id: "root",
+    tag: "page",
+    children: [
+      {
+        id: "form-1",
+        tag: "form",
+        children: [{ id: "input-1", tag: "input", inputType: "text", placeholder: "Enter text" }],
+      },
+    ],
+  };
+
+  it("setElementValue updates the target node's value and nothing else", () => {
+    const result = setElementValue(inputTree, "input-1", "hello");
+    const input = result.children?.[0].children?.[0];
+    expect(input?.value).toBe("hello");
+    expect(input?.id).toBe("input-1");
+    expect(input?.placeholder).toBe("Enter text");
+  });
+
+  it("setElementValue clears an explicit value back to undefined", () => {
+    const withValue = setElementValue(inputTree, "input-1", "hello");
+    const result = setElementValue(withValue, "input-1", undefined);
+    expect(result.children?.[0].children?.[0].value).toBeUndefined();
+  });
+
+  it("setElementValue is a no-op (same reference) when the value is already exactly this value", () => {
+    const withValue = setElementValue(inputTree, "input-1", "hello");
+    const result = setElementValue(withValue, "input-1", "hello");
+    expect(result).toBe(withValue);
+  });
+
+  it("setElementValue is a no-op (same reference) if the node doesn't exist", () => {
+    const result = setElementValue(inputTree, "does-not-exist", "hello");
+    expect(result).toBe(inputTree);
+  });
+
+  it("setElementValue preserves every other field, including sibling nodes (structural sharing)", () => {
+    const result = setElementValue(inputTree, "input-1", "hello");
+    expect(result).not.toBe(inputTree);
+    expect(result.children?.[0]).not.toBe(inputTree.children?.[0]);
+  });
+
+  it("setElementName updates the target node's name and nothing else", () => {
+    const result = setElementName(inputTree, "input-1", "email");
+    const input = result.children?.[0].children?.[0];
+    expect(input?.name).toBe("email");
+    expect(input?.placeholder).toBe("Enter text");
+  });
+
+  it("setElementName is a no-op (same reference) when the value is unchanged", () => {
+    const withName = setElementName(inputTree, "input-1", "email");
+    expect(setElementName(withName, "input-1", "email")).toBe(withName);
+  });
+
+  it("setElementPlaceholder updates the target node's placeholder and nothing else", () => {
+    const result = setElementPlaceholder(inputTree, "input-1", "Enter your email");
+    const input = result.children?.[0].children?.[0];
+    expect(input?.placeholder).toBe("Enter your email");
+    expect(input?.inputType).toBe("text");
+  });
+
+  it("setElementPlaceholder is a no-op (same reference) when the value is unchanged", () => {
+    expect(setElementPlaceholder(inputTree, "input-1", "Enter text")).toBe(inputTree);
+  });
+
+  it("none of the three require the node to be an `input` tag — generic by id only", () => {
+    const result = setElementValue(inputTree, "form-1", "irrelevant-on-a-form");
+    expect(result.children?.[0].value).toBe("irrelevant-on-a-form");
+  });
+});
+
+describe("setElementInputType (Checkpoint 1.11)", () => {
+  const inputTree: EditorElementNode = {
+    id: "root",
+    tag: "page",
+    children: [
+      {
+        id: "form-1",
+        tag: "form",
+        children: [{ id: "input-1", tag: "input", inputType: "text", placeholder: "Enter text" }],
+      },
+    ],
+  };
+
+  it("updates the target node's inputType and nothing else", () => {
+    const result = setElementInputType(inputTree, "input-1", "email");
+    const input = result.children?.[0].children?.[0];
+    expect(input?.inputType).toBe("email");
+    expect(input?.id).toBe("input-1");
+    expect(input?.placeholder).toBe("Enter text");
+  });
+
+  it("finds and updates a deeply nested node", () => {
+    const deepTree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [
+        {
+          id: "section-1",
+          tag: "section",
+          children: [
+            {
+              id: "form-1",
+              tag: "form",
+              children: [{ id: "input-1", tag: "input", inputType: "text" }],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = setElementInputType(deepTree, "input-1", "password");
+    const input = result.children?.[0].children?.[0].children?.[0];
+    expect(input?.inputType).toBe("password");
+  });
+
+  it("preserves every other field on the updated node, including styles", () => {
+    const styledTree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [
+        {
+          id: "input-1",
+          tag: "input",
+          inputType: "text",
+          name: "email",
+          value: "hello",
+          typography: { fontWeight: 700 },
+        },
+      ],
+    };
+
+    const result = setElementInputType(styledTree, "input-1", "number");
+    const input = result.children?.[0];
+    expect(input?.inputType).toBe("number");
+    expect(input?.name).toBe("email");
+    expect(input?.value).toBe("hello");
+    expect(input?.typography).toEqual({ fontWeight: 700 });
+  });
+
+  it("is a no-op (same reference) when the inputType is already exactly this value", () => {
+    const result = setElementInputType(inputTree, "input-1", "text");
+    expect(result).toBe(inputTree);
+  });
+
+  it("is a no-op (same reference) if the node doesn't exist", () => {
+    const result = setElementInputType(inputTree, "does-not-exist", "email");
+    expect(result).toBe(inputTree);
+  });
+
+  it("leaves unrelated sibling nodes completely untouched (structural sharing)", () => {
+    const result = setElementInputType(inputTree, "input-1", "url");
+    const form = result.children?.[0];
+    const originalForm = inputTree.children?.[0];
+    expect(form).not.toBe(originalForm);
+  });
+
+  it("cycles through every text-like type correctly", () => {
+    let current = inputTree;
+    for (const type of ["email", "password", "number", "search", "url", "tel", "text"] as const) {
+      current = setElementInputType(current, "input-1", type);
+      expect(current.children?.[0].children?.[0].inputType).toBe(type);
+    }
   });
 });
 
