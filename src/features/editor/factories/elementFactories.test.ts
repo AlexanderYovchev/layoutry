@@ -7,6 +7,7 @@ import {
   createContainerNode,
   createElementNode,
   createEmailInputNode,
+  createFooterCompositionNode,
   createFooterNode,
   createFormNode,
   createHeaderNode,
@@ -190,6 +191,45 @@ describe("element factories", () => {
     });
   });
 
+  describe("createFooterCompositionNode / \"Simple Footer\" starter (Checkpoint 1.12.1)", () => {
+    it("produces a genuine <footer> — same tag as the plain primitive Footer", () => {
+      expect(createFooterCompositionNode().tag).toBe("footer");
+    });
+
+    it("ships a div > (p, nav > a, a, a) subtree of ordinary, ordinarily-editable primitives", () => {
+      const node = createFooterCompositionNode();
+      expect(node.children).toHaveLength(1);
+
+      const container = node.children?.[0];
+      expect(container?.tag).toBe("div");
+      expect(container?.children).toHaveLength(2);
+
+      const [paragraph, nav] = container?.children ?? [];
+      expect(paragraph?.tag).toBe("p");
+      expect(typeof paragraph?.text).toBe("string");
+      expect(nav?.tag).toBe("nav");
+      expect(nav?.children).toHaveLength(3);
+      expect(nav?.children?.every((child) => child.tag === "a" && typeof child.href === "string")).toBe(true);
+    });
+
+    it("every node in the composition gets its own fresh, unique id", () => {
+      function collectIds(n: ReturnType<typeof createFooterCompositionNode>): string[] {
+        return [n.id, ...(n.children ?? []).flatMap((child) => collectIds(child))];
+      }
+      const ids = collectIds(createFooterCompositionNode());
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it("two separately created compositions never share any id", () => {
+      function collectIds(n: ReturnType<typeof createFooterCompositionNode>): string[] {
+        return [n.id, ...(n.children ?? []).flatMap((child) => collectIds(child))];
+      }
+      const firstIds = collectIds(createFooterCompositionNode());
+      const secondIds = collectIds(createFooterCompositionNode());
+      expect(firstIds.some((id) => secondIds.includes(id))).toBe(false);
+    });
+  });
+
   describe("Form + Text Input foundation (Checkpoint 1.10)", () => {
     it("createFormNode produces an empty, childable <form> sharing Container's exact structural defaults", () => {
       const node = createFormNode();
@@ -363,6 +403,7 @@ describe("element factories", () => {
       expect(createElementNode("radioInput").inputType).toBe("radio");
       expect(createElementNode("label").tag).toBe("label");
       expect(createElementNode("textarea").tag).toBe("textarea");
+      expect(createElementNode("footerComposition").tag).toBe("footer");
     });
   });
 
@@ -397,6 +438,7 @@ describe("element factories", () => {
         "radioInput",
         "label",
         "textarea",
+        "footerComposition",
       ]) {
         expect(isInsertableElementType(type)).toBe(true);
       }

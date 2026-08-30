@@ -8,9 +8,9 @@
  * IMPORTANT NAMING DISTINCTION — do not confuse this with the pre-existing
  * `ElementResizeConstraints` (types/layout.ts, `{ minWidth, minHeight }`):
  * that type is an *interaction floor* — "how small may a pointer-driven
- * resize drag shrink this element?" (64x64 for a leaf, a bigger floor for
- * a container — see getResizeConstraintsForTag) — purely an editor
- * concern, never serialized as CSS and never read by any resolver.
+ * resize drag shrink this element?" (a small generic floor shared by every
+ * tag — see getResizeConstraintsForTag) — purely an editor concern, never
+ * serialized as CSS and never read by any resolver.
  * `SizeConstraints` (this file) is the real CSS min/max the exported
  * document renders with. Setting a CSS min-width here never touches
  * ElementResizeConstraints, and a pointer resize drag never reads or

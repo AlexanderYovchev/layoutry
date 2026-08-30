@@ -53,8 +53,9 @@ const UNBOUNDED = { width: Infinity, height: Infinity };
  * aspectRatioLocked is resolved once per drag from the node's own
  * override or its tag's supportsIntrinsicAspectRatio default (see
  * computeFreeChildResizeResult) — read from the DOM's data-node-type
- * attribute plus a live document lookup for the override, mirroring how
- * useResizeSession resolves its own per-tag minimum constraints.
+ * attribute plus a live document lookup for the override. The resize
+ * floor itself (getResizeConstraintsForTag) is no longer tag-dependent
+ * (Checkpoint 1.12.1) — every tag shares the same small, generic minimum.
  */
 export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSessionResult {
   const setFreeChildGeometryLive = useEditorStore((state) => state.setFreeChildGeometryLive);
@@ -63,7 +64,7 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
   );
   const [activeDirection, setActiveDirection] = useState<ResizeDirection | null>(null);
   const sessionRef = useRef<FreeChildResizeSession | null>(null);
-  const constraintsRef = useRef<ElementResizeConstraints>(getResizeConstraintsForTag(""));
+  const constraintsRef = useRef<ElementResizeConstraints>(getResizeConstraintsForTag());
   const containerScalingRef = useRef<ContainerScalingSnapshot | null>(null);
   const latestPointerRef = useRef({ x: 0, y: 0 });
   const frameRef = useRef<number | null>(null);
@@ -136,7 +137,7 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
 
         const targetEl = window.document.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(nodeId)}"]`);
         const tag = targetEl?.getAttribute("data-node-type") ?? "";
-        constraintsRef.current = getResizeConstraintsForTag(tag);
+        constraintsRef.current = getResizeConstraintsForTag();
 
         const containerEl = targetEl?.parentElement?.closest<HTMLElement>("[data-node-id]") ?? null;
         const parentBounds = containerEl ? measureFreeContainerBounds(containerEl) : UNBOUNDED;

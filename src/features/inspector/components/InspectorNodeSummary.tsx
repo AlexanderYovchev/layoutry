@@ -13,6 +13,7 @@ import { InspectorGridChildSection } from "@/features/inspector/components/Inspe
 import { InspectorHeadingLevelSection } from "@/features/inspector/components/InspectorHeadingLevelSection";
 import { InspectorLayoutSection } from "@/features/inspector/components/InspectorLayoutSection";
 import { InspectorLinkSection } from "@/features/inspector/components/InspectorLinkSection";
+import { InspectorListSection } from "@/features/inspector/components/InspectorListSection";
 import { InspectorMediaSection } from "@/features/inspector/components/InspectorMediaSection";
 import { InspectorPositionSection } from "@/features/inspector/components/InspectorPositionSection";
 import { InspectorSizeSection } from "@/features/inspector/components/InspectorSizeSection";
@@ -84,6 +85,7 @@ export function InspectorNodeSummary({
       {getElementCapabilities(node.tag).supportsMediaFit && <InspectorMediaSection node={node} />}
       {getElementCapabilities(node.tag).supportsHref && <InspectorLinkSection node={node} />}
       {getElementCapabilities(node.tag).supportsHeadingLevel && <InspectorHeadingLevelSection node={node} />}
+      {(node.tag === "ul" || node.tag === "ol") && <InspectorListSection node={node} />}
       {getElementCapabilities(node.tag).supportsFormControl && <InspectorFormControlSection node={node} />}
       {getElementCapabilities(node.tag).supportsTypography && <InspectorTypographySection node={node} />}
       {getElementCapabilities(node.tag).supportsBackground && <InspectorBackgroundSection node={node} />}

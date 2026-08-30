@@ -44,7 +44,7 @@ export function computeContainerChildScaling(
       result[child.id] = normalizeFreeLayoutGeometry(
         child.geometry,
         newBounds,
-        getResizeConstraintsForTag(child.tag),
+        getResizeConstraintsForTag(),
       );
     }
     return result;

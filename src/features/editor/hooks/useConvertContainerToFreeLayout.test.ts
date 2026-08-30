@@ -2,6 +2,7 @@ import { renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { useConvertContainerToFreeLayout } from "./useConvertContainerToFreeLayout";
+import { DEFAULT_RESIZE_CONSTRAINTS } from "@/features/editor/types/resize";
 
 const initialState = useEditorStore.getState();
 
@@ -99,7 +100,7 @@ describe("useConvertContainerToFreeLayout", () => {
     expect(section?.dimensions).toEqual({ preferredWidth: 400, preferredHeight: 300, offsetX: 0, offsetY: 0 });
   });
 
-  it("floors the container's own preserved size at its tag minimum when its Flow-rendered size measures smaller (e.g. empty or lightly populated)", () => {
+  it("floors the container's own preserved size at the generic minimum when its Flow-rendered size measures smaller (e.g. empty or lightly populated)", () => {
     useEditorStore.setState((state) => ({
       document: { ...state.document, children: [{ id: "container-1", tag: "div", children: [] }] },
     }));
@@ -109,19 +110,25 @@ describe("useConvertContainerToFreeLayout", () => {
     container.setAttribute("data-node-type", "div");
     document.body.appendChild(container);
 
-    // An empty/near-empty Flow container commonly measures far below the
-    // div minimum (160x120) — Flow auto-sizing has no enforced floor,
-    // unlike an explicit resize.
-    stubRect(container, { left: 0, top: 0, right: 400, bottom: 40 });
+    // An empty/near-empty Flow container commonly measures far below a
+    // typical size — Flow auto-sizing has no enforced floor, unlike an
+    // explicit resize. The height here (2px) is below the generic resize
+    // floor (Checkpoint 1.12.1); the width (400px) is not.
+    stubRect(container, { left: 0, top: 0, right: 400, bottom: 2 });
 
     const { result } = renderHook(() => useConvertContainerToFreeLayout());
     result.current("container-1");
 
     const converted = useEditorStore.getState().document.children?.find((c) => c.id === "container-1");
-    expect(converted?.dimensions).toEqual({ preferredWidth: 400, preferredHeight: 120, offsetX: 0, offsetY: 0 });
+    expect(converted?.dimensions).toEqual({
+      preferredWidth: 400,
+      preferredHeight: DEFAULT_RESIZE_CONSTRAINTS.minHeight,
+      offsetX: 0,
+      offsetY: 0,
+    });
   });
 
-  it("floors a Section's own preserved size at its (bigger) 240x160 minimum", () => {
+  it("floors a Section's own preserved size at the same generic minimum as any other tag (Checkpoint 1.12.1 — no bigger, category-specific container floor)", () => {
     useEditorStore.setState((state) => ({
       document: { ...state.document, children: [{ id: "section-x", tag: "section", children: [] }] },
     }));
@@ -131,13 +138,18 @@ describe("useConvertContainerToFreeLayout", () => {
     container.setAttribute("data-node-type", "section");
     document.body.appendChild(container);
 
-    stubRect(container, { left: 0, top: 0, right: 100, bottom: 50 });
+    stubRect(container, { left: 0, top: 0, right: 2, bottom: 2 });
 
     const { result } = renderHook(() => useConvertContainerToFreeLayout());
     result.current("section-x");
 
     const converted = useEditorStore.getState().document.children?.find((c) => c.id === "section-x");
-    expect(converted?.dimensions).toEqual({ preferredWidth: 240, preferredHeight: 160, offsetX: 0, offsetY: 0 });
+    expect(converted?.dimensions).toEqual({
+      preferredWidth: DEFAULT_RESIZE_CONSTRAINTS.minWidth,
+      preferredHeight: DEFAULT_RESIZE_CONSTRAINTS.minHeight,
+      offsetX: 0,
+      offsetY: 0,
+    });
   });
 
   it("preserves a nested Free container's own size as freeLayout (not dimensions) when its own parent is already Free", () => {

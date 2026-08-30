@@ -88,7 +88,7 @@ export function useResizeSession(
   );
   const [activeDirection, setActiveDirection] = useState<ResizeDirection | null>(null);
   const sessionRef = useRef<ResizeSession | null>(null);
-  const constraintsRef = useRef<ElementResizeConstraints>(getResizeConstraintsForTag(""));
+  const constraintsRef = useRef<ElementResizeConstraints>(getResizeConstraintsForTag());
   const containerScalingRef = useRef<ContainerScalingSnapshot | null>(null);
   const latestPointerRef = useRef({ x: 0, y: 0 });
   const frameRef = useRef<number | null>(null);
@@ -164,9 +164,7 @@ export function useResizeSession(
         const targetEl = canvasRoot?.querySelector<HTMLElement>(
           `[data-node-id="${CSS.escape(nodeId)}"]`,
         );
-        constraintsRef.current = getResizeConstraintsForTag(
-          targetEl?.getAttribute("data-node-type") ?? "",
-        );
+        constraintsRef.current = getResizeConstraintsForTag();
         const bounds =
           canvasRoot && targetEl ? resolveResizeBounds(canvasRoot, targetEl) : UNBOUNDED;
         containerScalingRef.current = resolveContainerScalingSnapshot(

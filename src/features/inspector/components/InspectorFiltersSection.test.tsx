@@ -23,7 +23,16 @@ describe("InspectorFiltersSection", () => {
   it("shows every field as unset for a node with no filters", () => {
     render(<InspectorFiltersSection node={{ id: "container-1", tag: "div" }} />);
 
-    expect(screen.getByLabelText("Opacity")).toHaveValue(0);
+    // Opacity/Brightness/Contrast/Saturation display their true CSS-neutral
+    // 100% when unset (Checkpoint 1.12.1 fix) — Grayscale/Invert/Sepia's
+    // neutral genuinely is 0%, and Blur/Hue Rotate are unrelated units.
+    expect(screen.getByLabelText("Opacity")).toHaveValue(100);
+    expect(screen.getByLabelText("Brightness")).toHaveValue(100);
+    expect(screen.getByLabelText("Contrast")).toHaveValue(100);
+    expect(screen.getByLabelText("Saturation")).toHaveValue(100);
+    expect(screen.getByLabelText("Grayscale")).toHaveValue(0);
+    expect(screen.getByLabelText("Invert")).toHaveValue(0);
+    expect(screen.getByLabelText("Sepia")).toHaveValue(0);
     expect(screen.getByLabelText("Blur")).toHaveValue(0);
     expect(screen.getByLabelText("Hue Rotate")).toHaveValue(0);
     expect(screen.getByRole("button", { name: "Reset effects" })).toBeDisabled();
@@ -153,6 +162,21 @@ describe("InspectorFiltersSection", () => {
 
     expect(committedNode()?.filters?.opacity).toBeUndefined();
     expect(committedNode()?.filters?.brightness).toBe(150);
+  });
+
+  it("Reset Opacity displays the true CSS-neutral 100%, not 0%, once the parent re-renders with the committed node (Checkpoint 1.12.1 regression)", () => {
+    const filters = { opacity: 60 };
+    setupNode({ id: "container-1", tag: "div", filters });
+    const { rerender } = render(<InspectorFiltersSection node={{ id: "container-1", tag: "div", filters }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset opacity" }));
+    expect(committedNode()?.filters?.opacity).toBeUndefined();
+
+    // This component is purely props-driven (see its own doc comment) —
+    // it never re-reads the store itself, so the caller (InspectorPanel)
+    // is what feeds it the post-commit node. Simulate that hand-off here.
+    rerender(<InspectorFiltersSection node={committedNode()!} />);
+    expect(screen.getByLabelText("Opacity")).toHaveValue(100);
   });
 
   it("Reset Effects clears every filter at once", () => {

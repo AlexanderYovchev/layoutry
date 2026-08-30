@@ -3,6 +3,7 @@ import { canParentAcceptChild } from "@/features/editor/rules/insertionRules";
 import { canResizeElement } from "@/features/editor/rules/elementCapabilities";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
 import { getResizeConstraintsForTag } from "@/features/editor/types/layout";
+import { createListItemNode } from "@/features/editor/factories/elementFactories";
 import type { DropZone } from "@/features/editor/utils/resolveDropZone";
 import type { ElementDimensions, EditorElementNode } from "@/features/editor/types/document";
 import type { InputType } from "@/features/editor/types/input";
@@ -151,7 +152,7 @@ export function resizeNode(
 ): EditorElementNode {
   if (root.id === nodeId) {
     if (!canResizeElement(root.tag)) return root;
-    const constraints = getResizeConstraintsForTag(root.tag);
+    const constraints = getResizeConstraintsForTag();
     const safeDimensions: ElementDimensions = {
       preferredWidth: Math.max(constraints.minWidth, dimensions.preferredWidth),
       preferredHeight: Math.max(constraints.minHeight, dimensions.preferredHeight),
@@ -497,6 +498,49 @@ export function setAspectRatioLocked(
   let changed = false;
   const children = root.children.map((child) => {
     const updatedChild = setAspectRatioLocked(child, nodeId, locked);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
+ * Sets nodeId's number of <li> children (Checkpoint 1.12.1 — the List
+ * Inspector's Items count), so a user doesn't need the creation menu just
+ * to establish how many entries a list has. No-op-guarded (same reference)
+ * both for a non-list tag and for an unchanged count, matching the
+ * "strongest" pattern setElementChecked/setElementInputType established.
+ * Growing appends fresh createListItemNode() entries (the exact same
+ * factory/default-text convention the list's own starter items use);
+ * shrinking trims only from the end via slice, so every surviving item
+ * keeps its existing id/text/styles untouched — the whole subtree is never
+ * rebuilt. Deliberately does not weaken Checkpoint 1.6's ul/ol -> li
+ * containment: it only ever adds/removes ordinary <li> children through
+ * this same document/store architecture, never a synthetic visual entry
+ * outside the tree.
+ */
+export function setListItemCount(root: EditorElementNode, nodeId: string, count: number): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.tag !== "ul" && root.tag !== "ol") return root;
+
+    const children = root.children ?? [];
+    const clampedCount = Math.max(0, Math.floor(count));
+    if (children.length === clampedCount) return root;
+
+    if (clampedCount > children.length) {
+      const additions = Array.from({ length: clampedCount - children.length }, () => createListItemNode());
+      return { ...root, children: [...children, ...additions] };
+    }
+
+    return { ...root, children: children.slice(0, clampedCount) };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setListItemCount(child, nodeId, count);
     if (updatedChild !== child) changed = true;
     return updatedChild;
   });

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { InspectorSizeSection } from "./InspectorSizeSection";
 import type { EditorElementNode } from "@/features/editor/types/document";
+import { DEFAULT_RESIZE_CONSTRAINTS } from "@/features/editor/types/resize";
 
 const initialState = useEditorStore.getState();
 
@@ -132,16 +133,28 @@ describe("InspectorSizeSection", () => {
       expect(screen.getByRole("button", { name: "Reset height" })).toBeDisabled();
     });
 
-    it("applies the tag's own resize floor when committing a too-small Width (reuses resizeNode's clamp)", () => {
+    it("applies the generic resize floor when committing a too-small Width (reuses resizeNode's clamp)", () => {
       setupNode({ id: "n1", tag: "div" });
       render(<InspectorSizeSection node={{ id: "n1", tag: "div" }} isFreeChild={false} />);
 
       const widthField = screen.getByLabelText("Width");
-      fireEvent.change(widthField, { target: { value: "5" } });
+      fireEvent.change(widthField, { target: { value: "1" } });
       fireEvent.blur(widthField);
 
-      // A div is a container tag — 160 is its own floor (see getResizeConstraintsForTag).
-      expect(committedNode()?.dimensions?.preferredWidth).toBe(160);
+      // Every tag shares the same small, generic floor (see getResizeConstraintsForTag) —
+      // a container's creation size is never treated as its own minimum (Checkpoint 1.12.1).
+      expect(committedNode()?.dimensions?.preferredWidth).toBe(DEFAULT_RESIZE_CONSTRAINTS.minWidth);
+    });
+
+    it("allows committing a Width well below a container's typical creation size (Checkpoint 1.12.1 regression)", () => {
+      setupNode({ id: "n1", tag: "div" });
+      render(<InspectorSizeSection node={{ id: "n1", tag: "div" }} isFreeChild={false} />);
+
+      const widthField = screen.getByLabelText("Width");
+      fireEvent.change(widthField, { target: { value: "40" } });
+      fireEvent.blur(widthField);
+
+      expect(committedNode()?.dimensions?.preferredWidth).toBe(40);
     });
   });
 

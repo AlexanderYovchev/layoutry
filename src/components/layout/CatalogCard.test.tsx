@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MousePointerClick } from "lucide-react";
 import { describe, expect, it, vi } from "vitest";
 import type { CatalogCardPlaceholder } from "@/components/layout/creationToolbarCategories";
 import { CatalogCard } from "./CatalogCard";
@@ -10,6 +11,7 @@ const enabledCard: CatalogCardPlaceholder = {
   description: "Interactive button",
   disabled: false,
   elementType: "button",
+  icon: MousePointerClick,
 };
 
 const disabledCard: CatalogCardPlaceholder = {
@@ -74,5 +76,22 @@ describe("CatalogCard", () => {
     const card = screen.getByRole("menuitem", { name: /Link/ });
     expect(card.className).toContain("disabled:cursor-not-allowed");
     expect(card.className).not.toContain("hover:cursor-pointer");
+  });
+
+  it("renders the card's icon when one is provided (Checkpoint 1.12.1)", () => {
+    render(<CatalogCard card={enabledCard} />);
+
+    const card = screen.getByRole("menuitem", { name: /Button/ });
+    expect(card.querySelector("svg")).toBeInTheDocument();
+    // No dashed-placeholder fallback square once a real icon renders.
+    expect(card.querySelector(".border-dashed")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the dashed placeholder square when a card has no icon", () => {
+    render(<CatalogCard card={disabledCard} />);
+
+    const card = screen.getByRole("menuitem", { name: /Link/ });
+    expect(card.querySelector("svg")).not.toBeInTheDocument();
+    expect(card.querySelector(".border-dashed")).toBeInTheDocument();
   });
 });

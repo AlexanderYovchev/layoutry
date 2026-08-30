@@ -1,4 +1,3 @@
-import { canContainChildren } from "@/features/editor/rules/insertionRules";
 import { DEFAULT_RESIZE_CONSTRAINTS, type ResizeConstraints } from "@/features/editor/types/resize";
 
 /**
@@ -35,31 +34,20 @@ export interface FreeLayoutGeometry {
 export type ElementResizeConstraints = ResizeConstraints;
 
 /**
- * Minimum size for container tags, keyed by tag (Checkpoint 3.4.4 —
- * "containers must never become a line or unusably small rectangle").
- * "section" and "div" already exist as distinct tags in the document
- * model (see fixtureDocument.ts / documentNodeComponents.ts) — no new
- * element type is introduced for this. Any other container tag
- * (form/ul/ol/li/header/footer/main/article/aside/nav/table) falls back
- * to the same floor as "div".
+ * The single place a node's minimum resizable size is decided (Checkpoint
+ * 1.12.1). Previously this returned a bigger, per-tag-category floor for
+ * container tags (e.g. a div floored at 160x120, a section at 240x160) —
+ * that made a container's *creation* size read as an artificial minimum
+ * size, which manual QA flagged as a bug: a factory's initial dimensions
+ * are only a starting point, never a floor. Every tag now shares the same
+ * small, generic DEFAULT_RESIZE_CONSTRAINTS floor — just enough to keep
+ * geometry valid, never a component-specific minimum. No longer takes a
+ * tag at all — nothing about the answer varies by tag any more, so
+ * keeping an unused parameter "for later" would just be dead API surface
+ * (every call site below was updated to call this with no arguments).
  */
-const CONTAINER_RESIZE_CONSTRAINTS_BY_TAG: Record<string, ElementResizeConstraints> = {
-  section: { minWidth: 240, minHeight: 160 },
-  div: { minWidth: 160, minHeight: 120 },
-};
-
-const DEFAULT_CONTAINER_RESIZE_CONSTRAINTS: ElementResizeConstraints = { minWidth: 160, minHeight: 120 };
-
-/**
- * The single place a node's minimum resizable size is decided: a
- * container-tagged node gets its (bigger) container floor, any other
- * (leaf) tag keeps the original global DEFAULT_RESIZE_CONSTRAINTS
- * (64x64). Replaces the previous single hardcoded constant used
- * uniformly by resizeNode and the live resize session.
- */
-export function getResizeConstraintsForTag(tag: string): ElementResizeConstraints {
-  if (!canContainChildren(tag)) return DEFAULT_RESIZE_CONSTRAINTS;
-  return CONTAINER_RESIZE_CONSTRAINTS_BY_TAG[tag] ?? DEFAULT_CONTAINER_RESIZE_CONSTRAINTS;
+export function getResizeConstraintsForTag(): ElementResizeConstraints {
+  return DEFAULT_RESIZE_CONSTRAINTS;
 }
 
 /**

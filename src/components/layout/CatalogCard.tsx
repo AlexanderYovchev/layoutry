@@ -58,10 +58,19 @@ export function CatalogCard({ card, registerRef, onActivate }: CatalogCardProps)
       )}
       {...listeners}
     >
-      <span
-        aria-hidden="true"
-        className="mt-0.5 size-8 shrink-0 rounded-md border border-dashed border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
-      />
+      {card.icon ? (
+        <span
+          aria-hidden="true"
+          className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+        >
+          <card.icon className="size-4" />
+        </span>
+      ) : (
+        <span
+          aria-hidden="true"
+          className="mt-0.5 size-8 shrink-0 rounded-md border border-dashed border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
+        />
+      )}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-zinc-600 dark:text-zinc-400">
           {card.name}

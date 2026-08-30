@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EditorElementNode } from "@/features/editor/types/document";
+import { DEFAULT_RESIZE_CONSTRAINTS } from "@/features/editor/types/resize";
 import {
   applyFreeContainerChildGeometries,
   convertToFlowLayout,
@@ -56,22 +57,39 @@ describe("setFreeChildGeometry", () => {
     expect(result).toBe(root);
   });
 
-  it("floors width/height at the node's own tag minimum, same shape as resizeNode's defensive clamp", () => {
+  it("floors width/height at the generic resize minimum, same shape as resizeNode's defensive clamp", () => {
     const root = freeTree();
-    // image-1 is a leaf (img) — generic 64x64 floor.
-    const result = setFreeChildGeometry(root, "image-1", { x: 0, y: 0, width: 5, height: 5 });
+    // image-1 is a leaf (img) — shares the same generic floor every tag now uses.
+    const result = setFreeChildGeometry(root, "image-1", { x: 0, y: 0, width: 1, height: 1 });
     const image1 = result.children
       ?.find((child) => child.id === "section-1")
       ?.children?.find((child) => child.id === "image-1");
-    expect(image1?.freeLayout).toEqual({ x: 0, y: 0, width: 64, height: 64 });
+    expect(image1?.freeLayout).toEqual({
+      x: 0,
+      y: 0,
+      width: DEFAULT_RESIZE_CONSTRAINTS.minWidth,
+      height: DEFAULT_RESIZE_CONSTRAINTS.minHeight,
+    });
   });
 
-  it("floors a container's width/height at its own (bigger) container minimum", () => {
+  it("floors a container's width/height at the same generic minimum as a leaf (Checkpoint 1.12.1 — no bigger, category-specific container floor)", () => {
     const root = freeTree();
-    // section-1 is a "section" — 240x160 floor, not the generic 64x64.
-    const result = setFreeChildGeometry(root, "section-1", { x: 0, y: 0, width: 5, height: 5 });
+    // section-1 is a "section" — previously had a bigger 240x160 floor; now shares the generic floor.
+    const result = setFreeChildGeometry(root, "section-1", { x: 0, y: 0, width: 1, height: 1 });
     const section = result.children?.find((child) => child.id === "section-1");
-    expect(section?.freeLayout).toEqual({ x: 0, y: 0, width: 240, height: 160 });
+    expect(section?.freeLayout).toEqual({
+      x: 0,
+      y: 0,
+      width: DEFAULT_RESIZE_CONSTRAINTS.minWidth,
+      height: DEFAULT_RESIZE_CONSTRAINTS.minHeight,
+    });
+  });
+
+  it("allows a container to shrink well below its typical creation size in Free layout (Checkpoint 1.12.1 regression)", () => {
+    const root = freeTree();
+    const result = setFreeChildGeometry(root, "section-1", { x: 0, y: 0, width: 40, height: 30 });
+    const section = result.children?.find((child) => child.id === "section-1");
+    expect(section?.freeLayout).toEqual({ x: 0, y: 0, width: 40, height: 30 });
   });
 });
 

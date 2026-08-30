@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type {
   FocusEvent as ReactFocusEvent,
+  FormEvent as ReactFormEvent,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
 } from "react";
@@ -24,6 +25,20 @@ export interface NativeFormValueEditingOptions {
    * needs no change.
    */
   commitOnEnter?: boolean;
+  /**
+   * Live-filters the DOM's own `.value` on every native `input` event —
+   * typing, paste, and drag-drop all fire it, unlike `keydown`, which
+   * paste bypasses entirely (Checkpoint 1.12.1, added for Telephone's
+   * authored-value character restriction — see sanitizeTelValue). Applied
+   * directly to the DOM element (value stays uncontrolled — see this
+   * hook's own doc comment), never to React/document state: nothing is
+   * written to the store until the normal commit boundary, exactly as
+   * before. Must be a pure removal filter (only ever strips characters,
+   * never reorders/inserts) — the caret-preservation math below assumes
+   * this. Undefined (the default) disables filtering entirely, leaving
+   * every other Input type's existing behavior untouched.
+   */
+  sanitizeValue?: (raw: string) => string;
 }
 
 export interface NativeFormValueEditingControl {
@@ -37,6 +52,7 @@ export interface NativeFormValueEditingControl {
     onDoubleClick: (event: ReactMouseEvent) => void;
     onBlur: (event: ReactFocusEvent) => void;
     onKeyDown: (event: ReactKeyboardEvent) => void;
+    onInput: (event: ReactFormEvent<NativeEditableElement>) => void;
   };
 }
 
@@ -92,7 +108,7 @@ export interface NativeFormValueEditingControl {
  */
 export function useNativeFormValueEditing(
   node: EditorElementNode,
-  { commitOnEnter = true }: NativeFormValueEditingOptions = {},
+  { commitOnEnter = true, sanitizeValue }: NativeFormValueEditingOptions = {},
 ): NativeFormValueEditingControl {
   const [isEditing, setIsEditing] = useState(false);
   const domRef = useRef<NativeEditableElement | null>(null);
@@ -151,6 +167,23 @@ export function useNativeFormValueEditing(
     setIsEditing(true);
   }
 
+  // Fires for typing, paste, and drag-drop alike (unlike keydown, which
+  // paste never triggers) — see sanitizeValue's own doc comment. Caret
+  // math assumes sanitizeValue only ever removes characters: re-running
+  // it on just the substring before the original caret gives the correct
+  // post-filter caret position without needing a general diff.
+  function handleInput(event: ReactFormEvent<NativeEditableElement>) {
+    if (!sanitizeValue) return;
+    const element = event.currentTarget;
+    const raw = element.value;
+    const sanitized = sanitizeValue(raw);
+    if (sanitized === raw) return;
+    const caret = element.selectionStart ?? raw.length;
+    const nextCaret = sanitizeValue(raw.slice(0, caret)).length;
+    element.value = sanitized;
+    element.setSelectionRange(nextCaret, nextCaret);
+  }
+
   function handleBlur() {
     if (suppressNextBlurCommitRef.current) {
       suppressNextBlurCommitRef.current = false;
@@ -193,6 +226,7 @@ export function useNativeFormValueEditing(
       onDoubleClick: handleDoubleClick,
       onBlur: handleBlur,
       onKeyDown: handleKeyDown,
+      onInput: handleInput,
     },
   };
 }

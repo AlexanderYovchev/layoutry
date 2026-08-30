@@ -1,3 +1,36 @@
+import type { LucideIcon } from "lucide-react";
+import {
+  AlignLeft,
+  AtSign,
+  Blocks,
+  Box,
+  Circle,
+  CircleDot,
+  ClipboardList,
+  Globe,
+  Hash,
+  Image,
+  Layout,
+  LayoutPanelTop,
+  Link,
+  List,
+  ListOrdered,
+  Lock,
+  Menu,
+  MousePointerClick,
+  Newspaper,
+  PanelBottom,
+  PanelRight,
+  PanelTop,
+  Phone,
+  Search,
+  SquareCheck,
+  Tag,
+  TextCursorInput,
+  TextQuote,
+  Type,
+} from "lucide-react";
+
 /**
  * Mirrors the editor feature's InsertableElementType string-for-string,
  * without importing it — components/layout must not import src/features/*,
@@ -33,7 +66,8 @@ export type InsertableCardType =
   | "checkboxInput"
   | "radioInput"
   | "label"
-  | "textarea";
+  | "textarea"
+  | "footerComposition";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -42,6 +76,8 @@ export interface CatalogCardPlaceholder {
   /** True whenever elementType is unset — a card is only ever enabled because a real factory exists for it. */
   disabled: boolean;
   elementType?: InsertableCardType;
+  /** A recognizable per-card icon (Checkpoint 1.12.1) — undefined for every still-disabled placeholder card, which keeps CatalogCard's existing dashed-square fallback. */
+  icon?: LucideIcon;
 }
 
 export interface CategorySection {
@@ -60,6 +96,7 @@ interface CardSeed {
   name: string;
   description: string;
   elementType?: InsertableCardType;
+  icon?: LucideIcon;
 }
 
 function section(
@@ -77,6 +114,7 @@ function section(
       description: seed.description,
       disabled: !seed.elementType,
       elementType: seed.elementType,
+      icon: seed.icon,
     })),
   };
 }
@@ -92,23 +130,26 @@ function htmlCategory(): ToolbarCategoryContent {
           name: "Container",
           description: "Generic layout container",
           elementType: "container",
+          icon: Box,
         },
         {
           name: "Section",
           description: "Generic content section",
           elementType: "section",
+          icon: Layout,
         },
       ]),
       section(id, "typography", "Typography", [
-        { name: "Heading", description: "Page heading", elementType: "heading" },
+        { name: "Heading", description: "Page heading", elementType: "heading", icon: Type },
         {
           name: "Paragraph",
           description: "Body text",
           elementType: "paragraph",
+          icon: AlignLeft,
         },
       ]),
       section(id, "navigation", "Navigation", [
-        { name: "Link", description: "Navigable link", elementType: "link" },
+        { name: "Link", description: "Navigable link", elementType: "link", icon: Link },
         { name: "Menu", description: "Navigation menu" },
       ]),
       section(id, "lists", "Lists", [
@@ -116,16 +157,19 @@ function htmlCategory(): ToolbarCategoryContent {
           name: "Unordered List",
           description: "Bulleted list",
           elementType: "unorderedList",
+          icon: List,
         },
         {
           name: "Ordered List",
           description: "Numbered list",
           elementType: "orderedList",
+          icon: ListOrdered,
         },
         {
           name: "List Item",
           description: "Single list entry",
           elementType: "listItem",
+          icon: Circle,
         },
       ]),
       section(id, "forms", "Forms", [
@@ -133,70 +177,83 @@ function htmlCategory(): ToolbarCategoryContent {
           name: "Form",
           description: "Form container",
           elementType: "form",
+          icon: ClipboardList,
         },
         {
           name: "Label",
           description: "Wraps and labels a control",
           elementType: "label",
+          icon: Tag,
         },
         {
           name: "Text Input",
           description: "Single-line text field",
           elementType: "input",
+          icon: TextCursorInput,
         },
         {
           name: "Email Input",
           description: "Email address field",
           elementType: "emailInput",
+          icon: AtSign,
         },
         {
           name: "Password Input",
           description: "Masked password field",
           elementType: "passwordInput",
+          icon: Lock,
         },
         {
           name: "Number Input",
           description: "Numeric field",
           elementType: "numberInput",
+          icon: Hash,
         },
         {
           name: "Search Input",
           description: "Search query field",
           elementType: "searchInput",
+          icon: Search,
         },
         {
           name: "URL Input",
           description: "Web address field",
           elementType: "urlInput",
+          icon: Globe,
         },
         {
           name: "Tel Input",
           description: "Phone number field",
           elementType: "telInput",
+          icon: Phone,
         },
         {
           name: "Checkbox",
           description: "Toggleable option",
           elementType: "checkboxInput",
+          icon: SquareCheck,
         },
         {
           name: "Radio Button",
           description: "Single choice option",
           elementType: "radioInput",
+          icon: CircleDot,
         },
         {
           name: "Textarea",
           description: "Multi-line text field",
           elementType: "textarea",
+          icon: TextQuote,
         },
         {
           name: "Button",
           description: "Interactive button",
           elementType: "button",
+          icon: MousePointerClick,
         },
       ]),
       section(id, "media", "Media", [
-        { name: "Image", description: "Static image", elementType: "image" },
+        { name: "Image", description: "Static image", elementType: "image", icon: Image },
         { name: "Video", description: "Embedded video" },
       ]),
       section(id, "tables", "Tables", [
@@ -208,31 +265,43 @@ function htmlCategory(): ToolbarCategoryContent {
           name: "Header",
           description: "Page or section header",
           elementType: "header",
+          icon: PanelTop,
         },
         {
           name: "Nav",
           description: "Navigation links",
           elementType: "nav",
+          icon: Menu,
         },
         {
           name: "Main",
           description: "Primary page content",
           elementType: "main",
+          icon: LayoutPanelTop,
         },
         {
           name: "Article",
           description: "Self-contained content",
           elementType: "article",
+          icon: Newspaper,
         },
         {
           name: "Aside",
           description: "Related or tangential content",
           elementType: "aside",
+          icon: PanelRight,
         },
         {
           name: "Footer",
           description: "Page or section footer",
           elementType: "footer",
+          icon: PanelBottom,
+        },
+        {
+          name: "Simple Footer",
+          description: "Footer starter with copyright text and links",
+          elementType: "footerComposition",
+          icon: Blocks,
         },
       ]),
     ],

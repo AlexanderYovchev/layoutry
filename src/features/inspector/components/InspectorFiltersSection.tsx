@@ -35,6 +35,19 @@ interface PercentFieldConfig {
   label: string;
   isValid: (value: number) => boolean;
   errorMessage: string;
+  /**
+   * The value this field's control displays when the document has it
+   * unset (Checkpoint 1.12.1). Opacity/Brightness/Contrast/Saturation's
+   * true CSS-neutral state is 100% (e.g. `filter: brightness(1)`) — a
+   * previous shared `?? 0` fallback showed them all as 0%, which reads as
+   * "invisible"/"solid black"/etc., not "unaffected." Grayscale/Invert/
+   * Sepia's neutral genuinely is 0%, so they keep that fallback. This is
+   * purely a *display* fallback: the underlying node field stays exactly
+   * as unset as before (getFilterSettings/withFilterField untouched), and
+   * the resolved CSS for an unset field was always correct — only the
+   * Inspector's own shown number was wrong.
+   */
+  neutralValue: number;
 }
 
 /**
@@ -44,22 +57,22 @@ interface PercentFieldConfig {
  * array + a single generic commit/reset pair rather than seven near-
  * identical JSX blocks, since InspectorPropertyRow +
  * InspectorNumericValueControl already do all the real work; only the
- * label, validator, and error message differ per field.
+ * label, validator, error message, and neutral fallback differ per field.
  */
 const TRANSPARENCY_FIELDS: readonly PercentFieldConfig[] = [
-  { field: "opacity", label: "Opacity", isValid: isValidOpacityValue, errorMessage: "Enter a value between 0 and 100." },
+  { field: "opacity", label: "Opacity", isValid: isValidOpacityValue, errorMessage: "Enter a value between 0 and 100.", neutralValue: 100 },
 ];
 
 const COLOR_PERCENT_FIELDS: readonly PercentFieldConfig[] = [
-  { field: "brightness", label: "Brightness", isValid: isValidBrightnessValue, errorMessage: "Brightness can't be negative." },
-  { field: "contrast", label: "Contrast", isValid: isValidContrastValue, errorMessage: "Contrast can't be negative." },
-  { field: "saturate", label: "Saturation", isValid: isValidSaturateValue, errorMessage: "Saturation can't be negative." },
+  { field: "brightness", label: "Brightness", isValid: isValidBrightnessValue, errorMessage: "Brightness can't be negative.", neutralValue: 100 },
+  { field: "contrast", label: "Contrast", isValid: isValidContrastValue, errorMessage: "Contrast can't be negative.", neutralValue: 100 },
+  { field: "saturate", label: "Saturation", isValid: isValidSaturateValue, errorMessage: "Saturation can't be negative.", neutralValue: 100 },
 ];
 
 const SPECIAL_EFFECTS_FIELDS: readonly PercentFieldConfig[] = [
-  { field: "grayscale", label: "Grayscale", isValid: isValidGrayscaleValue, errorMessage: "Enter a value between 0 and 100." },
-  { field: "invert", label: "Invert", isValid: isValidInvertValue, errorMessage: "Enter a value between 0 and 100." },
-  { field: "sepia", label: "Sepia", isValid: isValidSepiaValue, errorMessage: "Enter a value between 0 and 100." },
+  { field: "grayscale", label: "Grayscale", isValid: isValidGrayscaleValue, errorMessage: "Enter a value between 0 and 100.", neutralValue: 0 },
+  { field: "invert", label: "Invert", isValid: isValidInvertValue, errorMessage: "Enter a value between 0 and 100.", neutralValue: 0 },
+  { field: "sepia", label: "Sepia", isValid: isValidSepiaValue, errorMessage: "Enter a value between 0 and 100.", neutralValue: 0 },
 ];
 
 /**
@@ -170,7 +183,7 @@ export function InspectorFiltersSection({ node }: InspectorFiltersSectionProps) 
       >
         <InspectorNumericValueControl
           ariaLabel={config.label}
-          value={value ?? 0}
+          value={value ?? config.neutralValue}
           unit="%"
           allowedUnits={["%"]}
           onCommit={(next) => handlePercentCommit(config, next)}

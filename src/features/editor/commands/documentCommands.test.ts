@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EditorElementNode } from "@/features/editor/types/document";
+import { DEFAULT_RESIZE_CONSTRAINTS } from "@/features/editor/types/resize";
 import {
   insertNode,
   moveNode,
@@ -14,6 +15,7 @@ import {
   setElementTag,
   setElementText,
   setElementValue,
+  setListItemCount,
 } from "./documentCommands";
 
 const tree: EditorElementNode = {
@@ -357,28 +359,50 @@ describe("resizeNode", () => {
     expect(container?.dimensions).toEqual({ preferredWidth: 320, preferredHeight: 180, offsetX: -60, offsetY: -20 });
   });
 
-  it("clamps width/height defensively to the tag's own minimum constraints even if the caller didn't (Checkpoint 3.4.4 — a div container floors at 160x120, not the generic 64x64)", () => {
+  it("clamps width/height defensively to the same small, generic floor for a container, even if the caller didn't (Checkpoint 1.12.1 — a creation/starting size must never become a minimum)", () => {
     const result = resizeNode(resizeTree, "container-1", {
-      preferredWidth: 10,
+      preferredWidth: 1,
       preferredHeight: -5,
       offsetX: 0,
       offsetY: 0,
     });
 
     const container = result.children?.find((child) => child.id === "container-1");
-    expect(container?.dimensions).toEqual({ preferredWidth: 160, preferredHeight: 120, offsetX: 0, offsetY: 0 });
+    expect(container?.dimensions).toEqual({
+      preferredWidth: DEFAULT_RESIZE_CONSTRAINTS.minWidth,
+      preferredHeight: DEFAULT_RESIZE_CONSTRAINTS.minHeight,
+      offsetX: 0,
+      offsetY: 0,
+    });
   });
 
-  it("clamps a leaf (non-container) node's width/height to the generic 64x64 minimum", () => {
+  it("clamps a leaf (non-container) node's width/height to the same generic floor as a container", () => {
     const result = resizeNode(resizeTree, "heading-1", {
-      preferredWidth: 10,
+      preferredWidth: 1,
       preferredHeight: -5,
       offsetX: 0,
       offsetY: 0,
     });
 
     const heading = result.children?.find((child) => child.id === "heading-1");
-    expect(heading?.dimensions).toEqual({ preferredWidth: 64, preferredHeight: 64, offsetX: 0, offsetY: 0 });
+    expect(heading?.dimensions).toEqual({
+      preferredWidth: DEFAULT_RESIZE_CONSTRAINTS.minWidth,
+      preferredHeight: DEFAULT_RESIZE_CONSTRAINTS.minHeight,
+      offsetX: 0,
+      offsetY: 0,
+    });
+  });
+
+  it("allows an explicit resize well below a container's own creation size (Checkpoint 1.12.1 regression — a Form's ~200x150 factory default must not act as a floor)", () => {
+    const result = resizeNode(resizeTree, "container-1", {
+      preferredWidth: 40,
+      preferredHeight: 30,
+      offsetX: 0,
+      offsetY: 0,
+    });
+
+    const container = result.children?.find((child) => child.id === "container-1");
+    expect(container?.dimensions).toEqual({ preferredWidth: 40, preferredHeight: 30, offsetX: 0, offsetY: 0 });
   });
 
   it("does not mutate the original tree", () => {
@@ -448,17 +472,22 @@ describe("setElementDimensions", () => {
     children: [{ id: "container-1", tag: "div", children: [] }],
   };
 
-  it("sets dimensions with the same tag-based floor clamp resizeNode applies", () => {
+  it("sets dimensions with the same generic floor clamp resizeNode applies", () => {
     const result = setElementDimensions(sizingTree, "container-1", {
-      preferredWidth: 10,
-      preferredHeight: 10,
+      preferredWidth: 1,
+      preferredHeight: 1,
       offsetX: 0,
       offsetY: 0,
     });
 
     const container = result.children?.find((child) => child.id === "container-1");
-    // Container floor is 160x120 (see resizeNode's own test suite).
-    expect(container?.dimensions).toEqual({ preferredWidth: 160, preferredHeight: 120, offsetX: 0, offsetY: 0 });
+    // See resizeNode's own test suite — every tag shares the same generic floor.
+    expect(container?.dimensions).toEqual({
+      preferredWidth: DEFAULT_RESIZE_CONSTRAINTS.minWidth,
+      preferredHeight: DEFAULT_RESIZE_CONSTRAINTS.minHeight,
+      offsetX: 0,
+      offsetY: 0,
+    });
   });
 
   it("clears dimensions entirely (both axes) when passed undefined", () => {
@@ -1052,6 +1081,99 @@ describe("setElementChecked (Checkpoint 1.12)", () => {
   it("does not require the node to be a checkbox/radio — generic by id only", () => {
     const result = setElementChecked(checkboxTree, "form-1", true);
     expect(result.children?.[0].checked).toBe(true);
+  });
+});
+
+describe("setListItemCount (Checkpoint 1.12.1)", () => {
+  function listTree(itemCount: number, tag: "ul" | "ol" = "ul"): EditorElementNode {
+    return {
+      id: "root",
+      tag: "page",
+      children: [
+        {
+          id: "list-1",
+          tag,
+          children: Array.from({ length: itemCount }, (_, index) => ({
+            id: `li-${index}`,
+            tag: "li",
+            text: `List item ${index}`,
+          })),
+        },
+      ],
+    };
+  }
+
+  it("appends fresh li children with fresh ids when growing", () => {
+    const result = setListItemCount(listTree(3), "list-1", 5);
+    const list = result.children?.[0];
+    expect(list?.children).toHaveLength(5);
+    expect(list?.children?.map((child) => child.tag)).toEqual(["li", "li", "li", "li", "li"]);
+    const ids = list?.children?.map((child) => child.id) ?? [];
+    expect(new Set(ids).size).toBe(5);
+  });
+
+  it("preserves every surviving item's id/text/styles untouched when growing", () => {
+    const tree = listTree(2);
+    const original = tree.children?.[0].children;
+    const result = setListItemCount(tree, "list-1", 4);
+    const survivors = result.children?.[0].children?.slice(0, 2);
+    expect(survivors).toEqual(original);
+  });
+
+  it("trims only from the end when shrinking, preserving earlier items untouched", () => {
+    const tree = listTree(5);
+    const original = tree.children?.[0].children;
+    const result = setListItemCount(tree, "list-1", 2);
+    const list = result.children?.[0];
+    expect(list?.children).toHaveLength(2);
+    expect(list?.children).toEqual(original?.slice(0, 2));
+  });
+
+  it("works for both ul and ol", () => {
+    const olResult = setListItemCount(listTree(2, "ol"), "list-1", 4);
+    expect(olResult.children?.[0].children).toHaveLength(4);
+  });
+
+  it("is a no-op (same reference) when the count is already exactly this count", () => {
+    const tree = listTree(3);
+    expect(setListItemCount(tree, "list-1", 3)).toBe(tree);
+  });
+
+  it("is a no-op (same reference) for a non-list tag", () => {
+    const tree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [{ id: "div-1", tag: "div", children: [] }],
+    };
+    expect(setListItemCount(tree, "div-1", 5)).toBe(tree);
+  });
+
+  it("is a no-op (same reference) if the node doesn't exist", () => {
+    const tree = listTree(3);
+    expect(setListItemCount(tree, "does-not-exist", 5)).toBe(tree);
+  });
+
+  it("clamps a negative count to zero", () => {
+    const result = setListItemCount(listTree(3), "list-1", -2);
+    expect(result.children?.[0].children).toEqual([]);
+  });
+
+  it("floors a fractional count", () => {
+    const result = setListItemCount(listTree(2), "list-1", 3.9);
+    expect(result.children?.[0].children).toHaveLength(3);
+  });
+
+  it("leaves unrelated sibling nodes completely untouched (structural sharing)", () => {
+    const tree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [
+        { id: "list-1", tag: "ul", children: [{ id: "li-0", tag: "li", text: "List item 0" }] },
+        { id: "unrelated", tag: "div", children: [] },
+      ],
+    };
+    const result = setListItemCount(tree, "list-1", 3);
+    expect(result.children?.[1]).toBe(tree.children?.[1]);
   });
 });
 

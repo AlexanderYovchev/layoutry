@@ -414,4 +414,88 @@ describe("InputElement (Checkpoint 1.10)", () => {
       expect(input.checked).toBe(false);
     });
   });
+
+  describe("telephone character filtering (Checkpoint 1.12.1)", () => {
+    function renderTel(value?: string) {
+      render(
+        <InputElement
+          node={{ id: "input-1", tag: "input", inputType: "tel", value }}
+          parentId="form-1"
+          parentLayoutMode="flow"
+          parentFlowDisplay="block"
+        />,
+      );
+      return screen.getByRole("textbox") as HTMLInputElement;
+    }
+
+    it("strips alphabetic characters as the user types (live, not just at commit)", () => {
+      const input = renderTel();
+      fireEvent.doubleClick(input);
+
+      fireEvent.input(input, { target: { value: "call-now-555" } });
+
+      expect(input.value).toBe("--555");
+    });
+
+    it("strips alphabetic characters from a pasted value (the input event paste also fires, not just keydown)", () => {
+      const input = renderTel();
+      fireEvent.doubleClick(input);
+
+      // Paste is not a keydown — dispatching the same native `input`
+      // event paste itself fires proves this isn't a keydown-only filter
+      // paste could bypass.
+      fireEvent.input(input, { target: { value: "abc(555) 123-4567xyz" } });
+
+      expect(input.value).toBe("(555) 123-4567");
+    });
+
+    it("keeps digits and common phone punctuation untouched", () => {
+      const input = renderTel();
+      fireEvent.doubleClick(input);
+
+      fireEvent.input(input, { target: { value: "+1 (555) 123-4567 *99#" } });
+
+      expect(input.value).toBe("+1 (555) 123-4567 *99#");
+    });
+
+    it("commits the already-sanitized value on blur, not the raw typed-with-letters string", () => {
+      renderTel();
+      const spy = vi.spyOn(useEditorStore.getState(), "setElementValue");
+      const input = screen.getByRole("textbox") as HTMLInputElement;
+
+      fireEvent.doubleClick(input);
+      fireEvent.input(input, { target: { value: "555-CALL-NOW" } });
+      fireEvent.blur(input);
+
+      expect(spy).toHaveBeenCalledWith("input-1", "555--");
+    });
+
+    it("does not filter other Input types (e.g. Text) — tel-only, not applied generically", () => {
+      render(
+        <InputElement node={{ id: "input-1", tag: "input", inputType: "text" }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+      );
+      const input = screen.getByRole("textbox") as HTMLInputElement;
+      fireEvent.doubleClick(input);
+
+      fireEvent.input(input, { target: { value: "call-now-555" } });
+
+      expect(input.value).toBe("call-now-555");
+    });
+
+    it("preserves the caret position after stripping a disallowed character typed mid-string", () => {
+      const input = renderTel("555123");
+      fireEvent.doubleClick(input);
+
+      // Simulate the DOM state right after typing "x" at position 3
+      // ("555" + "x" + "123"), caret already advanced to 4 (right after
+      // the just-typed character) — exactly what a real keypress leaves
+      // before this hook's input handler runs.
+      input.value = "555x123";
+      input.setSelectionRange(4, 4);
+      fireEvent.input(input);
+
+      expect(input.value).toBe("555123");
+      expect(input.selectionStart).toBe(3);
+    });
+  });
 });

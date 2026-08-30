@@ -14,6 +14,7 @@ import {
   setElementTag as setElementTagCommand,
   setElementText as setElementTextCommand,
   setElementValue as setElementValueCommand,
+  setListItemCount as setListItemCountCommand,
   type InsertPosition,
 } from "@/features/editor/commands/documentCommands";
 import type { InputType } from "@/features/editor/types/input";
@@ -209,6 +210,8 @@ interface EditorState {
   setElementInputType: (nodeId: string, inputType: InputType) => void;
   /** One-shot authored checked-state edit (Checkpoint 1.12 — the Form Control Inspector's Checked toggle for checkbox/radio). Same action-level no-op guard as setElementValue/setElementInputType. */
   setElementChecked: (nodeId: string, checked: boolean | undefined) => void;
+  /** One-shot list item count edit (Checkpoint 1.12.1 — the List Inspector's Items field for ul/ol). Same action-level no-op guard as setElementValue/setElementChecked. */
+  setListItemCount: (nodeId: string, count: number) => void;
 
   /**
    * Generic continuous-interaction transaction (Checkpoint 4.3.1) — the
@@ -577,6 +580,13 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setElementChecked: (nodeId, checked) =>
     set((state) => {
       const document = setElementCheckedCommand(state.document, nodeId, checked);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setListItemCount: (nodeId, count) =>
+    set((state) => {
+      const document = setListItemCountCommand(state.document, nodeId, count);
       if (document === state.document) return {};
       return { ...pushHistory(state), document };
     }),

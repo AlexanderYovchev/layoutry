@@ -49,3 +49,24 @@ const TOGGLE_INPUT_TYPES: ReadonlySet<InputType> = new Set(["checkbox", "radio"]
 export function isToggleInputType(inputType: InputType): boolean {
   return TOGGLE_INPUT_TYPES.has(inputType);
 }
+
+/**
+ * Practical telephone-number characters (Checkpoint 1.12.1): digits, the
+ * international-dial prefix (+), the two DTMF symbols phones themselves
+ * use (*, #), and common human formatting punctuation (spaces, parens,
+ * hyphen, dot). Deliberately excludes every letter — native `type="tel"`
+ * itself imposes no format restriction at all, but an authored default
+ * value with letters in it ("call-now") is never a real phone number, so
+ * Layoutry restricts it at the editing layer instead. This does NOT
+ * change the rendered `type` attribute (still genuinely "tel", never
+ * "number" — see Checkpoint 1.12.1's report) and never touches any other
+ * Input type's editing behavior.
+ */
+const TEL_ALLOWED_CHARACTERS = /[0-9+*#().\- ]/;
+
+/** Strips every character sanitizeValue's caller (useNativeFormValueEditing) would otherwise let through unfiltered — a pure removal filter, never a reorder, so callers can safely diff caret position against it. */
+export function sanitizeTelValue(raw: string): string {
+  return Array.from(raw)
+    .filter((character) => TEL_ALLOWED_CHARACTERS.test(character))
+    .join("");
+}

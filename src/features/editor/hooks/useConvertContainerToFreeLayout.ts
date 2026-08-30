@@ -67,17 +67,17 @@ export function useConvertContainerToFreeLayout() {
 
     // A container's *Flow* rendered size has no enforced minimum (only an
     // explicit resize does) — an empty or lightly-populated container can
-    // measure smaller than its own tag minimum (see
-    // getResizeConstraintsForTag; a Section/Container resized via its own
-    // handles can never go below 240x160/160x120, but Flow auto-sizing has
-    // no such floor). Freezing that raw measured size as the container's
+    // measure smaller than the generic resize floor (see
+    // getResizeConstraintsForTag; an explicit resize via handles can never
+    // go below that small floor, but Flow auto-sizing has no such floor
+    // at all). Freezing that raw measured size as the container's
     // permanent Free-mode size would then force every subsequently
     // inserted/placed child's own minimum size (normalizeFreeLayoutGeometry
     // always honors a child's minimum over the parent bounds when they
     // conflict) to overflow past the container's own edge. Flooring the
     // preserved size at conversion time is what keeps a freshly-Free'd
     // container always large enough to actually hold content.
-    const containerConstraints = getResizeConstraintsForTag(containerEl.getAttribute("data-node-type") ?? "");
+    const containerConstraints = getResizeConstraintsForTag();
     const selfWidth = Math.max(containerRect.width, containerConstraints.minWidth);
     const selfHeight = Math.max(containerRect.height, containerConstraints.minHeight);
 

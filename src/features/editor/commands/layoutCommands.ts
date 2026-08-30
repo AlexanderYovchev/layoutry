@@ -21,7 +21,7 @@ export function setFreeChildGeometry(
   geometry: FreeLayoutGeometry,
 ): EditorElementNode {
   if (root.id === nodeId) {
-    const constraints = getResizeConstraintsForTag(root.tag);
+    const constraints = getResizeConstraintsForTag();
     const safeGeometry: FreeLayoutGeometry = {
       x: geometry.x,
       y: geometry.y,

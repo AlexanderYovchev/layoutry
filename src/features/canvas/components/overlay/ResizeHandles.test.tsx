@@ -5,6 +5,7 @@ import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
 import { ResizeHandles } from "./ResizeHandles";
 import type { MeasuredNodeRect } from "@/features/canvas/hooks/useMeasuredNodeRect";
+import { DEFAULT_RESIZE_CONSTRAINTS } from "@/features/editor/types/resize";
 
 const initialState = useEditorStore.getState();
 
@@ -20,11 +21,10 @@ function UnboundedHarness({ children }: { children: ReactNode }) {
   return <div ref={canvasRootRef}>{children}</div>;
 }
 
-// heading-1 (a leaf, not a container) deliberately keeps the generic 64x64
-// resize floor (Checkpoint 3.4.4 gives container tags like "section" a
-// much bigger 240x160 minimum — see getResizeConstraintsForTag), so these
-// direction-math/anchor tests exercise plain per-handle geometry rather
-// than incidentally re-testing the container minimum.
+// heading-1 uses the generic resize floor every tag now shares (Checkpoint
+// 1.12.1 removed the bigger, per-tag-category container floor — see
+// getResizeConstraintsForTag), so these direction-math/anchor tests
+// exercise plain per-handle geometry against that small, shared minimum.
 function renderHandles(overrides: Partial<{ offsetX: number; offsetY: number }> = {}) {
   return render(
     <UnboundedHarness>
@@ -133,7 +133,7 @@ describe("ResizeHandles", () => {
     fireEvent.pointerUp(handle, { clientX: 0, clientY: 300, pointerId: 1 });
 
     const section = findNodeById(useEditorStore.getState().document, "heading-1");
-    expect(section?.dimensions?.preferredWidth).toBe(64);
+    expect(section?.dimensions?.preferredWidth).toBe(DEFAULT_RESIZE_CONSTRAINTS.minWidth);
   });
 
   it("marks the dragged handle active while resizing", () => {
@@ -365,8 +365,10 @@ describe("ResizeHandles — Free container child scaling (Checkpoint 3.4.4)", ()
     fireEvent.pointerUp(handle, { clientX: 0, clientY: 300, pointerId: 1 });
 
     const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
-    // Container's own tag minimum (240 for "section") wins over the 25% floor (50) here —
-    // both floors exist; whichever is bigger applies. Either way it never reaches near-zero.
+    // The 25% MIN_FREE_CONTAINER_SCALE floor (50) is what stops this shrink
+    // from reaching near-zero — the generic resize floor (Checkpoint
+    // 1.12.1) is much smaller than 50 now, so this scenario is really only
+    // exercising computeContainerChildScaling's own floor, not resizeNode's.
     expect(section?.dimensions?.preferredWidth).toBeGreaterThanOrEqual(50);
     const heading = section?.children?.find((c) => c.id === "heading-1");
     expect(heading?.freeLayout?.width).toBeGreaterThan(0);
@@ -385,11 +387,11 @@ describe("ResizeHandles — Free container child scaling (Checkpoint 3.4.4)", ()
     fireEvent.pointerUp(handle, { clientX: 560, clientY: 300, pointerId: 1 });
 
     const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
-    // Height (100) floors up to section's own 160px minimum (Checkpoint
-    // 3.4.4's per-tag container minimums), even though this drag only
-    // touched the east/width handle — resizeNode's defensive clamp
-    // applies regardless of which axis actually changed.
-    expect(section?.dimensions).toEqual({ preferredWidth: 260, preferredHeight: 160, offsetX: 0, offsetY: 0 });
+    // Height (100) stays exactly as measured — the generic resize floor
+    // (Checkpoint 1.12.1) is far below 100, so resizeNode's defensive
+    // clamp has nothing to do here even though it always re-applies to
+    // both axes regardless of which handle was actually dragged.
+    expect(section?.dimensions).toEqual({ preferredWidth: 260, preferredHeight: 100, offsetX: 0, offsetY: 0 });
   });
 });
 

@@ -41,7 +41,7 @@ export function resolveFreeDestinationPlacement(
   const freeLayout = normalizeFreeLayoutGeometry(
     { x: position.x, y: position.y, width: size.width, height: size.height },
     parentBounds,
-    getResizeConstraintsForTag(node.tag),
+    getResizeConstraintsForTag(),
   );
 
   return { ...node, freeLayout };

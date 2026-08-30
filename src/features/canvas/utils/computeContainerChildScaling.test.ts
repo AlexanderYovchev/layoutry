@@ -4,6 +4,7 @@ import {
   deriveFlooredContainerOuterSize,
   type ContainerChildSnapshot,
 } from "./computeContainerChildScaling";
+import { DEFAULT_RESIZE_CONSTRAINTS } from "@/features/editor/types/resize";
 
 const children: ContainerChildSnapshot[] = [
   { id: "a", tag: "img", geometry: { x: 16, y: 16, width: 100, height: 80 } },
@@ -97,10 +98,10 @@ describe("computeContainerChildScaling — clamp policy", () => {
     expect(result.b.x + result.b.width).toBeLessThanOrEqual(100);
   });
 
-  it("respects each child's own tag minimum (a container child floors higher than a leaf) when the new bounds are large enough to allow it", () => {
+  it("respects the generic resize floor (Checkpoint 1.12.1 — every tag shares the same one, container or leaf) when the new bounds are large enough to allow it", () => {
     const mixedChildren: ContainerChildSnapshot[] = [
-      { id: "leaf", tag: "img", geometry: { x: 0, y: 0, width: 10, height: 10 } },
-      { id: "nested-container", tag: "div", geometry: { x: 0, y: 0, width: 10, height: 10 } },
+      { id: "leaf", tag: "img", geometry: { x: 0, y: 0, width: 1, height: 1 } },
+      { id: "nested-container", tag: "div", geometry: { x: 0, y: 0, width: 1, height: 1 } },
     ];
     const result = computeContainerChildScaling(
       mixedChildren,
@@ -108,12 +109,12 @@ describe("computeContainerChildScaling — clamp policy", () => {
       { width: 200, height: 200 },
       "clamp",
     );
-    expect(result.leaf.width).toBe(64);
-    expect(result["nested-container"].width).toBe(160);
+    expect(result.leaf.width).toBe(DEFAULT_RESIZE_CONSTRAINTS.minWidth);
+    expect(result["nested-container"].width).toBe(DEFAULT_RESIZE_CONSTRAINTS.minWidth);
   });
 
   it("never lets a child escape the new bounds, even a nested container whose own minimum exceeds them", () => {
-    // A container's own minimum (160 for div) can exceed how much room a
+    // A container's own generic minimum can exceed how much room a
     // severely shrunk parent actually has — containment must win over
     // that minimum regardless of the child's own tag.
     const mixedChildren: ContainerChildSnapshot[] = [

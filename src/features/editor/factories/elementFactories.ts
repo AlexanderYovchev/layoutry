@@ -44,7 +44,8 @@ export type InsertableElementType =
   | "checkboxInput"
   | "radioInput"
   | "label"
-  | "textarea";
+  | "textarea"
+  | "footerComposition";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -201,6 +202,53 @@ export function createFooterNode(): EditorElementNode {
     children: [],
     flowLayout: { display: "block" },
     spacing: DEFAULT_CONTAINER_SPACING,
+  };
+}
+
+/**
+ * "Simple Footer" starter composition (Checkpoint 1.12.1) — the primitive
+ * `footer` tag above stays a neutral, empty structural element on
+ * purpose (see its own doc comment); this is a SEPARATE catalog entry
+ * that ships pre-populated with ordinary primitives, for users who want a
+ * usable starting point rather than an empty shell. Every node here is a
+ * genuine, independently-editable primitive (div/p/nav/a) built from the
+ * exact same fields their own standalone factories use — no proprietary
+ * "FooterComponentNode", no opaque/locked subtree. Built inline on one
+ * returned node, the same way the List factories already ship 3 starter
+ * `<li>` items: insertNode inserts a whole subtree in one immutable
+ * write, so one insertElement call is still exactly one history entry.
+ */
+export function createFooterCompositionNode(): EditorElementNode {
+  return {
+    id: generateNodeId("footer"),
+    tag: "footer",
+    flowLayout: { display: "block" },
+    spacing: DEFAULT_CONTAINER_SPACING,
+    children: [
+      {
+        id: generateNodeId("div"),
+        tag: "div",
+        flowLayout: { display: "block" },
+        spacing: DEFAULT_CONTAINER_SPACING,
+        children: [
+          {
+            id: generateNodeId("p"),
+            tag: "p",
+            text: "© 2026 Your Company. All rights reserved.",
+          },
+          {
+            id: generateNodeId("nav"),
+            tag: "nav",
+            flowLayout: { display: "block" },
+            children: [
+              { id: generateNodeId("a"), tag: "a", text: "Privacy", href: DEFAULT_LINK_HREF },
+              { id: generateNodeId("a"), tag: "a", text: "Terms", href: DEFAULT_LINK_HREF },
+              { id: generateNodeId("a"), tag: "a", text: "Contact", href: DEFAULT_LINK_HREF },
+            ],
+          },
+        ],
+      },
+    ],
   };
 }
 
@@ -379,6 +427,7 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   radioInput: createRadioNode,
   label: createLabelNode,
   textarea: createTextareaNode,
+  footerComposition: createFooterCompositionNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -427,6 +476,7 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   radioInput: { width: 20, height: 20 },
   label: { width: 220, height: 60 },
   textarea: { width: 240, height: 100 },
+  footerComposition: { width: 320, height: 160 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };

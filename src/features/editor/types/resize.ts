@@ -7,9 +7,17 @@ export interface ResizeConstraints {
   minHeight: number;
 }
 
+/**
+ * The generic, editor-level resize floor (Checkpoint 1.12.1) — a minimal
+ * positive size that keeps geometry valid (never zero/negative, never
+ * degenerate for ratio math) without treating any tag's creation size or
+ * category as a minimum. A newly-created element's factory dimensions are
+ * only a starting point; the user must be able to shrink well below them.
+ * Deliberately generic and tag-independent — see getResizeConstraintsForTag.
+ */
 export const DEFAULT_RESIZE_CONSTRAINTS: ResizeConstraints = {
-  minWidth: 64,
-  minHeight: 64,
+  minWidth: 4,
+  minHeight: 4,
 };
 
 /**

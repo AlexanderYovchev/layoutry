@@ -75,7 +75,7 @@ export function setElementPadding(
               freeLayout: normalizeFreeLayoutGeometry(
                 child.freeLayout,
                 newContentBounds,
-                getResizeConstraintsForTag(child.tag),
+                getResizeConstraintsForTag(),
               ),
             }
           : child,

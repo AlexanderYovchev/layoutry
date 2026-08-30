@@ -97,7 +97,7 @@ export function InspectorSizeSection({ node, isFreeChild }: InspectorSizeSection
       setElementDimensions(node.id, undefined);
       return;
     }
-    const fallback = getResizeConstraintsForTag(node.tag);
+    const fallback = getResizeConstraintsForTag();
     const height = node.dimensions?.preferredHeight ?? renderedSize?.height ?? fallback.minHeight;
     setElementDimensions(node.id, {
       preferredWidth: next,
@@ -112,7 +112,7 @@ export function InspectorSizeSection({ node, isFreeChild }: InspectorSizeSection
       setElementDimensions(node.id, undefined);
       return;
     }
-    const fallback = getResizeConstraintsForTag(node.tag);
+    const fallback = getResizeConstraintsForTag();
     const width = node.dimensions?.preferredWidth ?? renderedSize?.width ?? fallback.minWidth;
     setElementDimensions(node.id, {
       preferredWidth: width,

@@ -18,7 +18,7 @@ import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
 import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
-import { getInputType, isToggleInputType } from "@/features/editor/types/input";
+import { getInputType, isToggleInputType, sanitizeTelValue } from "@/features/editor/types/input";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -74,11 +74,12 @@ function preventCheckedToggle(event: ReactMouseEvent) {
 export function InputElement({ node, parentId, parentLayoutMode, parentFlowDisplay }: DocumentElementProps) {
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
-  const editable = useNativeFormValueEditing(node);
-  const checkedResyncRef = useRef<HTMLInputElement | null>(null);
-
   const inputType = getInputType(node);
   const isToggle = isToggleInputType(inputType);
+  const editable = useNativeFormValueEditing(node, {
+    sanitizeValue: inputType === "tel" ? sanitizeTelValue : undefined,
+  });
+  const checkedResyncRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!isToggle) return;
