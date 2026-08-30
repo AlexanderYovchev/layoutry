@@ -23,6 +23,12 @@ describe("getElementDisplayName", () => {
     expect(getElementDisplayName({ id: "15", tag: "footer" })).toBe("Footer");
     expect(getElementDisplayName({ id: "16", tag: "form" })).toBe("Form");
     expect(getElementDisplayName({ id: "17", tag: "label" })).toBe("Label");
+    expect(getElementDisplayName({ id: "18", tag: "textarea" })).toBe("Textarea");
+  });
+
+  it("resolves Checkbox/Radio to their own short names, not \"Checkbox Input\"/\"Radio Input\" (Checkpoint 1.12)", () => {
+    expect(getElementDisplayName({ id: "1", tag: "input", inputType: "checkbox" })).toBe("Checkbox");
+    expect(getElementDisplayName({ id: "2", tag: "input", inputType: "radio" })).toBe("Radio");
   });
 
   it("resolves Input's display name from its inputType, not a single generic name (Checkpoint 1.11)", () => {

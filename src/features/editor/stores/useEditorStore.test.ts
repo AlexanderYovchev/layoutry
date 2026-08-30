@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  createCheckboxNode,
   createContainerNode,
   createEmailInputNode,
   createFooterNode,
@@ -9,6 +10,8 @@ import {
   createLabelNode,
   createLinkNode,
   createListItemNode,
+  createRadioNode,
+  createTextareaNode,
   createUnorderedListNode,
 } from "@/features/editor/factories/elementFactories";
 import { useEditorStore } from "./useEditorStore";
@@ -1479,6 +1482,130 @@ describe("useEditorStore — Label + expanded text-like Input types (Checkpoint 
       ?.children?.find((c) => c.id === formId)
       ?.children?.find((c) => c.id === original.id)?.children?.[0];
     expect(refreshedOriginalInput?.inputType).toBe("email");
+  });
+});
+
+describe("useEditorStore — Checkbox/Radio + Textarea foundation (Checkpoint 1.12)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("setElementChecked pushes exactly one history entry per change, no entry on no-op, and undo restores the previous checked state", () => {
+    useEditorStore.getState().insertElement("section-1", createCheckboxNode());
+    const checkboxId = useEditorStore.getState().selectedElementId!;
+    const findCheckbox = () => useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === checkboxId);
+    const pastLengthAfterInsert = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().setElementChecked(checkboxId, true);
+    expect(findCheckbox()?.checked).toBe(true);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthAfterInsert + 1);
+
+    useEditorStore.getState().setElementChecked(checkboxId, true);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthAfterInsert + 1); // no-op, no new entry
+
+    useEditorStore.getState().undo();
+    expect(findCheckbox()?.checked).toBeUndefined();
+  });
+
+  it("Label can wrap a Checkbox, a Radio, and a Textarea — Label > Checkbox / Label > Radio / Form > Textarea", () => {
+    useEditorStore.getState().insertElement("section-1", createFormNode());
+    const formId = useEditorStore.getState().selectedElementId!;
+
+    useEditorStore.getState().insertElement(formId, createLabelNode());
+    const checkboxLabelId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement(checkboxLabelId, createCheckboxNode());
+
+    useEditorStore.getState().selectElement(formId);
+    useEditorStore.getState().insertElement(formId, createLabelNode());
+    const radioLabelId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement(radioLabelId, createRadioNode());
+
+    useEditorStore.getState().selectElement(formId);
+    useEditorStore.getState().insertElement(formId, createTextareaNode());
+
+    const form = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === formId);
+    const checkboxLabel = form?.children?.find((c) => c.id === checkboxLabelId);
+    const radioLabel = form?.children?.find((c) => c.id === radioLabelId);
+    const textarea = form?.children?.find((c) => c.tag === "textarea");
+
+    expect(checkboxLabel?.children?.[0]?.inputType).toBe("checkbox");
+    expect(radioLabel?.children?.[0]?.inputType).toBe("radio");
+    expect(textarea?.tag).toBe("textarea");
+  });
+
+  it("Checkbox and Textarea both reject insertion into a List — Checkpoint 1.6's UL/OL li-only rule remains intact", () => {
+    useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
+    const listId = useEditorStore.getState().selectedElementId!;
+    const beforeDocument = useEditorStore.getState().document;
+
+    useEditorStore.getState().insertElement(listId, createCheckboxNode());
+    expect(useEditorStore.getState().document).toBe(beforeDocument);
+
+    useEditorStore.getState().insertElement(listId, createTextareaNode());
+    expect(useEditorStore.getState().document).toBe(beforeDocument);
+  });
+
+  it("switching Input Type across families (text -> checkbox -> radio -> email) preserves name/value and never destroys stored data", () => {
+    useEditorStore.getState().insertElement("section-1", createInputNode());
+    const inputId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().setElementName(inputId, "newsletter");
+    useEditorStore.getState().setElementValue(inputId, "yes");
+    useEditorStore.getState().setElementPlaceholder(inputId, "Email");
+
+    const findInput = () => useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === inputId);
+
+    useEditorStore.getState().setElementInputType(inputId, "checkbox");
+    expect(findInput()?.name).toBe("newsletter");
+    expect(findInput()?.value).toBe("yes");
+    expect(findInput()?.placeholder).toBe("Email"); // preserved, though hidden in the Inspector for this type
+
+    useEditorStore.getState().setElementChecked(inputId, true);
+    useEditorStore.getState().setElementInputType(inputId, "radio");
+    expect(findInput()?.checked).toBe(true); // preserved, though hidden in the Inspector for a fresh selection state
+    expect(findInput()?.name).toBe("newsletter");
+
+    useEditorStore.getState().setElementInputType(inputId, "email");
+    expect(findInput()?.inputType).toBe("email");
+    expect(findInput()?.name).toBe("newsletter");
+    expect(findInput()?.value).toBe("yes");
+    expect(findInput()?.placeholder).toBe("Email");
+    expect(findInput()?.checked).toBe(true); // still stored, simply inert for a text-like type
+  });
+
+  it("duplicates a Form > Label > Checkbox / Label > Radio / Textarea structure recursively with fresh ids, preserving checked/inputType, and independent post-duplicate editing", () => {
+    useEditorStore.getState().insertElement("section-1", createFormNode());
+    const formId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement(formId, createLabelNode());
+    const labelId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement(labelId, createCheckboxNode());
+    const checkboxId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().setElementChecked(checkboxId, true);
+    useEditorStore.getState().setElementName(checkboxId, "terms");
+
+    useEditorStore.getState().selectElement(labelId);
+    useEditorStore.getState().duplicateSelection();
+
+    const form = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === formId);
+    const labels = form?.children?.filter((c) => c.tag === "label") ?? [];
+    expect(labels).toHaveLength(2);
+    const [original, duplicate] = labels;
+
+    expect(duplicate.id).not.toBe(original.id);
+    const duplicateCheckbox = duplicate.children?.[0];
+    const originalCheckbox = original.children?.[0];
+    expect(duplicateCheckbox?.id).not.toBe(originalCheckbox?.id);
+    expect(duplicateCheckbox?.inputType).toBe("checkbox");
+    expect(duplicateCheckbox?.checked).toBe(true);
+    expect(duplicateCheckbox?.name).toBe("terms");
+
+    // Editing the duplicate's checked state never touches the original.
+    useEditorStore.getState().setElementChecked(duplicateCheckbox!.id, false);
+    const refreshedOriginalCheckbox = useEditorStore
+      .getState()
+      .document.children?.find((c) => c.id === "section-1")
+      ?.children?.find((c) => c.id === formId)
+      ?.children?.find((c) => c.id === original.id)?.children?.[0];
+    expect(refreshedOriginalCheckbox?.checked).toBe(true);
   });
 });
 

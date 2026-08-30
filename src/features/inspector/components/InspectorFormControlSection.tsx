@@ -1,11 +1,12 @@
 "use client";
 
 import { useRef, useState, type KeyboardEvent } from "react";
+import { InspectorBooleanToggle } from "@/features/inspector/components/InspectorBooleanToggle";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
-import { getInputType, INPUT_TYPES, type InputType } from "@/features/editor/types/input";
+import { getInputType, INPUT_TYPES, isToggleInputType, type InputType } from "@/features/editor/types/input";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +18,8 @@ const INPUT_TYPE_OPTION_LABELS: Record<InputType, string> = {
   search: "Search",
   url: "URL",
   tel: "Tel",
+  checkbox: "Checkbox",
+  radio: "Radio",
 };
 
 interface InputTypeFieldProps {
@@ -25,16 +28,21 @@ interface InputTypeFieldProps {
 }
 
 /**
- * A native `<select>` dropdown for Input Type (Checkpoint 1.11) — seven
- * textual options is past the point a segmented row (InspectorSegmentedRow,
- * used for Heading Level's six single-character H1–H6 options) stays
- * legible in this panel's own width; InspectorUnitSelect already
- * established the "several textual choices -> a real <select>" pattern
- * this mirrors, just not extracted as a shared component since that one
- * is CssUnit-typed and this checkpoint has exactly one consumer. Always
+ * A native `<select>` dropdown for Input Type (Checkpoint 1.11, widened
+ * to checkbox/radio in 1.12) — this many textual options is past the
+ * point a segmented row (InspectorSegmentedRow, used for Heading
+ * Level's six single-character H1–H6 options) stays legible in this
+ * panel's own width; InspectorUnitSelect already established the
+ * "several textual choices -> a real <select>" pattern this mirrors,
+ * just not extracted as a shared component since that one is
+ * CssUnit-typed and this checkpoint has exactly one consumer. Always
  * has a value (no "unset" state — every Input has an effective type via
  * getInputType's own text default), so this never needs the Reset
- * affordance the other three fields use.
+ * affordance the other three fields use. Deliberately offers every
+ * InputType, including checkbox/radio — switching directly between any
+ * two families (e.g. Email -> Checkbox -> Radio -> Text) is the whole
+ * point of one shared Input node, not something this control should
+ * artificially restrict.
  */
 function InputTypeField({ value, onChange }: InputTypeFieldProps) {
   return (
@@ -152,31 +160,42 @@ function FormControlTextField({ id, label, value, onCommit, onReset, hasExplicit
 }
 
 /**
- * Input's semantic form-control concerns: Type (Checkpoint 1.11 — the
- * dedicated setElementInputType command deferred by Checkpoint 1.10,
- * since nothing could change it until this checkpoint widened the type
- * union), Name, Placeholder, and Default Value (Checkpoint 1.10) —
- * deliberately not a CSS Inspector section, the same "element data, not
- * styling" spirit InspectorLinkSection/InspectorHeadingLevelSection
- * already established, placed in the same position (after Link/Heading
- * Level, before Typography). Type renders first — it's the field that
- * determines what the other three even mean. checked/required/disabled/
- * readonly/min/max/pattern/autocomplete remain deliberately out of this
- * checkpoint's scope — see this checkpoint's own report. One completed
- * edit is one history entry per field (setElementInputType/
- * setElementName/setElementPlaceholder/setElementValue's own one-shot,
- * action-level-no-op-guarded store actions); an unchanged value never
- * commits at all.
+ * Form Control's semantic concerns, type-aware since Checkpoint 1.12:
+ * Type (Checkpoint 1.11 — only for `input`; Textarea has no inputType
+ * concept at all, so this row is omitted entirely for it, not just
+ * disabled), Name, Placeholder, and Default Value (Checkpoint 1.10),
+ * and Checked (Checkpoint 1.12 — only for checkbox/radio, replacing
+ * Placeholder, which native checkbox/radio ignore entirely and would
+ * only confuse the panel). Deliberately not a CSS Inspector section,
+ * the same "element data, not styling" spirit InspectorLinkSection/
+ * InspectorHeadingLevelSection already established, placed in the same
+ * position (after Link/Heading Level, before Typography). Type renders
+ * first when present — it's the field that determines what the others
+ * even mean. required/disabled/readonly/min/max/pattern/autocomplete
+ * remain deliberately out of this checkpoint's scope — see this
+ * checkpoint's own report. One completed edit is one history entry per
+ * field (setElementInputType/setElementName/setElementPlaceholder/
+ * setElementValue/setElementChecked's own one-shot, action-level-no-op-
+ * guarded store actions); an unchanged value never commits at all.
+ *
+ * Switching Type never deletes Placeholder/Checked even when the newly
+ * selected type hides one of them from view — see this checkpoint's
+ * report on non-destructive type transitions. Hiding here is purely a
+ * rendering decision; the underlying document field is untouched.
  */
 export function InspectorFormControlSection({ node }: InspectorFormControlSectionProps) {
   const setElementInputType = useEditorStore((state) => state.setElementInputType);
   const setElementName = useEditorStore((state) => state.setElementName);
   const setElementPlaceholder = useEditorStore((state) => state.setElementPlaceholder);
   const setElementValue = useEditorStore((state) => state.setElementValue);
+  const setElementChecked = useEditorStore((state) => state.setElementChecked);
+
+  const isInput = node.tag === "input";
+  const isToggle = isInput && isToggleInputType(getInputType(node));
 
   return (
     <InspectorSection label="Form Control" defaultOpen>
-      <InputTypeField value={getInputType(node)} onChange={(inputType) => setElementInputType(node.id, inputType)} />
+      {isInput && <InputTypeField value={getInputType(node)} onChange={(inputType) => setElementInputType(node.id, inputType)} />}
       <FormControlTextField
         id="form-control-name"
         label="Name"
@@ -185,14 +204,16 @@ export function InspectorFormControlSection({ node }: InspectorFormControlSectio
         onCommit={(value) => setElementName(node.id, value)}
         onReset={() => setElementName(node.id, undefined)}
       />
-      <FormControlTextField
-        id="form-control-placeholder"
-        label="Placeholder"
-        value={node.placeholder ?? ""}
-        hasExplicitValue={node.placeholder !== undefined}
-        onCommit={(value) => setElementPlaceholder(node.id, value)}
-        onReset={() => setElementPlaceholder(node.id, undefined)}
-      />
+      {!isToggle && (
+        <FormControlTextField
+          id="form-control-placeholder"
+          label="Placeholder"
+          value={node.placeholder ?? ""}
+          hasExplicitValue={node.placeholder !== undefined}
+          onCommit={(value) => setElementPlaceholder(node.id, value)}
+          onReset={() => setElementPlaceholder(node.id, undefined)}
+        />
+      )}
       <FormControlTextField
         id="form-control-value"
         label="Default Value"
@@ -201,6 +222,11 @@ export function InspectorFormControlSection({ node }: InspectorFormControlSectio
         onCommit={(value) => setElementValue(node.id, value)}
         onReset={() => setElementValue(node.id, undefined)}
       />
+      {isToggle && (
+        <InspectorPropertyRow label="Checked">
+          <InspectorBooleanToggle checked={node.checked ?? false} onChange={(checked) => setElementChecked(node.id, checked)} label="Checked" />
+        </InspectorPropertyRow>
+      )}
     </InspectorSection>
   );
 }

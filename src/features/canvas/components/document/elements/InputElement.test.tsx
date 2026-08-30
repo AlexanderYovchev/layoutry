@@ -307,4 +307,111 @@ describe("InputElement (Checkpoint 1.10)", () => {
       expect(input.value).toBe("hello");
     });
   });
+
+  describe("checkbox/radio (Checkpoint 1.12)", () => {
+    it("renders a genuine <input type=\"checkbox\">, not a div standing in for one", () => {
+      render(<InputElement node={{ id: "input-1", tag: "input", inputType: "checkbox" }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+
+      const checkbox = screen.getByRole("checkbox") as HTMLInputElement;
+      expect(checkbox.tagName).toBe("INPUT");
+      expect(checkbox.type).toBe("checkbox");
+    });
+
+    it("renders a genuine <input type=\"radio\">", () => {
+      render(<InputElement node={{ id: "input-1", tag: "input", inputType: "radio" }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+
+      const radio = screen.getByRole("radio") as HTMLInputElement;
+      expect(radio.type).toBe("radio");
+    });
+
+    it("reflects name and value as real DOM attributes, same as text-like Input", () => {
+      render(
+        <InputElement
+          node={{ id: "input-1", tag: "input", inputType: "checkbox", name: "terms", value: "accepted" }}
+          parentId="form-1"
+          parentLayoutMode="flow"
+          parentFlowDisplay="block"
+        />,
+      );
+
+      const checkbox = screen.getByRole("checkbox");
+      expect(checkbox).toHaveAttribute("name", "terms");
+      expect(checkbox).toHaveAttribute("value", "accepted");
+    });
+
+    it("uses the authored checked state as the initial/default checked state", () => {
+      render(<InputElement node={{ id: "input-1", tag: "input", inputType: "checkbox", checked: true }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+
+      expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(true);
+    });
+
+    it("defaults to unchecked when checked is unset", () => {
+      render(<InputElement node={{ id: "input-1", tag: "input", inputType: "checkbox" }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+
+      expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
+    });
+
+    it("a plain click does NOT toggle the checkbox — normal Canvas selection must not activate native controls (Checkpoint 1.9's own recommendation)", () => {
+      render(<InputElement node={{ id: "input-1", tag: "input", inputType: "checkbox" }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+
+      const checkbox = screen.getByRole("checkbox") as HTMLInputElement;
+      fireEvent.click(checkbox);
+
+      expect(checkbox.checked).toBe(false);
+    });
+
+    it("the click event's default action is prevented — the mechanism that stops native toggling", () => {
+      render(<InputElement node={{ id: "input-1", tag: "input", inputType: "checkbox" }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+
+      const notCancelled = fireEvent.click(screen.getByRole("checkbox"));
+      expect(notCancelled).toBe(false);
+    });
+
+    it("mousedown is also prevented — the same focus-stealing safeguard text-like Input uses, so a merely-selected checkbox never blocks editor keyboard shortcuts", () => {
+      render(<InputElement node={{ id: "input-1", tag: "input", inputType: "checkbox" }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+
+      const notCancelled = fireEvent.mouseDown(screen.getByRole("checkbox"));
+      expect(notCancelled).toBe(false);
+    });
+
+    it("a checkbox never becomes readOnly — the attribute is meaningless for checkbox/radio, so this component never sets it for them", () => {
+      render(<InputElement node={{ id: "input-1", tag: "input", inputType: "checkbox" }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+
+      expect(screen.getByRole("checkbox")).not.toHaveAttribute("readonly");
+    });
+
+    it("resyncs the displayed checked state when node.checked changes from OUTSIDE interaction (e.g. Undo/Redo/Reset) — defaultChecked alone would NOT do this on a later render, the same class of bug Checkpoint 1.10 found for defaultValue", () => {
+      const { rerender } = render(
+        <InputElement node={{ id: "input-1", tag: "input", inputType: "checkbox", checked: false }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+      );
+      const checkbox = screen.getByRole("checkbox") as HTMLInputElement;
+      expect(checkbox.checked).toBe(false);
+
+      rerender(
+        <InputElement node={{ id: "input-1", tag: "input", inputType: "checkbox", checked: true }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+      );
+      expect(checkbox.checked).toBe(true);
+
+      rerender(
+        <InputElement node={{ id: "input-1", tag: "input", inputType: "checkbox", checked: false }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+      );
+      expect(checkbox.checked).toBe(false);
+    });
+
+    it("does not apply the resync effect to text-like Input — isToggle-gated, never runs for a variant with no checked concept", () => {
+      const { rerender } = render(
+        <InputElement node={{ id: "input-1", tag: "input", inputType: "text", value: "hello" }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+      );
+      const input = screen.getByRole("textbox") as HTMLInputElement;
+
+      // A checked prop appearing on a text-like node (never produced by
+      // this app's own commands, but a defensive check) must not be
+      // written to a DOM property that only means something for
+      // checkbox/radio.
+      rerender(
+        <InputElement node={{ id: "input-1", tag: "input", inputType: "text", value: "hello", checked: true }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+      );
+      expect(input.checked).toBe(false);
+    });
+  });
 });

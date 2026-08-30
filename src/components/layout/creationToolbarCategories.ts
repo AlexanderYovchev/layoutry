@@ -30,7 +30,10 @@ export type InsertableCardType =
   | "searchInput"
   | "urlInput"
   | "telInput"
-  | "label";
+  | "checkboxInput"
+  | "radioInput"
+  | "label"
+  | "textarea";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -170,6 +173,21 @@ function htmlCategory(): ToolbarCategoryContent {
           name: "Tel Input",
           description: "Phone number field",
           elementType: "telInput",
+        },
+        {
+          name: "Checkbox",
+          description: "Toggleable option",
+          elementType: "checkboxInput",
+        },
+        {
+          name: "Radio Button",
+          description: "Single choice option",
+          elementType: "radioInput",
+        },
+        {
+          name: "Textarea",
+          description: "Multi-line text field",
+          elementType: "textarea",
         },
         {
           name: "Button",

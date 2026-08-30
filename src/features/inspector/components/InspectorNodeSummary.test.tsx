@@ -616,6 +616,17 @@ describe("InspectorNodeSummary — Form Control section (Checkpoint 1.10)", () =
     expect(screen.getByText("Form Control")).toBeInTheDocument();
   });
 
+  it("shows the Form Control section for a Textarea (Checkpoint 1.12 — the section now supports more than one native tag)", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "textarea-1", tag: "textarea" }}
+        parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Form Control")).toBeInTheDocument();
+  });
+
   it("omits the Form Control section for unrelated elements (a container, a heading, a button, a form, a label)", () => {
     for (const node of [
       { id: "div-1", tag: "div" },

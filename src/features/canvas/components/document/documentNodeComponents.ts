@@ -8,6 +8,7 @@ import { InputElement } from "@/features/canvas/components/document/elements/Inp
 import { LinkElement } from "@/features/canvas/components/document/elements/LinkElement";
 import { ListItemElement } from "@/features/canvas/components/document/elements/ListItemElement";
 import { ParagraphElement } from "@/features/canvas/components/document/elements/ParagraphElement";
+import { TextareaElement } from "@/features/canvas/components/document/elements/TextareaElement";
 import type { DocumentElementComponent } from "@/features/canvas/types/documentRenderer";
 
 /**
@@ -44,4 +45,5 @@ export const documentNodeComponents: Record<string, DocumentElementComponent> =
     form: ContainerElement,
     label: ContainerElement,
     input: InputElement,
+    textarea: TextareaElement,
   };

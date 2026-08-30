@@ -41,7 +41,10 @@ export type InsertableElementType =
   | "searchInput"
   | "urlInput"
   | "telInput"
-  | "label";
+  | "checkboxInput"
+  | "radioInput"
+  | "label"
+  | "textarea";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -270,6 +273,24 @@ export function createTelInputNode(): EditorElementNode {
 }
 
 /**
+ * Checkbox/Radio (Checkpoint 1.12) — the exact same `tag: "input"` leaf
+ * as every text-like variant, differing only in `inputType`; see
+ * types/input.ts's own top comment for why this stays one document
+ * concept rather than a separate node type. Deliberately no placeholder
+ * (native checkbox/radio ignore it entirely — inventing one would be
+ * fake authored data with no meaning) and no starter `name`/`value`/
+ * `checked` — the same "empty until the user sets something real"
+ * philosophy createInputNode already follows.
+ */
+export function createCheckboxNode(): EditorElementNode {
+  return { id: generateNodeId("input"), tag: "input", inputType: "checkbox" };
+}
+
+export function createRadioNode(): EditorElementNode {
+  return { id: generateNodeId("input"), tag: "input", inputType: "radio" };
+}
+
+/**
  * Label (Checkpoint 1.11) — a childable semantic container sharing
  * Container/Section/Form's exact structural defaults, exactly like the
  * Checkpoint 1.8 semantic sectioning family. Phase one is deliberately
@@ -286,6 +307,25 @@ export function createLabelNode(): EditorElementNode {
     children: [],
     flowLayout: { display: "block" },
     spacing: DEFAULT_CONTAINER_SPACING,
+  };
+}
+
+/**
+ * Textarea (Checkpoint 1.12) — a genuine `tag: "textarea"` leaf, not
+ * Input with a variant: multiline text is a real, distinct native
+ * element, not another `inputType`. Reuses Input's own `name`/
+ * `placeholder`/`value` fields unchanged (the same semantic concern —
+ * an authored default a real form control carries — deserves the same
+ * document field across compatible controls; see this checkpoint's own
+ * report for why no textareaValue/etc. duplicate was created). `value`
+ * is left unset for the same "no fake authored data" reason
+ * createInputNode already follows.
+ */
+export function createTextareaNode(): EditorElementNode {
+  return {
+    id: generateNodeId("textarea"),
+    tag: "textarea",
+    placeholder: "Enter text",
   };
 }
 
@@ -335,7 +375,10 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   searchInput: createSearchInputNode,
   urlInput: createUrlInputNode,
   telInput: createTelInputNode,
+  checkboxInput: createCheckboxNode,
+  radioInput: createRadioNode,
   label: createLabelNode,
+  textarea: createTextareaNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -380,7 +423,10 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   searchInput: { width: 200, height: 40 },
   urlInput: { width: 200, height: 40 },
   telInput: { width: 200, height: 40 },
+  checkboxInput: { width: 20, height: 20 },
+  radioInput: { width: 20, height: 20 },
   label: { width: 220, height: 60 },
+  textarea: { width: 240, height: 100 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };
@@ -406,6 +452,7 @@ const INSERTABLE_TYPE_BY_TAG: Record<string, InsertableElementType> = {
   form: "form",
   input: "input",
   label: "label",
+  textarea: "textarea",
 };
 
 /** Falls back to a generic size for a tag with no InsertableElementType entry (e.g. a pasted/duplicated node whose tag isn't one of the five catalog types). */

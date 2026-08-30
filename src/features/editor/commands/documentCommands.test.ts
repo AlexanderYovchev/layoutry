@@ -5,6 +5,7 @@ import {
   moveNode,
   removeNode,
   resizeNode,
+  setElementChecked,
   setElementDimensions,
   setElementHref,
   setElementInputType,
@@ -934,6 +935,123 @@ describe("setElementInputType (Checkpoint 1.11)", () => {
       current = setElementInputType(current, "input-1", type);
       expect(current.children?.[0].children?.[0].inputType).toBe(type);
     }
+  });
+
+  it("cycles across control families — text-like to checkbox/radio and back — without touching unrelated fields (Checkpoint 1.12)", () => {
+    const styledTree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [{ id: "input-1", tag: "input", inputType: "email", name: "newsletter", placeholder: "Email", value: "yes" }],
+    };
+
+    let current = setElementInputType(styledTree, "input-1", "checkbox");
+    expect(current.children?.[0].inputType).toBe("checkbox");
+    expect(current.children?.[0].name).toBe("newsletter");
+    expect(current.children?.[0].placeholder).toBe("Email");
+    expect(current.children?.[0].value).toBe("yes");
+
+    current = setElementInputType(current, "input-1", "radio");
+    expect(current.children?.[0].inputType).toBe("radio");
+
+    current = setElementInputType(current, "input-1", "email");
+    expect(current.children?.[0].inputType).toBe("email");
+    expect(current.children?.[0].name).toBe("newsletter");
+    expect(current.children?.[0].placeholder).toBe("Email");
+    expect(current.children?.[0].value).toBe("yes");
+  });
+});
+
+describe("setElementChecked (Checkpoint 1.12)", () => {
+  const checkboxTree: EditorElementNode = {
+    id: "root",
+    tag: "page",
+    children: [
+      {
+        id: "form-1",
+        tag: "form",
+        children: [{ id: "checkbox-1", tag: "input", inputType: "checkbox", name: "terms" }],
+      },
+    ],
+  };
+
+  it("updates the target node's checked and nothing else", () => {
+    const result = setElementChecked(checkboxTree, "checkbox-1", true);
+    const checkbox = result.children?.[0].children?.[0];
+    expect(checkbox?.checked).toBe(true);
+    expect(checkbox?.name).toBe("terms");
+  });
+
+  it("finds and updates a deeply nested node", () => {
+    const deepTree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [
+        {
+          id: "section-1",
+          tag: "section",
+          children: [
+            {
+              id: "form-1",
+              tag: "form",
+              children: [{ id: "checkbox-1", tag: "input", inputType: "checkbox" }],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = setElementChecked(deepTree, "checkbox-1", true);
+    expect(result.children?.[0].children?.[0].children?.[0].checked).toBe(true);
+  });
+
+  it("preserves every other field, including styles", () => {
+    const styledTree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [{ id: "checkbox-1", tag: "input", inputType: "checkbox", name: "terms", value: "yes", typography: { fontWeight: 700 } }],
+    };
+
+    const result = setElementChecked(styledTree, "checkbox-1", true);
+    const checkbox = result.children?.[0];
+    expect(checkbox?.checked).toBe(true);
+    expect(checkbox?.name).toBe("terms");
+    expect(checkbox?.value).toBe("yes");
+    expect(checkbox?.typography).toEqual({ fontWeight: 700 });
+  });
+
+  it("clears an explicit checked back to undefined", () => {
+    const withChecked = setElementChecked(checkboxTree, "checkbox-1", true);
+    const result = setElementChecked(withChecked, "checkbox-1", undefined);
+    expect(result.children?.[0].children?.[0].checked).toBeUndefined();
+  });
+
+  it("sets false explicitly (distinct from unset)", () => {
+    const withChecked = setElementChecked(checkboxTree, "checkbox-1", true);
+    const result = setElementChecked(withChecked, "checkbox-1", false);
+    expect(result.children?.[0].children?.[0].checked).toBe(false);
+  });
+
+  it("is a no-op (same reference) when the value is already exactly this value", () => {
+    const withChecked = setElementChecked(checkboxTree, "checkbox-1", true);
+    expect(setElementChecked(withChecked, "checkbox-1", true)).toBe(withChecked);
+  });
+
+  it("is a no-op (same reference) when both are unset", () => {
+    expect(setElementChecked(checkboxTree, "checkbox-1", undefined)).toBe(checkboxTree);
+  });
+
+  it("is a no-op (same reference) if the node doesn't exist", () => {
+    expect(setElementChecked(checkboxTree, "does-not-exist", true)).toBe(checkboxTree);
+  });
+
+  it("leaves unrelated sibling nodes completely untouched (structural sharing)", () => {
+    const result = setElementChecked(checkboxTree, "checkbox-1", true);
+    expect(result.children?.[0]).not.toBe(checkboxTree.children?.[0]);
+  });
+
+  it("does not require the node to be a checkbox/radio — generic by id only", () => {
+    const result = setElementChecked(checkboxTree, "form-1", true);
+    expect(result.children?.[0].checked).toBe(true);
   });
 });
 

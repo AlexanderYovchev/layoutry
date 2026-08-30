@@ -5,6 +5,7 @@ import {
   removeNode,
   resizeNode,
   setAspectRatioLocked as setAspectRatioLockedCommand,
+  setElementChecked as setElementCheckedCommand,
   setElementDimensions as setElementDimensionsCommand,
   setElementHref as setElementHrefCommand,
   setElementInputType as setElementInputTypeCommand,
@@ -206,6 +207,8 @@ interface EditorState {
   setElementPlaceholder: (nodeId: string, placeholder: string | undefined) => void;
   /** One-shot Input Type edit (Checkpoint 1.11 — the Form Control Inspector's Type selector). Same action-level no-op guard as setElementValue/setElementTag. */
   setElementInputType: (nodeId: string, inputType: InputType) => void;
+  /** One-shot authored checked-state edit (Checkpoint 1.12 — the Form Control Inspector's Checked toggle for checkbox/radio). Same action-level no-op guard as setElementValue/setElementInputType. */
+  setElementChecked: (nodeId: string, checked: boolean | undefined) => void;
 
   /**
    * Generic continuous-interaction transaction (Checkpoint 4.3.1) — the
@@ -567,6 +570,13 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setElementInputType: (nodeId, inputType) =>
     set((state) => {
       const document = setElementInputTypeCommand(state.document, nodeId, inputType);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setElementChecked: (nodeId, checked) =>
+    set((state) => {
+      const document = setElementCheckedCommand(state.document, nodeId, checked);
       if (document === state.document) return {};
       return { ...pushHistory(state), document };
     }),

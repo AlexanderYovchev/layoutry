@@ -14,7 +14,7 @@ function ConnectedSection({ id }: { id: string }) {
   return <InspectorFormControlSection node={node} />;
 }
 
-function setup(node: { id: string; tag: string; inputType?: InputType; name?: string; placeholder?: string; value?: string }) {
+function setup(node: { id: string; tag: string; inputType?: InputType; name?: string; placeholder?: string; value?: string; checked?: boolean }) {
   useEditorStore.setState((state) => ({
     document: { ...state.document, children: [{ ...node }] },
   }));
@@ -123,11 +123,11 @@ describe("InspectorFormControlSection — Input Type (Checkpoint 1.11)", () => {
     expect(screen.getByLabelText("Type")).toHaveValue("text");
   });
 
-  it("offers all seven text-like types as options", () => {
+  it("offers every InputType as an option, including checkbox/radio (Checkpoint 1.12 — cross-family switching)", () => {
     setup({ id: "input-1", tag: "input" });
     const select = screen.getByLabelText("Type") as HTMLSelectElement;
     const values = Array.from(select.options).map((option) => option.value);
-    expect(values).toEqual(["text", "email", "password", "number", "search", "url", "tel"]);
+    expect(values).toEqual(["text", "email", "password", "number", "search", "url", "tel", "checkbox", "radio"]);
   });
 
   it("changing Type commits through setElementInputType and re-renders immediately", () => {
@@ -167,5 +167,110 @@ describe("InspectorFormControlSection — Input Type (Checkpoint 1.11)", () => {
     fireEvent.change(screen.getByLabelText("Type"), { target: { value: "text" } });
 
     expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);
+  });
+});
+
+describe("InspectorFormControlSection — Checkbox/Radio + Textarea (Checkpoint 1.12)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("hides Placeholder and shows Checked for a checkbox", () => {
+    setup({ id: "input-1", tag: "input", inputType: "checkbox" });
+
+    expect(screen.queryByLabelText("Placeholder")).not.toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Checked" })).toBeInTheDocument();
+  });
+
+  it("hides Placeholder and shows Checked for a radio", () => {
+    setup({ id: "input-1", tag: "input", inputType: "radio" });
+
+    expect(screen.queryByLabelText("Placeholder")).not.toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Checked" })).toBeInTheDocument();
+  });
+
+  it("still shows Name and Default Value for a checkbox — only Placeholder is hidden", () => {
+    setup({ id: "input-1", tag: "input", inputType: "checkbox" });
+
+    expect(screen.getByLabelText("Name")).toBeInTheDocument();
+    expect(screen.getByLabelText("Default Value")).toBeInTheDocument();
+  });
+
+  it("omits Checked for text-like Input types", () => {
+    setup({ id: "input-1", tag: "input", inputType: "email" });
+    expect(screen.queryByRole("switch", { name: "Checked" })).not.toBeInTheDocument();
+  });
+
+  it("reflects the current checked state on the toggle", () => {
+    setup({ id: "input-1", tag: "input", inputType: "checkbox", checked: true });
+    expect(screen.getByRole("switch", { name: "Checked" })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("defaults the toggle to unchecked when checked is unset", () => {
+    setup({ id: "input-1", tag: "input", inputType: "checkbox" });
+    expect(screen.getByRole("switch", { name: "Checked" })).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("toggling Checked commits through setElementChecked and pushes exactly one history entry, undoable", () => {
+    setup({ id: "input-1", tag: "input", inputType: "checkbox" });
+    const pastLengthBefore = useEditorStore.getState().past.length;
+
+    fireEvent.click(screen.getByRole("switch", { name: "Checked" }));
+
+    expect(currentNode("input-1")?.checked).toBe(true);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+
+    useEditorStore.getState().undo();
+    expect(currentNode("input-1")?.checked).toBeUndefined();
+  });
+
+  it("toggling Checked off commits false explicitly", () => {
+    setup({ id: "input-1", tag: "input", inputType: "checkbox", checked: true });
+
+    fireEvent.click(screen.getByRole("switch", { name: "Checked" }));
+
+    expect(currentNode("input-1")?.checked).toBe(false);
+  });
+
+  it("switching Type away from checkbox does not delete the stored Placeholder — it only becomes hidden (non-destructive type switching)", () => {
+    setup({ id: "input-1", tag: "input", inputType: "text", placeholder: "Email", name: "newsletter" });
+    // Establish a stored placeholder on a text-like type first, then
+    // switch to checkbox (hides Placeholder in the UI) and back.
+    fireEvent.change(screen.getByLabelText("Type"), { target: { value: "checkbox" } });
+    expect(currentNode("input-1")?.placeholder).toBe("Email");
+    expect(screen.queryByLabelText("Placeholder")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Type"), { target: { value: "text" } });
+    expect(currentNode("input-1")?.placeholder).toBe("Email");
+    expect(screen.getByLabelText("Placeholder")).toHaveValue("Email");
+  });
+
+  it("switching Type away from checkbox does not delete a stored Checked state — it only becomes hidden", () => {
+    setup({ id: "input-1", tag: "input", inputType: "checkbox", checked: true });
+
+    fireEvent.change(screen.getByLabelText("Type"), { target: { value: "text" } });
+    expect(currentNode("input-1")?.checked).toBe(true);
+    expect(screen.queryByRole("switch", { name: "Checked" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Type"), { target: { value: "checkbox" } });
+    expect(screen.getByRole("switch", { name: "Checked" })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("omits the Type field entirely for Textarea — it has no inputType concept", () => {
+    setup({ id: "textarea-1", tag: "textarea" });
+    expect(screen.queryByLabelText("Type")).not.toBeInTheDocument();
+  });
+
+  it("shows Name, Placeholder, and Default Value for Textarea, same as text-like Input", () => {
+    setup({ id: "textarea-1", tag: "textarea", name: "message", placeholder: "Write your message", value: "hello" });
+
+    expect(screen.getByLabelText("Name")).toHaveValue("message");
+    expect(screen.getByLabelText("Placeholder")).toHaveValue("Write your message");
+    expect(screen.getByLabelText("Default Value")).toHaveValue("hello");
+  });
+
+  it("omits Checked for Textarea", () => {
+    setup({ id: "textarea-1", tag: "textarea" });
+    expect(screen.queryByRole("switch", { name: "Checked" })).not.toBeInTheDocument();
   });
 });

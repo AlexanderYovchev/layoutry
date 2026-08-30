@@ -3,6 +3,7 @@ import {
   createArticleNode,
   createAsideNode,
   createButtonNode,
+  createCheckboxNode,
   createContainerNode,
   createElementNode,
   createEmailInputNode,
@@ -21,9 +22,11 @@ import {
   createOrderedListNode,
   createParagraphNode,
   createPasswordInputNode,
+  createRadioNode,
   createSearchInputNode,
   createSectionNode,
   createTelInputNode,
+  createTextareaNode,
   createUnorderedListNode,
   createUrlInputNode,
   isInsertableElementType,
@@ -278,6 +281,58 @@ describe("element factories", () => {
     });
   });
 
+  describe("Checkbox + Radio + Textarea (Checkpoint 1.12)", () => {
+    it("createCheckboxNode produces a real, leaf <input type=\"checkbox\"> with no placeholder/name/value/checked", () => {
+      const node = createCheckboxNode();
+
+      expect(node.tag).toBe("input");
+      expect(node.inputType).toBe("checkbox");
+      expect(node.placeholder).toBeUndefined();
+      expect(node.name).toBeUndefined();
+      expect(node.value).toBeUndefined();
+      expect(node.checked).toBeUndefined();
+      expect(node.children).toBeUndefined();
+      expect(node.id).toMatch(/^input-/);
+    });
+
+    it("createRadioNode produces a real, leaf <input type=\"radio\"> with no placeholder/name/value/checked", () => {
+      const node = createRadioNode();
+
+      expect(node.tag).toBe("input");
+      expect(node.inputType).toBe("radio");
+      expect(node.placeholder).toBeUndefined();
+      expect(node.name).toBeUndefined();
+      expect(node.value).toBeUndefined();
+      expect(node.checked).toBeUndefined();
+      expect(node.id).toMatch(/^input-/);
+    });
+
+    it("createCheckboxNode/createRadioNode produce a unique id per call", () => {
+      expect(createCheckboxNode().id).not.toBe(createCheckboxNode().id);
+      expect(createRadioNode().id).not.toBe(createRadioNode().id);
+    });
+
+    it("createTextareaNode produces a genuine <textarea> leaf with a placeholder but no authored value", () => {
+      const node = createTextareaNode();
+
+      expect(node.tag).toBe("textarea");
+      expect(node.placeholder).toBe("Enter text");
+      expect(node.value).toBeUndefined();
+      expect(node.name).toBeUndefined();
+      expect(node.children).toBeUndefined();
+      expect(node.id).toMatch(/^textarea-/);
+    });
+
+    it("createTextareaNode leaves flowLayout/spacing unset, matching every other leaf primitive", () => {
+      expect(createTextareaNode().flowLayout).toBeUndefined();
+      expect(createTextareaNode().spacing).toBeUndefined();
+    });
+
+    it("createTextareaNode produces a unique id per call", () => {
+      expect(createTextareaNode().id).not.toBe(createTextareaNode().id);
+    });
+  });
+
   describe("createElementNode", () => {
     it("dispatches to the matching factory for every insertable type", () => {
       expect(createElementNode("container").tag).toBe("div");
@@ -304,7 +359,10 @@ describe("element factories", () => {
       expect(createElementNode("searchInput").inputType).toBe("search");
       expect(createElementNode("urlInput").inputType).toBe("url");
       expect(createElementNode("telInput").inputType).toBe("tel");
+      expect(createElementNode("checkboxInput").inputType).toBe("checkbox");
+      expect(createElementNode("radioInput").inputType).toBe("radio");
       expect(createElementNode("label").tag).toBe("label");
+      expect(createElementNode("textarea").tag).toBe("textarea");
     });
   });
 
@@ -335,7 +393,10 @@ describe("element factories", () => {
         "searchInput",
         "urlInput",
         "telInput",
+        "checkboxInput",
+        "radioInput",
         "label",
+        "textarea",
       ]) {
         expect(isInsertableElementType(type)).toBe(true);
       }

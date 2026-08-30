@@ -16,7 +16,10 @@ describe("EditorApp", () => {
     render(<EditorApp />);
 
     await user.click(screen.getByRole("button", { name: "HTML" }));
-    await user.click(screen.getByRole("menuitem", { name: /Button/ }));
+    // Anchored (Checkpoint 1.12): a plain /Button/ now also matches the
+    // "Radio Button" card's accessible name (card names concatenate
+    // name+description) — see this checkpoint's own report.
+    await user.click(screen.getByRole("menuitem", { name: /^Button/ }));
 
     const selectedId = useEditorStore.getState().selectedElementId;
     expect(selectedId).toMatch(/^button-/);
@@ -301,4 +304,43 @@ describe("EditorApp", () => {
     expect(selectedRows).toHaveLength(1);
     expect(selectedRows[0]).toHaveAttribute("title", "Email Input");
   });
+
+  it("clicking Checkbox then Textarea inserts a real checkbox and a genuine <textarea>, syncing Structure with their own names (Checkpoint 1.12)", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<EditorApp />);
+
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("menuitem", { name: /^Form/ }));
+    const formId = useEditorStore.getState().selectedElementId;
+
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("menuitem", { name: /^Checkbox/ }));
+    const checkboxId = useEditorStore.getState().selectedElementId;
+
+    // Re-select the Form so Textarea lands as its sibling, not nested
+    // inside the checkbox (a leaf, but insertion targets the selected
+    // node's parent when the selection can't contain children).
+    await user.click(screen.getByRole("tab", { name: "Structure" }));
+    await user.click(screen.getByRole("treeitem", { name: /Form/ }));
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("menuitem", { name: /^Textarea/ }));
+    const textareaId = useEditorStore.getState().selectedElementId;
+
+    const form = useEditorStore.getState().document.children?.find((c) => c.id === formId);
+    expect(form?.tag).toBe("form");
+    expect(form?.children?.some((c) => c.id === checkboxId && c.inputType === "checkbox")).toBe(true);
+    expect(form?.children?.some((c) => c.id === textareaId && c.tag === "textarea")).toBe(true);
+
+    const checkboxRendered = container.querySelector(`[data-node-id="${checkboxId}"]`);
+    expect(checkboxRendered).toHaveAttribute("type", "checkbox");
+    const textareaRendered = container.querySelector(`[data-node-id="${textareaId}"]`);
+    expect(textareaRendered?.tagName).toBe("TEXTAREA");
+
+    await user.click(screen.getByRole("tab", { name: "Structure" }));
+    const selectedRows = screen
+      .getAllByRole("treeitem")
+      .filter((row) => row.getAttribute("aria-selected") === "true");
+    expect(selectedRows).toHaveLength(1);
+    expect(selectedRows[0]).toHaveAttribute("title", "Textarea");
+  }, 15000); // multi-round real userEvent interaction — see Checkpoint 1.8's identical fix for the same resource-contention flake under full-suite parallel load
 });

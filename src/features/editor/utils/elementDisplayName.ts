@@ -18,6 +18,13 @@ const INPUT_TYPE_DISPLAY_NAMES: Record<InputType, string> = {
   search: "Search Input",
   url: "URL Input",
   tel: "Tel Input",
+  // Checkbox/Radio (Checkpoint 1.12) deliberately read as "Checkbox"/
+  // "Radio" rather than "Checkbox Input"/"Radio Input" — clearer to
+  // users, and consistent with how every other Structure label already
+  // favors the shortest name that's still unambiguous (e.g. "Link", not
+  // "Link Anchor").
+  checkbox: "Checkbox",
+  radio: "Radio",
 };
 
 const TAG_DISPLAY_NAMES: Record<string, string> = {
@@ -47,6 +54,7 @@ const TAG_DISPLAY_NAMES: Record<string, string> = {
   form: "Form",
   input: "Input",
   label: "Label",
+  textarea: "Textarea",
 };
 
 /**

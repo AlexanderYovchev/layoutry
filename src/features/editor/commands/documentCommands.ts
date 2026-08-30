@@ -386,6 +386,39 @@ export function setElementValue(
 }
 
 /**
+ * Sets (or clears, via `checked: undefined`) nodeId's authored/default
+ * checked state (Checkpoint 1.12 — checkbox/radio's Inspector Checked
+ * toggle). Same generic, tag-agnostic, no-op-guarded shape as
+ * setElementValue — deliberately NOT live-runtime-state: this is the
+ * document's own authored checked state, changed only through this
+ * command (Canvas clicks on checkbox/radio never call it — see
+ * InputElement's own doc comment), never synchronized from a live
+ * toggle. No-ops (same reference) when the value is already exactly
+ * this, matching setElementValue/setElementTag's own no-op convention.
+ */
+export function setElementChecked(
+  root: EditorElementNode,
+  nodeId: string,
+  checked: boolean | undefined,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.checked === checked) return root;
+    return { ...root, checked };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementChecked(child, nodeId, checked);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
  * Sets (or clears, via `name: undefined`) nodeId's `name` attribute
  * (Checkpoint 1.10) — same generic, tag-agnostic, no-op-guarded shape as
  * setElementValue/setElementHref.

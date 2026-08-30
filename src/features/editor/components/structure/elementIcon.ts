@@ -19,6 +19,7 @@ import {
   Rows3,
   Tag,
   TextCursorInput,
+  TextQuote,
   Type,
   type LucideIcon,
 } from "lucide-react";
@@ -51,6 +52,13 @@ export const TAG_ICONS: Record<string, LucideIcon> = {
   aside: PanelRight,
   footer: PanelBottom,
   form: ClipboardList,
+  // Checkbox/Radio (Checkpoint 1.12) share this same "input" entry —
+  // TAG_ICONS is a tag-only lookup, and distinguishing them would need
+  // the same node-aware extension getElementDisplayName's own signature
+  // already happened to allow for; out of this checkpoint's scope (see
+  // its own report) since the Structure row's text label already
+  // distinguishes "Checkbox"/"Radio" unambiguously.
   input: TextCursorInput,
   label: Tag,
+  textarea: TextQuote,
 };

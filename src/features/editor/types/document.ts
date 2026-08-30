@@ -167,18 +167,18 @@ export interface EditorElementNode {
    */
   sizeConstraints?: SizeConstraints;
   /**
-   * This node's own native form-control type (Checkpoint 1.10) — only
-   * meaningful for `tag: "input"`. Deliberately a separate field from
-   * `tag` itself: the node stays a genuine `input` element regardless of
-   * variant, exactly the way Heading Level (Checkpoint 1.7) keeps `tag`
-   * as the single source of truth for h1–h6 rather than introducing a
-   * parallel field — inputType is the input-specific analogue, not a
-   * second copy of that same idea. Unset defaults to "text" (see
-   * getInputType in types/input.ts) rather than requiring every factory
-   * caller to stamp it explicitly. Only "text" is reachable through the
-   * UI this checkpoint — the type is a real union (not a bare string) so
-   * later checkpoints extend the allowed set without touching this
-   * field's shape.
+   * This node's own native form-control type (Checkpoint 1.10, widened
+   * through text-like variants in 1.11 and to checkbox/radio in 1.12) —
+   * only meaningful for `tag: "input"`. Deliberately a separate field
+   * from `tag` itself: the node stays a genuine `input` element
+   * regardless of variant, exactly the way Heading Level (Checkpoint
+   * 1.7) keeps `tag` as the single source of truth for h1–h6 rather
+   * than introducing a parallel field — inputType is the input-specific
+   * analogue, not a second copy of that same idea. Unset defaults to
+   * "text" (see getInputType in types/input.ts) rather than requiring
+   * every factory caller to stamp it explicitly. Checkbox/radio remain
+   * this same one `input` tag, never a separate document concept — see
+   * this checkpoint's own report.
    */
   inputType?: InputType;
   /**
@@ -192,8 +192,12 @@ export interface EditorElementNode {
   name?: string;
   /**
    * This node's own `placeholder` attribute (Checkpoint 1.10) — only
-   * meaningful for a form-control-capable tag. Unset renders no
-   * `placeholder` attribute.
+   * meaningful for a form-control-capable tag whose value is free text
+   * (text-like Input variants, Textarea — Checkpoint 1.12). Native
+   * checkbox/radio ignore `placeholder` entirely, so it's semantically
+   * inert (not hidden or deleted) for those two variants — see this
+   * checkpoint's own report on non-destructive type switching. Unset
+   * renders no `placeholder` attribute.
    */
   placeholder?: string;
   /**
@@ -201,14 +205,32 @@ export interface EditorElementNode {
    * meaningful for a form-control-capable tag. Deliberately NOT live,
    * continuously-synchronized runtime state: Layoutry is a visual page
    * editor, not a running application, so this field represents the
-   * initial value a real `<input>` would carry (rendered via
-   * `defaultValue`, an uncontrolled DOM prop — see InputElement's own
-   * doc comment), never the transient text a user is mid-typing on the
-   * Canvas. Committed only at a deliberate edit-session boundary (blur/
-   * Enter) via setElementValue — see useNativeInputEditing. Unset
-   * renders no `value` attribute (an empty, unfilled field), the same
-   * "store unconditionally, no synthesized default" convention `href`
-   * already uses via getLinkHref.
+   * initial value a real `<input>`/`<textarea>` would carry (rendered
+   * via `defaultValue`, an uncontrolled DOM prop — see InputElement's
+   * own doc comment), never the transient text a user is mid-typing on
+   * the Canvas. Committed only at a deliberate edit-session boundary
+   * (blur/Enter, or blur-only for Textarea — see
+   * useNativeFormValueEditing) via setElementValue. Unset renders no
+   * `value` attribute (an empty, unfilled field), the same "store
+   * unconditionally, no synthesized default" convention `href` already
+   * uses via getLinkHref. For checkbox/radio, this is HTML's own
+   * `value` attribute (the submitted identifier) — a different concern
+   * from `checked` below, exactly like real `<input type="checkbox"
+   * value="...">` HTML.
    */
   value?: string;
+  /**
+   * This node's own AUTHORED/DEFAULT checked state (Checkpoint 1.12) —
+   * only meaningful for `inputType: "checkbox" | "radio"`. Same
+   * authored-state principle as `value` above: NOT continuously-
+   * synchronized live DOM state, rendered via `defaultChecked` (an
+   * uncontrolled DOM prop), committed only through the dedicated
+   * setElementChecked command (Inspector-only in this checkpoint — see
+   * this checkpoint's report on why Canvas clicks never toggle this).
+   * Unset renders unchecked (`defaultChecked={undefined}` behaves the
+   * same as `false` for a real `<input>`), the same "store
+   * unconditionally, no synthesized default" convention `value` and
+   * `href` already use.
+   */
+  checked?: boolean;
 }

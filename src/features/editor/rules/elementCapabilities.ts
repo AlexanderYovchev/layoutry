@@ -150,8 +150,32 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
    * aspect-ratio-and-sizing) is already true via DEFAULT_CAPABILITIES,
    * the same "applies to a box regardless of what's inside it" reasoning
    * every other visual tag already gets.
+   *
+   * Deliberately NOT varied by inputType (Checkpoint 1.12 — checkbox/
+   * radio share this exact same entry with every text-like variant):
+   * getElementCapabilities only ever receives a tag, never a node, so
+   * capabilities are architecturally tag-scoped, not inputType-scoped.
+   * Native checkbox/radio styling IS genuinely less consistent across
+   * browsers than a text field's (background/border/border-radius
+   * render very differently, or are partly ignored, depending on the
+   * browser's own default checkbox/radio appearance) — but introducing
+   * an inputType-aware capability system would be a broad architectural
+   * change for a real but secondary cosmetic concern, and nothing in
+   * this checkpoint's scope requires it. Documented here as a known,
+   * accepted browser-rendering limitation rather than worked around.
    */
   input: { supportsTypography: true, supportsBackground: true, supportsFormControl: true },
+
+  /**
+   * Textarea (Checkpoint 1.12) — the same reasoning and the same three
+   * overrides as Input above: not a container, not in TEXT_BEARING_TAGS
+   * (its content is node.value, not node.text), so it needs the same
+   * explicit typography/background grant, plus supportsFormControl so
+   * it receives the same Form Control Inspector section Input already
+   * gets (Name/Placeholder/Default Value — no Type field, since Textarea
+   * has no inputType concept at all).
+   */
+  textarea: { supportsTypography: true, supportsBackground: true, supportsFormControl: true },
 };
 
 export function getElementCapabilities(tag: string): ElementCapabilities {

@@ -210,9 +210,10 @@ describe("elementCapabilities", () => {
     expect(caps.supportsFormControl).toBe(true);
   });
 
-  it("flags only Input as supporting the Form Control section (Checkpoint 1.10); other tags don't", () => {
+  it("flags Input and Textarea as supporting the Form Control section (Checkpoint 1.10, extended to Textarea in 1.12); other tags don't", () => {
     expect(getElementCapabilities("input").supportsFormControl).toBe(true);
-    for (const tag of ["h1", "p", "button", "a", "li", "div", "img", "form", "section"]) {
+    expect(getElementCapabilities("textarea").supportsFormControl).toBe(true);
+    for (const tag of ["h1", "p", "button", "a", "li", "div", "img", "form", "label", "section"]) {
       expect(getElementCapabilities(tag).supportsFormControl, tag).toBe(false);
     }
   });
@@ -242,8 +243,20 @@ describe("elementCapabilities", () => {
     expect(label).toEqual(div);
   });
 
-  it("Input's capabilities key off tag alone, never inputType — the function has no node to read inputType from in the first place, so every variant (email/password/number/search/url/tel) is architecturally guaranteed to share Input's one capability set", () => {
+  it("Input's capabilities key off tag alone, never inputType — the function has no node to read inputType from in the first place, so every variant (email/password/number/search/url/tel/checkbox/radio) is architecturally guaranteed to share Input's one capability set (Checkpoint 1.12 — a deliberate decision, not an oversight: see this checkpoint's own report on why capabilities were kept tag-scoped rather than made inputType-aware for checkbox/radio's genuinely less consistent native styling)", () => {
     expect(getElementCapabilities("input").supportsFormControl).toBe(true);
+  });
+
+  it("gives Textarea (Checkpoint 1.12) the same explicit typography/background/form-control overrides as Input — neither a container nor text-bearing (its content is node.value, not node.text)", () => {
+    const textarea = getElementCapabilities("textarea");
+
+    expect(textarea.canContainChildren).toBe(false);
+    expect(textarea.supportsTypography).toBe(true);
+    expect(textarea.supportsBackground).toBe(true);
+    expect(textarea.supportsFormControl).toBe(true);
+    expect(textarea.supportsBorder).toBe(true);
+    expect(textarea.supportsBorderRadius).toBe(true);
+    expect(textarea.supportsBoxShadow).toBe(true);
   });
 
   it("gives an entirely unknown tag the same sensible defaults as any other element", () => {

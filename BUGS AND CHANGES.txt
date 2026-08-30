@@ -2,9 +2,16 @@ Lists should have a field in the css inspection menu where the user can pick the
 
 Instead of showing all adjustable percantage numbers 0% by default should be 100% at the css inspection tab.
 
+Form is the same as the other containers on creation, the user can include all of the form components in the other containers which makes it kind of unproffesional, give me a better idea how to change this.
 
+The fields and containers has limitation on resizing. On creation a component is set to an  Auto Width and Height, the moment i resize it manually by dragging or directly writing inside the size fields it limits me to a certain
+px size. For example the Form container is set to minimum 120px height when i try to resize and doesnt let me change it below 120. This must be fixed for all of the resizable components!
 
+User can type letters in the Phone number fields which in my opinion shouldnt be allowed!
 
+Footer needs a starting template not just a blank container.
+
+All of the menu component options (Container,Paragraph,Picture,Link etc.) should have a relevant icon so it looks more promising and easy to remember.
 
 FUNCTIONALITY CHANGES:
 The user should be able to make multiple pages that are connected via button redirection by his choice. The website should provide a guidance and availability for this to happen. My idea is to have additional tab

@@ -124,3 +124,32 @@ describe("Label containment (Checkpoint 1.11)", () => {
     expect(canParentAcceptChild("label", "li")).toBe(false);
   });
 });
+
+describe("Checkbox/Radio containment (Checkpoint 1.12)", () => {
+  it("reuses Input's exact containment rules unchanged — checkbox/radio share the same tag, so no new containment logic exists or is needed", () => {
+    expect(canParentAcceptChild("form", "input")).toBe(true);
+    expect(canParentAcceptChild("label", "input")).toBe(true);
+    expect(canParentAcceptChild("ul", "input")).toBe(false);
+  });
+});
+
+describe("Textarea containment (Checkpoint 1.12)", () => {
+  it("is a leaf — rejects all children", () => {
+    expect(canContainChildren("textarea")).toBe(false);
+  });
+
+  it("is insertable into Form, Label, Container, and ordinary structural containers — no Form-only restriction", () => {
+    for (const parentTag of ["form", "label", "div", "section", "header", "main"]) {
+      expect(canParentAcceptChild(parentTag, "textarea"), parentTag).toBe(true);
+    }
+  });
+
+  it("is rejected inside UL/OL — Checkpoint 1.6's li-only allowlist remains intact", () => {
+    expect(canParentAcceptChild("ul", "textarea")).toBe(false);
+    expect(canParentAcceptChild("ol", "textarea")).toBe(false);
+  });
+
+  it("rejects Textarea as a parent regardless of child tag", () => {
+    expect(canParentAcceptChild("textarea", "div")).toBe(false);
+  });
+});
