@@ -28,6 +28,11 @@ import {
   createSearchInputNode,
   createSectionNode,
   createSelectNode,
+  createTableDataCellNode,
+  createTableHeaderCellNode,
+  createTableNode,
+  createTableRowNode,
+  createTableSectionNode,
   createTelInputNode,
   createTextareaNode,
   createUnorderedListNode,
@@ -289,6 +294,118 @@ describe("element factories", () => {
     });
   });
 
+  describe("Table foundation (Checkpoint 1.14)", () => {
+    it("createTableHeaderCellNode produces a leaf <th> with generic starter text and no value/children", () => {
+      const node = createTableHeaderCellNode();
+      expect(node.tag).toBe("th");
+      expect(node.text).toBe("Heading");
+      expect(node.children).toBeUndefined();
+      expect(node.id).toMatch(/^th-/);
+    });
+
+    it("createTableDataCellNode produces a leaf <td> with generic starter text and no value/children", () => {
+      const node = createTableDataCellNode();
+      expect(node.tag).toBe("td");
+      expect(node.text).toBe("Cell");
+      expect(node.children).toBeUndefined();
+      expect(node.id).toMatch(/^td-/);
+    });
+
+    it("createTableHeaderCellNode/createTableDataCellNode each produce a unique id per call", () => {
+      expect(createTableHeaderCellNode().id).not.toBe(createTableHeaderCellNode().id);
+      expect(createTableDataCellNode().id).not.toBe(createTableDataCellNode().id);
+    });
+
+    it("createTableRowNode builds a genuine <tr> with the requested cell tag and count", () => {
+      const headerRow = createTableRowNode("th", 3);
+      expect(headerRow.tag).toBe("tr");
+      expect(headerRow.children).toHaveLength(3);
+      expect(headerRow.children?.every((cell) => cell.tag === "th")).toBe(true);
+
+      const dataRow = createTableRowNode("td", 2);
+      expect(dataRow.children).toHaveLength(2);
+      expect(dataRow.children?.every((cell) => cell.tag === "td")).toBe(true);
+    });
+
+    it("createTableRowNode gives every cell its own fresh, unique id", () => {
+      const row = createTableRowNode("td", 4);
+      const ids = row.children?.map((cell) => cell.id) ?? [];
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it("createTableRowNode(tag, 0) produces a row with zero cells rather than throwing", () => {
+      expect(createTableRowNode("td", 0).children).toEqual([]);
+    });
+
+    it("createTableSectionNode wraps the given rows in a genuine thead/tbody/tfoot", () => {
+      const rows = [createTableRowNode("td", 2)];
+      const body = createTableSectionNode("tbody", rows);
+      expect(body.tag).toBe("tbody");
+      expect(body.children).toBe(rows);
+      expect(body.id).toMatch(/^tbody-/);
+    });
+
+    it("createTableNode produces the documented starter structure: thead > tr > 3 th, tbody > 2 tr > 3 td each", () => {
+      const table = createTableNode();
+      expect(table.tag).toBe("table");
+      expect(table.children).toHaveLength(2);
+
+      const [thead, tbody] = table.children ?? [];
+      expect(thead.tag).toBe("thead");
+      expect(thead.children).toHaveLength(1);
+      const headerRow = thead.children?.[0];
+      expect(headerRow?.tag).toBe("tr");
+      expect(headerRow?.children).toHaveLength(3);
+      expect(headerRow?.children?.every((cell) => cell.tag === "th")).toBe(true);
+
+      expect(tbody.tag).toBe("tbody");
+      expect(tbody.children).toHaveLength(2);
+      for (const row of tbody.children ?? []) {
+        expect(row.tag).toBe("tr");
+        expect(row.children).toHaveLength(3);
+        expect(row.children?.every((cell) => cell.tag === "td")).toBe(true);
+      }
+    });
+
+    it("gives the starter header cells distinct, immediately meaningful text", () => {
+      const table = createTableNode();
+      const headerRow = table.children?.[0].children?.[0];
+      expect(headerRow?.children?.map((cell) => cell.text)).toEqual(["Heading 1", "Heading 2", "Heading 3"]);
+    });
+
+    it("has no tfoot by default — Footer Row is an opt-in toggle, not a starter default", () => {
+      const table = createTableNode();
+      expect(table.children?.some((child) => child.tag === "tfoot")).toBe(false);
+    });
+
+    it("leaves flowLayout/spacing unset on the table itself, matching Select's own leaf-like sizing convention", () => {
+      const table = createTableNode();
+      expect(table.flowLayout).toBeUndefined();
+      expect(table.spacing).toBeUndefined();
+    });
+
+    it("every node in the starter table subtree gets its own fresh, unique id", () => {
+      function collectIds(node: ReturnType<typeof createTableNode>): string[] {
+        return [node.id, ...(node.children ?? []).flatMap(collectIds)];
+      }
+      const ids = collectIds(createTableNode());
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it("two separately created Tables never share any subtree id", () => {
+      function collectIds(node: ReturnType<typeof createTableNode>): string[] {
+        return [node.id, ...(node.children ?? []).flatMap(collectIds)];
+      }
+      const firstIds = collectIds(createTableNode());
+      const secondIds = collectIds(createTableNode());
+      expect(firstIds.some((id) => secondIds.includes(id))).toBe(false);
+    });
+
+    it("createTableNode produces a unique id per call", () => {
+      expect(createTableNode().id).not.toBe(createTableNode().id);
+    });
+  });
+
   describe("Form + Text Input foundation (Checkpoint 1.10)", () => {
     it("createFormNode produces an empty, childable <form> sharing Container's exact structural defaults", () => {
       const node = createFormNode();
@@ -464,6 +581,7 @@ describe("element factories", () => {
       expect(createElementNode("textarea").tag).toBe("textarea");
       expect(createElementNode("footerComposition").tag).toBe("footer");
       expect(createElementNode("select").tag).toBe("select");
+      expect(createElementNode("table").tag).toBe("table");
     });
   });
 
@@ -500,6 +618,7 @@ describe("element factories", () => {
         "textarea",
         "footerComposition",
         "select",
+        "table",
       ]) {
         expect(isInsertableElementType(type)).toBe(true);
       }
@@ -507,6 +626,12 @@ describe("element factories", () => {
 
     it("does NOT recognize 'option' as an insertable type (Checkpoint 1.13 — Option is deliberately not a standalone catalog entry, only ever created via a Select's starter set or its Options count control)", () => {
       expect(isInsertableElementType("option")).toBe(false);
+    });
+
+    it("does NOT recognize thead/tbody/tfoot/tr/th/td as standalone insertable types (Checkpoint 1.14 — every table structural primitive is created only via the starter table or the Table Inspector's Columns/Body Rows/Header/Footer controls, the same 'internal factory, no catalog entry' precedent Option already established)", () => {
+      for (const tag of ["thead", "tbody", "tfoot", "tr", "th", "td"]) {
+        expect(isInsertableElementType(tag)).toBe(false);
+      }
     });
 
     it("rejects unknown strings", () => {

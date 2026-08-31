@@ -26,6 +26,7 @@ import {
   Phone,
   Search,
   SquareCheck,
+  Table,
   Tag,
   TextCursorInput,
   TextQuote,
@@ -69,7 +70,8 @@ export type InsertableCardType =
   | "label"
   | "textarea"
   | "footerComposition"
-  | "select";
+  | "select"
+  | "table";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -265,8 +267,12 @@ function htmlCategory(): ToolbarCategoryContent {
         { name: "Video", description: "Embedded video" },
       ]),
       section(id, "tables", "Tables", [
-        { name: "Table", description: "Tabular data grid" },
-        { name: "Table Row", description: "Single table row" },
+        {
+          name: "Table",
+          description: "Tabular data grid with starter rows and columns",
+          elementType: "table",
+          icon: Table,
+        },
       ]),
       section(id, "semantic", "Semantic Elements", [
         {

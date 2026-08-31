@@ -200,3 +200,87 @@ describe("Select/Option containment (Checkpoint 1.13)", () => {
     expect(canParentAcceptChild("select", "li")).toBe(false);
   });
 });
+
+describe("Table containment (Checkpoint 1.14)", () => {
+  it("Table/Thead/Tbody/Tfoot/Tr are all real containers", () => {
+    expect(canContainChildren("table")).toBe(true);
+    expect(canContainChildren("thead")).toBe(true);
+    expect(canContainChildren("tbody")).toBe(true);
+    expect(canContainChildren("tfoot")).toBe(true);
+    expect(canContainChildren("tr")).toBe(true);
+  });
+
+  it("Th/Td are leaves — the same shape as List Item/Option", () => {
+    expect(canContainChildren("th")).toBe(false);
+    expect(canContainChildren("td")).toBe(false);
+  });
+
+  it("Table accepts only Thead/Tbody/Tfoot — direct Table -> Tr is deliberately rejected (see this checkpoint's report, section E)", () => {
+    expect(canParentAcceptChild("table", "thead")).toBe(true);
+    expect(canParentAcceptChild("table", "tbody")).toBe(true);
+    expect(canParentAcceptChild("table", "tfoot")).toBe(true);
+    expect(canParentAcceptChild("table", "tr")).toBe(false);
+  });
+
+  it("rejects any non-section child inside Table", () => {
+    for (const childTag of ["tr", "th", "td", "p", "div", "input", "li", "option"]) {
+      expect(canParentAcceptChild("table", childTag), childTag).toBe(false);
+    }
+  });
+
+  it("Thead/Tbody/Tfoot each accept only Tr", () => {
+    expect(canParentAcceptChild("thead", "tr")).toBe(true);
+    expect(canParentAcceptChild("tbody", "tr")).toBe(true);
+    expect(canParentAcceptChild("tfoot", "tr")).toBe(true);
+  });
+
+  it("rejects any non-tr child inside Thead/Tbody/Tfoot", () => {
+    for (const parentTag of ["thead", "tbody", "tfoot"]) {
+      for (const childTag of ["th", "td", "p", "div", "table"]) {
+        expect(canParentAcceptChild(parentTag, childTag), `${parentTag} -> ${childTag}`).toBe(false);
+      }
+    }
+  });
+
+  it("Tr accepts only Th/Td", () => {
+    expect(canParentAcceptChild("tr", "th")).toBe(true);
+    expect(canParentAcceptChild("tr", "td")).toBe(true);
+  });
+
+  it("rejects any non-cell child inside Tr", () => {
+    for (const childTag of ["p", "div", "tr", "thead", "input", "li", "option"]) {
+      expect(canParentAcceptChild("tr", childTag), childTag).toBe(false);
+    }
+  });
+
+  it("rejects Thead/Tbody/Tfoot/Tr/Th/Td everywhere except their one constrained parent", () => {
+    for (const parentTag of ["div", "section", "form", "label", "ul", "ol", "select", "header", "main"]) {
+      for (const childTag of ["thead", "tbody", "tfoot", "tr", "th", "td"]) {
+        expect(canParentAcceptChild(parentTag, childTag), `${parentTag} -> ${childTag}`).toBe(false);
+      }
+    }
+  });
+
+  it("rejects Thead/Tbody/Tfoot/Tr/Th/Td as a parent for anything other than their own allowed child", () => {
+    expect(canParentAcceptChild("th", "div")).toBe(false);
+    expect(canParentAcceptChild("td", "p")).toBe(false);
+  });
+
+  it("Table itself is insertable into ordinary structural containers, exactly like Select/List — no Form-only restriction", () => {
+    for (const parentTag of ["form", "label", "div", "section", "header", "main"]) {
+      expect(canParentAcceptChild(parentTag, "table"), parentTag).toBe(true);
+    }
+  });
+
+  it("is rejected inside UL/OL/Select — every prior constrained-parent allowlist remains intact and unweakened", () => {
+    expect(canParentAcceptChild("ul", "table")).toBe(false);
+    expect(canParentAcceptChild("select", "table")).toBe(false);
+    expect(canParentAcceptChild("ul", "tr")).toBe(false);
+    expect(canParentAcceptChild("select", "td")).toBe(false);
+  });
+
+  it("does not weaken UL/OL's li-only rule or Select's option-only rule", () => {
+    expect(canParentAcceptChild("ul", "li")).toBe(true);
+    expect(canParentAcceptChild("select", "option")).toBe(true);
+  });
+});

@@ -75,6 +75,23 @@ export interface ElementCapabilities {
   supportsHeadingLevel: boolean;
   /** Whether this tag has form-control semantics (Name/Placeholder/Default Value) worth exposing in the Inspector (Checkpoint 1.10 — see InspectorFormControlSection). True only for `input`; the same "own capability flag per semantic Inspector section" precedent supportsHref/supportsHeadingLevel already established, rather than an inline tag comparison in InspectorNodeSummary. */
   supportsFormControl: boolean;
+  /**
+   * Whether the generic Layout section (Flow/Free, then Block/Flex/Grid —
+   * see InspectorLayoutSection) is meaningful for this tag's OWN children
+   * (Checkpoint 1.14). Deliberately separate from `canContainChildren`:
+   * that flag answers "can this node hold document children at all,"
+   * this one answers a genuinely different question — "does arranging
+   * those children through Layoutry's Flow/Flex/Grid model make sense."
+   * A Select's children are native `<option>`s and a Table's children
+   * are native `<thead>/<tbody>/<tfoot>` sections governed by native
+   * table layout — Block/Flex/Grid has no real effect on either (see
+   * this checkpoint's own report, section J), so both opt out here
+   * rather than showing a control with no real effect. Defaults true —
+   * every existing container tag (div/section/ul/ol/form/label/the
+   * semantic sectioning family) keeps showing this section exactly as
+   * before; only the tags explicitly overridden below opt out.
+   */
+  supportsChildLayout: boolean;
 }
 
 /**
@@ -110,6 +127,7 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
   supportsHref: false,
   supportsHeadingLevel: false,
   supportsFormControl: false,
+  supportsChildLayout: true,
 };
 
 /**
@@ -120,7 +138,7 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
  * insertionRules.ts's CONTAINER_TAGS already uses), so typography support
  * is already correct the moment a factory for one of them is added.
  */
-const TEXT_BEARING_TAGS: ReadonlySet<string> = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "button", "a", "li", "blockquote"]);
+const TEXT_BEARING_TAGS: ReadonlySet<string> = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "button", "a", "li", "blockquote", "th", "td"]);
 
 /**
  * Only the document root and the body wrapper opt out of selection and
@@ -187,8 +205,19 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
    * field for a select — see InspectorFormControlSection's own isSelect
    * branch; Placeholder/Default Value/Type/Checked are all meaningless
    * here and stay hidden.
+   *
+   * supportsChildLayout: false (Checkpoint 1.14) closes a known, accepted
+   * edge case Checkpoint 1.13's own report explicitly deferred: a
+   * Select's children are native `<option>`s, so Flow/Flex/Grid never had
+   * any real effect on them, but InspectorLayoutSection still rendered
+   * generically off the raw canContainChildren check until this flag
+   * existed. Table's identical problem (see the table/thead/tbody/tfoot/
+   * tr overrides below) needed the same fix, so this checkpoint closes
+   * Select's version of it too as an incidental, same-mechanism fix
+   * rather than leaving it open now that the flag exists — see this
+   * checkpoint's own report for the explicit callout.
    */
-  select: { supportsTypography: true, supportsBackground: true, supportsFormControl: true },
+  select: { supportsTypography: true, supportsBackground: true, supportsFormControl: true, supportsChildLayout: false },
 
   /**
    * Option (Checkpoint 1.13) — deliberately the most restricted override
@@ -219,6 +248,144 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
     supportsDisplay: false,
     supportsPosition: false,
     supportsAspectRatio: false,
+  },
+
+  /**
+   * Table (Checkpoint 1.14) — an ordinary box at the top of the
+   * hierarchy: sizing/margin/position/border/border-radius/background/
+   * box-shadow/overflow all stay at their DEFAULT_CAPABILITIES true, the
+   * same "applies to a box regardless of what's inside it" reasoning
+   * every other visual container already gets. Two explicit overrides:
+   * supportsTypography (not TEXT_BEARING_TAGS — a table's own visible
+   * content comes from its cells' node.text, not node.text on the table
+   * itself — but a table-level font genuinely cascades into cells that
+   * don't override it, the same reasoning Select/Input/Textarea's own
+   * typography overrides already use) and supportsChildLayout: false —
+   * see that flag's own doc comment for why Flow/Flex/Grid has no real
+   * effect on a table's thead/tbody/tfoot children.
+   */
+  table: { supportsTypography: true, supportsChildLayout: false },
+
+  /**
+   * Thead/Tbody/Tfoot (Checkpoint 1.14) — structural row-grouping
+   * containers, not independently resizable/positionable/sized: their
+   * size and position are computed entirely by native table layout, not
+   * something a resize handle or an explicit Width/Height/Position value
+   * should fight (see this checkpoint's report, section J). supportsBorder
+   * stays at its DEFAULT_CAPABILITIES true (a header/footer divider line
+   * is a real, common table styling need); border-radius/box-shadow/
+   * filters are left disabled — cosmetically odd on a row-group whose own
+   * box is largely an implementation detail of the rows inside it, and
+   * not called out as useful by this checkpoint's own capability audit.
+   * supportsDisplay is disabled for a sharper reason than "not useful":
+   * the Display control's own value set (block/inline/inline-block/none —
+   * see types/display.ts) has no "table-header-group"/"table-row-group"/
+   * "table-footer-group" option, so the only values actually offered
+   * would silently break native table layout the moment one were applied
+   * (Checkpoint 4.8 already reserves "flex"/"grid" for the same ownership
+   * reason via Layout's own Display control — this is that same kind of
+   * conflict, not a new pattern). supportsTypography is granted the same
+   * way Table's own override is, for the same cascading reason.
+   */
+  thead: {
+    resizableX: false,
+    resizableY: false,
+    supportsAspectRatio: false,
+    supportsPosition: false,
+    supportsDisplay: false,
+    supportsBorderRadius: false,
+    supportsBoxShadow: false,
+    supportsFilters: false,
+    supportsTypography: true,
+    supportsChildLayout: false,
+  },
+  tbody: {
+    resizableX: false,
+    resizableY: false,
+    supportsAspectRatio: false,
+    supportsPosition: false,
+    supportsDisplay: false,
+    supportsBorderRadius: false,
+    supportsBoxShadow: false,
+    supportsFilters: false,
+    supportsTypography: true,
+    supportsChildLayout: false,
+  },
+  tfoot: {
+    resizableX: false,
+    resizableY: false,
+    supportsAspectRatio: false,
+    supportsPosition: false,
+    supportsDisplay: false,
+    supportsBorderRadius: false,
+    supportsBoxShadow: false,
+    supportsFilters: false,
+    supportsTypography: true,
+    supportsChildLayout: false,
+  },
+
+  /**
+   * Tr (Checkpoint 1.14) — same restricted shape as Thead/Tbody/Tfoot
+   * above and the same reasoning throughout (a row's size/position are
+   * native-table-computed; "display: flex" on a `<tr>` is the exact
+   * example this checkpoint's brief itself warns would "fundamentally
+   * stop [it] behaving like a table row" — supportsDisplay stays
+   * disabled for that reason, not merely "not useful"). supportsBorder
+   * stays true (a per-row divider/highlight is a real, common table
+   * styling need). supportsChildLayout is also false: a row's children
+   * are native `<th>/<td>` cells laid out by native table row rules, not
+   * Layoutry's Flow/Flex/Grid.
+   */
+  tr: {
+    resizableX: false,
+    resizableY: false,
+    supportsAspectRatio: false,
+    supportsPosition: false,
+    supportsDisplay: false,
+    supportsBorderRadius: false,
+    supportsBoxShadow: false,
+    supportsFilters: false,
+    supportsTypography: true,
+    supportsChildLayout: false,
+  },
+
+  /**
+   * Th/Td (Checkpoint 1.14) — text-bearing leaves (see TEXT_BEARING_TAGS
+   * above), so typography/background are already granted generically,
+   * with no override needed for either — the exact same derivation List
+   * Item's own zero-entry table row already relies on. Border/border-
+   * radius/box-shadow/filters/sizing (the Size section) all stay at their
+   * DEFAULT_CAPABILITIES true: a cell's own border, rounded corner, or
+   * explicit width is a completely ordinary, common table-styling want
+   * that doesn't touch the cell's own `display: table-cell`. Two explicit
+   * overrides, both for the same "would silently break native table-cell
+   * layout" reason Thead/Tbody/Tfoot/Tr's own supportsDisplay override
+   * already documents: supportsDisplay (its block/inline/inline-block/
+   * none value set includes no "table-cell" option — the same ownership
+   * conflict, not a new pattern) and supportsPosition (an explicit
+   * absolute/fixed position value computes `display: block` per the CSS
+   * spec, pulling the cell out of the table's layout the same way
+   * `display: block` itself would; there is no way to offer only
+   * `relative` — the one position value that's actually safe here —
+   * without a scoped-down control this checkpoint doesn't build).
+   * resizableX/Y are also disabled: a Canvas drag-resize on one cell
+   * can't move the rest of its column (no colgroup/shared-column-width
+   * model exists yet — out of this checkpoint's scope), so a resize
+   * handle here would silently look broken; the Inspector's own Size
+   * section (still enabled) is the deliberate, explicit way to set a
+   * cell's width/height instead.
+   */
+  th: {
+    resizableX: false,
+    resizableY: false,
+    supportsDisplay: false,
+    supportsPosition: false,
+  },
+  td: {
+    resizableX: false,
+    resizableY: false,
+    supportsDisplay: false,
+    supportsPosition: false,
   },
 };
 

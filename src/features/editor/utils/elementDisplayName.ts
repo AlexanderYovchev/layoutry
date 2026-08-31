@@ -57,6 +57,13 @@ const TAG_DISPLAY_NAMES: Record<string, string> = {
   textarea: "Textarea",
   select: "Select",
   option: "Option",
+  table: "Table",
+  thead: "Table Head",
+  tbody: "Table Body",
+  tfoot: "Table Foot",
+  tr: "Table Row",
+  th: "Header Cell",
+  td: "Data Cell",
 };
 
 /**
@@ -74,10 +81,17 @@ function optionDisplayName(node: EditorElementNode): string {
   return node.text && node.text !== base ? `${base} — ${node.text}` : base;
 }
 
+/** Header/Data Cell (Checkpoint 1.14) — the same "append the node's own text" treatment optionDisplayName above already established, so a cell reads as e.g. "Header Cell — Name"/"Data Cell — Bulgaria" in Structure (brief's own example) rather than a sea of indistinguishable "Header Cell"/"Data Cell" rows. Skipped when the text is empty or still exactly the bare default ("Heading"/"Cell" — see createTableHeaderCellNode/createTableDataCellNode), so a freshly-created cell never reads as the redundant "Header Cell — Heading". */
+function tableCellDisplayName(node: EditorElementNode): string {
+  const base = TAG_DISPLAY_NAMES[node.tag];
+  return node.text && node.text !== "Heading" && node.text !== "Cell" ? `${base} — ${node.text}` : base;
+}
+
 export function getElementDisplayName(node: EditorElementNode): string {
   if (node.displayName) return node.displayName;
   if (node.tag === "input") return INPUT_TYPE_DISPLAY_NAMES[getInputType(node)];
   if (node.tag === "option") return optionDisplayName(node);
+  if (node.tag === "th" || node.tag === "td") return tableCellDisplayName(node);
   return TAG_DISPLAY_NAMES[node.tag] ?? node.tag;
 }
 

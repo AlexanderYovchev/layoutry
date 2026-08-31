@@ -19,6 +19,12 @@ import {
   setSelectSelectedOption as setSelectSelectedOptionCommand,
   type InsertPosition,
 } from "@/features/editor/commands/documentCommands";
+import {
+  setTableBodyRowCount as setTableBodyRowCountCommand,
+  setTableColumnCount as setTableColumnCountCommand,
+  setTableFooterEnabled as setTableFooterEnabledCommand,
+  setTableHeaderEnabled as setTableHeaderEnabledCommand,
+} from "@/features/editor/commands/tableCommands";
 import type { InputType } from "@/features/editor/types/input";
 import {
   applyFreeContainerChildGeometries,
@@ -218,6 +224,14 @@ interface EditorState {
   setOptionCount: (selectId: string, count: number) => void;
   /** One-shot single-select authored-selection change (Checkpoint 1.13 — the Option Inspector's Selected toggle). Rewrites the whole affected Select subtree in one call so at most one Option is ever selected; pass undefined to clear the authored selection entirely. Same action-level no-op guard as every other one-shot field command. */
   setSelectSelectedOption: (selectId: string, optionId: string | undefined) => void;
+  /** One-shot table column-count edit (Checkpoint 1.14 — the Table Inspector's Columns field). Normalizes every row across thead/tbody/tfoot to the requested count. Same action-level no-op guard as every other one-shot count command. */
+  setTableColumnCount: (tableId: string, count: number) => void;
+  /** One-shot table body-row-count edit (Checkpoint 1.14 — the Table Inspector's Body Rows field). Header/Footer rows are untouched. */
+  setTableBodyRowCount: (tableId: string, count: number) => void;
+  /** One-shot table Header Row toggle (Checkpoint 1.14) — creates/removes the entire `<thead>` subtree in one step. */
+  setTableHeaderEnabled: (tableId: string, enabled: boolean) => void;
+  /** One-shot table Footer Row toggle (Checkpoint 1.14) — creates/removes the entire `<tfoot>` subtree in one step. */
+  setTableFooterEnabled: (tableId: string, enabled: boolean) => void;
 
   /**
    * Generic continuous-interaction transaction (Checkpoint 4.3.1) — the
@@ -607,6 +621,34 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setSelectSelectedOption: (selectId, optionId) =>
     set((state) => {
       const document = setSelectSelectedOptionCommand(state.document, selectId, optionId);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setTableColumnCount: (tableId, count) =>
+    set((state) => {
+      const document = setTableColumnCountCommand(state.document, tableId, count);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setTableBodyRowCount: (tableId, count) =>
+    set((state) => {
+      const document = setTableBodyRowCountCommand(state.document, tableId, count);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setTableHeaderEnabled: (tableId, enabled) =>
+    set((state) => {
+      const document = setTableHeaderEnabledCommand(state.document, tableId, enabled);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setTableFooterEnabled: (tableId, enabled) =>
+    set((state) => {
+      const document = setTableFooterEnabledCommand(state.document, tableId, enabled);
       if (document === state.document) return {};
       return { ...pushHistory(state), document };
     }),

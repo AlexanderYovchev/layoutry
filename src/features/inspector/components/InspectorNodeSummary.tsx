@@ -20,6 +20,7 @@ import { InspectorPositionSection } from "@/features/inspector/components/Inspec
 import { InspectorSelectOptionsSection } from "@/features/inspector/components/InspectorSelectOptionsSection";
 import { InspectorSizeSection } from "@/features/inspector/components/InspectorSizeSection";
 import { InspectorSpacingSection } from "@/features/inspector/components/InspectorSpacingSection";
+import { InspectorTableSection } from "@/features/inspector/components/InspectorTableSection";
 import { InspectorTypographySection } from "@/features/inspector/components/InspectorTypographySection";
 import { getElementCapabilities } from "@/features/editor/rules/elementCapabilities";
 import { canContainChildren } from "@/features/editor/rules/insertionRules";
@@ -88,6 +89,7 @@ export function InspectorNodeSummary({
       {getElementCapabilities(node.tag).supportsHref && <InspectorLinkSection node={node} />}
       {getElementCapabilities(node.tag).supportsHeadingLevel && <InspectorHeadingLevelSection node={node} />}
       {(node.tag === "ul" || node.tag === "ol") && <InspectorListSection node={node} />}
+      {node.tag === "table" && <InspectorTableSection node={node} />}
       {node.tag === "option" && <InspectorOptionSection node={node} parentId={parentId} />}
       {getElementCapabilities(node.tag).supportsFormControl && <InspectorFormControlSection node={node} />}
       {node.tag === "select" && <InspectorSelectOptionsSection node={node} />}
@@ -102,7 +104,9 @@ export function InspectorNodeSummary({
         <InspectorPositionSection node={node} />
       )}
       <InspectorSpacingSection node={node} />
-      {canContainChildren(node.tag) && <InspectorLayoutSection node={node} />}
+      {canContainChildren(node.tag) && getElementCapabilities(node.tag).supportsChildLayout && (
+        <InspectorLayoutSection node={node} />
+      )}
     </div>
   );
 }

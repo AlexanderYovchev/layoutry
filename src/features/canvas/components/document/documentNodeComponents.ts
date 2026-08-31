@@ -10,6 +10,10 @@ import { ListItemElement } from "@/features/canvas/components/document/elements/
 import { OptionElement } from "@/features/canvas/components/document/elements/OptionElement";
 import { ParagraphElement } from "@/features/canvas/components/document/elements/ParagraphElement";
 import { SelectElement } from "@/features/canvas/components/document/elements/SelectElement";
+import { TableCellElement } from "@/features/canvas/components/document/elements/TableCellElement";
+import { TableElement } from "@/features/canvas/components/document/elements/TableElement";
+import { TableRowElement } from "@/features/canvas/components/document/elements/TableRowElement";
+import { TableSectionElement } from "@/features/canvas/components/document/elements/TableSectionElement";
 import { TextareaElement } from "@/features/canvas/components/document/elements/TextareaElement";
 import type { DocumentElementComponent } from "@/features/canvas/types/documentRenderer";
 
@@ -50,4 +54,11 @@ export const documentNodeComponents: Record<string, DocumentElementComponent> =
     textarea: TextareaElement,
     select: SelectElement,
     option: OptionElement,
+    table: TableElement,
+    thead: TableSectionElement,
+    tbody: TableSectionElement,
+    tfoot: TableSectionElement,
+    tr: TableRowElement,
+    th: TableCellElement,
+    td: TableCellElement,
   };

@@ -12,6 +12,7 @@ import {
   createListItemNode,
   createRadioNode,
   createSelectNode,
+  createTableNode,
   createTextareaNode,
   createUnorderedListNode,
 } from "@/features/editor/factories/elementFactories";
@@ -1703,6 +1704,201 @@ describe("useEditorStore — Select + Option foundation (Checkpoint 1.13)", () =
     const select = form?.children?.find((c) => c.tag === "select");
     expect(select?.children).toHaveLength(3);
     expect(select?.children?.every((c) => c.tag === "option")).toBe(true);
+  });
+});
+
+describe("useEditorStore — Table foundation (Checkpoint 1.14)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  function findUnderSection(nodeId: string) {
+    return useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === nodeId);
+  }
+
+  it("insertElement('table') produces the full starter structure in one history entry", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().insertElement("section-1", createTableNode());
+    const tableId = useEditorStore.getState().selectedElementId!;
+
+    expect(findUnderSection(tableId)?.children).toHaveLength(2);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+  });
+
+  it("setTableColumnCount pushes exactly one history entry per change, no entry on no-op, and undo restores the previous columns", () => {
+    useEditorStore.getState().insertElement("section-1", createTableNode());
+    const tableId = useEditorStore.getState().selectedElementId!;
+    const pastLengthAfterInsert = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().setTableColumnCount(tableId, 5);
+    expect(findUnderSection(tableId)?.children?.[0].children?.[0].children).toHaveLength(5);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthAfterInsert + 1);
+
+    useEditorStore.getState().setTableColumnCount(tableId, 5);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthAfterInsert + 1); // no-op
+
+    useEditorStore.getState().undo();
+    expect(findUnderSection(tableId)?.children?.[0].children?.[0].children).toHaveLength(3);
+  });
+
+  it("setTableBodyRowCount pushes history, no-op guarded, and undo restores the previous rows", () => {
+    useEditorStore.getState().insertElement("section-1", createTableNode());
+    const tableId = useEditorStore.getState().selectedElementId!;
+    const pastLengthAfterInsert = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().setTableBodyRowCount(tableId, 4);
+    expect(findUnderSection(tableId)?.children?.find((c) => c.tag === "tbody")?.children).toHaveLength(4);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthAfterInsert + 1);
+
+    useEditorStore.getState().setTableBodyRowCount(tableId, 4);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthAfterInsert + 1); // no-op
+
+    useEditorStore.getState().undo();
+    expect(findUnderSection(tableId)?.children?.find((c) => c.tag === "tbody")?.children).toHaveLength(2);
+  });
+
+  it("setTableHeaderEnabled toggles the thead subtree and is history/no-op guarded", () => {
+    useEditorStore.getState().insertElement("section-1", createTableNode());
+    const tableId = useEditorStore.getState().selectedElementId!;
+    const pastLengthAfterInsert = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().setTableHeaderEnabled(tableId, false);
+    expect(findUnderSection(tableId)?.children?.some((c) => c.tag === "thead")).toBe(false);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthAfterInsert + 1);
+
+    useEditorStore.getState().setTableHeaderEnabled(tableId, false);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthAfterInsert + 1); // no-op
+
+    useEditorStore.getState().undo();
+    expect(findUnderSection(tableId)?.children?.some((c) => c.tag === "thead")).toBe(true);
+  });
+
+  it("setTableFooterEnabled toggles the tfoot subtree and is history/no-op guarded", () => {
+    useEditorStore.getState().insertElement("section-1", createTableNode());
+    const tableId = useEditorStore.getState().selectedElementId!;
+    const pastLengthAfterInsert = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().setTableFooterEnabled(tableId, true);
+    expect(findUnderSection(tableId)?.children?.some((c) => c.tag === "tfoot")).toBe(true);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthAfterInsert + 1);
+
+    useEditorStore.getState().setTableFooterEnabled(tableId, true);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthAfterInsert + 1); // no-op
+
+    useEditorStore.getState().undo();
+    expect(findUnderSection(tableId)?.children?.some((c) => c.tag === "tfoot")).toBe(false);
+  });
+
+  it("Table rejects insertion into a List — Checkpoint 1.6's UL/OL li-only rule remains intact", () => {
+    useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
+    const listId = useEditorStore.getState().selectedElementId!;
+    const beforeDocument = useEditorStore.getState().document;
+
+    useEditorStore.getState().insertElement(listId, createTableNode());
+    expect(useEditorStore.getState().document).toBe(beforeDocument);
+  });
+
+  it("Table rejects insertion into a Select — Checkpoint 1.13's select -> option allowlist remains intact", () => {
+    useEditorStore.getState().insertElement("section-1", createSelectNode());
+    const selectId = useEditorStore.getState().selectedElementId!;
+    const beforeDocument = useEditorStore.getState().document;
+
+    useEditorStore.getState().insertElement(selectId, createTableNode());
+    expect(useEditorStore.getState().document).toBe(beforeDocument);
+  });
+
+  it("moving a Data Cell from one Row to another is a valid move", () => {
+    useEditorStore.getState().insertElement("section-1", createTableNode());
+    const tableId = useEditorStore.getState().selectedElementId!;
+    const tbody = findUnderSection(tableId)!.children!.find((c) => c.tag === "tbody")!;
+    const [firstRow, secondRow] = tbody.children!;
+    const cellToMove = firstRow.children![0];
+
+    useEditorStore.getState().moveElement(cellToMove.id, secondRow.children![0].id, "before");
+
+    const refreshedTbody = findUnderSection(tableId)!.children!.find((c) => c.tag === "tbody")!;
+    expect(refreshedTbody.children![0].children).toHaveLength(2);
+    expect(refreshedTbody.children![1].children).toHaveLength(4);
+    expect(refreshedTbody.children![1].children!.map((c) => c.id)).toContain(cellToMove.id);
+  });
+
+  it("moving a Row from Tbody to Thead is a valid move — both accept only Tr", () => {
+    useEditorStore.getState().insertElement("section-1", createTableNode());
+    const tableId = useEditorStore.getState().selectedElementId!;
+    const table = findUnderSection(tableId)!;
+    const thead = table.children!.find((c) => c.tag === "thead")!;
+    const tbody = table.children!.find((c) => c.tag === "tbody")!;
+    const rowToMove = tbody.children![0];
+
+    useEditorStore.getState().moveElement(rowToMove.id, thead.id, "inside");
+
+    const refreshedThead = findUnderSection(tableId)!.children!.find((c) => c.tag === "thead")!;
+    expect(refreshedThead.children!.some((r) => r.id === rowToMove.id)).toBe(true);
+  });
+
+  it("rejects moving a Data Cell directly into a Container — constrained-nesting is enforced through the centralized rule, not a Table-specific branch", () => {
+    useEditorStore.getState().insertElement("section-1", createTableNode());
+    const tableId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement("section-1", createContainerNode());
+    const containerId = useEditorStore.getState().selectedElementId!;
+    const beforeDocument = useEditorStore.getState().document;
+
+    const tbody = findUnderSection(tableId)!.children!.find((c) => c.tag === "tbody")!;
+    const cellId = tbody.children![0].children![0].id;
+
+    useEditorStore.getState().moveElement(cellId, containerId, "inside");
+    expect(useEditorStore.getState().document).toBe(beforeDocument);
+  });
+
+  it("rejects moving an Option into a Table — every prior constrained-parent rule stays intact", () => {
+    useEditorStore.getState().insertElement("section-1", createTableNode());
+    const tableId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement("section-1", createSelectNode());
+    const selectId = useEditorStore.getState().selectedElementId!;
+    const optionId = findUnderSection(selectId)!.children![0].id;
+    const beforeDocument = useEditorStore.getState().document;
+
+    useEditorStore.getState().moveElement(optionId, tableId, "inside");
+    expect(useEditorStore.getState().document).toBe(beforeDocument);
+  });
+
+  it("duplicates a whole Table subtree recursively with fresh ids, preserving cell text, and independent post-duplicate editing", () => {
+    useEditorStore.getState().insertElement("section-1", createTableNode());
+    const tableId = useEditorStore.getState().selectedElementId!;
+    const original = findUnderSection(tableId)!;
+    const originalIds = collectIds(original);
+
+    useEditorStore.getState().selectElement(tableId);
+    useEditorStore.getState().duplicateSelection();
+
+    const tables = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.filter((c) => c.tag === "table") ?? [];
+    expect(tables).toHaveLength(2);
+    const [orig, duplicate] = tables;
+
+    expect(duplicate.id).not.toBe(orig.id);
+    const duplicateIds = collectIds(duplicate);
+    expect(duplicateIds.some((id) => originalIds.includes(id))).toBe(false);
+
+    expect(duplicate.children).toHaveLength(2);
+    const dupHeadRow = duplicate.children!.find((c) => c.tag === "thead")!.children![0];
+    const origHeadRow = orig.children!.find((c) => c.tag === "thead")!.children![0];
+    expect(dupHeadRow.children!.map((c) => c.text)).toEqual(origHeadRow.children!.map((c) => c.text));
+
+    // Editing the duplicate's cell text never touches the original.
+    useEditorStore.getState().setElementText(dupHeadRow.children![0].id, "Renamed");
+    const refreshedOrig = findUnderSection(orig.id);
+    const refreshedOrigHeadRow = refreshedOrig!.children!.find((c) => c.tag === "thead")!.children![0];
+    expect(refreshedOrigHeadRow.children![0].text).toBe("Heading 1");
+  });
+
+  it("Form > Table coexists correctly — Table is insertable into Form like any other control", () => {
+    useEditorStore.getState().insertElement("section-1", createFormNode());
+    const formId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement(formId, createTableNode());
+
+    const form = findUnderSection(formId);
+    const table = form?.children?.find((c) => c.tag === "table");
+    expect(table?.children).toHaveLength(2);
   });
 });
 

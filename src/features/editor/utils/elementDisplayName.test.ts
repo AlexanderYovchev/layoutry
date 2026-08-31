@@ -25,6 +25,24 @@ describe("getElementDisplayName", () => {
     expect(getElementDisplayName({ id: "17", tag: "label" })).toBe("Label");
     expect(getElementDisplayName({ id: "18", tag: "textarea" })).toBe("Textarea");
     expect(getElementDisplayName({ id: "19", tag: "select" })).toBe("Select");
+    expect(getElementDisplayName({ id: "20", tag: "table" })).toBe("Table");
+    expect(getElementDisplayName({ id: "21", tag: "thead" })).toBe("Table Head");
+    expect(getElementDisplayName({ id: "22", tag: "tbody" })).toBe("Table Body");
+    expect(getElementDisplayName({ id: "23", tag: "tfoot" })).toBe("Table Foot");
+    expect(getElementDisplayName({ id: "24", tag: "tr" })).toBe("Table Row");
+  });
+
+  it("appends a Header/Data Cell's own text (Checkpoint 1.14) — e.g. 'Header Cell — Name'/'Data Cell — Bulgaria'", () => {
+    expect(getElementDisplayName({ id: "1", tag: "th", text: "Name" })).toBe("Header Cell — Name");
+    expect(getElementDisplayName({ id: "2", tag: "td", text: "Bulgaria" })).toBe("Data Cell — Bulgaria");
+  });
+
+  it("shows the bare 'Header Cell'/'Data Cell' name for a cell with no text, or text exactly equal to its factory default ('Heading'/'Cell')", () => {
+    expect(getElementDisplayName({ id: "1", tag: "th" })).toBe("Header Cell");
+    expect(getElementDisplayName({ id: "2", tag: "th", text: "" })).toBe("Header Cell");
+    expect(getElementDisplayName({ id: "3", tag: "th", text: "Heading" })).toBe("Header Cell");
+    expect(getElementDisplayName({ id: "4", tag: "td" })).toBe("Data Cell");
+    expect(getElementDisplayName({ id: "5", tag: "td", text: "Cell" })).toBe("Data Cell");
   });
 
   it("appends an Option's own text (Checkpoint 1.13) — e.g. 'Option — Bulgaria'", () => {

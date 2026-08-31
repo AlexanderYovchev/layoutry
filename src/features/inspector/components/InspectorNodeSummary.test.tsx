@@ -688,14 +688,14 @@ describe("InspectorNodeSummary — Select/Option (Checkpoint 1.13)", () => {
     expect(screen.queryByText("Size")).not.toBeInTheDocument();
   });
 
-  it("Select IS still a container tag (accepts Option), so InspectorLayoutSection generically renders for it — accepted, documented, not a bug (see this checkpoint's own report)", () => {
+  it("Select IS still a container tag (accepts Option), but no longer shows the Layout section — Checkpoint 1.14 closed this known Checkpoint 1.13 edge case via elementCapabilities.ts's supportsChildLayout: false override, the same fix Table's identical problem needed", () => {
     render(
       <InspectorNodeSummary
         node={{ id: "select-1", tag: "select", children: [{ id: "option-1", tag: "option", text: "A" }] }}
         parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block"
       />,
     );
-    expect(screen.getByText("Layout")).toBeInTheDocument();
+    expect(screen.queryByText("Layout")).not.toBeInTheDocument();
   });
 
   it("omits the Layout section for Option — a genuine leaf", () => {
@@ -706,6 +706,104 @@ describe("InspectorNodeSummary — Select/Option (Checkpoint 1.13)", () => {
       />,
     );
     expect(screen.queryByText("Layout")).not.toBeInTheDocument();
+  });
+});
+
+describe("InspectorNodeSummary — Table (Checkpoint 1.14)", () => {
+  it("shows the Table section only for tag: table", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "table-1", tag: "table", children: [] }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.getByText("Columns")).toBeInTheDocument();
+    expect(screen.getByText("Body Rows")).toBeInTheDocument();
+  });
+
+  it("omits the Table section for every other tag", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "div-1", tag: "div", children: [] }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.queryByText("Body Rows")).not.toBeInTheDocument();
+  });
+
+  it("omits the Layout section for Table/Thead/Tbody/Tfoot/Tr — native table layout, not Layoutry's Flow/Flex/Grid", () => {
+    for (const tag of ["table", "thead", "tbody", "tfoot", "tr"]) {
+      const { unmount } = render(
+        <InspectorNodeSummary
+          node={{ id: `${tag}-1`, tag, children: [] }}
+          parentId="parent-1" parentLayoutMode="flow" parentFlowDisplay="block"
+        />,
+      );
+      expect(screen.queryByText("Layout"), tag).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("keeps the Layout section for an ordinary container that happens to sit next to a table (no accidental over-broad restriction)", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "div-1", tag: "div", children: [] }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.getByText("Layout")).toBeInTheDocument();
+  });
+
+  it("omits the Size section for Thead/Tbody/Tfoot/Tr — their size is computed entirely by native table layout", () => {
+    for (const tag of ["thead", "tbody", "tfoot", "tr"]) {
+      const { unmount } = render(
+        <InspectorNodeSummary
+          node={{ id: `${tag}-1`, tag, children: [] }}
+          parentId="parent-1" parentLayoutMode="flow" parentFlowDisplay="block"
+        />,
+      );
+      expect(screen.queryByLabelText("Width"), tag).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("keeps the Size section for Table itself and for Th/Td — an explicit width/height is a real, effective control there", () => {
+    for (const tag of ["table", "th", "td"]) {
+      const { unmount } = render(
+        <InspectorNodeSummary
+          node={{ id: `${tag}-1`, tag }}
+          parentId="parent-1" parentLayoutMode="flow" parentFlowDisplay="block"
+        />,
+      );
+      expect(screen.getByLabelText("Width"), tag).toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("omits the Position section for every table primitive (Thead/Tbody/Tfoot/Tr/Th/Td) — an absolute/fixed value would break native table layout", () => {
+    for (const tag of ["thead", "tbody", "tfoot", "tr", "th", "td"]) {
+      const { unmount } = render(
+        <InspectorNodeSummary
+          node={{ id: `${tag}-1`, tag }}
+          parentId="parent-1" parentLayoutMode="flow" parentFlowDisplay="block"
+        />,
+      );
+      expect(screen.queryByText("Position"), tag).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("shows the Typography section for Th/Td — both are text-bearing leaves", () => {
+    for (const tag of ["th", "td"]) {
+      const { unmount } = render(
+        <InspectorNodeSummary
+          node={{ id: `${tag}-1`, tag, text: "Alpha" }}
+          parentId="tr-1" parentLayoutMode="flow" parentFlowDisplay="block"
+        />,
+      );
+      expect(screen.getByText("Typography"), tag).toBeInTheDocument();
+      unmount();
+    }
   });
 });
 

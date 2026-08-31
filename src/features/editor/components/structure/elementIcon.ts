@@ -18,6 +18,8 @@ import {
   PanelRight,
   PanelTop,
   Rows3,
+  Table,
+  TableRowsSplit,
   Tag,
   TextCursorInput,
   TextQuote,
@@ -68,4 +70,20 @@ export const TAG_ICONS: Record<string, LucideIcon> = {
   // row's own "Option — <text>" label (see elementDisplayName.ts)
   // already disambiguates individual Options from each other.
   option: Circle,
+  // Table primitives (Checkpoint 1.14). Thead/Tfoot reuse Header/Footer's
+  // own icons (PanelTop/PanelBottom) — same "top section"/"bottom
+  // section" meaning, just inside a table instead of a page. Tbody
+  // reuses "body"'s own Rows3 (a set of stacked rows, which is
+  // literally what a tbody is). Th/Td share Type, the same "text-bearing
+  // leaf" reasoning li/option's own shared Circle already established —
+  // the Structure row's own "Header Cell"/"Data Cell" label (see
+  // elementDisplayName.ts) already disambiguates the two from each
+  // other.
+  table: Table,
+  thead: PanelTop,
+  tbody: Rows3,
+  tfoot: PanelBottom,
+  tr: TableRowsSplit,
+  th: Type,
+  td: Type,
 };

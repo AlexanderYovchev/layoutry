@@ -6,11 +6,10 @@
  * canParentAcceptChild below for the one place that's no longer quite
  * true). Reused by click-insert, drag-insert, Canvas drop-target
  * highlighting, and elementCapabilities.ts so the rule is never
- * duplicated. Still includes "table" (no catalog factory yet) so
- * containment — and, via elementCapabilities, resizing — is already
- * correct the moment a factory for it is added, with no change required
- * here; "form" and the semantic sectioning elements were the same kind of
- * forward declaration until Checkpoints 1.8/1.10 gave them real factories.
+ * duplicated. "form" and the semantic sectioning elements were once a
+ * forward declaration here (no factory yet) until Checkpoints 1.8/1.10
+ * gave them real factories; "table" was the same kind of forward
+ * declaration until Checkpoint 1.14 gave it one too.
  *
  * "li" is deliberately NOT here (Checkpoint 1.6) — early groundwork
  * speculatively included it as a general-purpose container, but List
@@ -27,6 +26,13 @@
  * reason — a genuine leaf (see OptionElement), never itself a container,
  * only ever meaningful as a direct child of "select" (see
  * ALLOWED_CHILD_TAGS below).
+ *
+ * "thead"/"tbody"/"tfoot"/"tr" (Checkpoint 1.14) ARE containers — each
+ * holds further structural children (a section holds rows, a row holds
+ * cells) — but every one of them is constrained to exactly one child tag
+ * via ALLOWED_CHILD_TAGS below, the same shape "table" itself uses.
+ * "th"/"td" are NOT here — like li/option, they're text-bearing leaves
+ * (see TableCellElement and TEXT_BEARING_TAGS), never containers.
  */
 const CONTAINER_TAGS: ReadonlySet<string> = new Set([
   "page",
@@ -44,6 +50,10 @@ const CONTAINER_TAGS: ReadonlySet<string> = new Set([
   "aside",
   "nav",
   "table",
+  "thead",
+  "tbody",
+  "tfoot",
+  "tr",
   // "select" (Checkpoint 1.13) is a container for exactly the same
   // constrained-nesting reason ul/ol are — see ALLOWED_CHILD_TAGS below.
   "select",
@@ -77,7 +87,38 @@ const ALLOWED_CHILD_TAGS: Readonly<Record<string, ReadonlySet<string>>> = {
   // ul/ol -> li above: a native <select> only ever meaningfully contains
   // <option> children.
   select: new Set(["option"]),
+  // Table's own structural nesting (Checkpoint 1.14). Direct table -> tr
+  // was deliberately NOT enabled here even though real HTML/React permit
+  // it (verified live — see this checkpoint's report, section E, for why
+  // it renders fine but was still left out): every row lives inside an
+  // explicit thead/tbody/tfoot, the "preferred semantic authoring model"
+  // this checkpoint's brief itself calls out, and the one shape
+  // getTableHead/getTableBody/getTableFoot (types/table.ts) and every
+  // Table Inspector command are actually built around.
+  table: new Set(["thead", "tbody", "tfoot"]),
+  thead: new Set(["tr"]),
+  tbody: new Set(["tr"]),
+  tfoot: new Set(["tr"]),
+  tr: new Set(["th", "td"]),
 };
+
+/**
+ * Tags with no meaning outside their one constrained parent (Checkpoint
+ * 1.14 generalized this from a two-entry inline check into a named set as
+ * more constrained tags joined li/option) — rejected as a child of every
+ * container NOT listed above in ALLOWED_CHILD_TAGS, rather than letting
+ * any of them land as a bare child of a Container/Section/Form/etc.
+ */
+const CONSTRAINED_CHILD_TAGS: ReadonlySet<string> = new Set([
+  "li",
+  "option",
+  "thead",
+  "tbody",
+  "tfoot",
+  "tr",
+  "th",
+  "td",
+]);
 
 export function canParentAcceptChild(parentTag: string, childTag: string): boolean {
   if (!canContainChildren(parentTag)) return false;
@@ -85,9 +126,5 @@ export function canParentAcceptChild(parentTag: string, childTag: string): boole
   const allowedChildren = ALLOWED_CHILD_TAGS[parentTag];
   if (allowedChildren) return allowedChildren.has(childTag);
 
-  // "li"/"option" have no meaning outside their one constrained parent —
-  // every container tag other than ul/ol/select (handled by the allowlist
-  // above) rejects them, rather than letting either land as a bare child
-  // of a Container/Section/etc.
-  return childTag !== "li" && childTag !== "option";
+  return !CONSTRAINED_CHILD_TAGS.has(childTag);
 }

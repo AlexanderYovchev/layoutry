@@ -46,7 +46,8 @@ export type InsertableElementType =
   | "label"
   | "textarea"
   | "footerComposition"
-  | "select";
+  | "select"
+  | "table";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -434,6 +435,92 @@ export function createSelectNode(): EditorElementNode {
 }
 
 /**
+ * A single, freshly-created Header Cell (Checkpoint 1.14) — used both as
+ * the Columns control's growth entry for the header row and, with
+ * distinct text below, as the starter table's own header row. A
+ * text-bearing leaf (see TableCellElement/insertionRules.ts's own doc
+ * comments) — no children, matching List Item/Option's exact precedent
+ * for a constrained-parent leaf. Simple, generic starter text ("Heading")
+ * rather than fake authored data, the same "no fake authored data"
+ * convention createInputNode/createOptionNode already follow.
+ */
+export function createTableHeaderCellNode(): EditorElementNode {
+  return { id: generateNodeId("th"), tag: "th", text: "Heading" };
+}
+
+/** A single, freshly-created Data Cell (Checkpoint 1.14) — the `<td>` counterpart to createTableHeaderCellNode above, used the same two ways (Columns growth entry, starter table body rows). */
+export function createTableDataCellNode(): EditorElementNode {
+  return { id: generateNodeId("td"), tag: "td", text: "Cell" };
+}
+
+function createStarterHeaderCell(text: string): EditorElementNode {
+  return { id: generateNodeId("th"), tag: "th", text };
+}
+
+/**
+ * A single, freshly-created Table Row (Checkpoint 1.14) — `cellCount`
+ * cells of `cellTag`, each built through createTableHeaderCellNode/
+ * createTableDataCellNode above (never an inline object literal). Used
+ * both by the starter table's body rows and by setTableBodyRowCount's own
+ * "append a fresh row matching the current column count" growth path
+ * (tableCommands.ts).
+ */
+export function createTableRowNode(cellTag: "th" | "td", cellCount: number): EditorElementNode {
+  const createCell = cellTag === "th" ? createTableHeaderCellNode : createTableDataCellNode;
+  return {
+    id: generateNodeId("tr"),
+    tag: "tr",
+    children: Array.from({ length: cellCount }, createCell),
+  };
+}
+
+/** A single, freshly-created table section (`<thead>`/`<tbody>`/`<tfoot>`) wrapping the given rows — used by the starter table below and by setTableHeaderEnabled/setTableFooterEnabled's own "create the section fresh" path (tableCommands.ts). */
+export function createTableSectionNode(tag: "thead" | "tbody" | "tfoot", rows: EditorElementNode[]): EditorElementNode {
+  return { id: generateNodeId(tag), tag, children: rows };
+}
+
+/**
+ * A newly inserted Table ships with a complete, immediately useful
+ * starter structure (Checkpoint 1.14) — 3 columns, one header row, two
+ * body rows — the same "immediately understandable and usable, not an
+ * empty shell" reasoning List's 3 starter `<li>`s and Select's 3 starter
+ * Options already established. Every node is an ordinary primitive built
+ * through the dedicated cell/row/section factories above, composed
+ * inline on the returned node for the same one-insertion/one-history-
+ * entry reason those two precedents use. Deliberately does NOT get
+ * Container/Section/Form's flowLayout+spacing structural defaults — like
+ * Select, a Table's own children are governed by native table layout, not
+ * Layoutry's Flow/Flex/Grid (see elementCapabilities.ts's own
+ * supportsChildLayout: false override for `table`), so leaving
+ * flowLayout/spacing unset matches Select's own leaf-like sizing
+ * convention. Header cells get distinct starter text ("Heading 1"/"Heading
+ * 2"/"Heading 3") so the starter table reads as genuinely useful at a
+ * glance; body cells share the plain "Cell" default createTableDataCellNode
+ * already uses — there is no equally short, meaningful way to distinguish
+ * "Cell 1" from "Cell 2" the way distinct header labels are meaningful.
+ */
+export function createTableNode(): EditorElementNode {
+  const headerRow: EditorElementNode = {
+    id: generateNodeId("tr"),
+    tag: "tr",
+    children: [
+      createStarterHeaderCell("Heading 1"),
+      createStarterHeaderCell("Heading 2"),
+      createStarterHeaderCell("Heading 3"),
+    ],
+  };
+
+  return {
+    id: generateNodeId("table"),
+    tag: "table",
+    children: [
+      createTableSectionNode("thead", [headerRow]),
+      createTableSectionNode("tbody", [createTableRowNode("td", 3), createTableRowNode("td", 3)]),
+    ],
+  };
+}
+
+/**
  * A generic placeholder photo, not a real asset — this app has no image
  * upload/picker yet (out of scope for Checkpoint 3.5.1). An inline SVG
  * with explicit width/height gives the <img> a real, non-square intrinsic
@@ -485,6 +572,7 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   textarea: createTextareaNode,
   footerComposition: createFooterCompositionNode,
   select: createSelectNode,
+  table: createTableNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -535,6 +623,7 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   textarea: { width: 240, height: 100 },
   footerComposition: { width: 320, height: 160 },
   select: { width: 200, height: 40 },
+  table: { width: 480, height: 200 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };
@@ -562,6 +651,7 @@ const INSERTABLE_TYPE_BY_TAG: Record<string, InsertableElementType> = {
   label: "label",
   textarea: "textarea",
   select: "select",
+  table: "table",
 };
 
 /** Falls back to a generic size for a tag with no InsertableElementType entry (e.g. a pasted/duplicated node whose tag isn't one of the five catalog types). */

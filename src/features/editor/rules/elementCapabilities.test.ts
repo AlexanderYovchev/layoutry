@@ -287,6 +287,99 @@ describe("elementCapabilities", () => {
     expect(option.supportsAspectRatio).toBe(false);
   });
 
+  describe("Table primitives (Checkpoint 1.14)", () => {
+    it("Table gets typography and opts out of the generic child Layout section", () => {
+      const table = getElementCapabilities("table");
+
+      expect(table.canContainChildren).toBe(true);
+      expect(table.supportsTypography).toBe(true);
+      expect(table.supportsBackground).toBe(true);
+      expect(table.supportsChildLayout).toBe(false);
+      // Ordinary box-model capabilities stay at their DEFAULT_CAPABILITIES
+      // true — a Table is an ordinary top-level box (see this
+      // checkpoint's report, section J).
+      expect(table.resizableX).toBe(true);
+      expect(table.resizableY).toBe(true);
+      expect(table.supportsBorder).toBe(true);
+      expect(table.supportsBorderRadius).toBe(true);
+      expect(table.supportsBoxShadow).toBe(true);
+      expect(table.supportsFilters).toBe(true);
+      expect(table.supportsDisplay).toBe(true);
+      expect(table.supportsPosition).toBe(true);
+      expect(table.supportsAspectRatio).toBe(true);
+    });
+
+    it("Thead/Tbody/Tfoot are all identically restricted — not resizable/positionable/sized, no Display or child Layout control, but border/typography/background stay available", () => {
+      for (const tag of ["thead", "tbody", "tfoot"]) {
+        const caps = getElementCapabilities(tag);
+        expect(caps.canContainChildren, tag).toBe(true);
+        expect(caps.resizableX, tag).toBe(false);
+        expect(caps.resizableY, tag).toBe(false);
+        expect(caps.supportsAspectRatio, tag).toBe(false);
+        expect(caps.supportsPosition, tag).toBe(false);
+        expect(caps.supportsDisplay, tag).toBe(false);
+        expect(caps.supportsBorderRadius, tag).toBe(false);
+        expect(caps.supportsBoxShadow, tag).toBe(false);
+        expect(caps.supportsFilters, tag).toBe(false);
+        expect(caps.supportsChildLayout, tag).toBe(false);
+        expect(caps.supportsBorder, tag).toBe(true);
+        expect(caps.supportsTypography, tag).toBe(true);
+        expect(caps.supportsBackground, tag).toBe(true);
+      }
+    });
+
+    it("Tr shares Thead/Tbody/Tfoot's exact restricted shape", () => {
+      const tr = getElementCapabilities("tr");
+      expect(tr.canContainChildren).toBe(true);
+      expect(tr.resizableX).toBe(false);
+      expect(tr.resizableY).toBe(false);
+      expect(tr.supportsAspectRatio).toBe(false);
+      expect(tr.supportsPosition).toBe(false);
+      expect(tr.supportsDisplay).toBe(false);
+      expect(tr.supportsBorderRadius).toBe(false);
+      expect(tr.supportsBoxShadow).toBe(false);
+      expect(tr.supportsFilters).toBe(false);
+      expect(tr.supportsChildLayout).toBe(false);
+      expect(tr.supportsBorder).toBe(true);
+      expect(tr.supportsTypography).toBe(true);
+      expect(tr.supportsBackground).toBe(true);
+    });
+
+    it("Th/Td are text-bearing leaves — typography/background derive automatically via TEXT_BEARING_TAGS, no explicit override needed for either", () => {
+      for (const tag of ["th", "td"]) {
+        const caps = getElementCapabilities(tag);
+        expect(caps.canContainChildren, tag).toBe(false);
+        expect(caps.supportsTypography, tag).toBe(true);
+        expect(caps.supportsBackground, tag).toBe(true);
+      }
+    });
+
+    it("Th/Td are not Canvas-resizable, and opt out of Display/Position (would silently break native table-cell layout), but keep Size/border/border-radius/box-shadow/filters", () => {
+      for (const tag of ["th", "td"]) {
+        const caps = getElementCapabilities(tag);
+        expect(caps.resizableX, tag).toBe(false);
+        expect(caps.resizableY, tag).toBe(false);
+        expect(caps.supportsDisplay, tag).toBe(false);
+        expect(caps.supportsPosition, tag).toBe(false);
+        expect(caps.supportsAspectRatio, tag).toBe(true);
+        expect(caps.supportsBorder, tag).toBe(true);
+        expect(caps.supportsBorderRadius, tag).toBe(true);
+        expect(caps.supportsBoxShadow, tag).toBe(true);
+        expect(caps.supportsFilters, tag).toBe(true);
+      }
+    });
+
+    it("Select also opts out of the child Layout section (Checkpoint 1.14 closed this known Checkpoint 1.13 edge case)", () => {
+      expect(getElementCapabilities("select").supportsChildLayout).toBe(false);
+    });
+
+    it("every ordinary container tag still defaults supportsChildLayout to true — unrelated containers are unaffected", () => {
+      for (const tag of ["div", "section", "ul", "ol", "form", "label", "header", "main"]) {
+        expect(getElementCapabilities(tag).supportsChildLayout, tag).toBe(true);
+      }
+    });
+  });
+
   it("gives an entirely unknown tag the same sensible defaults as any other element", () => {
     const caps = getElementCapabilities("some-future-tag");
 
