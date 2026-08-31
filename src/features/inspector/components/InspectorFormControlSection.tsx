@@ -182,6 +182,13 @@ function FormControlTextField({ id, label, value, onCommit, onReset, hasExplicit
  * selected type hides one of them from view — see this checkpoint's
  * report on non-destructive type transitions. Hiding here is purely a
  * rendering decision; the underlying document field is untouched.
+ *
+ * Select (Checkpoint 1.13) is the most restricted case: only Name
+ * renders for it — Type has no meaning (no inputType concept), and both
+ * Placeholder and Default Value are hidden (a select's own "value" is
+ * really "which Option is selected," which has its own dedicated
+ * Option Inspector section and setSelectSelectedOption command instead
+ * of overloading this generic Default Value field).
  */
 export function InspectorFormControlSection({ node }: InspectorFormControlSectionProps) {
   const setElementInputType = useEditorStore((state) => state.setElementInputType);
@@ -191,6 +198,7 @@ export function InspectorFormControlSection({ node }: InspectorFormControlSectio
   const setElementChecked = useEditorStore((state) => state.setElementChecked);
 
   const isInput = node.tag === "input";
+  const isSelect = node.tag === "select";
   const isToggle = isInput && isToggleInputType(getInputType(node));
 
   return (
@@ -204,7 +212,7 @@ export function InspectorFormControlSection({ node }: InspectorFormControlSectio
         onCommit={(value) => setElementName(node.id, value)}
         onReset={() => setElementName(node.id, undefined)}
       />
-      {!isToggle && (
+      {!isToggle && !isSelect && (
         <FormControlTextField
           id="form-control-placeholder"
           label="Placeholder"
@@ -214,14 +222,16 @@ export function InspectorFormControlSection({ node }: InspectorFormControlSectio
           onReset={() => setElementPlaceholder(node.id, undefined)}
         />
       )}
-      <FormControlTextField
-        id="form-control-value"
-        label="Default Value"
-        value={node.value ?? ""}
-        hasExplicitValue={node.value !== undefined}
-        onCommit={(value) => setElementValue(node.id, value)}
-        onReset={() => setElementValue(node.id, undefined)}
-      />
+      {!isSelect && (
+        <FormControlTextField
+          id="form-control-value"
+          label="Default Value"
+          value={node.value ?? ""}
+          hasExplicitValue={node.value !== undefined}
+          onCommit={(value) => setElementValue(node.id, value)}
+          onReset={() => setElementValue(node.id, undefined)}
+        />
+      )}
       {isToggle && (
         <InspectorPropertyRow label="Checked">
           <InspectorBooleanToggle checked={node.checked ?? false} onChange={(checked) => setElementChecked(node.id, checked)} label="Checked" />

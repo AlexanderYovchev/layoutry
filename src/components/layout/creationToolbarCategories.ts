@@ -4,6 +4,7 @@ import {
   AtSign,
   Blocks,
   Box,
+  ChevronDown,
   Circle,
   CircleDot,
   ClipboardList,
@@ -67,7 +68,8 @@ export type InsertableCardType =
   | "radioInput"
   | "label"
   | "textarea"
-  | "footerComposition";
+  | "footerComposition"
+  | "select";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -244,6 +246,12 @@ function htmlCategory(): ToolbarCategoryContent {
           description: "Multi-line text field",
           elementType: "textarea",
           icon: TextQuote,
+        },
+        {
+          name: "Select",
+          description: "Dropdown choice field with starter options",
+          elementType: "select",
+          icon: ChevronDown,
         },
         {
           name: "Button",

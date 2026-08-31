@@ -3,7 +3,7 @@ import { canParentAcceptChild } from "@/features/editor/rules/insertionRules";
 import { canResizeElement } from "@/features/editor/rules/elementCapabilities";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
 import { getResizeConstraintsForTag } from "@/features/editor/types/layout";
-import { createListItemNode } from "@/features/editor/factories/elementFactories";
+import { createListItemNode, createOptionNode } from "@/features/editor/factories/elementFactories";
 import type { DropZone } from "@/features/editor/utils/resolveDropZone";
 import type { ElementDimensions, EditorElementNode } from "@/features/editor/types/document";
 import type { InputType } from "@/features/editor/types/input";
@@ -541,6 +541,109 @@ export function setListItemCount(root: EditorElementNode, nodeId: string, count:
   let changed = false;
   const children = root.children.map((child) => {
     const updatedChild = setListItemCount(child, nodeId, count);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
+ * Sets selectId's number of <option> children (Checkpoint 1.13) — the
+ * Select Inspector's Options count, the same "don't force the creation
+ * menu just to establish how many entries exist" reasoning
+ * setListItemCount already established for Lists. A deliberately
+ * separate, structurally-parallel command rather than a shared/
+ * generalized one — this codebase's existing near-identical one-field
+ * commands (setElementName/setElementPlaceholder, etc.) are each their
+ * own small function rather than prematurely unified, and this follows
+ * that same precedent. No-op-guarded (same reference) both for a
+ * non-select tag and for an unchanged count. Growing appends fresh
+ * createOptionNode() entries; shrinking trims only from the end via
+ * slice, so every surviving Option keeps its existing id/text/value/
+ * selected/styles untouched. If the removed tail happens to include the
+ * currently-selected Option, no explicit fix-up is needed or performed:
+ * the selected Option is simply gone from the children array, and
+ * getSelectedOptionValue naturally resolves to "none selected," letting
+ * the native browser's own first-option default apply — the same
+ * "unset renders the safe native default" convention already used
+ * everywhere else in this app, and never an invalid/dangling reference
+ * since nothing else stores an Option id independently.
+ */
+export function setOptionCount(root: EditorElementNode, selectId: string, count: number): EditorElementNode {
+  if (root.id === selectId) {
+    if (root.tag !== "select") return root;
+
+    const children = root.children ?? [];
+    const clampedCount = Math.max(0, Math.floor(count));
+    if (children.length === clampedCount) return root;
+
+    if (clampedCount > children.length) {
+      const additions = Array.from({ length: clampedCount - children.length }, () => createOptionNode());
+      return { ...root, children: [...children, ...additions] };
+    }
+
+    return { ...root, children: children.slice(0, clampedCount) };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setOptionCount(child, selectId, count);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
+ * Sets which single Option child of selectId is authored selected
+ * (Checkpoint 1.13) — the one parent-aware command every Selected-state
+ * change must go through, rather than independently toggling an Option's
+ * own `selected` field, since an independent per-node toggle could leave
+ * two siblings both selected at once (the single-select invariant this
+ * command exists to protect). Pass `optionId` to select exactly that
+ * child and clear every sibling; pass `undefined` to clear the authored
+ * selection entirely (native falls back to its own first-option
+ * default). Rewrites every affected child in one pass, so the whole
+ * change is one immutable subtree replacement — never an intermediate
+ * state where two Options are briefly both selected or both unselected
+ * mid-mutation. No-op-guarded (same reference) both for a non-select
+ * target and when the requested selection already matches every child's
+ * current state exactly (e.g. re-selecting the already-selected Option).
+ * Clearing writes `selected: undefined` (fully unset), not an explicit
+ * `false` — matching the "store unconditionally, no synthesized default"
+ * convention `checked`/`value`/`href` already use, and keeping "no
+ * Option selected" indistinguishable from "never touched," which is
+ * exactly what it should mean.
+ */
+export function setSelectSelectedOption(
+  root: EditorElementNode,
+  selectId: string,
+  optionId: string | undefined,
+): EditorElementNode {
+  if (root.id === selectId) {
+    if (root.tag !== "select" || !root.children) return root;
+
+    let changed = false;
+    const children = root.children.map((child) => {
+      const shouldBeSelected = child.id === optionId;
+      const currentlySelected = child.selected === true;
+      if (shouldBeSelected === currentlySelected) return child;
+      changed = true;
+      return { ...child, selected: shouldBeSelected ? true : undefined };
+    });
+
+    return changed ? { ...root, children } : root;
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setSelectSelectedOption(child, selectId, optionId);
     if (updatedChild !== child) changed = true;
     return updatedChild;
   });

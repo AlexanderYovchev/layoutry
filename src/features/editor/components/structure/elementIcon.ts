@@ -1,5 +1,6 @@
 import {
   Box,
+  ChevronDown,
   Circle,
   ClipboardList,
   Component,
@@ -61,4 +62,10 @@ export const TAG_ICONS: Record<string, LucideIcon> = {
   input: TextCursorInput,
   label: Tag,
   textarea: TextQuote,
+  select: ChevronDown,
+  // Option (Checkpoint 1.13) reuses "li"'s exact icon — both are a
+  // bullet-like leaf entry within one constrained parent; the Structure
+  // row's own "Option — <text>" label (see elementDisplayName.ts)
+  // already disambiguates individual Options from each other.
+  option: Circle,
 };

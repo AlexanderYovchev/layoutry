@@ -20,12 +20,14 @@ import {
   createMainNode,
   createNavNode,
   createNumberInputNode,
+  createOptionNode,
   createOrderedListNode,
   createParagraphNode,
   createPasswordInputNode,
   createRadioNode,
   createSearchInputNode,
   createSectionNode,
+  createSelectNode,
   createTelInputNode,
   createTextareaNode,
   createUnorderedListNode,
@@ -230,6 +232,63 @@ describe("element factories", () => {
     });
   });
 
+  describe("createSelectNode / createOptionNode (Checkpoint 1.13)", () => {
+    it("createOptionNode produces a leaf <option> with useful default text and no value/selected", () => {
+      const node = createOptionNode();
+      expect(node.tag).toBe("option");
+      expect(node.text).toBe("Option");
+      expect(node.value).toBeUndefined();
+      expect(node.selected).toBeUndefined();
+      expect(node.children).toBeUndefined();
+    });
+
+    it("createOptionNode produces a unique id per call", () => {
+      expect(createOptionNode().id).not.toBe(createOptionNode().id);
+    });
+
+    it("createSelectNode produces a genuine <select> with three starter Options", () => {
+      const node = createSelectNode();
+      expect(node.tag).toBe("select");
+      expect(node.children).toHaveLength(3);
+      expect(node.children?.every((child) => child.tag === "option")).toBe(true);
+    });
+
+    it("gives each starter Option distinct, immediately meaningful text and value", () => {
+      const node = createSelectNode();
+      expect(node.children?.map((child) => child.text)).toEqual(["Option 1", "Option 2", "Option 3"]);
+      expect(node.children?.map((child) => child.value)).toEqual(["option-1", "option-2", "option-3"]);
+    });
+
+    it("does not authored-select any starter Option — none has selected:true", () => {
+      const node = createSelectNode();
+      expect(node.children?.every((child) => child.selected === undefined)).toBe(true);
+    });
+
+    it("leaves flowLayout/spacing unset, matching Input/Textarea's own leaf-like sizing convention rather than Container's", () => {
+      const node = createSelectNode();
+      expect(node.flowLayout).toBeUndefined();
+      expect(node.spacing).toBeUndefined();
+    });
+
+    it("every starter Option gets its own fresh, unique id", () => {
+      const node = createSelectNode();
+      const ids = node.children?.map((child) => child.id) ?? [];
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it("two separately created Selects never share starter Option ids", () => {
+      const first = createSelectNode();
+      const second = createSelectNode();
+      const firstIds = first.children?.map((child) => child.id) ?? [];
+      const secondIds = second.children?.map((child) => child.id) ?? [];
+      expect(firstIds.some((id) => secondIds.includes(id))).toBe(false);
+    });
+
+    it("createSelectNode produces a unique id per call", () => {
+      expect(createSelectNode().id).not.toBe(createSelectNode().id);
+    });
+  });
+
   describe("Form + Text Input foundation (Checkpoint 1.10)", () => {
     it("createFormNode produces an empty, childable <form> sharing Container's exact structural defaults", () => {
       const node = createFormNode();
@@ -404,6 +463,7 @@ describe("element factories", () => {
       expect(createElementNode("label").tag).toBe("label");
       expect(createElementNode("textarea").tag).toBe("textarea");
       expect(createElementNode("footerComposition").tag).toBe("footer");
+      expect(createElementNode("select").tag).toBe("select");
     });
   });
 
@@ -439,9 +499,14 @@ describe("element factories", () => {
         "label",
         "textarea",
         "footerComposition",
+        "select",
       ]) {
         expect(isInsertableElementType(type)).toBe(true);
       }
+    });
+
+    it("does NOT recognize 'option' as an insertable type (Checkpoint 1.13 — Option is deliberately not a standalone catalog entry, only ever created via a Select's starter set or its Options count control)", () => {
+      expect(isInsertableElementType("option")).toBe(false);
     });
 
     it("rejects unknown strings", () => {

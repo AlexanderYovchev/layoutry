@@ -55,6 +55,8 @@ const TAG_DISPLAY_NAMES: Record<string, string> = {
   input: "Input",
   label: "Label",
   textarea: "Textarea",
+  select: "Select",
+  option: "Option",
 };
 
 /**
@@ -66,9 +68,16 @@ const TAG_DISPLAY_NAMES: Record<string, string> = {
  * falls back to the plain tag mapping, then the raw tag itself for
  * anything unrecognized.
  */
+/** Option (Checkpoint 1.13) — appends its own authored text so siblings read as e.g. "Option — Bulgaria" in the Structure panel, the one place Canvas-unreliable Option selection needs to be easy to tell apart (brief's own example). Skipped when the text is empty or still exactly the bare "Option" default, so a freshly-created Option never reads as the redundant "Option — Option". */
+function optionDisplayName(node: EditorElementNode): string {
+  const base = TAG_DISPLAY_NAMES.option;
+  return node.text && node.text !== base ? `${base} — ${node.text}` : base;
+}
+
 export function getElementDisplayName(node: EditorElementNode): string {
   if (node.displayName) return node.displayName;
   if (node.tag === "input") return INPUT_TYPE_DISPLAY_NAMES[getInputType(node)];
+  if (node.tag === "option") return optionDisplayName(node);
   return TAG_DISPLAY_NAMES[node.tag] ?? node.tag;
 }
 

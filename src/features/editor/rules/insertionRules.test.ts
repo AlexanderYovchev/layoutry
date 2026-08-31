@@ -153,3 +153,50 @@ describe("Textarea containment (Checkpoint 1.12)", () => {
     expect(canParentAcceptChild("textarea", "div")).toBe(false);
   });
 });
+
+describe("Select/Option containment (Checkpoint 1.13)", () => {
+  it("Select is a real container (Checkpoint 1.13's own select -> option allowlist entry)", () => {
+    expect(canContainChildren("select")).toBe(true);
+  });
+
+  it("Option is a leaf — rejects all children, the same shape as List Item", () => {
+    expect(canContainChildren("option")).toBe(false);
+  });
+
+  it("lets Select accept Option", () => {
+    expect(canParentAcceptChild("select", "option")).toBe(true);
+  });
+
+  it("rejects any non-option child inside Select", () => {
+    for (const childTag of ["p", "h1", "input", "textarea", "div", "label", "button", "li"]) {
+      expect(canParentAcceptChild("select", childTag), childTag).toBe(false);
+    }
+  });
+
+  it("rejects Option everywhere except Select", () => {
+    for (const parentTag of ["div", "section", "form", "label", "ul", "ol", "header", "main"]) {
+      expect(canParentAcceptChild(parentTag, "option"), parentTag).toBe(false);
+    }
+  });
+
+  it("rejects Option as a parent regardless of child tag", () => {
+    expect(canParentAcceptChild("option", "div")).toBe(false);
+  });
+
+  it("Form/Container/ordinary structural containers accept Select, no Form-only restriction", () => {
+    for (const parentTag of ["form", "label", "div", "section", "header", "main"]) {
+      expect(canParentAcceptChild(parentTag, "select"), parentTag).toBe(true);
+    }
+  });
+
+  it("is rejected inside UL/OL — Checkpoint 1.6's li-only allowlist remains intact and unweakened", () => {
+    expect(canParentAcceptChild("ul", "select")).toBe(false);
+    expect(canParentAcceptChild("ol", "select")).toBe(false);
+  });
+
+  it("UL/OL's own li-only rule remains unweakened by the new select allowlist entry", () => {
+    expect(canParentAcceptChild("ul", "li")).toBe(true);
+    expect(canParentAcceptChild("ul", "option")).toBe(false);
+    expect(canParentAcceptChild("select", "li")).toBe(false);
+  });
+});

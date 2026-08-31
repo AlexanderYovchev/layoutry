@@ -24,6 +24,18 @@ describe("getElementDisplayName", () => {
     expect(getElementDisplayName({ id: "16", tag: "form" })).toBe("Form");
     expect(getElementDisplayName({ id: "17", tag: "label" })).toBe("Label");
     expect(getElementDisplayName({ id: "18", tag: "textarea" })).toBe("Textarea");
+    expect(getElementDisplayName({ id: "19", tag: "select" })).toBe("Select");
+  });
+
+  it("appends an Option's own text (Checkpoint 1.13) — e.g. 'Option — Bulgaria'", () => {
+    expect(getElementDisplayName({ id: "1", tag: "option", text: "Bulgaria" })).toBe("Option — Bulgaria");
+    expect(getElementDisplayName({ id: "2", tag: "option", text: "Option 1" })).toBe("Option — Option 1");
+  });
+
+  it("shows bare 'Option' for an Option with no text, or text exactly equal to the bare tag name (never the redundant 'Option — Option')", () => {
+    expect(getElementDisplayName({ id: "1", tag: "option" })).toBe("Option");
+    expect(getElementDisplayName({ id: "2", tag: "option", text: "" })).toBe("Option");
+    expect(getElementDisplayName({ id: "3", tag: "option", text: "Option" })).toBe("Option");
   });
 
   it("resolves Checkbox/Radio to their own short names, not \"Checkbox Input\"/\"Radio Input\" (Checkpoint 1.12)", () => {

@@ -45,7 +45,8 @@ export type InsertableElementType =
   | "radioInput"
   | "label"
   | "textarea"
-  | "footerComposition";
+  | "footerComposition"
+  | "select";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -378,6 +379,61 @@ export function createTextareaNode(): EditorElementNode {
 }
 
 /**
+ * A single, freshly-created Option (Checkpoint 1.13) — used both as the
+ * "Options: N" count control's growth entry and, composed with distinct
+ * text/value below, as Select's own starter set. A genuine leaf (see
+ * OptionElement/insertionRules.ts's own doc comments) — no children, no
+ * flowLayout/spacing, matching List Item's exact precedent for a
+ * constrained-parent leaf. `value` deliberately left unset here (a bare,
+ * standalone Option has no meaningful default) — the starter set below
+ * gives each of its three Options a real, distinct value instead.
+ */
+export function createOptionNode(): EditorElementNode {
+  return { id: generateNodeId("option"), tag: "option", text: "Option" };
+}
+
+function createStarterOption(text: string, value: string): EditorElementNode {
+  return { id: generateNodeId("option"), tag: "option", text, value };
+}
+
+/**
+ * A newly inserted Select ships with three starter Options — the same
+ * "immediately understandable and usable, not an empty shell" reasoning
+ * List's own three starter `<li>` items already established (Checkpoint
+ * 1.6), built inline on the returned node for the same one-insertion/
+ * one-history-entry reason. None starts authored `selected` — an
+ * unselected Select simply falls back to the browser's own native
+ * "first option" default (see types/select.ts's own doc comment), the
+ * same "unset renders the safe native default" convention this app
+ * already uses everywhere else.
+ */
+function createStarterOptions(): EditorElementNode[] {
+  return [
+    createStarterOption("Option 1", "option-1"),
+    createStarterOption("Option 2", "option-2"),
+    createStarterOption("Option 3", "option-3"),
+  ];
+}
+
+/**
+ * Select (Checkpoint 1.13) — a genuine `tag: "select"` leaf-ish container
+ * (see insertionRules.ts: it accepts only Option children, the same
+ * constrained shape ul/ol already established). Deliberately does NOT
+ * get Container/Section/Form's flowLayout+spacing structural defaults:
+ * unlike those, a Select's children are native `<option>` elements, not
+ * flowed boxes — block/flex/grid arrangement has no real rendering
+ * effect on them, so leaving flowLayout/spacing unset (natural sizing)
+ * matches Input/Textarea's own leaf-like sizing convention instead.
+ */
+export function createSelectNode(): EditorElementNode {
+  return {
+    id: generateNodeId("select"),
+    tag: "select",
+    children: createStarterOptions(),
+  };
+}
+
+/**
  * A generic placeholder photo, not a real asset — this app has no image
  * upload/picker yet (out of scope for Checkpoint 3.5.1). An inline SVG
  * with explicit width/height gives the <img> a real, non-square intrinsic
@@ -428,6 +484,7 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   label: createLabelNode,
   textarea: createTextareaNode,
   footerComposition: createFooterCompositionNode,
+  select: createSelectNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -477,6 +534,7 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   label: { width: 220, height: 60 },
   textarea: { width: 240, height: 100 },
   footerComposition: { width: 320, height: 160 },
+  select: { width: 200, height: 40 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };
@@ -503,6 +561,7 @@ const INSERTABLE_TYPE_BY_TAG: Record<string, InsertableElementType> = {
   input: "input",
   label: "label",
   textarea: "textarea",
+  select: "select",
 };
 
 /** Falls back to a generic size for a tag with no InsertableElementType entry (e.g. a pasted/duplicated node whose tag isn't one of the five catalog types). */

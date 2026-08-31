@@ -656,6 +656,59 @@ describe("InspectorNodeSummary — Form Control section (Checkpoint 1.10)", () =
   });
 });
 
+describe("InspectorNodeSummary — Select/Option (Checkpoint 1.13)", () => {
+  it("shows the Form Control section (Name only) and the Options section for a Select", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "select-1", tag: "select", children: [] }}
+        parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Form Control")).toBeInTheDocument();
+    expect(screen.getByText("Options")).toBeInTheDocument();
+  });
+
+  it("omits the Options section for anything other than Select", () => {
+    render(<InspectorNodeSummary node={{ id: "div-1", tag: "div" }} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+    expect(screen.queryByText("Options")).not.toBeInTheDocument();
+  });
+
+  it("shows the dedicated Option section for an Option, and omits Form Control/Options/Size for it", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "option-1", tag: "option", text: "Bulgaria" }}
+        parentId="select-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+
+    expect(screen.getByText("Option")).toBeInTheDocument();
+    expect(screen.queryByText("Form Control")).not.toBeInTheDocument();
+    expect(screen.queryByText("Options")).not.toBeInTheDocument();
+    expect(screen.queryByText("Size")).not.toBeInTheDocument();
+  });
+
+  it("Select IS still a container tag (accepts Option), so InspectorLayoutSection generically renders for it — accepted, documented, not a bug (see this checkpoint's own report)", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "select-1", tag: "select", children: [{ id: "option-1", tag: "option", text: "A" }] }}
+        parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.getByText("Layout")).toBeInTheDocument();
+  });
+
+  it("omits the Layout section for Option — a genuine leaf", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "option-1", tag: "option", text: "A" }}
+        parentId="select-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.queryByText("Layout")).not.toBeInTheDocument();
+  });
+});
+
 describe("InspectorNodeSummary — Label (Checkpoint 1.11)", () => {
   it("shows the Layout section for Label — it's a real container, no Label-specific CSS controls", () => {
     render(

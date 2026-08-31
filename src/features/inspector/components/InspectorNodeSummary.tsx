@@ -15,7 +15,9 @@ import { InspectorLayoutSection } from "@/features/inspector/components/Inspecto
 import { InspectorLinkSection } from "@/features/inspector/components/InspectorLinkSection";
 import { InspectorListSection } from "@/features/inspector/components/InspectorListSection";
 import { InspectorMediaSection } from "@/features/inspector/components/InspectorMediaSection";
+import { InspectorOptionSection } from "@/features/inspector/components/InspectorOptionSection";
 import { InspectorPositionSection } from "@/features/inspector/components/InspectorPositionSection";
+import { InspectorSelectOptionsSection } from "@/features/inspector/components/InspectorSelectOptionsSection";
 import { InspectorSizeSection } from "@/features/inspector/components/InspectorSizeSection";
 import { InspectorSpacingSection } from "@/features/inspector/components/InspectorSpacingSection";
 import { InspectorTypographySection } from "@/features/inspector/components/InspectorTypographySection";
@@ -86,7 +88,9 @@ export function InspectorNodeSummary({
       {getElementCapabilities(node.tag).supportsHref && <InspectorLinkSection node={node} />}
       {getElementCapabilities(node.tag).supportsHeadingLevel && <InspectorHeadingLevelSection node={node} />}
       {(node.tag === "ul" || node.tag === "ol") && <InspectorListSection node={node} />}
+      {node.tag === "option" && <InspectorOptionSection node={node} parentId={parentId} />}
       {getElementCapabilities(node.tag).supportsFormControl && <InspectorFormControlSection node={node} />}
+      {node.tag === "select" && <InspectorSelectOptionsSection node={node} />}
       {getElementCapabilities(node.tag).supportsTypography && <InspectorTypographySection node={node} />}
       {getElementCapabilities(node.tag).supportsBackground && <InspectorBackgroundSection node={node} />}
       {getElementCapabilities(node.tag).supportsBorder && <InspectorBorderSection node={node} />}

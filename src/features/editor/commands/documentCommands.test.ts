@@ -16,6 +16,8 @@ import {
   setElementText,
   setElementValue,
   setListItemCount,
+  setOptionCount,
+  setSelectSelectedOption,
 } from "./documentCommands";
 
 const tree: EditorElementNode = {
@@ -1173,6 +1175,222 @@ describe("setListItemCount (Checkpoint 1.12.1)", () => {
       ],
     };
     const result = setListItemCount(tree, "list-1", 3);
+    expect(result.children?.[1]).toBe(tree.children?.[1]);
+  });
+});
+
+describe("setOptionCount (Checkpoint 1.13)", () => {
+  function selectTree(optionCount: number): EditorElementNode {
+    return {
+      id: "root",
+      tag: "page",
+      children: [
+        {
+          id: "select-1",
+          tag: "select",
+          children: Array.from({ length: optionCount }, (_, index) => ({
+            id: `option-${index}`,
+            tag: "option",
+            text: `Option ${index}`,
+          })),
+        },
+      ],
+    };
+  }
+
+  it("appends fresh option children with fresh ids when growing", () => {
+    const result = setOptionCount(selectTree(3), "select-1", 5);
+    const select = result.children?.[0];
+    expect(select?.children).toHaveLength(5);
+    expect(select?.children?.map((child) => child.tag)).toEqual(["option", "option", "option", "option", "option"]);
+    const ids = select?.children?.map((child) => child.id) ?? [];
+    expect(new Set(ids).size).toBe(5);
+  });
+
+  it("preserves every surviving Option's id/text/styles untouched when growing", () => {
+    const tree = selectTree(2);
+    const original = tree.children?.[0].children;
+    const result = setOptionCount(tree, "select-1", 4);
+    const survivors = result.children?.[0].children?.slice(0, 2);
+    expect(survivors).toEqual(original);
+  });
+
+  it("trims only from the end when shrinking, preserving earlier Options untouched", () => {
+    const tree = selectTree(5);
+    const original = tree.children?.[0].children;
+    const result = setOptionCount(tree, "select-1", 2);
+    const select = result.children?.[0];
+    expect(select?.children).toHaveLength(2);
+    expect(select?.children).toEqual(original?.slice(0, 2));
+  });
+
+  it("dropping the selected Option leaves no dangling reference — the Select simply has no selected child left", () => {
+    const tree = selectTree(3);
+    tree.children![0].children![2].selected = true;
+    const result = setOptionCount(tree, "select-1", 2);
+    const select = result.children?.[0];
+    expect(select?.children).toHaveLength(2);
+    expect(select?.children?.some((child) => child.selected === true)).toBe(false);
+  });
+
+  it("is a no-op (same reference) when the count is already exactly this count", () => {
+    const tree = selectTree(3);
+    expect(setOptionCount(tree, "select-1", 3)).toBe(tree);
+  });
+
+  it("is a no-op (same reference) for a non-select tag", () => {
+    const tree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [{ id: "div-1", tag: "div", children: [] }],
+    };
+    expect(setOptionCount(tree, "div-1", 5)).toBe(tree);
+  });
+
+  it("is a no-op (same reference) if the node doesn't exist", () => {
+    const tree = selectTree(3);
+    expect(setOptionCount(tree, "does-not-exist", 5)).toBe(tree);
+  });
+
+  it("clamps a negative count to zero", () => {
+    const result = setOptionCount(selectTree(3), "select-1", -2);
+    expect(result.children?.[0].children).toEqual([]);
+  });
+
+  it("floors a fractional count", () => {
+    const result = setOptionCount(selectTree(2), "select-1", 3.9);
+    expect(result.children?.[0].children).toHaveLength(3);
+  });
+
+  it("leaves unrelated sibling nodes completely untouched (structural sharing)", () => {
+    const tree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [
+        { id: "select-1", tag: "select", children: [{ id: "option-0", tag: "option", text: "Option 0" }] },
+        { id: "unrelated", tag: "div", children: [] },
+      ],
+    };
+    const result = setOptionCount(tree, "select-1", 3);
+    expect(result.children?.[1]).toBe(tree.children?.[1]);
+  });
+});
+
+describe("setSelectSelectedOption (Checkpoint 1.13)", () => {
+  function selectTreeWithOptions(): EditorElementNode {
+    return {
+      id: "root",
+      tag: "page",
+      children: [
+        {
+          id: "select-1",
+          tag: "select",
+          children: [
+            { id: "option-a", tag: "option", text: "A", value: "a" },
+            { id: "option-b", tag: "option", text: "B", value: "b" },
+            { id: "option-c", tag: "option", text: "C", value: "c" },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("selects exactly the requested Option", () => {
+    const result = setSelectSelectedOption(selectTreeWithOptions(), "select-1", "option-b");
+    const options = result.children?.[0].children;
+    expect(options?.find((o) => o.id === "option-b")?.selected).toBe(true);
+  });
+
+  it("clears every sibling in the same mutation (single-select invariant)", () => {
+    let tree = setSelectSelectedOption(selectTreeWithOptions(), "select-1", "option-a");
+    tree = setSelectSelectedOption(tree, "select-1", "option-c");
+
+    const options = tree.children?.[0].children;
+    expect(options?.filter((o) => o.selected === true)).toHaveLength(1);
+    expect(options?.find((o) => o.id === "option-c")?.selected).toBe(true);
+    expect(options?.find((o) => o.id === "option-a")?.selected).toBeUndefined();
+  });
+
+  it("clears selected as undefined (fully unset), not explicit false — matches setElementChecked's own { ...root, field: undefined } convention", () => {
+    let tree = setSelectSelectedOption(selectTreeWithOptions(), "select-1", "option-a");
+    tree = setSelectSelectedOption(tree, "select-1", "option-b");
+
+    const optionA = tree.children?.[0].children?.find((o) => o.id === "option-a");
+    expect(optionA?.selected).toBeUndefined();
+    expect(optionA?.selected).not.toBe(false);
+  });
+
+  it("clears the authored selection entirely when optionId is undefined", () => {
+    let tree = setSelectSelectedOption(selectTreeWithOptions(), "select-1", "option-b");
+    tree = setSelectSelectedOption(tree, "select-1", undefined);
+
+    const options = tree.children?.[0].children;
+    expect(options?.some((o) => o.selected === true)).toBe(false);
+  });
+
+  it("preserves every other field on each Option, including styles", () => {
+    const tree = selectTreeWithOptions();
+    tree.children![0].children![0].typography = { fontWeight: 700 };
+    const result = setSelectSelectedOption(tree, "select-1", "option-a");
+    const optionA = result.children?.[0].children?.find((o) => o.id === "option-a");
+    expect(optionA?.text).toBe("A");
+    expect(optionA?.value).toBe("a");
+    expect(optionA?.typography).toEqual({ fontWeight: 700 });
+  });
+
+  it("is a no-op (same reference) when the requested selection already matches every child's current state", () => {
+    const withA = setSelectSelectedOption(selectTreeWithOptions(), "select-1", "option-a");
+    expect(setSelectSelectedOption(withA, "select-1", "option-a")).toBe(withA);
+  });
+
+  it("is a no-op (same reference) when clearing an already-fully-unselected Select", () => {
+    const tree = selectTreeWithOptions();
+    expect(setSelectSelectedOption(tree, "select-1", undefined)).toBe(tree);
+  });
+
+  it("is a no-op (same reference) for a non-select tag", () => {
+    const tree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [{ id: "div-1", tag: "div", children: [] }],
+    };
+    expect(setSelectSelectedOption(tree, "div-1", "anything")).toBe(tree);
+  });
+
+  it("is a no-op (same reference) if the select doesn't exist", () => {
+    const tree = selectTreeWithOptions();
+    expect(setSelectSelectedOption(tree, "does-not-exist", "option-a")).toBe(tree);
+  });
+
+  it("finds and updates a deeply nested select", () => {
+    const deepTree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [
+        {
+          id: "form-1",
+          tag: "form",
+          children: [
+            {
+              id: "select-1",
+              tag: "select",
+              children: [{ id: "option-a", tag: "option", text: "A" }],
+            },
+          ],
+        },
+      ],
+    };
+    const result = setSelectSelectedOption(deepTree, "select-1", "option-a");
+    expect(result.children?.[0].children?.[0].children?.[0].selected).toBe(true);
+  });
+
+  it("leaves unrelated sibling nodes completely untouched (structural sharing)", () => {
+    const tree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [selectTreeWithOptions().children![0], { id: "unrelated", tag: "div", children: [] }],
+    };
+    const result = setSelectSelectedOption(tree, "select-1", "option-a");
     expect(result.children?.[1]).toBe(tree.children?.[1]);
   });
 });

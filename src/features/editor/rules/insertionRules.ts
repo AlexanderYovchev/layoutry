@@ -22,6 +22,11 @@
  * elements" — every existing text-bearing tag is exclusively one or the
  * other. Revisit only if a future checkpoint deliberately builds that
  * richer content model.
+ *
+ * "option" (Checkpoint 1.13) is the same shape as "li" for the same
+ * reason — a genuine leaf (see OptionElement), never itself a container,
+ * only ever meaningful as a direct child of "select" (see
+ * ALLOWED_CHILD_TAGS below).
  */
 const CONTAINER_TAGS: ReadonlySet<string> = new Set([
   "page",
@@ -39,6 +44,9 @@ const CONTAINER_TAGS: ReadonlySet<string> = new Set([
   "aside",
   "nav",
   "table",
+  // "select" (Checkpoint 1.13) is a container for exactly the same
+  // constrained-nesting reason ul/ol are — see ALLOWED_CHILD_TAGS below.
+  "select",
 ]);
 
 export function canContainChildren(tag: string): boolean {
@@ -65,6 +73,10 @@ export function canContainChildren(tag: string): boolean {
 const ALLOWED_CHILD_TAGS: Readonly<Record<string, ReadonlySet<string>>> = {
   ul: new Set(["li"]),
   ol: new Set(["li"]),
+  // Select -> Option only (Checkpoint 1.13) — the exact same shape as
+  // ul/ol -> li above: a native <select> only ever meaningfully contains
+  // <option> children.
+  select: new Set(["option"]),
 };
 
 export function canParentAcceptChild(parentTag: string, childTag: string): boolean {
@@ -73,8 +85,9 @@ export function canParentAcceptChild(parentTag: string, childTag: string): boole
   const allowedChildren = ALLOWED_CHILD_TAGS[parentTag];
   if (allowedChildren) return allowedChildren.has(childTag);
 
-  // "li" has no meaning outside a list — every container tag other than
-  // ul/ol (which are handled by the allowlist above) rejects it, rather
-  // than letting it land as a bare child of a Container/Section/etc.
-  return childTag !== "li";
+  // "li"/"option" have no meaning outside their one constrained parent —
+  // every container tag other than ul/ol/select (handled by the allowlist
+  // above) rejects them, rather than letting either land as a bare child
+  // of a Container/Section/etc.
+  return childTag !== "li" && childTag !== "option";
 }

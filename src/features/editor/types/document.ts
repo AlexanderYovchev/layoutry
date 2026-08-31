@@ -233,4 +233,26 @@ export interface EditorElementNode {
    * `href` already use.
    */
   checked?: boolean;
+  /**
+   * This node's own AUTHORED/DEFAULT selected state (Checkpoint 1.13) —
+   * only meaningful for `tag: "option"` (a Select's direct child). Same
+   * authored-state principle as `checked` above, but NOT rendered as a
+   * DOM `selected` attribute directly: React does not reliably reconcile
+   * a plain `<option selected>` HTML attribute the way it does an
+   * uncontrolled `<select defaultValue>` matched against its options'
+   * `value` props (the officially recommended pattern) — so the parent
+   * SelectElement is what reads this field across its own children to
+   * compute its own `defaultValue`; see types/select.ts's own doc
+   * comment. Mutated only through the dedicated setSelectSelectedOption
+   * command, which enforces the single-select invariant (at most one
+   * sibling Option may be selected at a time) in one atomic mutation —
+   * never toggled independently the way `checked` is, since an
+   * independent per-node toggle could leave two siblings both selected.
+   * Unset (not explicit false) is how every Option starts and how
+   * "clear the authored selection entirely" is represented, letting the
+   * native browser's own first-option default apply — the same "store
+   * unconditionally, no synthesized default" convention `checked`/
+   * `value`/`href` already use.
+   */
+  selected?: boolean;
 }

@@ -176,6 +176,50 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
    * has no inputType concept at all).
    */
   textarea: { supportsTypography: true, supportsBackground: true, supportsFormControl: true },
+
+  /**
+   * Select (Checkpoint 1.13) — same three overrides as Input/Textarea
+   * (not TEXT_BEARING_TAGS since its visible content comes from its
+   * Option children, not node.text; canContainChildren is already true
+   * via CONTAINER_TAGS membership, no override needed for that). Gets
+   * supportsFormControl for the same "Form Control Inspector section"
+   * reason Input/Textarea do, but that section renders only its Name
+   * field for a select — see InspectorFormControlSection's own isSelect
+   * branch; Placeholder/Default Value/Type/Checked are all meaningless
+   * here and stay hidden.
+   */
+  select: { supportsTypography: true, supportsBackground: true, supportsFormControl: true },
+
+  /**
+   * Option (Checkpoint 1.13) — deliberately the most restricted override
+   * in this table. An <option> has no rendered box at all outside an
+   * open native <select> dropdown (browser-native behavior, not
+   * something Layoutry controls), so every "applies to a box" capability
+   * (border/border radius/box shadow/filters/display/position/aspect-
+   * ratio-and-sizing) would control something with nothing visible to
+   * apply to — left false/disabled here rather than shown-but-inert.
+   * resizableX/Y are explicitly false for the same reason (no meaningful
+   * box to attach a resize handle to — see this checkpoint's own report
+   * on why Structure + the Option Inspector, not the Canvas, are the
+   * reliable Option-authoring surfaces). typography/background are kept
+   * true because real browsers DO genuinely (if inconsistently) respect
+   * an <option>'s own color/background-color/font-weight inside their
+   * native dropdown rendering — documented browser-styling limitation,
+   * not a Layoutry gap.
+   */
+  option: {
+    resizableX: false,
+    resizableY: false,
+    supportsTypography: true,
+    supportsBackground: true,
+    supportsBorder: false,
+    supportsBorderRadius: false,
+    supportsBoxShadow: false,
+    supportsFilters: false,
+    supportsDisplay: false,
+    supportsPosition: false,
+    supportsAspectRatio: false,
+  },
 };
 
 export function getElementCapabilities(tag: string): ElementCapabilities {

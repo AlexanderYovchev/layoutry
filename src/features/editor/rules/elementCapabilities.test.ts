@@ -259,6 +259,34 @@ describe("elementCapabilities", () => {
     expect(textarea.supportsBoxShadow).toBe(true);
   });
 
+  it("gives Select (Checkpoint 1.13) the same typography/background/form-control overrides as Input/Textarea, plus real container status (it accepts Option children)", () => {
+    const select = getElementCapabilities("select");
+
+    expect(select.canContainChildren).toBe(true);
+    expect(select.supportsTypography).toBe(true);
+    expect(select.supportsBackground).toBe(true);
+    expect(select.supportsFormControl).toBe(true);
+    expect(select.resizableX).toBe(true);
+    expect(select.resizableY).toBe(true);
+  });
+
+  it("gives Option (Checkpoint 1.13) the most restricted capability set — not resizable, not a container, and no box-styling controls with nothing to attach to", () => {
+    const option = getElementCapabilities("option");
+
+    expect(option.canContainChildren).toBe(false);
+    expect(option.resizableX).toBe(false);
+    expect(option.resizableY).toBe(false);
+    expect(option.supportsTypography).toBe(true);
+    expect(option.supportsBackground).toBe(true);
+    expect(option.supportsBorder).toBe(false);
+    expect(option.supportsBorderRadius).toBe(false);
+    expect(option.supportsBoxShadow).toBe(false);
+    expect(option.supportsFilters).toBe(false);
+    expect(option.supportsDisplay).toBe(false);
+    expect(option.supportsPosition).toBe(false);
+    expect(option.supportsAspectRatio).toBe(false);
+  });
+
   it("gives an entirely unknown tag the same sensible defaults as any other element", () => {
     const caps = getElementCapabilities("some-future-tag");
 

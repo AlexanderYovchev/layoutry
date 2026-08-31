@@ -7,7 +7,9 @@ import { ImageElement } from "@/features/canvas/components/document/elements/Ima
 import { InputElement } from "@/features/canvas/components/document/elements/InputElement";
 import { LinkElement } from "@/features/canvas/components/document/elements/LinkElement";
 import { ListItemElement } from "@/features/canvas/components/document/elements/ListItemElement";
+import { OptionElement } from "@/features/canvas/components/document/elements/OptionElement";
 import { ParagraphElement } from "@/features/canvas/components/document/elements/ParagraphElement";
+import { SelectElement } from "@/features/canvas/components/document/elements/SelectElement";
 import { TextareaElement } from "@/features/canvas/components/document/elements/TextareaElement";
 import type { DocumentElementComponent } from "@/features/canvas/types/documentRenderer";
 
@@ -46,4 +48,6 @@ export const documentNodeComponents: Record<string, DocumentElementComponent> =
     label: ContainerElement,
     input: InputElement,
     textarea: TextareaElement,
+    select: SelectElement,
+    option: OptionElement,
   };

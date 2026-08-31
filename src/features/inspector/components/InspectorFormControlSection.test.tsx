@@ -274,3 +274,30 @@ describe("InspectorFormControlSection — Checkbox/Radio + Textarea (Checkpoint 
     expect(screen.queryByRole("switch", { name: "Checked" })).not.toBeInTheDocument();
   });
 });
+
+describe("InspectorFormControlSection — Select (Checkpoint 1.13)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("shows only Name for Select — Type/Placeholder/Default Value/Checked are all hidden", () => {
+    setup({ id: "select-1", tag: "select", name: "country" });
+
+    expect(screen.getByLabelText("Name")).toHaveValue("country");
+    expect(screen.queryByLabelText("Type")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Placeholder")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Default Value")).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Checked" })).not.toBeInTheDocument();
+  });
+
+  it("commits Name for Select through setElementName, one history entry", () => {
+    setup({ id: "select-1", tag: "select" });
+    const pastLengthBefore = useEditorStore.getState().past.length;
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "country" } });
+    fireEvent.blur(screen.getByLabelText("Name"));
+
+    expect(currentNode("select-1")?.name).toBe("country");
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
+  });
+});

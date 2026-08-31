@@ -343,4 +343,29 @@ describe("EditorApp", () => {
     expect(selectedRows).toHaveLength(1);
     expect(selectedRows[0]).toHaveAttribute("title", "Textarea");
   }, 15000); // multi-round real userEvent interaction — see Checkpoint 1.8's identical fix for the same resource-contention flake under full-suite parallel load
+
+  it("clicking Select inserts a real <select> with three genuine <option> children, syncing Structure with their own names (Checkpoint 1.13)", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<EditorApp />);
+
+    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("menuitem", { name: /^Select/ }));
+    const selectId = useEditorStore.getState().selectedElementId;
+
+    const selectNode = useEditorStore.getState().document.children?.find((c) => c.id === selectId);
+    expect(selectNode?.tag).toBe("select");
+    expect(selectNode?.children).toHaveLength(3);
+    expect(selectNode?.children?.every((c) => c.tag === "option")).toBe(true);
+
+    const selectRendered = container.querySelector(`[data-node-id="${selectId}"]`);
+    expect(selectRendered?.tagName).toBe("SELECT");
+    expect(selectRendered?.querySelectorAll("option")).toHaveLength(3);
+
+    await user.click(screen.getByRole("tab", { name: "Structure" }));
+    const selectedRows = screen
+      .getAllByRole("treeitem")
+      .filter((row) => row.getAttribute("aria-selected") === "true");
+    expect(selectedRows).toHaveLength(1);
+    expect(selectedRows[0]).toHaveAttribute("title", "Select");
+  }, 15000); // multi-round real userEvent interaction — see Checkpoint 1.8's identical fix for the same resource-contention flake under full-suite parallel load
 });

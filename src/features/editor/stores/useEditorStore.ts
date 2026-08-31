@@ -15,6 +15,8 @@ import {
   setElementText as setElementTextCommand,
   setElementValue as setElementValueCommand,
   setListItemCount as setListItemCountCommand,
+  setOptionCount as setOptionCountCommand,
+  setSelectSelectedOption as setSelectSelectedOptionCommand,
   type InsertPosition,
 } from "@/features/editor/commands/documentCommands";
 import type { InputType } from "@/features/editor/types/input";
@@ -212,6 +214,10 @@ interface EditorState {
   setElementChecked: (nodeId: string, checked: boolean | undefined) => void;
   /** One-shot list item count edit (Checkpoint 1.12.1 — the List Inspector's Items field for ul/ol). Same action-level no-op guard as setElementValue/setElementChecked. */
   setListItemCount: (nodeId: string, count: number) => void;
+  /** One-shot option count edit (Checkpoint 1.13 — the Select Inspector's Options field). Same action-level no-op guard as setListItemCount. */
+  setOptionCount: (selectId: string, count: number) => void;
+  /** One-shot single-select authored-selection change (Checkpoint 1.13 — the Option Inspector's Selected toggle). Rewrites the whole affected Select subtree in one call so at most one Option is ever selected; pass undefined to clear the authored selection entirely. Same action-level no-op guard as every other one-shot field command. */
+  setSelectSelectedOption: (selectId: string, optionId: string | undefined) => void;
 
   /**
    * Generic continuous-interaction transaction (Checkpoint 4.3.1) — the
@@ -587,6 +593,20 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setListItemCount: (nodeId, count) =>
     set((state) => {
       const document = setListItemCountCommand(state.document, nodeId, count);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setOptionCount: (selectId, count) =>
+    set((state) => {
+      const document = setOptionCountCommand(state.document, selectId, count);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setSelectSelectedOption: (selectId, optionId) =>
+    set((state) => {
+      const document = setSelectSelectedOptionCommand(state.document, selectId, optionId);
       if (document === state.document) return {};
       return { ...pushHistory(state), document };
     }),

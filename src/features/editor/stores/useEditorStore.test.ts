@@ -11,6 +11,7 @@ import {
   createLinkNode,
   createListItemNode,
   createRadioNode,
+  createSelectNode,
   createTextareaNode,
   createUnorderedListNode,
 } from "@/features/editor/factories/elementFactories";
@@ -1606,6 +1607,102 @@ describe("useEditorStore — Checkbox/Radio + Textarea foundation (Checkpoint 1.
       ?.children?.find((c) => c.id === formId)
       ?.children?.find((c) => c.id === original.id)?.children?.[0];
     expect(refreshedOriginalCheckbox?.checked).toBe(true);
+  });
+});
+
+describe("useEditorStore — Select + Option foundation (Checkpoint 1.13)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  function findSelect(selectId: string) {
+    return useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === selectId);
+  }
+
+  it("setOptionCount pushes exactly one history entry per change, no entry on no-op, grows/shrinks the real child array, and undo restores the previous Options", () => {
+    useEditorStore.getState().insertElement("section-1", createSelectNode());
+    const selectId = useEditorStore.getState().selectedElementId!;
+    const pastLengthAfterInsert = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().setOptionCount(selectId, 5);
+    expect(findSelect(selectId)?.children).toHaveLength(5);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthAfterInsert + 1);
+
+    useEditorStore.getState().setOptionCount(selectId, 5);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthAfterInsert + 1); // no-op, no new entry
+
+    useEditorStore.getState().setOptionCount(selectId, 2);
+    expect(findSelect(selectId)?.children).toHaveLength(2);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthAfterInsert + 2);
+
+    useEditorStore.getState().undo();
+    expect(findSelect(selectId)?.children).toHaveLength(5);
+  });
+
+  it("Label can wrap a Select without native activation opening it — Label > Select", () => {
+    useEditorStore.getState().insertElement("section-1", createFormNode());
+    const formId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement(formId, createLabelNode());
+    const labelId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement(labelId, createSelectNode());
+
+    const form = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === formId);
+    const label = form?.children?.find((c) => c.id === labelId);
+    expect(label?.children?.[0]?.tag).toBe("select");
+  });
+
+  it("Select rejects insertion into a List — Checkpoint 1.6's UL/OL li-only rule remains intact", () => {
+    useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
+    const listId = useEditorStore.getState().selectedElementId!;
+    const beforeDocument = useEditorStore.getState().document;
+
+    useEditorStore.getState().insertElement(listId, createSelectNode());
+    expect(useEditorStore.getState().document).toBe(beforeDocument);
+  });
+
+  it("duplicates a Select with a custom selected Option recursively with fresh ids, preserving text/value/selected, and independent post-duplicate editing", () => {
+    useEditorStore.getState().insertElement("section-1", createSelectNode());
+    const selectId = useEditorStore.getState().selectedElementId!;
+    const originalOptionIds = findSelect(selectId)!.children!.map((c) => c.id);
+    useEditorStore.getState().setSelectSelectedOption(selectId, originalOptionIds[1]);
+
+    useEditorStore.getState().selectElement(selectId);
+    useEditorStore.getState().duplicateSelection();
+
+    const selects = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.filter((c) => c.tag === "select") ?? [];
+    expect(selects).toHaveLength(2);
+    const [original, duplicate] = selects;
+
+    expect(duplicate.id).not.toBe(original.id);
+    expect(duplicate.children).toHaveLength(3);
+    const duplicateIds = duplicate.children!.map((c) => c.id);
+    expect(duplicateIds.some((id) => originalOptionIds.includes(id))).toBe(false);
+
+    // The same RELATIVE Option (index 1) is preserved as selected in the
+    // duplicate — no relational id mapping needed, since selected lives
+    // directly on each Option node and cloneNodeWithFreshIds only changes
+    // ids, never field values.
+    expect(duplicate.children![1].selected).toBe(true);
+    expect(duplicate.children![0].selected).toBeUndefined();
+    expect(duplicate.children![2].selected).toBeUndefined();
+    expect(duplicate.children!.map((c) => c.text)).toEqual(original.children!.map((c) => c.text));
+    expect(duplicate.children!.map((c) => c.value)).toEqual(original.children!.map((c) => c.value));
+
+    // Editing the duplicate's selection never touches the original.
+    useEditorStore.getState().setSelectSelectedOption(duplicate.id, duplicate.children![0].id);
+    const refreshedOriginal = findSelect(original.id);
+    expect(refreshedOriginal?.children?.[1].selected).toBe(true);
+  });
+
+  it("Form > Select > Option coexists correctly — Select is insertable into Form like any other control", () => {
+    useEditorStore.getState().insertElement("section-1", createFormNode());
+    const formId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement(formId, createSelectNode());
+
+    const form = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === formId);
+    const select = form?.children?.find((c) => c.tag === "select");
+    expect(select?.children).toHaveLength(3);
+    expect(select?.children?.every((c) => c.tag === "option")).toBe(true);
   });
 });
 
