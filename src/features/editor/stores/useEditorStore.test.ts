@@ -11,10 +11,12 @@ import {
   createLinkNode,
   createListItemNode,
   createRadioNode,
+  createIframeNode,
   createSelectNode,
   createTableNode,
   createTextareaNode,
   createUnorderedListNode,
+  createVideoNode,
 } from "@/features/editor/factories/elementFactories";
 import { useEditorStore } from "./useEditorStore";
 
@@ -1899,6 +1901,203 @@ describe("useEditorStore — Table foundation (Checkpoint 1.14)", () => {
     const form = findUnderSection(formId);
     const table = form?.children?.find((c) => c.tag === "table");
     expect(table?.children).toHaveLength(2);
+  });
+});
+
+describe("useEditorStore — Video + Iframe foundation (Checkpoint 1.15)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  function findUnderSection(nodeId: string) {
+    return useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === nodeId);
+  }
+
+  it("setElementSrc/setElementPoster/setElementControls/setElementAutoplay/setElementMuted/setElementLoop each push exactly one history entry, no entry on no-op, and undo restores the previous value", () => {
+    useEditorStore.getState().insertElement("section-1", createVideoNode());
+    const videoId = useEditorStore.getState().selectedElementId!;
+
+    const cases: [string, () => void, () => unknown][] = [
+      ["setElementSrc", () => useEditorStore.getState().setElementSrc(videoId, "https://example.com/video.mp4"), () => findUnderSection(videoId)?.src],
+      ["setElementPoster", () => useEditorStore.getState().setElementPoster(videoId, "https://example.com/poster.jpg"), () => findUnderSection(videoId)?.poster],
+      ["setElementControls", () => useEditorStore.getState().setElementControls(videoId, false), () => findUnderSection(videoId)?.controls],
+      ["setElementAutoplay", () => useEditorStore.getState().setElementAutoplay(videoId, true), () => findUnderSection(videoId)?.autoplay],
+      ["setElementMuted", () => useEditorStore.getState().setElementMuted(videoId, true), () => findUnderSection(videoId)?.muted],
+      ["setElementLoop", () => useEditorStore.getState().setElementLoop(videoId, true), () => findUnderSection(videoId)?.loop],
+    ];
+
+    for (const [, apply, read] of cases) {
+      const pastLengthBefore = useEditorStore.getState().past.length;
+      apply();
+      expect(read()).not.toBeUndefined();
+      expect(useEditorStore.getState().past.length).toBe(pastLengthBefore + 1);
+
+      // no-op: applying the exact same value again pushes nothing
+      apply();
+      expect(useEditorStore.getState().past.length).toBe(pastLengthBefore + 1);
+
+      useEditorStore.getState().undo();
+      expect(read()).toBeUndefined();
+      // redo to leave state consistent for the next case in this loop
+      useEditorStore.getState().redo();
+    }
+  });
+
+  it("setElementTitle pushes one history entry per change, no entry on no-op, and undo restores the previous title", () => {
+    useEditorStore.getState().insertElement("section-1", createIframeNode());
+    const iframeId = useEditorStore.getState().selectedElementId!;
+    const pastLengthAfterInsert = useEditorStore.getState().past.length;
+
+    useEditorStore.getState().setElementTitle(iframeId, "Product tour");
+    expect(findUnderSection(iframeId)?.title).toBe("Product tour");
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthAfterInsert + 1);
+
+    useEditorStore.getState().setElementTitle(iframeId, "Product tour");
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthAfterInsert + 1); // no-op
+
+    useEditorStore.getState().undo();
+    expect(findUnderSection(iframeId)?.title).toBe("Embedded content");
+  });
+
+  it("setElementSrc is reused unchanged for Iframe — the same generic command Video uses", () => {
+    useEditorStore.getState().insertElement("section-1", createIframeNode());
+    const iframeId = useEditorStore.getState().selectedElementId!;
+
+    useEditorStore.getState().setElementSrc(iframeId, "https://example.com/embed");
+    expect(findUnderSection(iframeId)?.src).toBe("https://example.com/embed");
+  });
+
+  it("Video/Iframe reject insertion into a List — Checkpoint 1.6's UL/OL li-only rule remains intact", () => {
+    useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
+    const listId = useEditorStore.getState().selectedElementId!;
+    const beforeDocument = useEditorStore.getState().document;
+
+    useEditorStore.getState().insertElement(listId, createVideoNode());
+    expect(useEditorStore.getState().document).toBe(beforeDocument);
+
+    useEditorStore.getState().insertElement(listId, createIframeNode());
+    expect(useEditorStore.getState().document).toBe(beforeDocument);
+  });
+
+  it("duplicates a customized Video with fresh id, preserving every semantic field and CSS state, with independent post-duplicate editing", () => {
+    useEditorStore.getState().insertElement("section-1", createVideoNode());
+    const videoId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().setElementSrc(videoId, "https://example.com/video.mp4");
+    useEditorStore.getState().setElementPoster(videoId, "https://example.com/poster.jpg");
+    useEditorStore.getState().setElementControls(videoId, false);
+    useEditorStore.getState().setElementAutoplay(videoId, true);
+    useEditorStore.getState().setElementMuted(videoId, true);
+    useEditorStore.getState().setElementLoop(videoId, true);
+    useEditorStore.getState().setMediaFitSettings(videoId, { objectFit: "cover" });
+
+    useEditorStore.getState().selectElement(videoId);
+    useEditorStore.getState().duplicateSelection();
+
+    const videos = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.filter((c) => c.tag === "video") ?? [];
+    expect(videos).toHaveLength(2);
+    const [original, duplicate] = videos;
+
+    expect(duplicate.id).not.toBe(original.id);
+    expect(duplicate.src).toBe("https://example.com/video.mp4");
+    expect(duplicate.poster).toBe("https://example.com/poster.jpg");
+    expect(duplicate.controls).toBe(false);
+    expect(duplicate.autoplay).toBe(true);
+    expect(duplicate.muted).toBe(true);
+    expect(duplicate.loop).toBe(true);
+    expect(duplicate.mediaFit).toEqual({ objectFit: "cover" });
+
+    // Editing the duplicate never touches the original.
+    useEditorStore.getState().setElementSrc(duplicate.id, "https://example.com/other.mp4");
+    const refreshedOriginal = findUnderSection(original.id);
+    expect(refreshedOriginal?.src).toBe("https://example.com/video.mp4");
+  });
+
+  it("duplicates a customized Iframe with fresh id, preserving src/title and CSS state, with independent post-duplicate editing", () => {
+    useEditorStore.getState().insertElement("section-1", createIframeNode());
+    const iframeId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().setElementSrc(iframeId, "https://example.com/embed");
+    useEditorStore.getState().setElementTitle(iframeId, "Product tour");
+
+    useEditorStore.getState().selectElement(iframeId);
+    useEditorStore.getState().duplicateSelection();
+
+    const iframes = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.filter((c) => c.tag === "iframe") ?? [];
+    expect(iframes).toHaveLength(2);
+    const [original, duplicate] = iframes;
+
+    expect(duplicate.id).not.toBe(original.id);
+    expect(duplicate.src).toBe("https://example.com/embed");
+    expect(duplicate.title).toBe("Product tour");
+
+    useEditorStore.getState().setElementTitle(duplicate.id, "Renamed");
+    const refreshedOriginal = findUnderSection(original.id);
+    expect(refreshedOriginal?.title).toBe("Product tour");
+  });
+
+  it("Form > Video and Form > Iframe coexist correctly — both insertable into Form like any other control", () => {
+    useEditorStore.getState().insertElement("section-1", createFormNode());
+    const formId = useEditorStore.getState().selectedElementId!;
+    useEditorStore.getState().insertElement(formId, createVideoNode());
+    useEditorStore.getState().insertElement(formId, createIframeNode());
+
+    const form = findUnderSection(formId);
+    expect(form?.children?.some((c) => c.tag === "video")).toBe(true);
+    expect(form?.children?.some((c) => c.tag === "iframe")).toBe(true);
+  });
+});
+
+describe("useEditorStore — HTML Identity foundation (Checkpoint 1.15.1)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  function findSection() {
+    return useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+  }
+
+  it("setElementHtmlId/setElementClassName each push exactly one history entry, no entry on no-op, and undo restores the previous value", () => {
+    const cases: [string, () => void, () => unknown][] = [
+      ["setElementHtmlId", () => useEditorStore.getState().setElementHtmlId("section-1", "hero"), () => findSection()?.htmlId],
+      ["setElementClassName", () => useEditorStore.getState().setElementClassName("section-1", "hero-section featured"), () => findSection()?.className],
+    ];
+
+    for (const [, apply, read] of cases) {
+      const pastLengthBefore = useEditorStore.getState().past.length;
+      apply();
+      expect(read()).not.toBeUndefined();
+      expect(useEditorStore.getState().past.length).toBe(pastLengthBefore + 1);
+
+      // no-op: applying the exact same value again pushes nothing
+      apply();
+      expect(useEditorStore.getState().past.length).toBe(pastLengthBefore + 1);
+
+      useEditorStore.getState().undo();
+      expect(read()).toBeUndefined();
+      useEditorStore.getState().redo();
+    }
+  });
+
+  it("duplicates a customized node with fresh id, preserving htmlId/className, with independent post-duplicate editing", () => {
+    useEditorStore.getState().setElementHtmlId("section-1", "hero");
+    useEditorStore.getState().setElementClassName("section-1", "hero-section featured");
+
+    const sectionsBefore = useEditorStore.getState().document.children?.filter((c) => c.tag === "section") ?? [];
+
+    useEditorStore.getState().selectElement("section-1");
+    useEditorStore.getState().duplicateSelection();
+
+    const sections = useEditorStore.getState().document.children?.filter((c) => c.tag === "section") ?? [];
+    expect(sections).toHaveLength(sectionsBefore.length + 1);
+    const original = sections.find((c) => c.id === "section-1")!;
+    const duplicate = sections.find((c) => c.id !== "section-1" && !sectionsBefore.some((s) => s.id === c.id))!;
+
+    expect(duplicate.id).not.toBe(original.id);
+    expect(duplicate.htmlId).toBe("hero");
+    expect(duplicate.className).toBe("hero-section featured");
+
+    useEditorStore.getState().setElementHtmlId(duplicate.id, "hero-2");
+    const refreshedOriginal = useEditorStore.getState().document.children?.find((c) => c.id === original.id);
+    expect(refreshedOriginal?.htmlId).toBe("hero");
   });
 });
 

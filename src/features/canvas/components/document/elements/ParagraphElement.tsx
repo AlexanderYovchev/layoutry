@@ -36,6 +36,7 @@ export function ParagraphElement({ node, parentId, parentLayoutMode, parentFlowD
 
   return (
     <p
+      id={node.htmlId}
       ref={mergeRefs<HTMLElement>(dropRef, dragRef, editable.elementRef)}
       {...documentNodeAttributes(node, parentId)}
       {...editable.editableProps}
@@ -49,6 +50,7 @@ export function ParagraphElement({ node, parentId, parentLayoutMode, parentFlowD
         parentLayoutMode !== "free" && !node.dimensions && "max-w-prose",
         editable.isEditing && "outline-none",
         isDragging && "opacity-40",
+        node.className,
       )}
       style={{
         // resolvePositionStyle spread first, and elementPositionStyle after

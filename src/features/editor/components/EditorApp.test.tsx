@@ -225,8 +225,15 @@ describe("EditorApp", () => {
     const user = userEvent.setup();
     const { container } = render(<EditorApp />);
 
-    await user.click(screen.getByRole("button", { name: "HTML" }));
-    await user.click(screen.getByRole("menuitem", { name: /^Form/ }));
+    await user.click(screen.getByRole("button", { name: "Forms" }));
+    // Anchored to "FormForm" (Checkpoint 1.15.1): card accessible names
+    // concatenate name+description with no separator ("FormForm
+    // container"), and the Forms category now also has a still-disabled
+    // "Form Row" placeholder card, whose own accessible name
+    // ("Form RowHorizontal field grouping") also starts with "Form" — the
+    // same kind of collision Checkpoint 1.12's own Radio Button fix
+    // already documented, one level more specific here.
+    await user.click(screen.getByRole("menuitem", { name: /^FormForm/ }));
 
     const state = useEditorStore.getState();
     const insertedId = state.selectedElementId;
@@ -247,11 +254,18 @@ describe("EditorApp", () => {
     const user = userEvent.setup();
     const { container } = render(<EditorApp />);
 
-    await user.click(screen.getByRole("button", { name: "HTML" }));
-    await user.click(screen.getByRole("menuitem", { name: /^Form/ }));
+    await user.click(screen.getByRole("button", { name: "Forms" }));
+    // Anchored to "FormForm" (Checkpoint 1.15.1): card accessible names
+    // concatenate name+description with no separator ("FormForm
+    // container"), and the Forms category now also has a still-disabled
+    // "Form Row" placeholder card, whose own accessible name
+    // ("Form RowHorizontal field grouping") also starts with "Form" — the
+    // same kind of collision Checkpoint 1.12's own Radio Button fix
+    // already documented, one level more specific here.
+    await user.click(screen.getByRole("menuitem", { name: /^FormForm/ }));
     // The freshly inserted form is already selected.
 
-    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("button", { name: "Forms" }));
     await user.click(screen.getByRole("menuitem", { name: /^Text Input/ }));
 
     const state = useEditorStore.getState();
@@ -277,12 +291,12 @@ describe("EditorApp", () => {
     const user = userEvent.setup();
     const { container } = render(<EditorApp />);
 
-    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("button", { name: "Forms" }));
     await user.click(screen.getByRole("menuitem", { name: /^Label/ }));
     const labelId = useEditorStore.getState().selectedElementId;
     // The freshly inserted label is already selected.
 
-    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("button", { name: "Forms" }));
     await user.click(screen.getByRole("menuitem", { name: /^Email Input/ }));
 
     const state = useEditorStore.getState();
@@ -309,11 +323,18 @@ describe("EditorApp", () => {
     const user = userEvent.setup();
     const { container } = render(<EditorApp />);
 
-    await user.click(screen.getByRole("button", { name: "HTML" }));
-    await user.click(screen.getByRole("menuitem", { name: /^Form/ }));
+    await user.click(screen.getByRole("button", { name: "Forms" }));
+    // Anchored to "FormForm" (Checkpoint 1.15.1): card accessible names
+    // concatenate name+description with no separator ("FormForm
+    // container"), and the Forms category now also has a still-disabled
+    // "Form Row" placeholder card, whose own accessible name
+    // ("Form RowHorizontal field grouping") also starts with "Form" — the
+    // same kind of collision Checkpoint 1.12's own Radio Button fix
+    // already documented, one level more specific here.
+    await user.click(screen.getByRole("menuitem", { name: /^FormForm/ }));
     const formId = useEditorStore.getState().selectedElementId;
 
-    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("button", { name: "Forms" }));
     await user.click(screen.getByRole("menuitem", { name: /^Checkbox/ }));
     const checkboxId = useEditorStore.getState().selectedElementId;
 
@@ -322,7 +343,7 @@ describe("EditorApp", () => {
     // node's parent when the selection can't contain children).
     await user.click(screen.getByRole("tab", { name: "Structure" }));
     await user.click(screen.getByRole("treeitem", { name: /Form/ }));
-    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("button", { name: "Forms" }));
     await user.click(screen.getByRole("menuitem", { name: /^Textarea/ }));
     const textareaId = useEditorStore.getState().selectedElementId;
 
@@ -348,7 +369,7 @@ describe("EditorApp", () => {
     const user = userEvent.setup();
     const { container } = render(<EditorApp />);
 
-    await user.click(screen.getByRole("button", { name: "HTML" }));
+    await user.click(screen.getByRole("button", { name: "Forms" }));
     await user.click(screen.getByRole("menuitem", { name: /^Select/ }));
     const selectId = useEditorStore.getState().selectedElementId;
 

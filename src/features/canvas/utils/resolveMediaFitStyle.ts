@@ -9,8 +9,11 @@ import type { EditorElementNode } from "@/features/editor/types/document";
 import type { CSSProperties } from "react";
 
 /**
- * CSS for the *inner* media element (the real <img>, and video/iframe
- * once those exist) — always fills its outer wrapper box (width/height:
+ * CSS for the *inner* media element (the real <img>, and <video> as of
+ * Checkpoint 1.15 — see VideoElement; deliberately NOT <iframe>, whose
+ * embedded document has no "fit" concept for object-fit to apply to, see
+ * elementCapabilities.ts's own iframe doc comment) — always fills its
+ * outer wrapper box (width/height:
  * 100%, matching that wrapper's own containment sizing) but uses
  * object-fit/object-position to control how the visual content itself
  * behaves within that box, so a Grid/Flex track being stretched to fill

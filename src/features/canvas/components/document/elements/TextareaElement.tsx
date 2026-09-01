@@ -54,6 +54,7 @@ export function TextareaElement({ node, parentId, parentLayoutMode, parentFlowDi
       name={node.name}
       placeholder={node.placeholder}
       defaultValue={node.value}
+      id={node.htmlId}
       ref={mergeRefs<HTMLTextAreaElement>(dropRef, dragRef, editable.elementRef)}
       {...documentNodeAttributes(node, parentId)}
       {...editable.editableProps}
@@ -63,6 +64,7 @@ export function TextareaElement({ node, parentId, parentLayoutMode, parentFlowDi
         usesLegacyBorderChrome && "border border-zinc-200 dark:border-zinc-800",
         editable.isEditing && "cursor-text",
         isDragging && "opacity-40",
+        node.className,
       )}
       style={{
         // resolvePositionStyle spread first, and elementPositionStyle after

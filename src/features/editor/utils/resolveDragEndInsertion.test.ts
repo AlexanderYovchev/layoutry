@@ -77,10 +77,14 @@ describe("resolveDragEndInsertion", () => {
   });
 
   it("returns null for an unrecognized element type", () => {
+    // "audio" is deliberately still unrecognized (Checkpoint 1.15's own
+    // Non-Goals) — "video" was this test's original placeholder but is
+    // now a real InsertableElementType, so it no longer proves the
+    // "unrecognized" branch.
     const result = resolveDragEndInsertion(
       {
         active: {
-          data: { current: { elementType: "video" } },
+          data: { current: { elementType: "audio" } },
           rect: { current: { translated: null } },
         },
         over: null,

@@ -49,6 +49,7 @@ export function LinkElement({ node, parentId, parentLayoutMode, parentFlowDispla
     <a
       href={getLinkHref(node)}
       onClick={preventEditorNavigation}
+      id={node.htmlId}
       ref={mergeRefs<HTMLElement>(dropRef, dragRef, editable.elementRef)}
       {...documentNodeAttributes(node, parentId)}
       {...editable.editableProps}
@@ -56,6 +57,7 @@ export function LinkElement({ node, parentId, parentLayoutMode, parentFlowDispla
         "inline-block w-fit text-blue-600 underline underline-offset-2 dark:text-blue-400",
         editable.isEditing && "outline-none",
         isDragging && "opacity-40",
+        node.className,
       )}
       style={{
         // resolvePositionStyle spread first, and elementPositionStyle after

@@ -3,6 +3,7 @@ import { ButtonElement } from "@/features/canvas/components/document/elements/Bu
 import { ContainerElement } from "@/features/canvas/components/document/elements/ContainerElement";
 import { DocumentRootElement } from "@/features/canvas/components/document/elements/DocumentRootElement";
 import { HeadingElement } from "@/features/canvas/components/document/elements/HeadingElement";
+import { IframeElement } from "@/features/canvas/components/document/elements/IframeElement";
 import { ImageElement } from "@/features/canvas/components/document/elements/ImageElement";
 import { InputElement } from "@/features/canvas/components/document/elements/InputElement";
 import { LinkElement } from "@/features/canvas/components/document/elements/LinkElement";
@@ -15,6 +16,7 @@ import { TableElement } from "@/features/canvas/components/document/elements/Tab
 import { TableRowElement } from "@/features/canvas/components/document/elements/TableRowElement";
 import { TableSectionElement } from "@/features/canvas/components/document/elements/TableSectionElement";
 import { TextareaElement } from "@/features/canvas/components/document/elements/TextareaElement";
+import { VideoElement } from "@/features/canvas/components/document/elements/VideoElement";
 import type { DocumentElementComponent } from "@/features/canvas/types/documentRenderer";
 
 /**
@@ -61,4 +63,6 @@ export const documentNodeComponents: Record<string, DocumentElementComponent> =
     tr: TableRowElement,
     th: TableCellElement,
     td: TableCellElement,
+    video: VideoElement,
+    iframe: IframeElement,
   };

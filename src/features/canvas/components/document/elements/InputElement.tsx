@@ -96,6 +96,7 @@ export function InputElement({ node, parentId, parentLayoutMode, parentFlowDispl
       placeholder={node.placeholder}
       defaultValue={node.value}
       defaultChecked={node.checked}
+      id={node.htmlId}
       ref={mergeRefs<HTMLInputElement>(dropRef, dragRef, editable.elementRef, (element) => {
         checkedResyncRef.current = element;
       })}
@@ -107,6 +108,7 @@ export function InputElement({ node, parentId, parentLayoutMode, parentFlowDispl
         usesLegacyBorderChrome && "border border-zinc-200 dark:border-zinc-800",
         !isToggle && editable.isEditing && "cursor-text",
         isDragging && "opacity-40",
+        node.className,
       )}
       style={{
         // resolvePositionStyle spread first, and elementPositionStyle after

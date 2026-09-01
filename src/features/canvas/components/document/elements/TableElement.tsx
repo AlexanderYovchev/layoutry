@@ -52,6 +52,7 @@ export function TableElement({ node, parentId, parentLayoutMode, parentFlowDispl
 
   return (
     <table
+      id={node.htmlId}
       ref={mergeRefs<HTMLTableElement>(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
       className={cn(
@@ -59,6 +60,7 @@ export function TableElement({ node, parentId, parentLayoutMode, parentFlowDispl
         usesLegacyRadiusChrome && "rounded-lg",
         usesLegacyBorderChrome && "border border-zinc-100 dark:border-zinc-900",
         isDragging && "opacity-40",
+        node.className,
       )}
       style={{
         ...resolvePositionStyle(node),

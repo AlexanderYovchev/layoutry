@@ -54,6 +54,7 @@ export function ButtonElement({ node, parentId, parentLayoutMode, parentFlowDisp
   return (
     <button
       type="button"
+      id={node.htmlId}
       ref={mergeRefs<HTMLElement>(dropRef, dragRef, editable.elementRef)}
       {...documentNodeAttributes(node, parentId)}
       {...editable.editableProps}
@@ -63,6 +64,7 @@ export function ButtonElement({ node, parentId, parentLayoutMode, parentFlowDisp
         usesLegacyShadowChrome && "shadow-sm",
         editable.isEditing && "outline-none",
         isDragging && "opacity-40",
+        node.className,
       )}
       style={{
         // resolvePositionStyle spread first, and elementPositionStyle after

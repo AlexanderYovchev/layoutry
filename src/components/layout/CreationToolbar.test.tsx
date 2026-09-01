@@ -53,7 +53,7 @@ describe("CreationToolbar", () => {
     );
   });
 
-  it("shows the documented placeholder sections inside the HTML dropdown", async () => {
+  it("shows the documented placeholder sections inside the HTML dropdown (Checkpoint 1.15.1: Forms/Media moved to their own categories, replaced here by Interactive)", async () => {
     const user = userEvent.setup();
     render(<CreationToolbar />);
 
@@ -65,8 +65,7 @@ describe("CreationToolbar", () => {
       "Typography",
       "Navigation",
       "Lists",
-      "Forms",
-      "Media",
+      "Interactive",
       "Tables",
       "Semantic Elements",
     ]) {

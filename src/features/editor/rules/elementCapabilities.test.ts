@@ -48,17 +48,17 @@ describe("elementCapabilities", () => {
     expect(getElementCapabilities("li").supportsTypography).toBe(true);
   });
 
-  it("flags img/video/iframe as supporting an intrinsic aspect ratio; ordinary elements don't", () => {
+  it("flags img/video as supporting an intrinsic aspect ratio; ordinary elements and iframe don't (Checkpoint 1.15 corrected a stale iframe forward declaration — see elementCapabilities.ts's own doc comment)", () => {
     expect(getElementCapabilities("img").supportsIntrinsicAspectRatio).toBe(true);
     expect(getElementCapabilities("video").supportsIntrinsicAspectRatio).toBe(true);
-    expect(getElementCapabilities("iframe").supportsIntrinsicAspectRatio).toBe(true);
+    expect(getElementCapabilities("iframe").supportsIntrinsicAspectRatio).toBe(false);
     expect(getElementCapabilities("div").supportsIntrinsicAspectRatio).toBe(false);
   });
 
-  it("flags img/video/iframe as supporting object-fit/object-position; ordinary elements don't (Checkpoint 5.6)", () => {
+  it("flags img/video as supporting object-fit/object-position; ordinary elements and iframe don't (Checkpoint 5.6 for img/video, Checkpoint 1.15 for the iframe correction — object-fit has no effect on an iframe's own embedded document)", () => {
     expect(getElementCapabilities("img").supportsMediaFit).toBe(true);
     expect(getElementCapabilities("video").supportsMediaFit).toBe(true);
-    expect(getElementCapabilities("iframe").supportsMediaFit).toBe(true);
+    expect(getElementCapabilities("iframe").supportsMediaFit).toBe(false);
     expect(getElementCapabilities("div").supportsMediaFit).toBe(false);
   });
 
@@ -377,6 +377,57 @@ describe("elementCapabilities", () => {
       for (const tag of ["div", "section", "ul", "ol", "form", "label", "header", "main"]) {
         expect(getElementCapabilities(tag).supportsChildLayout, tag).toBe(true);
       }
+    });
+  });
+
+  describe("Video + Iframe (Checkpoint 1.15)", () => {
+    it("Video is a leaf (not a container), not text-bearing, and does not opt into a child-Layout section", () => {
+      const video = getElementCapabilities("video");
+      expect(video.canContainChildren).toBe(false);
+      expect(video.supportsTypography).toBe(false);
+      expect(video.supportsBackground).toBe(false);
+    });
+
+    it("Video shares Image's exact media override — resizable/sizing/border/border-radius/box-shadow/filters/display/position all stay at their DEFAULT_CAPABILITIES true", () => {
+      const video = getElementCapabilities("video");
+      expect(video.resizableX).toBe(true);
+      expect(video.resizableY).toBe(true);
+      expect(video.supportsIntrinsicAspectRatio).toBe(true);
+      expect(video.supportsMediaFit).toBe(true);
+      expect(video.supportsBorder).toBe(true);
+      expect(video.supportsBorderRadius).toBe(true);
+      expect(video.supportsBoxShadow).toBe(true);
+      expect(video.supportsFilters).toBe(true);
+      expect(video.supportsDisplay).toBe(true);
+      expect(video.supportsPosition).toBe(true);
+      expect(video.supportsAspectRatio).toBe(true);
+    });
+
+    it("Iframe is a leaf, not text-bearing, and does NOT get Image/Video's media-fit override (Checkpoint 1.15 corrected a stale forward declaration)", () => {
+      const iframe = getElementCapabilities("iframe");
+      expect(iframe.canContainChildren).toBe(false);
+      expect(iframe.supportsTypography).toBe(false);
+      expect(iframe.supportsBackground).toBe(false);
+      expect(iframe.supportsIntrinsicAspectRatio).toBe(false);
+      expect(iframe.supportsMediaFit).toBe(false);
+    });
+
+    it("Iframe still gets every other useful box-model capability from DEFAULT_CAPABILITIES — sizing/resize/position/border/border-radius/box-shadow/filters/display", () => {
+      const iframe = getElementCapabilities("iframe");
+      expect(iframe.resizableX).toBe(true);
+      expect(iframe.resizableY).toBe(true);
+      expect(iframe.supportsAspectRatio).toBe(true);
+      expect(iframe.supportsPosition).toBe(true);
+      expect(iframe.supportsBorder).toBe(true);
+      expect(iframe.supportsBorderRadius).toBe(true);
+      expect(iframe.supportsBoxShadow).toBe(true);
+      expect(iframe.supportsFilters).toBe(true);
+      expect(iframe.supportsDisplay).toBe(true);
+    });
+
+    it("neither Video nor Iframe exposes the child-Layout section — both are leaves (canContainChildren already gates it, no override needed for either)", () => {
+      expect(getElementCapabilities("video").canContainChildren).toBe(false);
+      expect(getElementCapabilities("iframe").canContainChildren).toBe(false);
     });
   });
 

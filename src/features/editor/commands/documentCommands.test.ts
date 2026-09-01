@@ -6,14 +6,23 @@ import {
   moveNode,
   removeNode,
   resizeNode,
+  setElementAutoplay,
   setElementChecked,
+  setElementClassName,
+  setElementControls,
   setElementDimensions,
   setElementHref,
+  setElementHtmlId,
   setElementInputType,
+  setElementLoop,
+  setElementMuted,
   setElementName,
   setElementPlaceholder,
+  setElementPoster,
+  setElementSrc,
   setElementTag,
   setElementText,
+  setElementTitle,
   setElementValue,
   setListItemCount,
   setOptionCount,
@@ -1398,3 +1407,204 @@ describe("setSelectSelectedOption (Checkpoint 1.13)", () => {
 function collectIds(node: EditorElementNode): string[] {
   return [node.id, ...(node.children ?? []).flatMap(collectIds)];
 }
+
+describe("setElementSrc (Checkpoint 1.15)", () => {
+  const videoTree: EditorElementNode = {
+    id: "root",
+    tag: "page",
+    children: [{ id: "video-1", tag: "video", muted: true }],
+  };
+
+  it("updates the target node's src and nothing else", () => {
+    const result = setElementSrc(videoTree, "video-1", "https://example.com/video.mp4");
+    const video = result.children?.[0];
+    expect(video?.src).toBe("https://example.com/video.mp4");
+    expect(video?.muted).toBe(true);
+  });
+
+  it("finds and updates a deeply nested node", () => {
+    const deepTree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [{ id: "section-1", tag: "section", children: [{ id: "video-1", tag: "video" }] }],
+    };
+    const result = setElementSrc(deepTree, "video-1", "https://example.com/video.mp4");
+    expect(result.children?.[0].children?.[0].src).toBe("https://example.com/video.mp4");
+  });
+
+  it("clears an explicit src back to undefined", () => {
+    const withSrc = setElementSrc(videoTree, "video-1", "https://example.com/video.mp4");
+    const result = setElementSrc(withSrc, "video-1", undefined);
+    expect(result.children?.[0].src).toBeUndefined();
+  });
+
+  it("is a no-op (same reference) when the value is already exactly this value", () => {
+    const withSrc = setElementSrc(videoTree, "video-1", "https://example.com/video.mp4");
+    expect(setElementSrc(withSrc, "video-1", "https://example.com/video.mp4")).toBe(withSrc);
+  });
+
+  it("is a no-op (same reference) if the node doesn't exist", () => {
+    expect(setElementSrc(videoTree, "does-not-exist", "https://example.com/video.mp4")).toBe(videoTree);
+  });
+
+  it("is reused unchanged for an Iframe node — same generic, tag-agnostic command", () => {
+    const iframeTree: EditorElementNode = { id: "root", tag: "page", children: [{ id: "iframe-1", tag: "iframe", title: "Embedded content" }] };
+    const result = setElementSrc(iframeTree, "iframe-1", "https://example.com/embed");
+    expect(result.children?.[0].src).toBe("https://example.com/embed");
+    expect(result.children?.[0].title).toBe("Embedded content");
+  });
+});
+
+describe("setElementPoster (Checkpoint 1.15)", () => {
+  const videoTree: EditorElementNode = { id: "root", tag: "page", children: [{ id: "video-1", tag: "video", src: "https://example.com/video.mp4" }] };
+
+  it("updates the target node's poster and nothing else", () => {
+    const result = setElementPoster(videoTree, "video-1", "https://example.com/poster.jpg");
+    const video = result.children?.[0];
+    expect(video?.poster).toBe("https://example.com/poster.jpg");
+    expect(video?.src).toBe("https://example.com/video.mp4");
+  });
+
+  it("clears an explicit poster back to undefined", () => {
+    const withPoster = setElementPoster(videoTree, "video-1", "https://example.com/poster.jpg");
+    expect(setElementPoster(withPoster, "video-1", undefined).children?.[0].poster).toBeUndefined();
+  });
+
+  it("is a no-op (same reference) when unchanged", () => {
+    expect(setElementPoster(videoTree, "video-1", undefined)).toBe(videoTree);
+  });
+
+  it("is a no-op (same reference) if the node doesn't exist", () => {
+    expect(setElementPoster(videoTree, "does-not-exist", "https://example.com/poster.jpg")).toBe(videoTree);
+  });
+});
+
+describe("setElementTitle (Checkpoint 1.15)", () => {
+  const iframeTree: EditorElementNode = { id: "root", tag: "page", children: [{ id: "iframe-1", tag: "iframe", src: "https://example.com/embed" }] };
+
+  it("updates the target node's title and nothing else", () => {
+    const result = setElementTitle(iframeTree, "iframe-1", "Product tour");
+    expect(result.children?.[0].title).toBe("Product tour");
+    expect(result.children?.[0].src).toBe("https://example.com/embed");
+  });
+
+  it("clears an explicit title back to undefined", () => {
+    const withTitle = setElementTitle(iframeTree, "iframe-1", "Product tour");
+    expect(setElementTitle(withTitle, "iframe-1", undefined).children?.[0].title).toBeUndefined();
+  });
+
+  it("is a no-op (same reference) when unchanged", () => {
+    expect(setElementTitle(iframeTree, "iframe-1", undefined)).toBe(iframeTree);
+  });
+});
+
+describe("Video boolean commands: setElementControls/setElementAutoplay/setElementMuted/setElementLoop (Checkpoint 1.15)", () => {
+  const videoTree: EditorElementNode = { id: "root", tag: "page", children: [{ id: "video-1", tag: "video", src: "https://example.com/video.mp4" }] };
+
+  const cases = [
+    { name: "setElementControls", fn: setElementControls, field: "controls" as const },
+    { name: "setElementAutoplay", fn: setElementAutoplay, field: "autoplay" as const },
+    { name: "setElementMuted", fn: setElementMuted, field: "muted" as const },
+    { name: "setElementLoop", fn: setElementLoop, field: "loop" as const },
+  ];
+
+  for (const { name, fn, field } of cases) {
+    describe(name, () => {
+      it("sets the flag true and preserves other fields", () => {
+        const result = fn(videoTree, "video-1", true);
+        expect(result.children?.[0][field]).toBe(true);
+        expect(result.children?.[0].src).toBe("https://example.com/video.mp4");
+      });
+
+      it("sets false explicitly (distinct from unset)", () => {
+        const withTrue = fn(videoTree, "video-1", true);
+        expect(fn(withTrue, "video-1", false).children?.[0][field]).toBe(false);
+      });
+
+      it("clears back to undefined", () => {
+        const withTrue = fn(videoTree, "video-1", true);
+        expect(fn(withTrue, "video-1", undefined).children?.[0][field]).toBeUndefined();
+      });
+
+      it("is a no-op (same reference) when unchanged", () => {
+        expect(fn(videoTree, "video-1", undefined)).toBe(videoTree);
+      });
+
+      it("is a no-op (same reference) if the node doesn't exist", () => {
+        expect(fn(videoTree, "does-not-exist", true)).toBe(videoTree);
+      });
+
+      it("finds and updates a deeply nested node", () => {
+        const deepTree: EditorElementNode = {
+          id: "root",
+          tag: "page",
+          children: [{ id: "section-1", tag: "section", children: [{ id: "video-1", tag: "video" }] }],
+        };
+        expect(fn(deepTree, "video-1", true).children?.[0].children?.[0][field]).toBe(true);
+      });
+    });
+  }
+
+  it("setElementAutoplay never touches muted as a side effect, and vice versa", () => {
+    const withAutoplay = setElementAutoplay(videoTree, "video-1", true);
+    expect(withAutoplay.children?.[0].muted).toBeUndefined();
+    const withBoth = setElementMuted(withAutoplay, "video-1", true);
+    expect(withBoth.children?.[0].autoplay).toBe(true);
+    expect(withBoth.children?.[0].muted).toBe(true);
+  });
+});
+
+describe("setElementHtmlId (Checkpoint 1.15.1)", () => {
+  const identityTree: EditorElementNode = { id: "root", tag: "page", children: [{ id: "div-1", tag: "div", className: "featured" }] };
+
+  it("updates the target node's htmlId and preserves other fields", () => {
+    const result = setElementHtmlId(identityTree, "div-1", "hero");
+    expect(result.children?.[0].htmlId).toBe("hero");
+    expect(result.children?.[0].className).toBe("featured");
+  });
+
+  it("clears an explicit htmlId back to undefined", () => {
+    const withId = setElementHtmlId(identityTree, "div-1", "hero");
+    expect(setElementHtmlId(withId, "div-1", undefined).children?.[0].htmlId).toBeUndefined();
+  });
+
+  it("is a no-op (same reference) when unchanged", () => {
+    expect(setElementHtmlId(identityTree, "div-1", undefined)).toBe(identityTree);
+  });
+
+  it("is a no-op (same reference) if the node doesn't exist", () => {
+    expect(setElementHtmlId(identityTree, "does-not-exist", "hero")).toBe(identityTree);
+  });
+
+  it("finds and updates a deeply nested node", () => {
+    const deepTree: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [{ id: "section-1", tag: "section", children: [{ id: "div-1", tag: "div" }] }],
+    };
+    expect(setElementHtmlId(deepTree, "div-1", "hero").children?.[0].children?.[0].htmlId).toBe("hero");
+  });
+});
+
+describe("setElementClassName (Checkpoint 1.15.1)", () => {
+  const identityTree: EditorElementNode = { id: "root", tag: "page", children: [{ id: "div-1", tag: "div", htmlId: "hero" }] };
+
+  it("updates the target node's className and preserves other fields", () => {
+    const result = setElementClassName(identityTree, "div-1", "hero-section featured");
+    expect(result.children?.[0].className).toBe("hero-section featured");
+    expect(result.children?.[0].htmlId).toBe("hero");
+  });
+
+  it("clears an explicit className back to undefined", () => {
+    const withClass = setElementClassName(identityTree, "div-1", "hero-section featured");
+    expect(setElementClassName(withClass, "div-1", undefined).children?.[0].className).toBeUndefined();
+  });
+
+  it("is a no-op (same reference) when unchanged", () => {
+    expect(setElementClassName(identityTree, "div-1", undefined)).toBe(identityTree);
+  });
+
+  it("is a no-op (same reference) if the node doesn't exist", () => {
+    expect(setElementClassName(identityTree, "does-not-exist", "featured")).toBe(identityTree);
+  });
+});

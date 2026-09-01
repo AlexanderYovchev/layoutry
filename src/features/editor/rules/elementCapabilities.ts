@@ -153,8 +153,32 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
   body: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false, supportsPosition: false, supportsAspectRatio: false },
 
   img: { supportsIntrinsicAspectRatio: true, supportsMediaFit: true },
+  /**
+   * Video (Checkpoint 1.15) shares Image's exact override — a real
+   * replaced element whose own content has an intrinsic ratio worth
+   * resize-locking and whose visual presentation genuinely benefits from
+   * object-fit/object-position, the same reasoning img already
+   * established.
+   */
   video: { supportsIntrinsicAspectRatio: true, supportsMediaFit: true },
-  iframe: { supportsIntrinsicAspectRatio: true, supportsMediaFit: true },
+  /**
+   * Iframe deliberately does NOT get Image/Video's override (Checkpoint
+   * 1.15 corrected a stale forward declaration here — this entry
+   * previously granted supportsIntrinsicAspectRatio/supportsMediaFit,
+   * copied speculatively from img/video before Iframe had a real factory
+   * or renderer; see insertionRules.ts's own doc comment on this same
+   * "forward declaration ahead of a real factory" pattern for "table").
+   * An iframe's embedded document is not a replaced element the way
+   * img/video are — object-fit/object-position have no effect on what an
+   * iframe's own nested browsing context renders (the embedded page
+   * reflows to fill the iframe's box; there is no "fit" concept to
+   * apply), so exposing those controls would be shown-but-inert, not
+   * genuinely useful. No override entry is needed at all: every other
+   * capability the brief calls out as useful for Iframe (sizing/resize/
+   * position/border/border-radius/box-shadow/filters/display/aspect-
+   * ratio) is already exactly what DEFAULT_CAPABILITIES grants an
+   * unlisted tag — see this checkpoint's own report, section L.
+   */
 
   a: { supportsHref: true },
 

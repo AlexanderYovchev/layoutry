@@ -101,7 +101,13 @@ export function ImageElement({ node, parentId, parentLayoutMode, parentFlowDispl
     >
       {node.src ? (
         // eslint-disable-next-line @next/next/no-img-element -- this renders arbitrary, dynamically-sized user document content (mirroring the export feature's plain HTML output), not a build-known app asset next/image could optimize.
-        <img src={node.src} alt={node.displayName ?? ""} style={resolveMediaFitStyle(node)} />
+        <img
+          src={node.src}
+          alt={node.displayName ?? ""}
+          id={node.htmlId}
+          className={node.className}
+          style={resolveMediaFitStyle(node)}
+        />
       ) : (
         <ImageIcon aria-hidden="true" className="size-8 text-zinc-300 dark:text-zinc-700" />
       )}

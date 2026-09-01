@@ -38,6 +38,7 @@ export function HeadingElement({ node, parentId, parentLayoutMode, parentFlowDis
 
   return (
     <Tag
+      id={node.htmlId}
       ref={mergeRefs<HTMLElement>(dropRef, dragRef, editable.elementRef)}
       {...documentNodeAttributes(node, parentId)}
       {...editable.editableProps}
@@ -45,6 +46,7 @@ export function HeadingElement({ node, parentId, parentLayoutMode, parentFlowDis
         "text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50",
         editable.isEditing && "outline-none",
         isDragging && "opacity-40",
+        node.className,
       )}
       style={{
         // resolvePositionStyle spread first, and elementPositionStyle after

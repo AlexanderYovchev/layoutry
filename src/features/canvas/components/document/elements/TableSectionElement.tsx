@@ -41,9 +41,10 @@ export function TableSectionElement({ node, parentId, parentLayoutMode, children
 
   return (
     <Tag
+      id={node.htmlId}
       ref={mergeRefs<HTMLElement>(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
-      className={cn(isDragging && "opacity-40")}
+      className={cn(isDragging && "opacity-40", node.className)}
       style={{
         ...resolveTypographyStyle(node),
         ...resolveBackgroundStyle(node),

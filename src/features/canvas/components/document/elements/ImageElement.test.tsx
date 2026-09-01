@@ -232,4 +232,23 @@ describe("ImageElement", () => {
     const wrapper = img.parentElement as HTMLElement;
     expect(wrapper.style.aspectRatio).toBe("auto");
   });
+
+  it("applies authored HTML id/class to the real inner <img>, not the editor wrapper div (Checkpoint 1.15.1)", () => {
+    const { container } = render(
+      <ImageElement
+        node={{ id: "image-1", tag: "img", src: "data:image/svg+xml;utf8,<svg/>", htmlId: "hero-image", className: "my-custom-class" }}
+        parentId="section-1"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+
+    const img = container.querySelector("img") as HTMLImageElement;
+    const wrapper = img.parentElement as HTMLElement;
+    expect(img).toHaveAttribute("id", "hero-image");
+    expect(img.className).toContain("my-custom-class");
+    // The wrapper div (editor-only geometry box, data-node-id owner) never receives it.
+    expect(wrapper).not.toHaveAttribute("id");
+    expect(wrapper.className).not.toContain("my-custom-class");
+  });
 });

@@ -4,6 +4,7 @@ import type { RefObject } from "react";
 import { DropIndicatorOverlay } from "@/features/canvas/components/overlay/DropIndicatorOverlay";
 import { FormGuideOverlay } from "@/features/canvas/components/overlay/FormGuideOverlay";
 import { HoverOverlay } from "@/features/canvas/components/overlay/HoverOverlay";
+import { MediaGuideOverlay } from "@/features/canvas/components/overlay/MediaGuideOverlay";
 import { SelectionOverlay } from "@/features/canvas/components/overlay/SelectionOverlay";
 import { useActiveDropIndicator } from "@/features/canvas/hooks/useActiveDropIndicator";
 import { useSelectedNode } from "@/features/editor/hooks/useSelectedNode";
@@ -20,10 +21,11 @@ interface CanvasOverlayProps {
  * selection are suppressed while a drop indicator is active, so the
  * canvas never shows two competing highlights during a drag.
  *
- * FormGuideOverlay (Checkpoint 1.12.1) renders unconditionally, unlike
- * Hover/Selection — every Form on the canvas gets its boundary/badge, not
- * only the selected one, since an empty Form needs to read as a drop
- * target while dragging, not just while selected.
+ * FormGuideOverlay (Checkpoint 1.12.1) and MediaGuideOverlay (Checkpoint
+ * 1.15) both render unconditionally, unlike Hover/Selection — every Form
+ * needs to read as a drop target while dragging (not just while
+ * selected), and every sourceless Video/Iframe needs its "Add a source
+ * URL" hint visible regardless of selection.
  */
 export function CanvasOverlay({ canvasRootRef, hoveredNodeId }: CanvasOverlayProps) {
   const selected = useSelectedNode();
@@ -34,6 +36,7 @@ export function CanvasOverlay({ canvasRootRef, hoveredNodeId }: CanvasOverlayPro
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0">
       <FormGuideOverlay canvasRootRef={canvasRootRef} />
+      <MediaGuideOverlay canvasRootRef={canvasRootRef} />
       {showHover && (
         <HoverOverlay canvasRootRef={canvasRootRef} nodeId={hoveredNodeId} />
       )}

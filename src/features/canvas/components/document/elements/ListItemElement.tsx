@@ -36,6 +36,7 @@ export function ListItemElement({ node, parentId, parentLayoutMode, parentFlowDi
 
   return (
     <li
+      id={node.htmlId}
       ref={mergeRefs<HTMLElement>(dropRef, dragRef, editable.elementRef)}
       {...documentNodeAttributes(node, parentId)}
       {...editable.editableProps}
@@ -43,6 +44,7 @@ export function ListItemElement({ node, parentId, parentLayoutMode, parentFlowDi
         "text-base text-zinc-600 dark:text-zinc-400",
         editable.isEditing && "outline-none",
         isDragging && "opacity-40",
+        node.className,
       )}
       style={{
         // resolvePositionStyle spread first, and elementPositionStyle after

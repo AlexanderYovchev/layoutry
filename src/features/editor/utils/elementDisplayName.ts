@@ -64,6 +64,15 @@ const TAG_DISPLAY_NAMES: Record<string, string> = {
   tr: "Table Row",
   th: "Header Cell",
   td: "Data Cell",
+  video: "Video",
+  // "Embed" (Checkpoint 1.15), not "Iframe" — the same beginner-friendly,
+  // purpose-named-over-raw-tag-name convention this table already uses
+  // throughout (div -> "Container", li -> "List Item", table's own
+  // sub-primitives -> "Table Head"/"Header Cell"/etc.), rather than
+  // switching to raw-HTML-tag naming just for this one entry. The real
+  // tag stays "iframe" underneath (see createIframeNode) — see this
+  // checkpoint's report, section M, for the full reasoning.
+  iframe: "Embed",
 };
 
 /**

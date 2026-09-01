@@ -832,3 +832,121 @@ describe("InspectorNodeSummary — Label (Checkpoint 1.11)", () => {
     expect(screen.queryByText("Form Control")).not.toBeInTheDocument();
   });
 });
+
+describe("InspectorNodeSummary — Video + Iframe (Checkpoint 1.15)", () => {
+  it("shows the Video section only for tag: video", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "video-1", tag: "video" }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.getByRole("switch", { name: "Controls" })).toBeInTheDocument();
+  });
+
+  it("shows the Embed section only for tag: iframe", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "iframe-1", tag: "iframe", title: "Embedded content" }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.getByLabelText("Title")).toHaveValue("Embedded content");
+  });
+
+  it("omits the Video section for Iframe, and the Embed section for Video", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "video-1", tag: "video" }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.queryByLabelText("Title")).not.toBeInTheDocument();
+  });
+
+  it("shows the Media (Object Fit/Position) section for Video", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "video-1", tag: "video" }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.getByText("Media")).toBeInTheDocument();
+  });
+
+  it("omits the Media (Object Fit/Position) section for Iframe — object-fit has no effect on an embedded document", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "iframe-1", tag: "iframe" }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.queryByText("Media")).not.toBeInTheDocument();
+  });
+
+  it("omits Typography for both Video and Iframe — neither is text-bearing", () => {
+    for (const tag of ["video", "iframe"]) {
+      const { unmount } = render(
+        <InspectorNodeSummary
+          node={{ id: `${tag}-1`, tag }}
+          parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+        />,
+      );
+      expect(screen.queryByText("Typography"), tag).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("omits the Layout section for both Video and Iframe — both are leaves, not containers", () => {
+    for (const tag of ["video", "iframe"]) {
+      const { unmount } = render(
+        <InspectorNodeSummary
+          node={{ id: `${tag}-1`, tag }}
+          parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+        />,
+      );
+      expect(screen.queryByText("Layout"), tag).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("shows the Size section for both Video and Iframe", () => {
+    for (const tag of ["video", "iframe"]) {
+      const { unmount } = render(
+        <InspectorNodeSummary
+          node={{ id: `${tag}-1`, tag }}
+          parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+        />,
+      );
+      expect(screen.getByLabelText("Width"), tag).toBeInTheDocument();
+      unmount();
+    }
+  });
+});
+
+describe("InspectorNodeSummary — Identity section (Checkpoint 1.15.1)", () => {
+  it("shows the Identity section (ID/Classes) unconditionally, for an ordinary container", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "section-1", tag: "section" }}
+        parentId={null} parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.getByText("Identity")).toBeInTheDocument();
+    expect(screen.getByLabelText("ID")).toBeInTheDocument();
+    expect(screen.getByLabelText("Classes")).toBeInTheDocument();
+  });
+
+  it("shows the Identity section for real, non-container semantic tags too (table/option)", () => {
+    for (const tag of ["table", "option"]) {
+      const { unmount } = render(
+        <InspectorNodeSummary
+          node={{ id: `${tag}-1`, tag }}
+          parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+        />,
+      );
+      expect(screen.getByText("Identity"), tag).toBeInTheDocument();
+      unmount();
+    }
+  });
+});

@@ -238,4 +238,31 @@ describe("ContainerElement", () => {
 
     expect(notCancelled).toBe(true);
   });
+
+  it("renders the authored HTML id and appends the authored class alongside required editor classes (Checkpoint 1.15.1)", () => {
+    const { container } = render(
+      <ContainerElement
+        node={{ id: "container-1", tag: "div", children: [], htmlId: "hero", className: "hero-section featured" }}
+        parentId="page-root"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+
+    const element = container.querySelector('[data-node-id="container-1"]') as HTMLElement;
+    expect(element).toHaveAttribute("id", "hero");
+    expect(element.className).toContain("hero-section");
+    expect(element.className).toContain("featured");
+    // Layoutry's own required editor chrome is still present alongside it.
+    expect(element.className).toContain("flex");
+  });
+
+  it("omits the id attribute entirely when htmlId is unset — never a synthesized default", () => {
+    const { container } = render(
+      <ContainerElement node={{ id: "container-1", tag: "div", children: [] }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+
+    const element = container.querySelector('[data-node-id="container-1"]') as HTMLElement;
+    expect(element).not.toHaveAttribute("id");
+  });
 });

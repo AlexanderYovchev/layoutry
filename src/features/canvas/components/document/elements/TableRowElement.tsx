@@ -25,9 +25,10 @@ export function TableRowElement({ node, parentId, parentLayoutMode, children }: 
 
   return (
     <tr
+      id={node.htmlId}
       ref={mergeRefs<HTMLTableRowElement>(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
-      className={cn(isDragging && "opacity-40")}
+      className={cn(isDragging && "opacity-40", node.className)}
       style={{
         ...resolveTypographyStyle(node),
         ...resolveBackgroundStyle(node),

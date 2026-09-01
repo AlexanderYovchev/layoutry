@@ -132,6 +132,7 @@ export function ContainerElement({
 
   return (
     <Tag
+      id={node.htmlId}
       ref={mergeRefs<HTMLElement>(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
       {...(node.tag === "form" ? { onSubmit: preventEditorFormSubmission } : undefined)}
@@ -144,6 +145,7 @@ export function ContainerElement({
         node.tag === "ul" && "list-disc list-inside",
         node.tag === "ol" && "list-decimal list-inside",
         isDragging && "opacity-40",
+        node.className,
       )}
       style={{
         // resolvePositionStyle spread first, and both elementPositionStyle

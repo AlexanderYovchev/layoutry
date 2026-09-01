@@ -47,7 +47,9 @@ export type InsertableElementType =
   | "textarea"
   | "footerComposition"
   | "select"
-  | "table";
+  | "table"
+  | "video"
+  | "iframe";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -541,6 +543,44 @@ export function createImageNode(): EditorElementNode {
   return { id: generateNodeId("img"), tag: "img", src: DEFAULT_IMAGE_SRC };
 }
 
+/**
+ * Video (Checkpoint 1.15) — a genuine `tag: "video"` leaf. Deliberately
+ * ships with NO src (unlike Image's own fixed placeholder SVG above):
+ * there is no equivalent safe, inline, always-available placeholder video
+ * the way an inline SVG works for Image, and this checkpoint's brief
+ * explicitly rejects injecting a random external video URL. A freshly
+ * created Video is understandable via its own Canvas empty-state overlay
+ * (MediaGuideOverlay) instead, the same "editor-only hint, not fake
+ * authored data" philosophy Table/Select's own starter content
+ * deliberately avoids for genuinely unknowable content. `controls`/
+ * `autoplay`/`muted`/`loop`/`poster` are all left unset — `controls`
+ * still renders as visually present via getVideoControls's own resolver-
+ * level fallback (see EditorElementNode.controls's own doc comment); the
+ * other three correctly default to "attribute absent," their real HTML
+ * default. No flowLayout/spacing (leaf-like sizing, matching every other
+ * media/leaf factory in this file).
+ */
+export function createVideoNode(): EditorElementNode {
+  return { id: generateNodeId("video"), tag: "video" };
+}
+
+/**
+ * Iframe (Checkpoint 1.15) — a genuine `tag: "iframe"` leaf. Ships with a
+ * real, neutral, immediately-accessible starter `title` ("Embedded
+ * content") rather than leaving it unset — the same reasoning
+ * createLinkNode's own DEFAULT_LINK_HREF stamps a concrete "#" rather
+ * than leaving `href` unset: an iframe with no title is a real,
+ * immediate accessibility gap (screen readers announce iframes by their
+ * title), and "Embedded content" is a genuinely correct, non-misleading
+ * description of literally any iframe before the user customizes it —
+ * see this checkpoint's report for the full reasoning. `src` is left
+ * unset for the same "no fake authored data" reason Video's own src is;
+ * the empty-state overlay covers the same gap.
+ */
+export function createIframeNode(): EditorElementNode {
+  return { id: generateNodeId("iframe"), tag: "iframe", title: "Embedded content" };
+}
+
 const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> = {
   container: createContainerNode,
   section: createSectionNode,
@@ -573,6 +613,8 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   footerComposition: createFooterCompositionNode,
   select: createSelectNode,
   table: createTableNode,
+  video: createVideoNode,
+  iframe: createIframeNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -624,6 +666,8 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   footerComposition: { width: 320, height: 160 },
   select: { width: 200, height: 40 },
   table: { width: 480, height: 200 },
+  video: { width: 400, height: 225 },
+  iframe: { width: 400, height: 300 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };
@@ -652,6 +696,8 @@ const INSERTABLE_TYPE_BY_TAG: Record<string, InsertableElementType> = {
   textarea: "textarea",
   select: "select",
   table: "table",
+  video: "video",
+  iframe: "iframe",
 };
 
 /** Falls back to a generic size for a tag with no InsertableElementType entry (e.g. a pasted/duplicated node whose tag isn't one of the five catalog types). */

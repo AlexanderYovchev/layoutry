@@ -95,6 +95,7 @@ export function SelectElement({ node, parentId, parentLayoutMode, parentFlowDisp
     <select
       name={node.name}
       defaultValue={selectedValue}
+      id={node.htmlId}
       ref={mergeRefs<HTMLSelectElement>(dropRef, dragRef, (element) => {
         selectRef.current = element;
       })}
@@ -106,6 +107,7 @@ export function SelectElement({ node, parentId, parentLayoutMode, parentFlowDisp
         usesLegacyRadiusChrome && "rounded-md",
         usesLegacyBorderChrome && "border border-zinc-200 dark:border-zinc-800",
         isDragging && "opacity-40",
+        node.className,
       )}
       style={{
         // Same resolver ordering as every other primitive — see

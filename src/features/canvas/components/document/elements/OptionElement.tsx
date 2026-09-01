@@ -34,6 +34,8 @@ export function OptionElement({ node, parentId }: DocumentElementProps) {
   return (
     <option
       value={node.value}
+      id={node.htmlId}
+      className={node.className}
       {...documentNodeAttributes(node, parentId)}
       style={{
         ...resolveTypographyStyle(node),

@@ -30,6 +30,8 @@ describe("getElementDisplayName", () => {
     expect(getElementDisplayName({ id: "22", tag: "tbody" })).toBe("Table Body");
     expect(getElementDisplayName({ id: "23", tag: "tfoot" })).toBe("Table Foot");
     expect(getElementDisplayName({ id: "24", tag: "tr" })).toBe("Table Row");
+    expect(getElementDisplayName({ id: "25", tag: "video" })).toBe("Video");
+    expect(getElementDisplayName({ id: "26", tag: "iframe" })).toBe("Embed");
   });
 
   it("appends a Header/Data Cell's own text (Checkpoint 1.14) — e.g. 'Header Cell — Name'/'Data Cell — Bulgaria'", () => {

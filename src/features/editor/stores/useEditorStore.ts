@@ -5,14 +5,23 @@ import {
   removeNode,
   resizeNode,
   setAspectRatioLocked as setAspectRatioLockedCommand,
+  setElementAutoplay as setElementAutoplayCommand,
   setElementChecked as setElementCheckedCommand,
+  setElementClassName as setElementClassNameCommand,
+  setElementControls as setElementControlsCommand,
   setElementDimensions as setElementDimensionsCommand,
   setElementHref as setElementHrefCommand,
+  setElementHtmlId as setElementHtmlIdCommand,
   setElementInputType as setElementInputTypeCommand,
+  setElementLoop as setElementLoopCommand,
+  setElementMuted as setElementMutedCommand,
   setElementName as setElementNameCommand,
   setElementPlaceholder as setElementPlaceholderCommand,
+  setElementPoster as setElementPosterCommand,
+  setElementSrc as setElementSrcCommand,
   setElementTag as setElementTagCommand,
   setElementText as setElementTextCommand,
+  setElementTitle as setElementTitleCommand,
   setElementValue as setElementValueCommand,
   setListItemCount as setListItemCountCommand,
   setOptionCount as setOptionCountCommand,
@@ -232,6 +241,25 @@ interface EditorState {
   setTableHeaderEnabled: (tableId: string, enabled: boolean) => void;
   /** One-shot table Footer Row toggle (Checkpoint 1.14) — creates/removes the entire `<tfoot>` subtree in one step. */
   setTableFooterEnabled: (tableId: string, enabled: boolean) => void;
+
+  /** One-shot media/embed source URL edit (Checkpoint 1.15 — Video's and Iframe's own Source URL field). Same action-level no-op guard as every other one-shot field command. */
+  setElementSrc: (nodeId: string, src: string | undefined) => void;
+  /** One-shot Video poster URL edit (Checkpoint 1.15). */
+  setElementPoster: (nodeId: string, poster: string | undefined) => void;
+  /** One-shot Video Controls toggle (Checkpoint 1.15). */
+  setElementControls: (nodeId: string, controls: boolean | undefined) => void;
+  /** One-shot Video Autoplay toggle (Checkpoint 1.15). */
+  setElementAutoplay: (nodeId: string, autoplay: boolean | undefined) => void;
+  /** One-shot Video Muted toggle (Checkpoint 1.15). */
+  setElementMuted: (nodeId: string, muted: boolean | undefined) => void;
+  /** One-shot Video Loop toggle (Checkpoint 1.15). */
+  setElementLoop: (nodeId: string, loop: boolean | undefined) => void;
+  /** One-shot accessible title edit (Checkpoint 1.15 — Iframe's own Title field). */
+  setElementTitle: (nodeId: string, title: string | undefined) => void;
+  /** One-shot authored HTML `id` edit (Checkpoint 1.15.1 — the Identity Inspector section). */
+  setElementHtmlId: (nodeId: string, htmlId: string | undefined) => void;
+  /** One-shot authored HTML `class` edit (Checkpoint 1.15.1 — the Identity Inspector section). */
+  setElementClassName: (nodeId: string, className: string | undefined) => void;
 
   /**
    * Generic continuous-interaction transaction (Checkpoint 4.3.1) — the
@@ -649,6 +677,69 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setTableFooterEnabled: (tableId, enabled) =>
     set((state) => {
       const document = setTableFooterEnabledCommand(state.document, tableId, enabled);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setElementSrc: (nodeId, src) =>
+    set((state) => {
+      const document = setElementSrcCommand(state.document, nodeId, src);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setElementPoster: (nodeId, poster) =>
+    set((state) => {
+      const document = setElementPosterCommand(state.document, nodeId, poster);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setElementControls: (nodeId, controls) =>
+    set((state) => {
+      const document = setElementControlsCommand(state.document, nodeId, controls);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setElementAutoplay: (nodeId, autoplay) =>
+    set((state) => {
+      const document = setElementAutoplayCommand(state.document, nodeId, autoplay);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setElementMuted: (nodeId, muted) =>
+    set((state) => {
+      const document = setElementMutedCommand(state.document, nodeId, muted);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setElementLoop: (nodeId, loop) =>
+    set((state) => {
+      const document = setElementLoopCommand(state.document, nodeId, loop);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setElementTitle: (nodeId, title) =>
+    set((state) => {
+      const document = setElementTitleCommand(state.document, nodeId, title);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setElementHtmlId: (nodeId, htmlId) =>
+    set((state) => {
+      const document = setElementHtmlIdCommand(state.document, nodeId, htmlId);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setElementClassName: (nodeId, className) =>
+    set((state) => {
+      const document = setElementClassNameCommand(state.document, nodeId, className);
       if (document === state.document) return {};
       return { ...pushHistory(state), document };
     }),

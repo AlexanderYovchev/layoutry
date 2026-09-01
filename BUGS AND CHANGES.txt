@@ -1,21 +1,19 @@
-Lists should have a field in the css inspection menu where the user can pick the count of the list entries instead of selecting them from the Menu one by one.
+Add SVG and Animation.
 
-Instead of showing all adjustable percantage numbers 0% by default should be 100% at the css inspection tab.
+Custom SVG where the users can draw their own SVG image.
 
-Form is the same as the other containers on creation, the user can include all of the form components in the other containers which makes it kind of unproffesional, give me a better idea how to change this.
+Containers should have content CSS styling for all of its children and an option button where the user can lock the parent CSS so incase the user tries to change CSS of any of the content elements nothing to happen. If
+the user tries to change the CSS of any of the elements while the CSS parent class is locked should show a message on a visible place that notifies to disable the CSS lock option of the parent.
 
-The fields and containers has limitation on resizing. On creation a component is set to an  Auto Width and Height, the moment i resize it manually by dragging or directly writing inside the size fields it limits me to a certain
-px size. For example the Form container is set to minimum 120px height when i try to resize and doesnt let me change it below 120. This must be fixed for all of the resizable components!
+There should be a multiple selecting elements via "CTRL + LM" and "SHIFT + LM" in case the user want to change the CSS for multiple elements from the same group at once. By same group i mean (only text) or (only Buttons) etc.
+If the user select multiple elements from different groups the CSS inspector should show only the options that are allowed for both elements so it doesnt throw error.
 
-User can type letters in the Phone number fields which in my opinion shouldnt be allowed!
+Some of the components (like Table for example) doesnt have a parent where the user can select all of the Cells, he is allowed to select the Cells only 1 by 1 and that makes the work harder in case he wanna bulk change the CSS.
 
-Footer needs a starting template not just a blank container.
+All of the elements should have a field in CSS inspector where it has Id and/or Class so the user can name their HTML parts.
 
-All of the menu component options (Container,Paragraph,Picture,Link etc.) should have a relevant icon so it looks more promising and easy to remember.
+Some of the Elements duplicated in the Nav Menu. You can Find them in HTML drop tab and in another place. Its more professional to find them only in one relevant for them place. For example Form elements like email
+password, phone fields can be found in HTML and in Forms tab. I know that these fields can be found not only in Forms but this should be refactored in a more clean way.
 
-FUNCTIONALITY CHANGES:
-The user should be able to make multiple pages that are connected via button redirection by his choice. The website should provide a guidance and availability for this to happen. My idea is to have additional tab
-from the aside menu where the user can easily connect 1 page ref to other through a button or other interactive element he picked. There should also be a nav bar at the bottom for the pages to be easily accessed.
+The containers still doesnt have a reshaping option where the user can change their shape (Not only the default rectangular one with 4 edges).
 
-
-Making the Containers different shapes not only default rectangular ones.

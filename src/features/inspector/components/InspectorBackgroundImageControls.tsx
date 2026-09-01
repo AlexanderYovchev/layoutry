@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type KeyboardEvent } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import { InspectorBackgroundPositionGrid } from "@/features/inspector/components/InspectorBackgroundPositionGrid";
 import { InspectorNumericValueControl, type NumericOrAuto } from "@/features/inspector/components/InspectorNumericValueControl";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
@@ -68,39 +68,81 @@ interface BackgroundImageUrlFieldProps {
 }
 
 /**
- * A plain draft/commit/Escape-revert URL text field — not extracted as a
- * shared primitive (this is its only consumer so far; see this project's
- * "don't extract until genuinely shared" rule), but built on the exact
- * same pattern InspectorColorFieldShell already uses for its own text
- * entry: an empty draft on blur reverts rather than clearing (the
- * explicit Reset button is the only clear affordance, avoiding the
- * ambiguity of "did blurring an empty field mean clear, or a mistake").
- * Validation happens in the caller's onCommit (see handleImageCommit)
- * exactly like every other Inspector field in this section.
+ * A draft/commit/Escape-revert URL text field (Checkpoint 1.15.1 fix) —
+ * still not extracted as a shared primitive (this is its only consumer;
+ * see this project's "don't extract until genuinely shared" rule and
+ * InspectorMediaTextField's own doc comment for why THAT component's
+ * different empty-behavior makes it not a fit here either), but now built
+ * on the exact same two proven bug fixes InspectorMediaTextField/
+ * LinkDestinationField already use — this component previously predated
+ * both and was missing them:
+ *
+ * 1. `touched`, set only by a real onChange and cleared on every
+ *    resync/commit — without it, blurring the field with no edit at all
+ *    (tabbing through it, or clicking it then clicking away) still called
+ *    onCommit with the value it already had, pushing a spurious history
+ *    entry through setElementBackground's own store action (which — unlike
+ *    the newer one-field document commands — pushes history unconditionally
+ *    on every call; see backgroundCommands.ts's own setBackgroundSettings,
+ *    which always returns a new object reference since withBackgroundField
+ *    always spreads a fresh one, so there is no cheap reference-equality
+ *    no-op guard available at that layer the way setElementSrc/setElementHref
+ *    have — this checkpoint's own report documents this as a known,
+ *    deferred characteristic of the whole Background CSS write path, out of
+ *    scope beyond this specifically-reported field).
+ * 2. `suppressNextBlurCommitRef` — Enter calls event.currentTarget.blur()
+ *    to visually release focus, which fires a real native blur event that
+ *    this field's own onBlur would otherwise treat as an unrelated second
+ *    commit of the identical already-committed draft, doubling the
+ *    history entry for one keypress.
+ *
+ * An empty draft on blur/Enter still reverts rather than committing —
+ * Reset is the only clear affordance, unchanged from before.
  */
 function BackgroundImageUrlField({ value, onCommit, error }: BackgroundImageUrlFieldProps) {
   const [draft, setDraft] = useState(value ?? "");
+  const [touched, setTouched] = useState(false);
+  const suppressNextBlurCommitRef = useRef(false);
   const [lastSyncedValue, setLastSyncedValue] = useState(value);
   if (value !== lastSyncedValue) {
     setLastSyncedValue(value);
     setDraft(value ?? "");
+    setTouched(false);
   }
 
   function commit() {
+    if (!touched) return;
+    setTouched(false);
     const trimmed = draft.trim();
     if (trimmed === "") {
       setDraft(value ?? "");
       return;
     }
+    // Guards the "unchanged value = no history" requirement at this call
+    // site specifically — see this function's own doc comment for why
+    // setElementBackground itself can't cheaply provide this no-op check
+    // the way setElementSrc/setElementHref do.
+    if (trimmed === value) return;
     onCommit(trimmed);
+  }
+
+  function handleBlur() {
+    if (suppressNextBlurCommitRef.current) {
+      suppressNextBlurCommitRef.current = false;
+      return;
+    }
+    commit();
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
       commit();
+      suppressNextBlurCommitRef.current = true;
       event.currentTarget.blur();
     } else if (event.key === "Escape") {
       setDraft(value ?? "");
+      setTouched(false);
+      suppressNextBlurCommitRef.current = true;
       event.currentTarget.blur();
     }
   }
@@ -113,8 +155,11 @@ function BackgroundImageUrlField({ value, onCommit, error }: BackgroundImageUrlF
       aria-invalid={error ? true : undefined}
       value={draft}
       placeholder="https://example.com/image.jpg"
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={commit}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        setTouched(true);
+      }}
+      onBlur={handleBlur}
       onKeyDown={handleKeyDown}
       className={cn(
         "h-6 w-full rounded-md border bg-zinc-50 px-2 text-xs text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 dark:bg-zinc-900 dark:text-zinc-300",

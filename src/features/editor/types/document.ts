@@ -111,7 +111,7 @@ export interface EditorElementNode {
   flexChild?: FlexChildSettings;
   /** This node's own grid-item placement. Only meaningful while its parent's flowLayout.display is "grid". */
   gridChild?: GridChildSettings;
-  /** The media source URL (Checkpoint 3.5.1) — only meaningful for a media-capable tag (img; video/iframe once those exist). Unset renders an empty placeholder rather than a broken/missing image. */
+  /** The media source URL (Checkpoint 3.5.1, widened to video in Checkpoint 1.15) — only meaningful for a media-capable tag (img, video). Unset renders an empty placeholder rather than a broken/missing image. Iframe deliberately reuses this exact same field for its own `src` (Checkpoint 1.15) — same "source of the embedded content" concern, no `iframeSrc` duplicate. */
   src?: string;
   /**
    * This node's own link destination (Checkpoint 1.4) — only meaningful
@@ -255,4 +255,93 @@ export interface EditorElementNode {
    * `value`/`href` already use.
    */
   selected?: boolean;
+  /**
+   * This node's own `poster` attribute (Checkpoint 1.15) — only
+   * meaningful for `tag: "video"`. A still image URL shown before
+   * playback starts; a dedicated field rather than a second child image
+   * node, matching the native `<video poster="...">` attribute exactly —
+   * see this checkpoint's report on why a synthetic image child was
+   * rejected. Same "store unconditionally, no synthesized default"
+   * convention `src`/`href`/`checked` already use — unset renders no
+   * `poster` attribute at all.
+   */
+  poster?: string;
+  /**
+   * This node's own `controls` attribute (Checkpoint 1.15) — only
+   * meaningful for `tag: "video"`. Unlike `checked`/`autoplay`/`muted`/
+   * `loop` below, unset does NOT mean "attribute absent" here: a freshly
+   * created Video with no controls at all would be unusable/invisible on
+   * the Canvas, so the renderer treats unset as an effective default of
+   * `true` (see getVideoControls in types/video.ts) — the resolver-level
+   * fallback pattern DEFAULT_OBJECT_FIT already established for mediaFit,
+   * not a value written into the document. An explicit `false` genuinely
+   * removes the attribute (a deliberately controls-less video).
+   */
+  controls?: boolean;
+  /**
+   * This node's own `autoplay` attribute (Checkpoint 1.15) — only
+   * meaningful for `tag: "video"`. Same "store unconditionally, no
+   * synthesized default" convention `checked` already uses — unset
+   * renders no `autoplay` attribute (the safe, expected default). Never
+   * automatically forces `muted` alongside it — see InspectorVideoSection's
+   * own doc comment for why that coupling was deliberately NOT built.
+   */
+  autoplay?: boolean;
+  /**
+   * This node's own `muted` attribute (Checkpoint 1.15) — only meaningful
+   * for `tag: "video"`. Same convention as `autoplay`/`checked` — unset
+   * renders no `muted` attribute.
+   */
+  muted?: boolean;
+  /**
+   * This node's own `loop` attribute (Checkpoint 1.15) — only meaningful
+   * for `tag: "video"`. Same convention as `autoplay`/`muted`/`checked` —
+   * unset renders no `loop` attribute.
+   */
+  loop?: boolean;
+  /**
+   * This node's own `title` attribute (Checkpoint 1.15) — only meaningful
+   * for `tag: "iframe"`, where it is the accessible name a screen reader
+   * announces for the embedded content. Deliberately a dedicated field,
+   * not folded into `displayName` (a Structure-panel/export-unrelated
+   * label) — see this checkpoint's report for why the factory stamps a
+   * real, neutral starter value ("Embedded content") rather than leaving
+   * this unset, mirroring `href`'s own DEFAULT_LINK_HREF precedent (a
+   * concrete, inert default rather than a foreseeable accessibility gap).
+   */
+  title?: string;
+  /**
+   * This node's own authored HTML `id` attribute (Checkpoint 1.15.1) —
+   * genuine semantic HTML identity, meaningful for essentially any
+   * rendered tag, NOT editor-only metadata. Deliberately named `htmlId`,
+   * never `id`: this node already has its own internal editor identity at
+   * `EditorElementNode.id` (a stable, app-generated string used for
+   * selection/history/drag/structural lookups — see generateNodeId), and
+   * the two concepts must never collide or be conflatable, even though
+   * both would render as the string "id" in casual conversation. Same
+   * "store unconditionally, no synthesized default" convention `href`/
+   * `name`/`title` already use — unset renders no `id` attribute at all.
+   * Only trimmed of accidental surrounding whitespace at the Inspector
+   * field layer (see InspectorIdentitySection); never rewritten,
+   * deduplicated, or validated beyond that — see this checkpoint's own
+   * report for why (no project-wide uniqueness enforcement yet).
+   */
+  htmlId?: string;
+  /**
+   * This node's own authored HTML `class` attribute (Checkpoint 1.15.1) —
+   * a plain, opaque, space-separated class string, authored exactly the
+   * way a hand-written `class="hero-section featured"` attribute would
+   * be. Deliberately NOT a token array/visual class editor and NOT a
+   * CSS-class stylesheet system — this checkpoint only stores the
+   * authored string itself; see this checkpoint's own report for why
+   * both are explicitly deferred. Same "store unconditionally, no
+   * synthesized default" convention `htmlId` above uses. Renderers must
+   * treat this as content to APPEND alongside Layoutry's own required
+   * editor/structural Tailwind classes (see documentNodeAttributes' own
+   * doc comment and each element component's own className cn() call) —
+   * never a replacement for them, and never applied to an editor-only
+   * wrapper div when a genuine inner native element exists to own it
+   * (Image/Video/Iframe — see this checkpoint's report, section C).
+   */
+  className?: string;
 }

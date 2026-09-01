@@ -12,6 +12,7 @@ import {
   createFormNode,
   createHeaderNode,
   createHeadingNode,
+  createIframeNode,
   createImageNode,
   createInputNode,
   createLabelNode,
@@ -37,6 +38,7 @@ import {
   createTextareaNode,
   createUnorderedListNode,
   createUrlInputNode,
+  createVideoNode,
   isInsertableElementType,
 } from "./elementFactories";
 
@@ -406,6 +408,50 @@ describe("element factories", () => {
     });
   });
 
+  describe("Video + Iframe foundation (Checkpoint 1.15)", () => {
+    it("createVideoNode produces a genuine, leaf <video> with no src/poster/controls/autoplay/muted/loop", () => {
+      const node = createVideoNode();
+      expect(node.tag).toBe("video");
+      expect(node.src).toBeUndefined();
+      expect(node.poster).toBeUndefined();
+      expect(node.controls).toBeUndefined();
+      expect(node.autoplay).toBeUndefined();
+      expect(node.muted).toBeUndefined();
+      expect(node.loop).toBeUndefined();
+      expect(node.children).toBeUndefined();
+      expect(node.id).toMatch(/^video-/);
+    });
+
+    it("createVideoNode leaves flowLayout/spacing unset, matching every other leaf primitive", () => {
+      const node = createVideoNode();
+      expect(node.flowLayout).toBeUndefined();
+      expect(node.spacing).toBeUndefined();
+    });
+
+    it("createVideoNode produces a unique id per call", () => {
+      expect(createVideoNode().id).not.toBe(createVideoNode().id);
+    });
+
+    it("createIframeNode produces a genuine, leaf <iframe> with a real starter title but no src", () => {
+      const node = createIframeNode();
+      expect(node.tag).toBe("iframe");
+      expect(node.src).toBeUndefined();
+      expect(node.title).toBe("Embedded content");
+      expect(node.children).toBeUndefined();
+      expect(node.id).toMatch(/^iframe-/);
+    });
+
+    it("createIframeNode leaves flowLayout/spacing unset, matching every other leaf primitive", () => {
+      const node = createIframeNode();
+      expect(node.flowLayout).toBeUndefined();
+      expect(node.spacing).toBeUndefined();
+    });
+
+    it("createIframeNode produces a unique id per call", () => {
+      expect(createIframeNode().id).not.toBe(createIframeNode().id);
+    });
+  });
+
   describe("Form + Text Input foundation (Checkpoint 1.10)", () => {
     it("createFormNode produces an empty, childable <form> sharing Container's exact structural defaults", () => {
       const node = createFormNode();
@@ -582,6 +628,8 @@ describe("element factories", () => {
       expect(createElementNode("footerComposition").tag).toBe("footer");
       expect(createElementNode("select").tag).toBe("select");
       expect(createElementNode("table").tag).toBe("table");
+      expect(createElementNode("video").tag).toBe("video");
+      expect(createElementNode("iframe").tag).toBe("iframe");
     });
   });
 
@@ -619,6 +667,8 @@ describe("element factories", () => {
         "footerComposition",
         "select",
         "table",
+        "video",
+        "iframe",
       ]) {
         expect(isInsertableElementType(type)).toBe(true);
       }
@@ -635,7 +685,10 @@ describe("element factories", () => {
     });
 
     it("rejects unknown strings", () => {
-      expect(isInsertableElementType("video")).toBe(false);
+      // "audio" is deliberately still unrecognized (Checkpoint 1.15's own
+      // Non-Goals) — "video" was this test's original placeholder but is
+      // now a real InsertableElementType (Checkpoint 1.15).
+      expect(isInsertableElementType("audio")).toBe(false);
       expect(isInsertableElementType("")).toBe(false);
     });
   });

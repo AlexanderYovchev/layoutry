@@ -650,3 +650,259 @@ export function setSelectSelectedOption(
 
   return changed ? { ...root, children } : root;
 }
+
+/**
+ * Sets (or clears, via `src: undefined`) nodeId's media/embed source URL
+ * (Checkpoint 1.15) — same generic, tag-agnostic, no-op-guarded shape as
+ * setElementHref/setElementValue. Reused as-is by both Video's Source URL
+ * field and Iframe's Source URL field (the same "one field, one command,
+ * reused across whichever tags share the concern" precedent `src` itself
+ * already established for Image — see EditorElementNode.src's own doc
+ * comment); no setVideoSrc/setIframeSrc duplicate was created.
+ */
+export function setElementSrc(
+  root: EditorElementNode,
+  nodeId: string,
+  src: string | undefined,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.src === src) return root;
+    return { ...root, src };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementSrc(child, nodeId, src);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
+ * Sets (or clears, via `poster: undefined`) nodeId's Video poster URL
+ * (Checkpoint 1.15) — same generic, tag-agnostic, no-op-guarded shape as
+ * setElementSrc.
+ */
+export function setElementPoster(
+  root: EditorElementNode,
+  nodeId: string,
+  poster: string | undefined,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.poster === poster) return root;
+    return { ...root, poster };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementPoster(child, nodeId, poster);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
+ * Sets (or clears, via `controls: undefined`) nodeId's Video controls flag
+ * (Checkpoint 1.15) — same generic, tag-agnostic, no-op-guarded shape as
+ * setElementChecked. See EditorElementNode.controls's own doc comment for
+ * why "unset" here still renders WITH controls at the resolver level
+ * (getVideoControls) — this command itself only ever writes exactly what
+ * it's given, never a synthesized default.
+ */
+export function setElementControls(
+  root: EditorElementNode,
+  nodeId: string,
+  controls: boolean | undefined,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.controls === controls) return root;
+    return { ...root, controls };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementControls(child, nodeId, controls);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
+ * Sets (or clears, via `autoplay: undefined`) nodeId's Video autoplay flag
+ * (Checkpoint 1.15) — same generic, tag-agnostic, no-op-guarded shape as
+ * setElementChecked. Deliberately never touches `muted` as a side effect —
+ * see InspectorVideoSection's own doc comment for why that automatic
+ * coupling was rejected.
+ */
+export function setElementAutoplay(
+  root: EditorElementNode,
+  nodeId: string,
+  autoplay: boolean | undefined,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.autoplay === autoplay) return root;
+    return { ...root, autoplay };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementAutoplay(child, nodeId, autoplay);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
+ * Sets (or clears, via `muted: undefined`) nodeId's Video muted flag
+ * (Checkpoint 1.15) — same generic, tag-agnostic, no-op-guarded shape as
+ * setElementChecked.
+ */
+export function setElementMuted(
+  root: EditorElementNode,
+  nodeId: string,
+  muted: boolean | undefined,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.muted === muted) return root;
+    return { ...root, muted };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementMuted(child, nodeId, muted);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
+ * Sets (or clears, via `loop: undefined`) nodeId's Video loop flag
+ * (Checkpoint 1.15) — same generic, tag-agnostic, no-op-guarded shape as
+ * setElementChecked.
+ */
+export function setElementLoop(
+  root: EditorElementNode,
+  nodeId: string,
+  loop: boolean | undefined,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.loop === loop) return root;
+    return { ...root, loop };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementLoop(child, nodeId, loop);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
+ * Sets (or clears, via `title: undefined`) nodeId's accessible title
+ * (Checkpoint 1.15 — Iframe's Title field) — same generic, tag-agnostic,
+ * no-op-guarded shape as setElementName/setElementPlaceholder.
+ */
+export function setElementTitle(
+  root: EditorElementNode,
+  nodeId: string,
+  title: string | undefined,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.title === title) return root;
+    return { ...root, title };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementTitle(child, nodeId, title);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
+ * Sets (or clears, via `htmlId: undefined`) nodeId's authored HTML `id`
+ * (Checkpoint 1.15.1 — the Identity Inspector section's ID field) — same
+ * generic, tag-agnostic, no-op-guarded shape as setElementName/
+ * setElementTitle. Deliberately does not validate or rewrite its input
+ * beyond what the Inspector field itself already trims — see
+ * EditorElementNode.htmlId's own doc comment.
+ */
+export function setElementHtmlId(
+  root: EditorElementNode,
+  nodeId: string,
+  htmlId: string | undefined,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.htmlId === htmlId) return root;
+    return { ...root, htmlId };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementHtmlId(child, nodeId, htmlId);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
+ * Sets (or clears, via `className: undefined`) nodeId's authored HTML
+ * `class` string (Checkpoint 1.15.1 — the Identity Inspector section's
+ * Classes field) — same generic, tag-agnostic, no-op-guarded shape as
+ * setElementHtmlId.
+ */
+export function setElementClassName(
+  root: EditorElementNode,
+  nodeId: string,
+  className: string | undefined,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.className === className) return root;
+    return { ...root, className };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementClassName(child, nodeId, className);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}

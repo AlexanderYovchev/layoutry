@@ -1,4 +1,5 @@
 import {
+  AppWindow,
   Box,
   ChevronDown,
   Circle,
@@ -24,6 +25,7 @@ import {
   TextCursorInput,
   TextQuote,
   Type,
+  Video,
   type LucideIcon,
 } from "lucide-react";
 
@@ -86,4 +88,6 @@ export const TAG_ICONS: Record<string, LucideIcon> = {
   tr: TableRowsSplit,
   th: Type,
   td: Type,
+  video: Video,
+  iframe: AppWindow,
 };

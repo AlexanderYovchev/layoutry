@@ -53,6 +53,7 @@ export function TableCellElement({ node, parentId, parentLayoutMode }: DocumentE
 
   return (
     <Tag
+      id={node.htmlId}
       ref={mergeRefs<HTMLElement>(dropRef, dragRef, editable.elementRef)}
       {...documentNodeAttributes(node, parentId)}
       {...editable.editableProps}
@@ -62,6 +63,7 @@ export function TableCellElement({ node, parentId, parentLayoutMode }: DocumentE
         usesLegacyBorderChrome && "border border-zinc-100 dark:border-zinc-900",
         editable.isEditing && "outline-none",
         isDragging && "opacity-40",
+        node.className,
       )}
       style={{
         ...elementPositionStyle(node, parentLayoutMode),

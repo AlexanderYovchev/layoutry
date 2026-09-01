@@ -11,6 +11,8 @@ import { InspectorFormControlSection } from "@/features/inspector/components/Ins
 import { InspectorFreeGeometryFields } from "@/features/inspector/components/InspectorFreeGeometryFields";
 import { InspectorGridChildSection } from "@/features/inspector/components/InspectorGridChildSection";
 import { InspectorHeadingLevelSection } from "@/features/inspector/components/InspectorHeadingLevelSection";
+import { InspectorIdentitySection } from "@/features/inspector/components/InspectorIdentitySection";
+import { InspectorIframeSection } from "@/features/inspector/components/InspectorIframeSection";
 import { InspectorLayoutSection } from "@/features/inspector/components/InspectorLayoutSection";
 import { InspectorLinkSection } from "@/features/inspector/components/InspectorLinkSection";
 import { InspectorListSection } from "@/features/inspector/components/InspectorListSection";
@@ -22,6 +24,7 @@ import { InspectorSizeSection } from "@/features/inspector/components/InspectorS
 import { InspectorSpacingSection } from "@/features/inspector/components/InspectorSpacingSection";
 import { InspectorTableSection } from "@/features/inspector/components/InspectorTableSection";
 import { InspectorTypographySection } from "@/features/inspector/components/InspectorTypographySection";
+import { InspectorVideoSection } from "@/features/inspector/components/InspectorVideoSection";
 import { getElementCapabilities } from "@/features/editor/rules/elementCapabilities";
 import { canContainChildren } from "@/features/editor/rules/insertionRules";
 import { getElementDisplayName } from "@/features/editor/utils/elementDisplayName";
@@ -80,12 +83,15 @@ export function InspectorNodeSummary({
         {parentId && <InspectorFieldRow label="Parent ID" value={parentId} />}
         {isFreeChild && <InspectorFreeGeometryFields node={node} />}
       </div>
+      <InspectorIdentitySection node={node} />
       {getElementCapabilities(node.tag).supportsAspectRatio && (
         <InspectorSizeSection node={node} isFreeChild={isFreeChild} />
       )}
       {!isFreeChild && parentFlowDisplay === "flex" && <InspectorFlexChildSection node={node} />}
       {!isFreeChild && parentFlowDisplay === "grid" && <InspectorGridChildSection node={node} />}
       {getElementCapabilities(node.tag).supportsMediaFit && <InspectorMediaSection node={node} />}
+      {node.tag === "video" && <InspectorVideoSection node={node} />}
+      {node.tag === "iframe" && <InspectorIframeSection node={node} />}
       {getElementCapabilities(node.tag).supportsHref && <InspectorLinkSection node={node} />}
       {getElementCapabilities(node.tag).supportsHeadingLevel && <InspectorHeadingLevelSection node={node} />}
       {(node.tag === "ul" || node.tag === "ol") && <InspectorListSection node={node} />}

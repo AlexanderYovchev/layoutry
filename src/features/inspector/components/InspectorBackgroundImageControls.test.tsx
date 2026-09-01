@@ -221,4 +221,75 @@ describe("InspectorBackgroundImageControls", () => {
     rerender(<InspectorBackgroundImageControls node={{ id: "container-2", tag: "div" }} />);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
+
+  describe("history bug fix (Checkpoint 1.15.1)", () => {
+    it("blurring an untouched field pushes no history entry", () => {
+      setupNode({ id: "container-1", tag: "div", background: { image: "hero.jpg" } });
+      render(<InspectorBackgroundImageControls node={{ id: "container-1", tag: "div", background: { image: "hero.jpg" } }} />);
+
+      const pastLengthBefore = useEditorStore.getState().past.length;
+      const input = screen.getByLabelText("Background image URL");
+      fireEvent.focus(input);
+      fireEvent.blur(input);
+
+      expect(useEditorStore.getState().past.length).toBe(pastLengthBefore);
+      expect(committedNode()?.background?.image).toBe("hero.jpg");
+    });
+
+    it("Enter followed by the resulting blur pushes exactly one history entry, not two", () => {
+      setupNode({ id: "container-1", tag: "div", background: { image: "hero.jpg" } });
+      render(<InspectorBackgroundImageControls node={{ id: "container-1", tag: "div", background: { image: "hero.jpg" } }} />);
+
+      const pastLengthBefore = useEditorStore.getState().past.length;
+      const input = screen.getByLabelText("Background image URL");
+      fireEvent.change(input, { target: { value: "https://example.com/new.jpg" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      fireEvent.blur(input); // the same synchronous blur Enter's own event.currentTarget.blur() triggers
+
+      expect(useEditorStore.getState().past.length).toBe(pastLengthBefore + 1);
+      expect(committedNode()?.background?.image).toBe("https://example.com/new.jpg");
+    });
+
+    it("committing the exact same value again (no edit) pushes no history entry", () => {
+      setupNode({ id: "container-1", tag: "div", background: { image: "hero.jpg" } });
+      render(<InspectorBackgroundImageControls node={{ id: "container-1", tag: "div", background: { image: "hero.jpg" } }} />);
+
+      const input = screen.getByLabelText("Background image URL");
+      fireEvent.change(input, { target: { value: "hero.jpg" } });
+      const pastLengthBefore = useEditorStore.getState().past.length;
+      fireEvent.blur(input);
+
+      expect(useEditorStore.getState().past.length).toBe(pastLengthBefore);
+    });
+
+    it("Escape reverts the draft and pushes no history entry", () => {
+      setupNode({ id: "container-1", tag: "div", background: { image: "hero.jpg" } });
+      render(<InspectorBackgroundImageControls node={{ id: "container-1", tag: "div", background: { image: "hero.jpg" } }} />);
+
+      const pastLengthBefore = useEditorStore.getState().past.length;
+      const input = screen.getByLabelText("Background image URL");
+      fireEvent.change(input, { target: { value: "https://example.com/discard.jpg" } });
+      fireEvent.keyDown(input, { key: "Escape" });
+
+      expect(useEditorStore.getState().past.length).toBe(pastLengthBefore);
+      expect(input).toHaveValue("hero.jpg");
+      expect(committedNode()?.background?.image).toBe("hero.jpg");
+    });
+
+    it("a genuine changed-value blur still pushes exactly one history entry, and undo restores the previous image", () => {
+      setupNode({ id: "container-1", tag: "div", background: { image: "hero.jpg" } });
+      render(<InspectorBackgroundImageControls node={{ id: "container-1", tag: "div", background: { image: "hero.jpg" } }} />);
+
+      const pastLengthBefore = useEditorStore.getState().past.length;
+      const input = screen.getByLabelText("Background image URL");
+      fireEvent.change(input, { target: { value: "https://example.com/new.jpg" } });
+      fireEvent.blur(input);
+
+      expect(useEditorStore.getState().past.length).toBe(pastLengthBefore + 1);
+      expect(committedNode()?.background?.image).toBe("https://example.com/new.jpg");
+
+      useEditorStore.getState().undo();
+      expect(committedNode()?.background?.image).toBe("hero.jpg");
+    });
+  });
 });

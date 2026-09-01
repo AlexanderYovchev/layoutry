@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   AlignLeft,
+  AppWindow,
   AtSign,
   Blocks,
   Box,
@@ -27,6 +28,7 @@ import {
   Search,
   SquareCheck,
   Table,
+  Video,
   Tag,
   TextCursorInput,
   TextQuote,
@@ -71,7 +73,9 @@ export type InsertableCardType =
   | "textarea"
   | "footerComposition"
   | "select"
-  | "table";
+  | "table"
+  | "video"
+  | "iframe";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -176,95 +180,13 @@ function htmlCategory(): ToolbarCategoryContent {
           icon: Circle,
         },
       ]),
-      section(id, "forms", "Forms", [
-        {
-          name: "Form",
-          description: "Form container",
-          elementType: "form",
-          icon: ClipboardList,
-        },
-        {
-          name: "Label",
-          description: "Wraps and labels a control",
-          elementType: "label",
-          icon: Tag,
-        },
-        {
-          name: "Text Input",
-          description: "Single-line text field",
-          elementType: "input",
-          icon: TextCursorInput,
-        },
-        {
-          name: "Email Input",
-          description: "Email address field",
-          elementType: "emailInput",
-          icon: AtSign,
-        },
-        {
-          name: "Password Input",
-          description: "Masked password field",
-          elementType: "passwordInput",
-          icon: Lock,
-        },
-        {
-          name: "Number Input",
-          description: "Numeric field",
-          elementType: "numberInput",
-          icon: Hash,
-        },
-        {
-          name: "Search Input",
-          description: "Search query field",
-          elementType: "searchInput",
-          icon: Search,
-        },
-        {
-          name: "URL Input",
-          description: "Web address field",
-          elementType: "urlInput",
-          icon: Globe,
-        },
-        {
-          name: "Tel Input",
-          description: "Phone number field",
-          elementType: "telInput",
-          icon: Phone,
-        },
-        {
-          name: "Checkbox",
-          description: "Toggleable option",
-          elementType: "checkboxInput",
-          icon: SquareCheck,
-        },
-        {
-          name: "Radio Button",
-          description: "Single choice option",
-          elementType: "radioInput",
-          icon: CircleDot,
-        },
-        {
-          name: "Textarea",
-          description: "Multi-line text field",
-          elementType: "textarea",
-          icon: TextQuote,
-        },
-        {
-          name: "Select",
-          description: "Dropdown choice field with starter options",
-          elementType: "select",
-          icon: ChevronDown,
-        },
+      section(id, "interactive", "Interactive", [
         {
           name: "Button",
           description: "Interactive button",
           elementType: "button",
           icon: MousePointerClick,
         },
-      ]),
-      section(id, "media", "Media", [
-        { name: "Image", description: "Static image", elementType: "image", icon: Image },
-        { name: "Video", description: "Embedded video" },
       ]),
       section(id, "tables", "Tables", [
         {
@@ -393,11 +315,16 @@ function mediaCategory(): ToolbarCategoryContent {
     label: "Media",
     sections: [
       section(id, "images", "Images", [
-        { name: "Image", description: "Static image placeholder" },
+        { name: "Image", description: "Static image", elementType: "image", icon: Image },
         { name: "Gallery", description: "Grid of images" },
       ]),
       section(id, "video", "Video", [
-        { name: "Video Player", description: "Embedded video player" },
+        {
+          name: "Video",
+          description: "Video files or URLs, with playback controls",
+          elementType: "video",
+          icon: Video,
+        },
         { name: "Video Background", description: "Looping background video" },
       ]),
       section(id, "audio", "Audio", [
@@ -407,7 +334,12 @@ function mediaCategory(): ToolbarCategoryContent {
         { name: "Icon", description: "Single vector icon" },
       ]),
       section(id, "embeds", "Embeds", [
-        { name: "Embed", description: "Third-party embedded content" },
+        {
+          name: "Embed",
+          description: "External embeddable pages or content",
+          elementType: "iframe",
+          icon: AppWindow,
+        },
       ]),
     ],
   };
@@ -419,13 +351,89 @@ function formsCategory(): ToolbarCategoryContent {
     id,
     label: "Forms",
     sections: [
+      section(id, "structure", "Structure", [
+        {
+          name: "Form",
+          description: "Form container",
+          elementType: "form",
+          icon: ClipboardList,
+        },
+        {
+          name: "Label",
+          description: "Wraps and labels a control",
+          elementType: "label",
+          icon: Tag,
+        },
+      ]),
       section(id, "inputs", "Inputs", [
-        { name: "Text Input", description: "Single-line text field" },
-        { name: "Textarea", description: "Multi-line text field" },
+        {
+          name: "Text Input",
+          description: "Single-line text field",
+          elementType: "input",
+          icon: TextCursorInput,
+        },
+        {
+          name: "Email Input",
+          description: "Email address field",
+          elementType: "emailInput",
+          icon: AtSign,
+        },
+        {
+          name: "Password Input",
+          description: "Masked password field",
+          elementType: "passwordInput",
+          icon: Lock,
+        },
+        {
+          name: "Number Input",
+          description: "Numeric field",
+          elementType: "numberInput",
+          icon: Hash,
+        },
+        {
+          name: "Search Input",
+          description: "Search query field",
+          elementType: "searchInput",
+          icon: Search,
+        },
+        {
+          name: "URL Input",
+          description: "Web address field",
+          elementType: "urlInput",
+          icon: Globe,
+        },
+        {
+          name: "Tel Input",
+          description: "Phone number field",
+          elementType: "telInput",
+          icon: Phone,
+        },
+        {
+          name: "Textarea",
+          description: "Multi-line text field",
+          elementType: "textarea",
+          icon: TextQuote,
+        },
+        {
+          name: "Select",
+          description: "Dropdown choice field with starter options",
+          elementType: "select",
+          icon: ChevronDown,
+        },
       ]),
       section(id, "selection-controls", "Selection Controls", [
-        { name: "Checkbox", description: "Toggleable option" },
-        { name: "Radio Button", description: "Single choice option" },
+        {
+          name: "Checkbox",
+          description: "Toggleable option",
+          elementType: "checkboxInput",
+          icon: SquareCheck,
+        },
+        {
+          name: "Radio Button",
+          description: "Single choice option",
+          elementType: "radioInput",
+          icon: CircleDot,
+        },
       ]),
       section(id, "buttons", "Buttons", [
         { name: "Submit Button", description: "Submits the form" },
