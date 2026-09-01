@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { selectionFromSingle } from "@/features/editor/types/selection";
 import { InspectorSpacingSection } from "./InspectorSpacingSection";
 
 const initialState = useEditorStore.getState();
@@ -217,7 +218,7 @@ describe("InspectorSpacingSection", () => {
   it("keeps the same node selected across an undo/redo round trip of a spacing commit", () => {
     useEditorStore.setState((state) => ({
       document: { ...state.document, children: [{ id: "n1", tag: "div", children: [] }] },
-      selectedElementId: "n1",
+      selection: selectionFromSingle("n1"),
     }));
 
     render(<InspectorSpacingSection node={{ id: "n1", tag: "div" }} />);
@@ -226,9 +227,9 @@ describe("InspectorSpacingSection", () => {
     fireEvent.blur(input);
 
     useEditorStore.getState().undo();
-    expect(useEditorStore.getState().selectedElementId).toBe("n1");
+    expect(useEditorStore.getState().selection.primaryId).toBe("n1");
 
     useEditorStore.getState().redo();
-    expect(useEditorStore.getState().selectedElementId).toBe("n1");
+    expect(useEditorStore.getState().selection.primaryId).toBe("n1");
   });
 });

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+﻿import { afterEach, describe, expect, it } from "vitest";
 import {
   createCheckboxNode,
   createContainerNode,
@@ -28,27 +28,27 @@ describe("useEditorStore", () => {
   });
 
   it("starts with no selection", () => {
-    expect(useEditorStore.getState().selectedElementId).toBeNull();
+    expect(useEditorStore.getState().selection).toEqual({ ids: [] });
   });
 
   it("selects a node", () => {
     useEditorStore.getState().selectElement("heading-1");
 
-    expect(useEditorStore.getState().selectedElementId).toBe("heading-1");
+    expect(useEditorStore.getState().selection.primaryId).toBe("heading-1");
   });
 
   it("replaces the selected node when a different id is selected", () => {
     useEditorStore.getState().selectElement("heading-1");
     useEditorStore.getState().selectElement("paragraph-1");
 
-    expect(useEditorStore.getState().selectedElementId).toBe("paragraph-1");
+    expect(useEditorStore.getState().selection.primaryId).toBe("paragraph-1");
   });
 
   it("clears the selection", () => {
     useEditorStore.getState().selectElement("heading-1");
     useEditorStore.getState().clearSelection();
 
-    expect(useEditorStore.getState().selectedElementId).toBeNull();
+    expect(useEditorStore.getState().selection).toEqual({ ids: [] });
   });
 
   it("inserts a node into the target parent and selects it in one update", () => {
@@ -60,7 +60,7 @@ describe("useEditorStore", () => {
       .getState()
       .document.children?.find((child) => child.id === "section-1");
     expect(section?.children?.at(-1)).toEqual(newNode);
-    expect(useEditorStore.getState().selectedElementId).toBe("button-new");
+    expect(useEditorStore.getState().selection.primaryId).toBe("button-new");
   });
 
   it("inserts a node at an explicit position and selects it", () => {
@@ -79,7 +79,7 @@ describe("useEditorStore", () => {
       "paragraph-1",
       "button-1",
     ]);
-    expect(useEditorStore.getState().selectedElementId).toBe("heading-new");
+    expect(useEditorStore.getState().selection.primaryId).toBe("heading-new");
   });
 
   it("moves a node and keeps it selected in one update", () => {
@@ -93,7 +93,7 @@ describe("useEditorStore", () => {
       "paragraph-1",
     ]);
     expect(targetSection?.children?.map((child) => child.id)).toEqual(["image-1", "button-1"]);
-    expect(state.selectedElementId).toBe("button-1");
+    expect(state.selection.primaryId).toBe("button-1");
   });
 
   it("rejects an invalid move without altering the document", () => {
@@ -122,7 +122,7 @@ describe("useEditorStore", () => {
 
     expect(useEditorStore.getState().document).toBe(before);
     expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);
-    expect(useEditorStore.getState().selectedElementId).toBe("heading-1");
+    expect(useEditorStore.getState().selection.primaryId).toBe("heading-1");
   });
 
   it("resizes a node without changing selection", () => {
@@ -136,7 +136,7 @@ describe("useEditorStore", () => {
       .getState()
       .document.children?.find((child) => child.id === "section-1");
     expect(section?.dimensions).toEqual({ preferredWidth: 320, preferredHeight: 180, offsetX: 0, offsetY: 0 });
-    expect(useEditorStore.getState().selectedElementId).toBe("section-1");
+    expect(useEditorStore.getState().selection.primaryId).toBe("section-1");
   });
 
   it("resizes a text element (heading) — universal resize, Checkpoint 3.4.3", () => {
@@ -204,7 +204,7 @@ describe("useEditorStore clipboard", () => {
     expect(section?.children?.map((child) => child.id)).toEqual(["paragraph-1", "button-1"]);
     expect(useEditorStore.getState().clipboard?.operation).toBe("cut");
     expect(useEditorStore.getState().clipboard?.nodes[0].id).toBe("heading-1");
-    expect(useEditorStore.getState().selectedElementId).toBe("section-1");
+    expect(useEditorStore.getState().selection.primaryId).toBe("section-1");
   });
 
   it("pastes a copied node with a fresh id into the currently selected container", () => {
@@ -220,7 +220,7 @@ describe("useEditorStore clipboard", () => {
     const pasted = section2?.children?.at(-1);
     expect(pasted?.tag).toBe("h1");
     expect(pasted?.id).not.toBe("heading-1");
-    expect(useEditorStore.getState().selectedElementId).toBe(pasted?.id);
+    expect(useEditorStore.getState().selection.primaryId).toBe(pasted?.id);
     // The original is untouched by a copy+paste.
     const section1 = useEditorStore
       .getState()
@@ -292,7 +292,7 @@ describe("useEditorStore clipboard", () => {
     expect(ids?.[0]).toBe("heading-1");
     expect(ids?.[1]).not.toBe("heading-1");
     expect(section?.children?.[1].tag).toBe("h1");
-    expect(useEditorStore.getState().selectedElementId).toBe(ids?.[1]);
+    expect(useEditorStore.getState().selection.primaryId).toBe(ids?.[1]);
   });
 
   it("duplicate preserves dimensions", () => {
@@ -332,7 +332,7 @@ describe("useEditorStore clipboard", () => {
       .getState()
       .document.children?.find((child) => child.id === "section-1");
     expect(section?.children?.map((child) => child.id)).toEqual(["paragraph-1", "button-1"]);
-    expect(useEditorStore.getState().selectedElementId).toBe("section-1");
+    expect(useEditorStore.getState().selection.primaryId).toBe("section-1");
   });
 
   it("does nothing when the document root is selected for delete/cut/duplicate", () => {
@@ -364,7 +364,7 @@ describe("useEditorStore history (undo/redo)", () => {
       .getState()
       .document.children?.find((child) => child.id === "section-1");
     expect(section?.children?.some((child) => child.id === "button-new")).toBe(false);
-    expect(useEditorStore.getState().selectedElementId).toBe("heading-1");
+    expect(useEditorStore.getState().selection.primaryId).toBe("heading-1");
   });
 
   it("redoes an insertion after an undo", () => {
@@ -378,7 +378,7 @@ describe("useEditorStore history (undo/redo)", () => {
       .getState()
       .document.children?.find((child) => child.id === "section-1");
     expect(section?.children?.some((child) => child.id === "button-new")).toBe(true);
-    expect(useEditorStore.getState().selectedElementId).toBe("button-new");
+    expect(useEditorStore.getState().selection.primaryId).toBe("button-new");
   });
 
   it("undoes a deletion", () => {
@@ -410,7 +410,7 @@ describe("useEditorStore history (undo/redo)", () => {
     useEditorStore.getState().copySelection();
     useEditorStore.getState().selectElement("section-2");
     useEditorStore.getState().pasteClipboard();
-    const pastedId = useEditorStore.getState().selectedElementId;
+    const pastedId = useEditorStore.getState().selection.primaryId;
 
     useEditorStore.getState().undo();
 
@@ -677,7 +677,7 @@ describe("useEditorStore — Free layout (Checkpoint 3.4.4)", () => {
 
     useEditorStore.getState().pasteClipboard();
 
-    const pastedId = useEditorStore.getState().selectedElementId;
+    const pastedId = useEditorStore.getState().selection.primaryId;
     const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
     const pasted = section?.children?.find((c) => c.id === pastedId);
     const original = section?.children?.find((c) => c.id === "heading-1");
@@ -696,7 +696,7 @@ describe("useEditorStore — Free layout (Checkpoint 3.4.4)", () => {
 
     useEditorStore.getState().duplicateSelection();
 
-    const duplicateId = useEditorStore.getState().selectedElementId;
+    const duplicateId = useEditorStore.getState().selection.primaryId;
     const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
     const duplicate = section?.children?.find((c) => c.id === duplicateId);
     const original = section?.children?.find((c) => c.id === "heading-1");
@@ -712,7 +712,7 @@ describe("useEditorStore — Free layout (Checkpoint 3.4.4)", () => {
 
     useEditorStore.getState().pasteClipboard();
 
-    const pastedId = useEditorStore.getState().selectedElementId;
+    const pastedId = useEditorStore.getState().selection.primaryId;
     const section2 = useEditorStore.getState().document.children?.find((c) => c.id === "section-2");
     const pasted = section2?.children?.find((c) => c.id === pastedId);
     expect(pasted?.freeLayout).toBeUndefined();
@@ -1111,7 +1111,7 @@ describe("useEditorStore — Resize & Sizing (Checkpoint 5.7)", () => {
 
   it("setElementHref pushes exactly one history entry per commit and is undoable/redoable (Checkpoint 1.4)", () => {
     useEditorStore.getState().insertElement("section-1", createLinkNode());
-    const linkId = useEditorStore.getState().selectedElementId!;
+    const linkId = useEditorStore.getState().selection.primaryId!;
     const pastLengthBefore = useEditorStore.getState().past.length;
 
     useEditorStore.getState().setElementHref(linkId, "/pricing");
@@ -1176,7 +1176,7 @@ describe("useEditorStore — setElementTag (Checkpoint 1.7)", () => {
 
     expect(findHeading()?.text).toBe("Build layouts visually. Own the code.");
     expect(findHeading()?.typography).toEqual({ fontWeight: 700 });
-    expect(useEditorStore.getState().selectedElementId).toBe("heading-1");
+    expect(useEditorStore.getState().selection.primaryId).toBe("heading-1");
   });
 });
 
@@ -1190,7 +1190,7 @@ describe("useEditorStore — Lists (Checkpoint 1.6)", () => {
 
     useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
 
-    const listId = useEditorStore.getState().selectedElementId!;
+    const listId = useEditorStore.getState().selection.primaryId!;
     const list = useEditorStore
       .getState()
       .document.children?.find((c) => c.id === "section-1")
@@ -1202,7 +1202,7 @@ describe("useEditorStore — Lists (Checkpoint 1.6)", () => {
 
   it("inserting a List Item while the list itself is selected appends it into that list (a practical, un-hacky add-item path)", () => {
     useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
-    const listId = useEditorStore.getState().selectedElementId!;
+    const listId = useEditorStore.getState().selection.primaryId!;
     // selection is already the ul after insertElement (see comment above insertElement's own definition)
 
     useEditorStore.getState().insertElement(listId, createListItemNode());
@@ -1216,7 +1216,7 @@ describe("useEditorStore — Lists (Checkpoint 1.6)", () => {
 
   it("setElementText on a list item's label pushes exactly one history entry and is undoable/redoable, same tag-agnostic command as every other primitive", () => {
     useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
-    const listId = useEditorStore.getState().selectedElementId!;
+    const listId = useEditorStore.getState().selection.primaryId!;
     const findList = () =>
       useEditorStore
         .getState()
@@ -1239,7 +1239,7 @@ describe("useEditorStore — Lists (Checkpoint 1.6)", () => {
 
   it("duplicating an entire list clones every item recursively with fresh ids (reuses cloneNodeWithFreshIds — no list-specific clone logic)", () => {
     useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
-    const listId = useEditorStore.getState().selectedElementId!;
+    const listId = useEditorStore.getState().selection.primaryId!;
 
     useEditorStore.getState().duplicateSelection();
 
@@ -1257,7 +1257,7 @@ describe("useEditorStore — Lists (Checkpoint 1.6)", () => {
 
   it("reordering list items via moveElement changes document order (drives native OL numbering/UL bullet order)", () => {
     useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
-    const listId = useEditorStore.getState().selectedElementId!;
+    const listId = useEditorStore.getState().selection.primaryId!;
     const findList = () =>
       useEditorStore
         .getState()
@@ -1278,9 +1278,9 @@ describe("useEditorStore — semantic sectioning family (Checkpoint 1.8)", () =>
 
   it("duplicates a Footer subtree (Footer > Container > Heading) recursively with fresh ids, and the duplicate is undoable/redoable", () => {
     useEditorStore.getState().insertElement("section-1", createFooterNode());
-    const footerId = useEditorStore.getState().selectedElementId!;
+    const footerId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement(footerId, createContainerNode());
-    const containerId = useEditorStore.getState().selectedElementId!;
+    const containerId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement(containerId, createHeadingNode());
 
     useEditorStore.getState().selectElement(footerId);
@@ -1315,9 +1315,9 @@ describe("useEditorStore — Form + Text Input foundation (Checkpoint 1.10)", ()
 
   it("setElementValue/setElementName/setElementPlaceholder each push exactly one history entry per completed edit, and undo restores the previous value", () => {
     useEditorStore.getState().insertElement("section-1", createFormNode());
-    const formId = useEditorStore.getState().selectedElementId!;
+    const formId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement(formId, createInputNode());
-    const inputId = useEditorStore.getState().selectedElementId!;
+    const inputId = useEditorStore.getState().selection.primaryId!;
 
     const findInput = () => useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === formId)?.children?.find((c) => c.id === inputId);
 
@@ -1343,7 +1343,7 @@ describe("useEditorStore — Form + Text Input foundation (Checkpoint 1.10)", ()
 
   it("setElementValue/setElementName/setElementPlaceholder push no history entry when the value is unchanged (strongest no-op guard, same shape as setElementTag)", () => {
     useEditorStore.getState().insertElement("section-1", createInputNode());
-    const inputId = useEditorStore.getState().selectedElementId!;
+    const inputId = useEditorStore.getState().selection.primaryId!;
     const beforeDocument = useEditorStore.getState().document;
 
     useEditorStore.getState().setElementPlaceholder(inputId, "Enter text");
@@ -1358,7 +1358,7 @@ describe("useEditorStore — Form + Text Input foundation (Checkpoint 1.10)", ()
     for (const factory of [createFormNode, createContainerNode]) {
       useEditorStore.setState(initialState, true);
       useEditorStore.getState().insertElement("section-1", factory());
-      const parentId = useEditorStore.getState().selectedElementId!;
+      const parentId = useEditorStore.getState().selection.primaryId!;
       useEditorStore.getState().insertElement(parentId, createInputNode());
 
       const parent = useEditorStore
@@ -1371,9 +1371,9 @@ describe("useEditorStore — Form + Text Input foundation (Checkpoint 1.10)", ()
 
   it("duplicates a Form subtree (Form > Input) recursively with fresh ids, preserving inputType/name/placeholder/value, and the duplicate can be edited independently", () => {
     useEditorStore.getState().insertElement("section-1", createFormNode());
-    const formId = useEditorStore.getState().selectedElementId!;
+    const formId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement(formId, createInputNode());
-    const inputId = useEditorStore.getState().selectedElementId!;
+    const inputId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().setElementName(inputId, "email");
     useEditorStore.getState().setElementValue(inputId, "test@example.com");
 
@@ -1412,7 +1412,7 @@ describe("useEditorStore — Label + expanded text-like Input types (Checkpoint 
 
   it("setElementInputType pushes exactly one history entry per change, no entry on no-op, and undo restores the previous type", () => {
     useEditorStore.getState().insertElement("section-1", createInputNode());
-    const inputId = useEditorStore.getState().selectedElementId!;
+    const inputId = useEditorStore.getState().selection.primaryId!;
     const findInput = () => useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === inputId);
     const pastLengthAfterInsert = useEditorStore.getState().past.length;
 
@@ -1429,9 +1429,9 @@ describe("useEditorStore — Label + expanded text-like Input types (Checkpoint 
 
   it("Label can be inserted into Form and into an ordinary Container, and can itself contain an Input — Form > Label > Input", () => {
     useEditorStore.getState().insertElement("section-1", createFormNode());
-    const formId = useEditorStore.getState().selectedElementId!;
+    const formId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement(formId, createLabelNode());
-    const labelId = useEditorStore.getState().selectedElementId!;
+    const labelId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement(labelId, createEmailInputNode());
 
     const form = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === formId);
@@ -1445,7 +1445,7 @@ describe("useEditorStore — Label + expanded text-like Input types (Checkpoint 
 
   it("Label rejects insertion into a List — Checkpoint 1.6's UL/OL li-only rule remains intact", () => {
     useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
-    const listId = useEditorStore.getState().selectedElementId!;
+    const listId = useEditorStore.getState().selection.primaryId!;
     const beforeDocument = useEditorStore.getState().document;
 
     useEditorStore.getState().insertElement(listId, createLabelNode());
@@ -1455,11 +1455,11 @@ describe("useEditorStore — Label + expanded text-like Input types (Checkpoint 
 
   it("duplicates a Form > Label > Email Input subtree recursively with fresh ids, preserving inputType and independent post-duplicate editing", () => {
     useEditorStore.getState().insertElement("section-1", createFormNode());
-    const formId = useEditorStore.getState().selectedElementId!;
+    const formId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement(formId, createLabelNode());
-    const labelId = useEditorStore.getState().selectedElementId!;
+    const labelId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement(labelId, createEmailInputNode());
-    const inputId = useEditorStore.getState().selectedElementId!;
+    const inputId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().setElementName(inputId, "email");
 
     useEditorStore.getState().selectElement(labelId);
@@ -1496,7 +1496,7 @@ describe("useEditorStore — Checkbox/Radio + Textarea foundation (Checkpoint 1.
 
   it("setElementChecked pushes exactly one history entry per change, no entry on no-op, and undo restores the previous checked state", () => {
     useEditorStore.getState().insertElement("section-1", createCheckboxNode());
-    const checkboxId = useEditorStore.getState().selectedElementId!;
+    const checkboxId = useEditorStore.getState().selection.primaryId!;
     const findCheckbox = () => useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === checkboxId);
     const pastLengthAfterInsert = useEditorStore.getState().past.length;
 
@@ -1513,15 +1513,15 @@ describe("useEditorStore — Checkbox/Radio + Textarea foundation (Checkpoint 1.
 
   it("Label can wrap a Checkbox, a Radio, and a Textarea — Label > Checkbox / Label > Radio / Form > Textarea", () => {
     useEditorStore.getState().insertElement("section-1", createFormNode());
-    const formId = useEditorStore.getState().selectedElementId!;
+    const formId = useEditorStore.getState().selection.primaryId!;
 
     useEditorStore.getState().insertElement(formId, createLabelNode());
-    const checkboxLabelId = useEditorStore.getState().selectedElementId!;
+    const checkboxLabelId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement(checkboxLabelId, createCheckboxNode());
 
     useEditorStore.getState().selectElement(formId);
     useEditorStore.getState().insertElement(formId, createLabelNode());
-    const radioLabelId = useEditorStore.getState().selectedElementId!;
+    const radioLabelId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement(radioLabelId, createRadioNode());
 
     useEditorStore.getState().selectElement(formId);
@@ -1539,7 +1539,7 @@ describe("useEditorStore — Checkbox/Radio + Textarea foundation (Checkpoint 1.
 
   it("Checkbox and Textarea both reject insertion into a List — Checkpoint 1.6's UL/OL li-only rule remains intact", () => {
     useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
-    const listId = useEditorStore.getState().selectedElementId!;
+    const listId = useEditorStore.getState().selection.primaryId!;
     const beforeDocument = useEditorStore.getState().document;
 
     useEditorStore.getState().insertElement(listId, createCheckboxNode());
@@ -1551,7 +1551,7 @@ describe("useEditorStore — Checkbox/Radio + Textarea foundation (Checkpoint 1.
 
   it("switching Input Type across families (text -> checkbox -> radio -> email) preserves name/value and never destroys stored data", () => {
     useEditorStore.getState().insertElement("section-1", createInputNode());
-    const inputId = useEditorStore.getState().selectedElementId!;
+    const inputId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().setElementName(inputId, "newsletter");
     useEditorStore.getState().setElementValue(inputId, "yes");
     useEditorStore.getState().setElementPlaceholder(inputId, "Email");
@@ -1578,11 +1578,11 @@ describe("useEditorStore — Checkbox/Radio + Textarea foundation (Checkpoint 1.
 
   it("duplicates a Form > Label > Checkbox / Label > Radio / Textarea structure recursively with fresh ids, preserving checked/inputType, and independent post-duplicate editing", () => {
     useEditorStore.getState().insertElement("section-1", createFormNode());
-    const formId = useEditorStore.getState().selectedElementId!;
+    const formId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement(formId, createLabelNode());
-    const labelId = useEditorStore.getState().selectedElementId!;
+    const labelId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement(labelId, createCheckboxNode());
-    const checkboxId = useEditorStore.getState().selectedElementId!;
+    const checkboxId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().setElementChecked(checkboxId, true);
     useEditorStore.getState().setElementName(checkboxId, "terms");
 
@@ -1624,7 +1624,7 @@ describe("useEditorStore — Select + Option foundation (Checkpoint 1.13)", () =
 
   it("setOptionCount pushes exactly one history entry per change, no entry on no-op, grows/shrinks the real child array, and undo restores the previous Options", () => {
     useEditorStore.getState().insertElement("section-1", createSelectNode());
-    const selectId = useEditorStore.getState().selectedElementId!;
+    const selectId = useEditorStore.getState().selection.primaryId!;
     const pastLengthAfterInsert = useEditorStore.getState().past.length;
 
     useEditorStore.getState().setOptionCount(selectId, 5);
@@ -1644,9 +1644,9 @@ describe("useEditorStore — Select + Option foundation (Checkpoint 1.13)", () =
 
   it("Label can wrap a Select without native activation opening it — Label > Select", () => {
     useEditorStore.getState().insertElement("section-1", createFormNode());
-    const formId = useEditorStore.getState().selectedElementId!;
+    const formId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement(formId, createLabelNode());
-    const labelId = useEditorStore.getState().selectedElementId!;
+    const labelId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement(labelId, createSelectNode());
 
     const form = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === formId);
@@ -1656,7 +1656,7 @@ describe("useEditorStore — Select + Option foundation (Checkpoint 1.13)", () =
 
   it("Select rejects insertion into a List — Checkpoint 1.6's UL/OL li-only rule remains intact", () => {
     useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
-    const listId = useEditorStore.getState().selectedElementId!;
+    const listId = useEditorStore.getState().selection.primaryId!;
     const beforeDocument = useEditorStore.getState().document;
 
     useEditorStore.getState().insertElement(listId, createSelectNode());
@@ -1665,7 +1665,7 @@ describe("useEditorStore — Select + Option foundation (Checkpoint 1.13)", () =
 
   it("duplicates a Select with a custom selected Option recursively with fresh ids, preserving text/value/selected, and independent post-duplicate editing", () => {
     useEditorStore.getState().insertElement("section-1", createSelectNode());
-    const selectId = useEditorStore.getState().selectedElementId!;
+    const selectId = useEditorStore.getState().selection.primaryId!;
     const originalOptionIds = findSelect(selectId)!.children!.map((c) => c.id);
     useEditorStore.getState().setSelectSelectedOption(selectId, originalOptionIds[1]);
 
@@ -1699,7 +1699,7 @@ describe("useEditorStore — Select + Option foundation (Checkpoint 1.13)", () =
 
   it("Form > Select > Option coexists correctly — Select is insertable into Form like any other control", () => {
     useEditorStore.getState().insertElement("section-1", createFormNode());
-    const formId = useEditorStore.getState().selectedElementId!;
+    const formId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement(formId, createSelectNode());
 
     const form = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.find((c) => c.id === formId);
@@ -1721,7 +1721,7 @@ describe("useEditorStore — Table foundation (Checkpoint 1.14)", () => {
   it("insertElement('table') produces the full starter structure in one history entry", () => {
     const pastLengthBefore = useEditorStore.getState().past.length;
     useEditorStore.getState().insertElement("section-1", createTableNode());
-    const tableId = useEditorStore.getState().selectedElementId!;
+    const tableId = useEditorStore.getState().selection.primaryId!;
 
     expect(findUnderSection(tableId)?.children).toHaveLength(2);
     expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore + 1);
@@ -1729,7 +1729,7 @@ describe("useEditorStore — Table foundation (Checkpoint 1.14)", () => {
 
   it("setTableColumnCount pushes exactly one history entry per change, no entry on no-op, and undo restores the previous columns", () => {
     useEditorStore.getState().insertElement("section-1", createTableNode());
-    const tableId = useEditorStore.getState().selectedElementId!;
+    const tableId = useEditorStore.getState().selection.primaryId!;
     const pastLengthAfterInsert = useEditorStore.getState().past.length;
 
     useEditorStore.getState().setTableColumnCount(tableId, 5);
@@ -1745,7 +1745,7 @@ describe("useEditorStore — Table foundation (Checkpoint 1.14)", () => {
 
   it("setTableBodyRowCount pushes history, no-op guarded, and undo restores the previous rows", () => {
     useEditorStore.getState().insertElement("section-1", createTableNode());
-    const tableId = useEditorStore.getState().selectedElementId!;
+    const tableId = useEditorStore.getState().selection.primaryId!;
     const pastLengthAfterInsert = useEditorStore.getState().past.length;
 
     useEditorStore.getState().setTableBodyRowCount(tableId, 4);
@@ -1761,7 +1761,7 @@ describe("useEditorStore — Table foundation (Checkpoint 1.14)", () => {
 
   it("setTableHeaderEnabled toggles the thead subtree and is history/no-op guarded", () => {
     useEditorStore.getState().insertElement("section-1", createTableNode());
-    const tableId = useEditorStore.getState().selectedElementId!;
+    const tableId = useEditorStore.getState().selection.primaryId!;
     const pastLengthAfterInsert = useEditorStore.getState().past.length;
 
     useEditorStore.getState().setTableHeaderEnabled(tableId, false);
@@ -1777,7 +1777,7 @@ describe("useEditorStore — Table foundation (Checkpoint 1.14)", () => {
 
   it("setTableFooterEnabled toggles the tfoot subtree and is history/no-op guarded", () => {
     useEditorStore.getState().insertElement("section-1", createTableNode());
-    const tableId = useEditorStore.getState().selectedElementId!;
+    const tableId = useEditorStore.getState().selection.primaryId!;
     const pastLengthAfterInsert = useEditorStore.getState().past.length;
 
     useEditorStore.getState().setTableFooterEnabled(tableId, true);
@@ -1793,7 +1793,7 @@ describe("useEditorStore — Table foundation (Checkpoint 1.14)", () => {
 
   it("Table rejects insertion into a List — Checkpoint 1.6's UL/OL li-only rule remains intact", () => {
     useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
-    const listId = useEditorStore.getState().selectedElementId!;
+    const listId = useEditorStore.getState().selection.primaryId!;
     const beforeDocument = useEditorStore.getState().document;
 
     useEditorStore.getState().insertElement(listId, createTableNode());
@@ -1802,7 +1802,7 @@ describe("useEditorStore — Table foundation (Checkpoint 1.14)", () => {
 
   it("Table rejects insertion into a Select — Checkpoint 1.13's select -> option allowlist remains intact", () => {
     useEditorStore.getState().insertElement("section-1", createSelectNode());
-    const selectId = useEditorStore.getState().selectedElementId!;
+    const selectId = useEditorStore.getState().selection.primaryId!;
     const beforeDocument = useEditorStore.getState().document;
 
     useEditorStore.getState().insertElement(selectId, createTableNode());
@@ -1811,7 +1811,7 @@ describe("useEditorStore — Table foundation (Checkpoint 1.14)", () => {
 
   it("moving a Data Cell from one Row to another is a valid move", () => {
     useEditorStore.getState().insertElement("section-1", createTableNode());
-    const tableId = useEditorStore.getState().selectedElementId!;
+    const tableId = useEditorStore.getState().selection.primaryId!;
     const tbody = findUnderSection(tableId)!.children!.find((c) => c.tag === "tbody")!;
     const [firstRow, secondRow] = tbody.children!;
     const cellToMove = firstRow.children![0];
@@ -1826,7 +1826,7 @@ describe("useEditorStore — Table foundation (Checkpoint 1.14)", () => {
 
   it("moving a Row from Tbody to Thead is a valid move — both accept only Tr", () => {
     useEditorStore.getState().insertElement("section-1", createTableNode());
-    const tableId = useEditorStore.getState().selectedElementId!;
+    const tableId = useEditorStore.getState().selection.primaryId!;
     const table = findUnderSection(tableId)!;
     const thead = table.children!.find((c) => c.tag === "thead")!;
     const tbody = table.children!.find((c) => c.tag === "tbody")!;
@@ -1840,9 +1840,9 @@ describe("useEditorStore — Table foundation (Checkpoint 1.14)", () => {
 
   it("rejects moving a Data Cell directly into a Container — constrained-nesting is enforced through the centralized rule, not a Table-specific branch", () => {
     useEditorStore.getState().insertElement("section-1", createTableNode());
-    const tableId = useEditorStore.getState().selectedElementId!;
+    const tableId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement("section-1", createContainerNode());
-    const containerId = useEditorStore.getState().selectedElementId!;
+    const containerId = useEditorStore.getState().selection.primaryId!;
     const beforeDocument = useEditorStore.getState().document;
 
     const tbody = findUnderSection(tableId)!.children!.find((c) => c.tag === "tbody")!;
@@ -1854,9 +1854,9 @@ describe("useEditorStore — Table foundation (Checkpoint 1.14)", () => {
 
   it("rejects moving an Option into a Table — every prior constrained-parent rule stays intact", () => {
     useEditorStore.getState().insertElement("section-1", createTableNode());
-    const tableId = useEditorStore.getState().selectedElementId!;
+    const tableId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement("section-1", createSelectNode());
-    const selectId = useEditorStore.getState().selectedElementId!;
+    const selectId = useEditorStore.getState().selection.primaryId!;
     const optionId = findUnderSection(selectId)!.children![0].id;
     const beforeDocument = useEditorStore.getState().document;
 
@@ -1866,7 +1866,7 @@ describe("useEditorStore — Table foundation (Checkpoint 1.14)", () => {
 
   it("duplicates a whole Table subtree recursively with fresh ids, preserving cell text, and independent post-duplicate editing", () => {
     useEditorStore.getState().insertElement("section-1", createTableNode());
-    const tableId = useEditorStore.getState().selectedElementId!;
+    const tableId = useEditorStore.getState().selection.primaryId!;
     const original = findUnderSection(tableId)!;
     const originalIds = collectIds(original);
 
@@ -1895,7 +1895,7 @@ describe("useEditorStore — Table foundation (Checkpoint 1.14)", () => {
 
   it("Form > Table coexists correctly — Table is insertable into Form like any other control", () => {
     useEditorStore.getState().insertElement("section-1", createFormNode());
-    const formId = useEditorStore.getState().selectedElementId!;
+    const formId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement(formId, createTableNode());
 
     const form = findUnderSection(formId);
@@ -1915,7 +1915,7 @@ describe("useEditorStore — Video + Iframe foundation (Checkpoint 1.15)", () =>
 
   it("setElementSrc/setElementPoster/setElementControls/setElementAutoplay/setElementMuted/setElementLoop each push exactly one history entry, no entry on no-op, and undo restores the previous value", () => {
     useEditorStore.getState().insertElement("section-1", createVideoNode());
-    const videoId = useEditorStore.getState().selectedElementId!;
+    const videoId = useEditorStore.getState().selection.primaryId!;
 
     const cases: [string, () => void, () => unknown][] = [
       ["setElementSrc", () => useEditorStore.getState().setElementSrc(videoId, "https://example.com/video.mp4"), () => findUnderSection(videoId)?.src],
@@ -1945,7 +1945,7 @@ describe("useEditorStore — Video + Iframe foundation (Checkpoint 1.15)", () =>
 
   it("setElementTitle pushes one history entry per change, no entry on no-op, and undo restores the previous title", () => {
     useEditorStore.getState().insertElement("section-1", createIframeNode());
-    const iframeId = useEditorStore.getState().selectedElementId!;
+    const iframeId = useEditorStore.getState().selection.primaryId!;
     const pastLengthAfterInsert = useEditorStore.getState().past.length;
 
     useEditorStore.getState().setElementTitle(iframeId, "Product tour");
@@ -1961,7 +1961,7 @@ describe("useEditorStore — Video + Iframe foundation (Checkpoint 1.15)", () =>
 
   it("setElementSrc is reused unchanged for Iframe — the same generic command Video uses", () => {
     useEditorStore.getState().insertElement("section-1", createIframeNode());
-    const iframeId = useEditorStore.getState().selectedElementId!;
+    const iframeId = useEditorStore.getState().selection.primaryId!;
 
     useEditorStore.getState().setElementSrc(iframeId, "https://example.com/embed");
     expect(findUnderSection(iframeId)?.src).toBe("https://example.com/embed");
@@ -1969,7 +1969,7 @@ describe("useEditorStore — Video + Iframe foundation (Checkpoint 1.15)", () =>
 
   it("Video/Iframe reject insertion into a List — Checkpoint 1.6's UL/OL li-only rule remains intact", () => {
     useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
-    const listId = useEditorStore.getState().selectedElementId!;
+    const listId = useEditorStore.getState().selection.primaryId!;
     const beforeDocument = useEditorStore.getState().document;
 
     useEditorStore.getState().insertElement(listId, createVideoNode());
@@ -1981,7 +1981,7 @@ describe("useEditorStore — Video + Iframe foundation (Checkpoint 1.15)", () =>
 
   it("duplicates a customized Video with fresh id, preserving every semantic field and CSS state, with independent post-duplicate editing", () => {
     useEditorStore.getState().insertElement("section-1", createVideoNode());
-    const videoId = useEditorStore.getState().selectedElementId!;
+    const videoId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().setElementSrc(videoId, "https://example.com/video.mp4");
     useEditorStore.getState().setElementPoster(videoId, "https://example.com/poster.jpg");
     useEditorStore.getState().setElementControls(videoId, false);
@@ -2014,7 +2014,7 @@ describe("useEditorStore — Video + Iframe foundation (Checkpoint 1.15)", () =>
 
   it("duplicates a customized Iframe with fresh id, preserving src/title and CSS state, with independent post-duplicate editing", () => {
     useEditorStore.getState().insertElement("section-1", createIframeNode());
-    const iframeId = useEditorStore.getState().selectedElementId!;
+    const iframeId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().setElementSrc(iframeId, "https://example.com/embed");
     useEditorStore.getState().setElementTitle(iframeId, "Product tour");
 
@@ -2036,7 +2036,7 @@ describe("useEditorStore — Video + Iframe foundation (Checkpoint 1.15)", () =>
 
   it("Form > Video and Form > Iframe coexist correctly — both insertable into Form like any other control", () => {
     useEditorStore.getState().insertElement("section-1", createFormNode());
-    const formId = useEditorStore.getState().selectedElementId!;
+    const formId = useEditorStore.getState().selection.primaryId!;
     useEditorStore.getState().insertElement(formId, createVideoNode());
     useEditorStore.getState().insertElement(formId, createIframeNode());
 

@@ -60,4 +60,53 @@ describe("SelectionOverlay", () => {
 
     expect(document.querySelectorAll("[data-resize-handle]")).toHaveLength(8);
   });
+
+  it("Checkpoint 1.15.2: hides resize handles when showHandles is false (multi-selection)", () => {
+    render(
+      <div ref={{ current: document.createElement("div") }}>
+        <div data-node-id="section-1" />
+      </div>,
+    );
+    const ref = { current: document.createElement("div") };
+    render(
+      <div ref={ref}>
+        <div data-node-id="section-1" />
+        <SelectionOverlay canvasRootRef={ref} node={{ id: "section-1", tag: "section" }} showHandles={false} />
+      </div>,
+    );
+    expect(document.querySelector('[data-resize-handle="e"]')).not.toBeInTheDocument();
+  });
+
+  it("Checkpoint 1.15.2: still shows resize handles by default (showHandles defaults true — single-selection unaffected)", () => {
+    const ref = { current: document.createElement("div") };
+    render(
+      <div ref={ref}>
+        <div data-node-id="section-1" />
+        <SelectionOverlay canvasRootRef={ref} node={{ id: "section-1", tag: "section" }} />
+      </div>,
+    );
+    expect(document.querySelector('[data-resize-handle="e"]')).toBeInTheDocument();
+  });
+
+  it("Checkpoint 1.15.2: omits the floating label for a non-primary selected node", () => {
+    const ref = { current: document.createElement("div") };
+    const { container } = render(
+      <div ref={ref}>
+        <div data-node-id="section-1" />
+        <SelectionOverlay canvasRootRef={ref} node={{ id: "section-1", tag: "section" }} isPrimary={false} showHandles={false} />
+      </div>,
+    );
+    expect(container.querySelector('[data-canvas-overlay="selection"] span')).not.toBeInTheDocument();
+  });
+
+  it("Checkpoint 1.15.2: shows the label by default (isPrimary defaults true — single-selection unaffected)", () => {
+    const ref = { current: document.createElement("div") };
+    const { container } = render(
+      <div ref={ref}>
+        <div data-node-id="section-1" />
+        <SelectionOverlay canvasRootRef={ref} node={{ id: "section-1", tag: "section" }} />
+      </div>,
+    );
+    expect(container.querySelector('[data-canvas-overlay="selection"] span')).toBeInTheDocument();
+  });
 });

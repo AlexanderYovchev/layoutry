@@ -4,11 +4,12 @@ import { useState } from "react";
 import { InspectorElementSummary } from "@/features/inspector/components/InspectorElementSummary";
 import { InspectorFieldRow } from "@/features/inspector/components/InspectorFieldRow";
 import { InspectorHeader } from "@/features/inspector/components/InspectorHeader";
+import { InspectorMultiNodeSummary } from "@/features/inspector/components/InspectorMultiNodeSummary";
 import { InspectorNodeSummary } from "@/features/inspector/components/InspectorNodeSummary";
 import { InspectorPlaceholder } from "@/features/inspector/components/InspectorPlaceholder";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { InspectorSegmentedRow } from "@/features/inspector/components/InspectorSegmentedRow";
-import { useSelectedNode } from "@/features/editor/hooks/useSelectedNode";
+import { useSelectedNodes } from "@/features/editor/hooks/useSelectedNode";
 import type { MockSelectedElement } from "@/features/inspector/types/inspector";
 
 interface InspectorContentProps {
@@ -26,7 +27,9 @@ interface InspectorContentProps {
 export function InspectorContent({
   selectedElement = null,
 }: InspectorContentProps) {
-  const selected = useSelectedNode();
+  const { nodes: selectedNodes, primary } = useSelectedNodes();
+  const isMultiSelection = selectedNodes.length > 1;
+  const selected = isMultiSelection ? null : primary;
   const [openSectionIds, setOpenSectionIds] = useState<Set<string>>(
     () =>
       new Set(
@@ -48,15 +51,20 @@ export function InspectorContent({
     });
   }
 
-  const hasSelection = selected !== null || selectedElement !== null;
+  const hasSelection = selected !== null || selectedElement !== null || isMultiSelection;
+  const statusLabel = isMultiSelection
+    ? `${selectedNodes.length} elements selected`
+    : hasSelection
+      ? "1 element selected"
+      : "No selection";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <InspectorHeader
-        statusLabel={hasSelection ? "1 element selected" : "No selection"}
-      />
+      <InspectorHeader statusLabel={statusLabel} />
 
-      {selected ? (
+      {isMultiSelection ? (
+        <InspectorMultiNodeSummary nodes={selectedNodes.map((entry) => entry.node)} />
+      ) : selected ? (
         <InspectorNodeSummary
           node={selected.node}
           parentId={selected.parentId}

@@ -154,7 +154,7 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
       const store = useEditorStore.getState();
       const snapshot = store.transactionSnapshot;
       if (snapshot) {
-        useEditorStore.setState({ document: snapshot.document, selectedElementId: snapshot.selectedElementId });
+        useEditorStore.setState({ document: snapshot.document, selection: snapshot.selection });
       }
       store.cancelResizeTransaction();
 

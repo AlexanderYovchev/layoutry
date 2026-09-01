@@ -441,3 +441,29 @@ export function canResizeElement(tag: string): boolean {
   const capabilities = getElementCapabilities(tag);
   return capabilities.resizableX || capabilities.resizableY;
 }
+
+/**
+ * The capability set a MIXED selection can safely offer (Checkpoint
+ * 1.15.2, Part G of its own report) — every boolean capability is true
+ * only when EVERY selected tag's own capability is true (a logical AND
+ * across the selection), so e.g. selecting a Paragraph and an Image never
+ * shows Typography (Image alone already answers that false). This is the
+ * single centralized place that intersection happens; no Inspector
+ * section computes its own "are all selected tags text-bearing"-style
+ * check — every one of them reads this same function's result instead
+ * (see InspectorMultiNodeSummary). Throws on an empty `tags` array (there
+ * is no meaningful "capabilities of zero elements") — callers only ever
+ * invoke this once a real multi-selection exists.
+ */
+export function intersectElementCapabilities(tags: readonly string[]): ElementCapabilities {
+  if (tags.length === 0) {
+    throw new Error("intersectElementCapabilities requires at least one tag");
+  }
+
+  const perTag = tags.map((tag) => getElementCapabilities(tag));
+  const result = { ...perTag[0] };
+  for (const key of Object.keys(result) as (keyof ElementCapabilities)[]) {
+    result[key] = perTag.every((capabilities) => capabilities[key] === true);
+  }
+  return result;
+}

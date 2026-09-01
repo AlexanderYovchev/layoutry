@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+﻿import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { selectionFromSingle } from "@/features/editor/types/selection";
 import { StructureTree } from "@/features/editor/components/structure/StructureTree";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { CanvasInteractionBoundary } from "./CanvasInteractionBoundary";
@@ -41,7 +42,7 @@ describe("CanvasInteractionBoundary", () => {
 
     fireEvent.click(screen.getByRole("heading", { name: "Title" }));
 
-    expect(useEditorStore.getState().selectedElementId).toBe("heading-1");
+    expect(useEditorStore.getState().selection.primaryId).toBe("heading-1");
   });
 
   it("selects the deepest node under the pointer, not an ancestor container", () => {
@@ -49,35 +50,35 @@ describe("CanvasInteractionBoundary", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Click me" }));
 
-    expect(useEditorStore.getState().selectedElementId).toBe("button-1");
+    expect(useEditorStore.getState().selection.primaryId).toBe("button-1");
   });
 
   it("clears selection when clicking blank canvas space", () => {
-    useEditorStore.setState({ selectedElementId: "heading-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("heading-1") });
     const { container } = renderInWorkspace();
 
     fireEvent.click(container.querySelector('main[aria-label="Workspace"]')!);
 
-    expect(useEditorStore.getState().selectedElementId).toBeNull();
+    expect(useEditorStore.getState().selection.primaryId).toBeUndefined();
   });
 
   it("clears rather than selects when the pseudo document root itself is clicked", () => {
-    useEditorStore.setState({ selectedElementId: "heading-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("heading-1") });
     renderInWorkspace();
 
     const rootElement = document.querySelector('[data-node-id="page-root"]')!;
     fireEvent.click(rootElement);
 
-    expect(useEditorStore.getState().selectedElementId).toBeNull();
+    expect(useEditorStore.getState().selection.primaryId).toBeUndefined();
   });
 
   it("clears selection on Escape", () => {
-    useEditorStore.setState({ selectedElementId: "heading-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("heading-1") });
     renderInWorkspace();
 
     fireEvent.keyDown(window, { key: "Escape" });
 
-    expect(useEditorStore.getState().selectedElementId).toBeNull();
+    expect(useEditorStore.getState().selection.primaryId).toBeUndefined();
   });
 
   it("does not clear selection on Escape when another handler already consumed it", () => {
@@ -86,16 +87,16 @@ describe("CanvasInteractionBoundary", () => {
       (event) => event.preventDefault(),
       { once: true },
     );
-    useEditorStore.setState({ selectedElementId: "heading-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("heading-1") });
     renderInWorkspace();
 
     fireEvent.keyDown(window, { key: "Escape" });
 
-    expect(useEditorStore.getState().selectedElementId).toBe("heading-1");
+    expect(useEditorStore.getState().selection.primaryId).toBe("heading-1");
   });
 
   it("ignores clicks outside the Workspace region", () => {
-    useEditorStore.setState({ selectedElementId: "heading-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("heading-1") });
     render(
       <div>
         <main aria-label="Workspace">
@@ -107,11 +108,11 @@ describe("CanvasInteractionBoundary", () => {
 
     fireEvent.click(screen.getByTestId("outside-chrome"));
 
-    expect(useEditorStore.getState().selectedElementId).toBe("heading-1");
+    expect(useEditorStore.getState().selection.primaryId).toBe("heading-1");
   });
 
   it("shows a selection overlay with the node's display name when a node is selected", () => {
-    useEditorStore.setState({ selectedElementId: "heading-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("heading-1") });
     const { container } = renderInWorkspace();
 
     const overlay = container.querySelector('[data-canvas-overlay="selection"]');
@@ -139,7 +140,7 @@ describe("CanvasInteractionBoundary", () => {
   });
 
   it("does not show a hover overlay for the already-selected node", () => {
-    useEditorStore.setState({ selectedElementId: "heading-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("heading-1") });
     const { container } = renderInWorkspace();
 
     fireEvent.pointerOver(screen.getByRole("heading", { name: "Title" }), {

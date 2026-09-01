@@ -23,6 +23,7 @@ import { InspectorSelectOptionsSection } from "@/features/inspector/components/I
 import { InspectorSizeSection } from "@/features/inspector/components/InspectorSizeSection";
 import { InspectorSpacingSection } from "@/features/inspector/components/InspectorSpacingSection";
 import { InspectorTableSection } from "@/features/inspector/components/InspectorTableSection";
+import { InspectorTableSelectionSection } from "@/features/inspector/components/InspectorTableSelectionSection";
 import { InspectorTypographySection } from "@/features/inspector/components/InspectorTypographySection";
 import { InspectorVideoSection } from "@/features/inspector/components/InspectorVideoSection";
 import { getElementCapabilities } from "@/features/editor/rules/elementCapabilities";
@@ -96,6 +97,7 @@ export function InspectorNodeSummary({
       {getElementCapabilities(node.tag).supportsHeadingLevel && <InspectorHeadingLevelSection node={node} />}
       {(node.tag === "ul" || node.tag === "ol") && <InspectorListSection node={node} />}
       {node.tag === "table" && <InspectorTableSection node={node} />}
+      {(node.tag === "table" || node.tag === "tr") && <InspectorTableSelectionSection node={node} />}
       {node.tag === "option" && <InspectorOptionSection node={node} parentId={parentId} />}
       {getElementCapabilities(node.tag).supportsFormControl && <InspectorFormControlSection node={node} />}
       {node.tag === "select" && <InspectorSelectOptionsSection node={node} />}

@@ -126,6 +126,7 @@ function FormControlTextField({ id, label, value, onCommit, onReset, hasExplicit
       suppressNextBlurCommitRef.current = true;
       event.currentTarget.blur();
     } else if (event.key === "Escape") {
+      event.preventDefault();
       setDraft(value);
       setTouched(false);
       suppressNextBlurCommitRef.current = true;

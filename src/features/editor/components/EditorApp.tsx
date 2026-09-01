@@ -46,7 +46,7 @@ interface ActiveDragPreview {
  */
 export function EditorApp() {
   const documentModel = useEditorStore((state) => state.document);
-  const selectedElementId = useEditorStore((state) => state.selectedElementId);
+  const selection = useEditorStore((state) => state.selection);
   const clipboard = useEditorStore((state) => state.clipboard);
   const hasPast = useEditorStore((state) => state.past.length > 0);
   const hasFuture = useEditorStore((state) => state.future.length > 0);
@@ -60,14 +60,21 @@ export function EditorApp() {
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
   );
 
-  const hasEligibleSelection = selectedElementId !== null && selectedElementId !== documentModel.id;
+  // Cut/Copy/Duplicate stay single-target (primary-only) operations this
+  // checkpoint (Checkpoint 1.15.2 explicitly deferred multi-node clipboard/
+  // duplicate — see this checkpoint's report, section M); Delete already
+  // supports the full selection, so its own menu/shortcut availability is
+  // keyed off the whole selection instead.
+  const primarySelectedId = selection.primaryId ?? null;
+  const hasEligiblePrimarySelection = primarySelectedId !== null && primarySelectedId !== documentModel.id;
+  const hasEligibleSelection = selection.ids.length > 0;
 
   const editMenuCommands: EditMenuCommands = {
     canUndo: hasPast,
     canRedo: hasFuture,
-    canCut: hasEligibleSelection,
-    canCopy: hasEligibleSelection,
-    canDuplicate: hasEligibleSelection,
+    canCut: hasEligiblePrimarySelection,
+    canCopy: hasEligiblePrimarySelection,
+    canDuplicate: hasEligiblePrimarySelection,
     canDelete: hasEligibleSelection,
     canPaste: clipboard !== null,
     onUndo: () => useEditorStore.getState().undo(),

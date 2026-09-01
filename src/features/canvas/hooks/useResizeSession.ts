@@ -259,7 +259,7 @@ export function useResizeSession(
       if (snapshot) {
         useEditorStore.setState({
           document: snapshot.document,
-          selectedElementId: snapshot.selectedElementId,
+          selection: snapshot.selection,
         });
       }
       store.cancelResizeTransaction();

@@ -85,6 +85,7 @@ export function InspectorNumberFieldRow({ label, value, onCommit }: InspectorNum
       suppressNextBlurCommitRef.current = true;
       event.currentTarget.blur();
     } else if (event.key === "Escape") {
+      event.preventDefault();
       setDraft(String(Math.round(value)));
       setTouched(false);
       suppressNextBlurCommitRef.current = true;

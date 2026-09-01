@@ -3,6 +3,7 @@ import {
   canResizeElement,
   getEffectiveAspectRatioLocked,
   getElementCapabilities,
+  intersectElementCapabilities,
   isSelectableElement,
 } from "./elementCapabilities";
 
@@ -481,5 +482,37 @@ describe("elementCapabilities", () => {
     it("an explicit false override wins over the tag's own true default", () => {
       expect(getEffectiveAspectRatioLocked({ tag: "img", aspectRatioLocked: false })).toBe(false);
     });
+  });
+});
+
+describe("intersectElementCapabilities (Checkpoint 1.15.2 — multi-selection capability gating)", () => {
+  it("returns the same capabilities for a single tag as getElementCapabilities itself", () => {
+    expect(intersectElementCapabilities(["p"])).toEqual(getElementCapabilities("p"));
+  });
+
+  it("Paragraph + Heading: both text-bearing — Typography stays true", () => {
+    expect(intersectElementCapabilities(["p", "h1"]).supportsTypography).toBe(true);
+  });
+
+  it("Paragraph + Image: Image doesn't support Typography — false for the pair", () => {
+    expect(intersectElementCapabilities(["p", "img"]).supportsTypography).toBe(false);
+  });
+
+  it("Image + Video: both support Media Fit — true for the pair", () => {
+    expect(intersectElementCapabilities(["img", "video"]).supportsMediaFit).toBe(true);
+  });
+
+  it("Image + Iframe: Iframe doesn't support Media Fit — false for the pair", () => {
+    expect(intersectElementCapabilities(["img", "iframe"]).supportsMediaFit).toBe(false);
+  });
+
+  it("every boolean flag is a true logical AND across three or more tags", () => {
+    const result = intersectElementCapabilities(["p", "h1", "img"]);
+    expect(result.supportsTypography).toBe(false); // img breaks it
+    expect(result.supportsBorder).toBe(true); // all three support border
+  });
+
+  it("throws for an empty tag list", () => {
+    expect(() => intersectElementCapabilities([])).toThrow();
   });
 });

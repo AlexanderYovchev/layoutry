@@ -7,7 +7,7 @@ import { HoverOverlay } from "@/features/canvas/components/overlay/HoverOverlay"
 import { MediaGuideOverlay } from "@/features/canvas/components/overlay/MediaGuideOverlay";
 import { SelectionOverlay } from "@/features/canvas/components/overlay/SelectionOverlay";
 import { useActiveDropIndicator } from "@/features/canvas/hooks/useActiveDropIndicator";
-import { useSelectedNode } from "@/features/editor/hooks/useSelectedNode";
+import { useSelectedNodes } from "@/features/editor/hooks/useSelectedNode";
 
 interface CanvasOverlayProps {
   canvasRootRef: RefObject<HTMLElement | null>;
@@ -28,10 +28,14 @@ interface CanvasOverlayProps {
  * URL" hint visible regardless of selection.
  */
 export function CanvasOverlay({ canvasRootRef, hoveredNodeId }: CanvasOverlayProps) {
-  const selected = useSelectedNode();
+  const { nodes: selectedNodes, primary } = useSelectedNodes();
   const activeDropIndicator = useActiveDropIndicator();
   const showHover =
-    hoveredNodeId !== null && hoveredNodeId !== selected?.node.id && !activeDropIndicator;
+    hoveredNodeId !== null && hoveredNodeId !== primary?.node.id && !activeDropIndicator;
+  // Checkpoint 1.15.2, Part 14 — resize handles only ever render for a
+  // genuine single selection; a multi-selection's own outlines are pure
+  // visual feedback (see SelectionOverlay's own doc comment for why).
+  const showHandles = selectedNodes.length === 1;
 
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0">
@@ -40,13 +44,17 @@ export function CanvasOverlay({ canvasRootRef, hoveredNodeId }: CanvasOverlayPro
       {showHover && (
         <HoverOverlay canvasRootRef={canvasRootRef} nodeId={hoveredNodeId} />
       )}
-      {selected && !activeDropIndicator && (
-        <SelectionOverlay
-          canvasRootRef={canvasRootRef}
-          node={selected.node}
-          parentLayoutMode={selected.parentLayoutMode}
-        />
-      )}
+      {!activeDropIndicator &&
+        selectedNodes.map((selected) => (
+          <SelectionOverlay
+            key={selected.node.id}
+            canvasRootRef={canvasRootRef}
+            node={selected.node}
+            parentLayoutMode={selected.parentLayoutMode}
+            isPrimary={selected.node.id === primary?.node.id}
+            showHandles={showHandles}
+          />
+        ))}
       {activeDropIndicator && (
         <DropIndicatorOverlay
           canvasRootRef={canvasRootRef}

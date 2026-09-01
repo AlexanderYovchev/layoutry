@@ -32,12 +32,14 @@ function indentClassName(depth: number) {
 interface StructureTreeNodeProps {
   node: EditorElementNode;
   depth: number;
-  selectedElementId: string | null;
+  /** Every currently-selected node's own editor id (Checkpoint 1.15.2) — a row highlights whenever its own id is a member, not just when it's the primary. */
+  selectedIds: readonly string[];
+  primarySelectedId: string | null;
   openNodeIds: Set<string>;
   /** The tree's single roving tab stop (WAI-ARIA treeview pattern) — every other row is tabIndex=-1. */
   currentNodeId: string;
   onToggle: (id: string) => void;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, event: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) => void;
   onFocusRow: (id: string) => void;
   onMoveFocus: (fromId: string, direction: 1 | -1) => void;
   onMoveToEdge: (edge: "first" | "last") => void;
@@ -47,7 +49,8 @@ interface StructureTreeNodeProps {
 export function StructureTreeNode({
   node,
   depth,
-  selectedElementId,
+  selectedIds,
+  primarySelectedId,
   openNodeIds,
   currentNodeId,
   onToggle,
@@ -60,7 +63,8 @@ export function StructureTreeNode({
   const children = node.children ?? [];
   const hasChildren = children.length > 0;
   const isOpen = openNodeIds.has(node.id);
-  const isSelected = node.id === selectedElementId;
+  const isSelected = selectedIds.includes(node.id);
+  const isPrimary = node.id === primarySelectedId;
   const displayName = getElementDisplayName(node);
   const Icon = TAG_ICONS[node.tag] ?? FALLBACK_ELEMENT_ICON;
 
@@ -69,7 +73,7 @@ export function StructureTreeNode({
       case "Enter":
       case " ":
         event.preventDefault();
-        onSelect(node.id);
+        onSelect(node.id, { ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey });
         break;
       case "ArrowDown":
         event.preventDefault();
@@ -105,15 +109,19 @@ export function StructureTreeNode({
         aria-level={depth + 1}
         tabIndex={node.id === currentNodeId ? 0 : -1}
         title={displayName}
-        onClick={() => onSelect(node.id)}
+        onClick={(event: MouseEvent) =>
+          onSelect(node.id, { ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey })
+        }
         onFocus={() => onFocusRow(node.id)}
         onKeyDown={handleRowKeyDown}
         className={cn(
-          "flex items-center gap-1.5 rounded-md py-1.5 pr-2 text-sm transition-colors duration-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 active:bg-zinc-200 dark:active:bg-zinc-800",
+          "flex items-center gap-1.5 rounded-md py-1.5 pr-2 text-sm transition-colors duration-100 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 active:bg-zinc-200 dark:active:bg-zinc-800",
           indentClassName(depth),
-          isSelected
+          isPrimary
             ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100"
-            : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900",
+            : isSelected
+              ? "bg-blue-50 text-zinc-900 dark:bg-blue-950 dark:text-zinc-100"
+              : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900",
         )}
       >
         {hasChildren ? (
@@ -166,7 +174,8 @@ export function StructureTreeNode({
                   key={child.id}
                   node={child}
                   depth={depth + 1}
-                  selectedElementId={selectedElementId}
+                  selectedIds={selectedIds}
+                  primarySelectedId={primarySelectedId}
                   openNodeIds={openNodeIds}
                   currentNodeId={currentNodeId}
                   onToggle={onToggle}

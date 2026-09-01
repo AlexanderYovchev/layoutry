@@ -74,6 +74,7 @@ function IdentityTextField({ id, label, value, placeholder, onCommit }: Identity
       suppressNextBlurCommitRef.current = true;
       event.currentTarget.blur();
     } else if (event.key === "Escape") {
+      event.preventDefault();
       setDraft(value ?? "");
       setTouched(false);
       suppressNextBlurCommitRef.current = true;

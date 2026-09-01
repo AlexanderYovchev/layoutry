@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+﻿import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
@@ -21,7 +21,7 @@ describe("EditorApp", () => {
     // name+description) — see this checkpoint's own report.
     await user.click(screen.getByRole("menuitem", { name: /^Button/ }));
 
-    const selectedId = useEditorStore.getState().selectedElementId;
+    const selectedId = useEditorStore.getState().selection.primaryId;
     expect(selectedId).toMatch(/^button-/);
 
     // Canvas: the new button is really in the rendered document.
@@ -51,7 +51,7 @@ describe("EditorApp", () => {
     await user.click(screen.getByRole("menuitem", { name: /^Container/ }));
 
     const state = useEditorStore.getState();
-    expect(state.document.children?.at(-1)?.id).toBe(state.selectedElementId);
+    expect(state.document.children?.at(-1)?.id).toBe(state.selection.primaryId);
   });
 
   it("clicking the Section catalog card inserts a real <section>, selects it, and syncs Canvas and Structure (Checkpoint 1.2)", async () => {
@@ -62,7 +62,7 @@ describe("EditorApp", () => {
     await user.click(screen.getByRole("menuitem", { name: /^Section/ }));
 
     const state = useEditorStore.getState();
-    const insertedId = state.selectedElementId;
+    const insertedId = state.selection.primaryId;
     expect(insertedId).toMatch(/^section-/);
     expect(state.document.children?.at(-1)?.tag).toBe("section");
 
@@ -87,7 +87,7 @@ describe("EditorApp", () => {
     await user.click(screen.getByRole("menuitem", { name: /^Link/ }));
 
     const state = useEditorStore.getState();
-    const insertedId = state.selectedElementId;
+    const insertedId = state.selection.primaryId;
     expect(insertedId).toMatch(/^a-/);
     expect(state.document.children?.at(-1)?.tag).toBe("a");
     expect(state.document.children?.at(-1)?.href).toBe("#");
@@ -114,7 +114,7 @@ describe("EditorApp", () => {
     await user.click(screen.getByRole("menuitem", { name: /^Unordered List/ }));
 
     const state = useEditorStore.getState();
-    const insertedId = state.selectedElementId;
+    const insertedId = state.selection.primaryId;
     expect(insertedId).toMatch(/^ul-/);
     const insertedNode = state.document.children?.at(-1);
     expect(insertedNode?.tag).toBe("ul");
@@ -140,7 +140,7 @@ describe("EditorApp", () => {
     await user.click(screen.getByRole("menuitem", { name: /^Ordered List/ }));
 
     const state = useEditorStore.getState();
-    const insertedId = state.selectedElementId;
+    const insertedId = state.selection.primaryId;
     expect(state.document.children?.at(-1)?.tag).toBe("ol");
     const rendered = container.querySelector(`[data-node-id="${insertedId}"]`);
     expect(rendered?.tagName).toBe("OL");
@@ -206,7 +206,7 @@ describe("EditorApp", () => {
       await user.click(screen.getByRole("menuitem", { name: new RegExp(menuName) }));
 
       const state = useEditorStore.getState();
-      const insertedId = state.selectedElementId;
+      const insertedId = state.selection.primaryId;
       expect(state.document.children?.at(-1)?.tag, tag).toBe(tag);
 
       const rendered = container.querySelector(`[data-node-id="${insertedId}"]`);
@@ -236,7 +236,7 @@ describe("EditorApp", () => {
     await user.click(screen.getByRole("menuitem", { name: /^FormForm/ }));
 
     const state = useEditorStore.getState();
-    const insertedId = state.selectedElementId;
+    const insertedId = state.selection.primaryId;
     expect(state.document.children?.at(-1)?.tag).toBe("form");
 
     const rendered = container.querySelector(`[data-node-id="${insertedId}"]`);
@@ -274,7 +274,7 @@ describe("EditorApp", () => {
     expect(form?.children?.[0]?.tag).toBe("input");
     expect(form?.children?.[0]?.inputType).toBe("text");
 
-    const inputId = state.selectedElementId;
+    const inputId = state.selection.primaryId;
     const rendered = container.querySelector(`[data-node-id="${inputId}"]`);
     expect(rendered?.tagName).toBe("INPUT");
     expect(rendered).toHaveAttribute("type", "text");
@@ -293,7 +293,7 @@ describe("EditorApp", () => {
 
     await user.click(screen.getByRole("button", { name: "Forms" }));
     await user.click(screen.getByRole("menuitem", { name: /^Label/ }));
-    const labelId = useEditorStore.getState().selectedElementId;
+    const labelId = useEditorStore.getState().selection.primaryId;
     // The freshly inserted label is already selected.
 
     await user.click(screen.getByRole("button", { name: "Forms" }));
@@ -332,11 +332,11 @@ describe("EditorApp", () => {
     // same kind of collision Checkpoint 1.12's own Radio Button fix
     // already documented, one level more specific here.
     await user.click(screen.getByRole("menuitem", { name: /^FormForm/ }));
-    const formId = useEditorStore.getState().selectedElementId;
+    const formId = useEditorStore.getState().selection.primaryId;
 
     await user.click(screen.getByRole("button", { name: "Forms" }));
     await user.click(screen.getByRole("menuitem", { name: /^Checkbox/ }));
-    const checkboxId = useEditorStore.getState().selectedElementId;
+    const checkboxId = useEditorStore.getState().selection.primaryId;
 
     // Re-select the Form so Textarea lands as its sibling, not nested
     // inside the checkbox (a leaf, but insertion targets the selected
@@ -345,7 +345,7 @@ describe("EditorApp", () => {
     await user.click(screen.getByRole("treeitem", { name: /Form/ }));
     await user.click(screen.getByRole("button", { name: "Forms" }));
     await user.click(screen.getByRole("menuitem", { name: /^Textarea/ }));
-    const textareaId = useEditorStore.getState().selectedElementId;
+    const textareaId = useEditorStore.getState().selection.primaryId;
 
     const form = useEditorStore.getState().document.children?.find((c) => c.id === formId);
     expect(form?.tag).toBe("form");
@@ -371,7 +371,7 @@ describe("EditorApp", () => {
 
     await user.click(screen.getByRole("button", { name: "Forms" }));
     await user.click(screen.getByRole("menuitem", { name: /^Select/ }));
-    const selectId = useEditorStore.getState().selectedElementId;
+    const selectId = useEditorStore.getState().selection.primaryId;
 
     const selectNode = useEditorStore.getState().document.children?.find((c) => c.id === selectId);
     expect(selectNode?.tag).toBe("select");

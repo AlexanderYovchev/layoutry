@@ -2,6 +2,7 @@ import { fireEvent, render } from "@testing-library/react";
 import { useRef, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { selectionFromSingle } from "@/features/editor/types/selection";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
 import { ResizeHandles } from "./ResizeHandles";
 import type { MeasuredNodeRect } from "@/features/canvas/hooks/useMeasuredNodeRect";
@@ -465,7 +466,7 @@ describe("ResizeHandles history transactions (Checkpoint 3.4.3)", () => {
   });
 
   it("Escape mid-drag does not clear the current selection (unlike Escape with no active drag)", () => {
-    useEditorStore.setState({ selectedElementId: "section-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("section-1") });
     renderHandles();
     const handle = document.querySelector('[data-resize-handle="e"]') as Element;
 
@@ -473,7 +474,7 @@ describe("ResizeHandles history transactions (Checkpoint 3.4.3)", () => {
     fireEvent.pointerMove(handle, { clientX: 560, clientY: 300, pointerId: 1 });
     fireEvent.keyDown(window, { key: "Escape" });
 
-    expect(useEditorStore.getState().selectedElementId).toBe("section-1");
+    expect(useEditorStore.getState().selection.primaryId).toBe("section-1");
   });
 
   it("Escape with no active drag does not touch history or the transaction state", () => {

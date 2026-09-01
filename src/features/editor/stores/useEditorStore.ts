@@ -62,6 +62,30 @@ import { setDisplaySettings as setDisplaySettingsCommand } from "@/features/edit
 import { setPositionSettings as setPositionSettingsCommand } from "@/features/editor/commands/positionCommands";
 import { setAspectRatio as setAspectRatioCommand } from "@/features/editor/commands/aspectRatioCommands";
 import { setSizeConstraints as setSizeConstraintsCommand } from "@/features/editor/commands/sizeConstraintsCommands";
+import {
+  normalizeSelectionRoots,
+  removeNodesByIds,
+  setElementsAspectRatio as setElementsAspectRatioCommand,
+  setElementsBackgroundField as setElementsBackgroundFieldCommand,
+  setElementsBorderAllSidesField as setElementsBorderAllSidesFieldCommand,
+  setElementsBorderRadiusAllCorners as setElementsBorderRadiusAllCornersCommand,
+  setElementsDimensions as setElementsDimensionsCommand,
+  setElementsDisplayField as setElementsDisplayFieldCommand,
+  setElementsFilterField as setElementsFilterFieldCommand,
+  setElementsMediaFitField as setElementsMediaFitFieldCommand,
+  setElementsPositionField as setElementsPositionFieldCommand,
+  setElementsSizeConstraintField as setElementsSizeConstraintFieldCommand,
+  setElementsSpacingAllSides as setElementsSpacingAllSidesCommand,
+  setElementsTypographyField as setElementsTypographyFieldCommand,
+} from "@/features/editor/commands/bulkCommands";
+import {
+  addSelectionId,
+  createSelection,
+  EMPTY_SELECTION,
+  selectionFromSingle,
+  toggleSelectionId,
+  type EditorSelection,
+} from "@/features/editor/types/selection";
 import { clampGridChildPlacement } from "@/features/editor/utils/clampGridChildPlacement";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
 import { cloneNodeWithFreshIds } from "@/features/editor/utils/cloneNodeWithFreshIds";
@@ -84,9 +108,9 @@ import type {
 } from "@/features/editor/types/flowLayout";
 import type { EdgeValues } from "@/features/editor/types/spacing";
 import type { MediaFitSettings } from "@/features/editor/types/mediaFit";
-import type { TypographySettings } from "@/features/editor/types/typography";
+import type { CssLengthValue, TypographySettings } from "@/features/editor/types/typography";
 import type { BackgroundSettings } from "@/features/editor/types/background";
-import type { BorderSettings } from "@/features/editor/types/border";
+import type { BorderSettings, BorderSideSettings } from "@/features/editor/types/border";
 import type { BorderRadiusSettings } from "@/features/editor/types/borderRadius";
 import type { BoxShadowSettings } from "@/features/editor/types/boxShadow";
 import type { FilterSettings } from "@/features/editor/types/filters";
@@ -97,14 +121,32 @@ import type { SizeConstraints } from "@/features/editor/types/sizeConstraints";
 
 interface EditorState {
   document: EditorElementNode;
-  selectedElementId: string | null;
+  /**
+   * The editor's multi-selection state (Checkpoint 1.15.2 — see
+   * types/selection.ts's own doc comment for the full model). This
+   * field's own `ids` may contain a now-deleted id for one render (it's
+   * only pruned lazily, at read time — see useSelectedNodes/
+   * normalizeSelection), so nothing should read `selection` directly for
+   * anything beyond "what did the user last ask to have selected"; every
+   * consumer that needs "what's actually still selectable right now"
+   * goes through useSelectedNodes instead.
+   */
+  selection: EditorSelection;
   clipboard: EditorClipboard | null;
   past: HistoryEntry[];
   future: HistoryEntry[];
   /** Non-null while a continuous interaction (currently: resize) is mid-drag — see beginResizeTransaction. */
   transactionSnapshot: HistoryEntry | null;
 
+  /** Selects exactly this one id, replacing any existing selection — the plain-click behavior, and every internal single-target action (insert/move/duplicate/paste/undo/redo) below. `selectOnly` is the same action under an explicit name for new multi-selection-aware call sites. */
   selectElement: (id: string | null) => void;
+  selectOnly: (id: string) => void;
+  /** Ctrl/Cmd+click — toggles one id's membership (Checkpoint 1.15.2, Part 9). */
+  toggleSelection: (id: string) => void;
+  /** Shift+click on Canvas — additive only, never a toggle (Checkpoint 1.15.2, Part 10). */
+  addToSelection: (id: string) => void;
+  /** Structured/group selection (e.g. Table's "Select All Cells", Structure's own future sibling-range) — replaces the whole selection at once. */
+  setSelection: (ids: readonly string[], primaryId?: string) => void;
   clearSelection: () => void;
   insertElement: (
     parentId: string,
@@ -262,6 +304,33 @@ interface EditorState {
   setElementClassName: (nodeId: string, className: string | undefined) => void;
 
   /**
+   * Bulk CSS commands (Checkpoint 1.15.2) — the multi-selection Inspector's
+   * own write path. Each applies ONE field to every targeted node's OWN
+   * existing settings (never a single shared object stamped onto all of
+   * them — see bulkCommands.ts's own doc comments), in a single document
+   * traversal, as one atomic mutation and (via the shared no-op-guarded
+   * wrapper every action below uses) at most one history entry — never
+   * one entry per targeted node.
+   */
+  setElementsTypographyField: <K extends keyof TypographySettings>(ids: readonly string[], field: K, value: TypographySettings[K]) => void;
+  setElementsBackgroundField: <K extends Exclude<keyof BackgroundSettings, "size" | "customSize" | "gradient">>(
+    ids: readonly string[],
+    field: K,
+    value: BackgroundSettings[K],
+  ) => void;
+  /** "All Sides" bulk Border mode (Checkpoint 1.15.2) — per-individual-side bulk editing is deferred, see this checkpoint's report. */
+  setElementsBorderAllSidesField: <K extends keyof BorderSideSettings>(ids: readonly string[], field: K, value: BorderSideSettings[K]) => void;
+  setElementsBorderRadiusAllCorners: (ids: readonly string[], value: CssLengthValue | undefined) => void;
+  setElementsDisplayField: <K extends keyof DisplaySettings>(ids: readonly string[], field: K, value: DisplaySettings[K]) => void;
+  setElementsFilterField: <K extends keyof FilterSettings>(ids: readonly string[], field: K, value: FilterSettings[K]) => void;
+  setElementsPositionField: <K extends keyof PositionSettings>(ids: readonly string[], field: K, value: PositionSettings[K]) => void;
+  setElementsMediaFitField: <K extends keyof MediaFitSettings>(ids: readonly string[], field: K, value: MediaFitSettings[K]) => void;
+  setElementsSizeConstraintField: <K extends keyof SizeConstraints>(ids: readonly string[], field: K, value: SizeConstraints[K]) => void;
+  setElementsSpacingAllSides: (ids: readonly string[], box: "margin" | "padding", value: number) => void;
+  setElementsAspectRatio: (ids: readonly string[], aspectRatio: AspectRatioValue | undefined) => void;
+  setElementsDimensions: (ids: readonly string[], dimensions: ElementDimensions | undefined) => void;
+
+  /**
    * Generic continuous-interaction transaction (Checkpoint 4.3.1) — the
    * exact same shared `transactionSnapshot` mechanism begin/
    * commitResizeTransaction already established, exposed under a
@@ -291,7 +360,7 @@ interface EditorState {
 
 /** Snapshot of the state a history entry needs, taken *before* a mutation is applied. */
 function snapshot(state: EditorState): HistoryEntry {
-  return { document: state.document, selectedElementId: state.selectedElementId };
+  return { document: state.document, selection: state.selection };
 }
 
 /** Every one-shot (non-transactional) mutation pushes the pre-mutation snapshot and clears redo. */
@@ -300,18 +369,23 @@ function pushHistory(state: EditorState): Pick<EditorState, "past" | "future"> {
 }
 
 /**
- * The currently selected node, unless there's no selection, the
- * selection is the document root (never a valid copy/cut/duplicate/
- * delete target — see elementCapabilities), or the id no longer resolves
- * in the document. Every clipboard command opens by checking this rather
- * than re-deriving the same three conditions, and returning the resolved
- * node means callers never need an `as` assertion to use it afterward.
+ * The current PRIMARY selected node, unless there's no selection, the
+ * primary is the document root (never a valid copy/cut/duplicate/delete
+ * target — see elementCapabilities), or the id no longer resolves in the
+ * document. Every clipboard/duplicate command opens by checking this
+ * rather than re-deriving the same three conditions — all four remain
+ * deliberately single-target, primary-only operations in this checkpoint
+ * (Checkpoint 1.15.2 explicitly scoped multi-node Copy/Cut/Paste/
+ * Duplicate out — see this checkpoint's own report, section M); Delete is
+ * the one clipboard-family command with a genuine multi-selection path
+ * (see deleteSelection below).
  */
 function eligibleSelectedNode(state: EditorState): EditorElementNode | undefined {
-  if (!state.selectedElementId || state.selectedElementId === state.document.id) {
+  const id = state.selection.primaryId;
+  if (!id || id === state.document.id) {
     return undefined;
   }
-  return findNodeById(state.document, state.selectedElementId);
+  return findNodeById(state.document, id);
 }
 
 /**
@@ -333,14 +407,18 @@ function eligibleSelectedNode(state: EditorState): EditorElementNode | undefined
  */
 export const useEditorStore = create<EditorState>()((set) => ({
   document: fixtureDocument,
-  selectedElementId: null,
+  selection: EMPTY_SELECTION,
   clipboard: null,
   past: [],
   future: [],
   transactionSnapshot: null,
 
-  selectElement: (id) => set({ selectedElementId: id }),
-  clearSelection: () => set({ selectedElementId: null }),
+  selectElement: (id) => set({ selection: selectionFromSingle(id) }),
+  selectOnly: (id) => set({ selection: selectionFromSingle(id) }),
+  toggleSelection: (id) => set((state) => ({ selection: toggleSelectionId(state.selection, id) })),
+  addToSelection: (id) => set((state) => ({ selection: addSelectionId(state.selection, id) })),
+  setSelection: (ids, primaryId) => set({ selection: createSelection(ids, primaryId) }),
+  clearSelection: () => set({ selection: EMPTY_SELECTION }),
 
   // Insertion and selecting the newly inserted node are one atomic
   // update — every insertion method (click, drag) goes through this
@@ -358,7 +436,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
     set((state) => {
       const document = insertNode(state.document, parentId, node, position);
       if (document === state.document) return {};
-      return { ...pushHistory(state), document, selectedElementId: node.id };
+      return { ...pushHistory(state), document, selection: selectionFromSingle(node.id) };
     }),
 
   // Same shape as insertElement, and the same no-op guard: moveNode
@@ -370,7 +448,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
     set((state) => {
       const document = moveNode(state.document, nodeId, targetId, zone);
       if (document === state.document) return {};
-      return { ...pushHistory(state), document, selectedElementId: nodeId };
+      return { ...pushHistory(state), document, selection: selectionFromSingle(nodeId) };
     }),
 
   // Resizing never changes selection — the resized node was already
@@ -772,7 +850,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
       return {
         ...pushHistory(state),
         document,
-        selectedElementId: resolveDeletionFallbackSelection(sourceParentId, state.document.id),
+        selection: selectionFromSingle(resolveDeletionFallbackSelection(sourceParentId, state.document.id)),
         clipboard: { operation: "cut", nodes: [node], sourceParentId },
       };
     }),
@@ -783,7 +861,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
       if (!sourceNode) return {};
       const destinationParentId = resolveDestinationParent(
         state.document,
-        state.selectedElementId,
+        state.selection.primaryId ?? null,
         state.clipboard?.sourceParentId,
       );
       const clone = resolveFreeDestinationPlacement(
@@ -794,7 +872,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
       return {
         ...pushHistory(state),
         document: insertNode(state.document, destinationParentId, clone),
-        selectedElementId: clone.id,
+        selection: selectionFromSingle(clone.id),
       };
     }),
 
@@ -809,20 +887,103 @@ export const useEditorStore = create<EditorState>()((set) => ({
         referenceId: node.id,
         placement: "after",
       });
-      return { ...pushHistory(state), document, selectedElementId: clone.id };
+      return { ...pushHistory(state), document, selection: selectionFromSingle(clone.id) };
     }),
 
+  // Multi-selection-aware (Checkpoint 1.15.2, Part 16): normalizes to
+  // top-level selection roots first (dropping any selected id that is
+  // itself a descendant of another selected id), so "Container plus its
+  // own selected Paragraph child" deletes Container exactly once rather
+  // than attempting a second, now-dangling removal of the Paragraph — see
+  // normalizeSelectionRoots/removeNodesByIds's own doc comments. This same
+  // path handles an ordinary single-node delete too (roots.length === 1
+  // degenerates to the pre-1.15.2 behavior exactly), so there is no
+  // separate single-selection code path to keep in sync.
   deleteSelection: () =>
     set((state) => {
-      const node = eligibleSelectedNode(state);
-      if (!node) return {};
-      const parentId = findParentId(state.document, node.id);
-      const document = removeNode(state.document, node.id);
+      const roots = normalizeSelectionRoots(state.document, state.selection.ids);
+      if (roots.length === 0) return {};
+      const parentId = findParentId(state.document, roots[0]);
+      const document = removeNodesByIds(state.document, new Set(roots));
+      if (document === state.document) return {};
       return {
         ...pushHistory(state),
         document,
-        selectedElementId: resolveDeletionFallbackSelection(parentId, state.document.id),
+        selection: selectionFromSingle(resolveDeletionFallbackSelection(parentId, state.document.id)),
       };
+    }),
+
+  setElementsTypographyField: (ids, field, value) =>
+    set((state) => {
+      const document = setElementsTypographyFieldCommand(state.document, new Set(ids), field, value);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+  setElementsBackgroundField: (ids, field, value) =>
+    set((state) => {
+      const document = setElementsBackgroundFieldCommand(state.document, new Set(ids), field, value);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+  setElementsBorderAllSidesField: (ids, field, value) =>
+    set((state) => {
+      const document = setElementsBorderAllSidesFieldCommand(state.document, new Set(ids), field, value);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+  setElementsBorderRadiusAllCorners: (ids, value) =>
+    set((state) => {
+      const document = setElementsBorderRadiusAllCornersCommand(state.document, new Set(ids), value);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+  setElementsDisplayField: (ids, field, value) =>
+    set((state) => {
+      const document = setElementsDisplayFieldCommand(state.document, new Set(ids), field, value);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+  setElementsFilterField: (ids, field, value) =>
+    set((state) => {
+      const document = setElementsFilterFieldCommand(state.document, new Set(ids), field, value);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+  setElementsPositionField: (ids, field, value) =>
+    set((state) => {
+      const document = setElementsPositionFieldCommand(state.document, new Set(ids), field, value);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+  setElementsMediaFitField: (ids, field, value) =>
+    set((state) => {
+      const document = setElementsMediaFitFieldCommand(state.document, new Set(ids), field, value);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+  setElementsSizeConstraintField: (ids, field, value) =>
+    set((state) => {
+      const document = setElementsSizeConstraintFieldCommand(state.document, new Set(ids), field, value);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+  setElementsSpacingAllSides: (ids, box, value) =>
+    set((state) => {
+      const document = setElementsSpacingAllSidesCommand(state.document, new Set(ids), box, value);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+  setElementsAspectRatio: (ids, aspectRatio) =>
+    set((state) => {
+      const document = setElementsAspectRatioCommand(state.document, new Set(ids), aspectRatio);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+  setElementsDimensions: (ids, dimensions) =>
+    set((state) => {
+      const document = setElementsDimensionsCommand(state.document, new Set(ids), dimensions);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
     }),
 
   undo: () =>
@@ -831,7 +992,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
       const previous = state.past[state.past.length - 1];
       return {
         document: previous.document,
-        selectedElementId: previous.selectedElementId,
+        selection: previous.selection,
         past: state.past.slice(0, -1),
         future: [snapshot(state), ...state.future],
       };
@@ -843,7 +1004,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
       const [next, ...rest] = state.future;
       return {
         document: next.document,
-        selectedElementId: next.selectedElementId,
+        selection: next.selection,
         past: [...state.past, snapshot(state)],
         future: rest,
       };

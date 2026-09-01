@@ -186,6 +186,7 @@ export function InspectorNumericValueControl({
       suppressNextBlurCommitRef.current = true;
       event.currentTarget.blur();
     } else if (event.key === "Escape") {
+      event.preventDefault();
       setDraft(formatDraft(value));
       setTouched(false);
       suppressNextBlurCommitRef.current = true;

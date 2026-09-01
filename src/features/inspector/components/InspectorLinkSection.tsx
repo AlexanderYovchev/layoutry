@@ -87,6 +87,7 @@ function LinkDestinationField({ value, onCommit, error }: DestinationFieldProps)
       suppressNextBlurCommitRef.current = true;
       event.currentTarget.blur();
     } else if (event.key === "Escape") {
+      event.preventDefault();
       setDraft(value);
       setTouched(false);
       suppressNextBlurCommitRef.current = true;

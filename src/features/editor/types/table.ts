@@ -60,3 +60,38 @@ export function getTableColumnCount(node: EditorElementNode): number {
 export function getTableBodyRowCount(node: EditorElementNode): number {
   return getTableBody(node)?.children?.length ?? 0;
 }
+
+/**
+ * Table bulk-selection helpers (Checkpoint 1.15.2, Part D of its own
+ * report) — pure reads over the genuine th/td tree, returning ordinary
+ * node ids to hand to the shared multi-selection action (setSelection).
+ * Deliberately NOT a synthetic "Cell Group" concept: the result is
+ * indistinguishable from a selection the user built by hand, Ctrl-
+ * clicking each cell one at a time — that's the whole architectural
+ * point (see this checkpoint's report, section L).
+ */
+export function getTableRowCellIds(row: EditorElementNode): string[] {
+  return (row.children ?? []).filter((child) => child.tag === "th" || child.tag === "td").map((cell) => cell.id);
+}
+
+function getSectionCellIds(section: EditorElementNode | undefined): string[] {
+  if (!section) return [];
+  return (section.children ?? []).flatMap((row) => getTableRowCellIds(row));
+}
+
+export function getTableHeaderCellIds(table: EditorElementNode): string[] {
+  return getSectionCellIds(getTableHead(table));
+}
+
+export function getTableBodyCellIds(table: EditorElementNode): string[] {
+  return getSectionCellIds(getTableBody(table));
+}
+
+export function getTableFooterCellIds(table: EditorElementNode): string[] {
+  return getSectionCellIds(getTableFoot(table));
+}
+
+/** Every real th/td cell in the table, across thead/tbody/tfoot, in document order. */
+export function getTableCellIds(table: EditorElementNode): string[] {
+  return [...getTableHeaderCellIds(table), ...getTableBodyCellIds(table), ...getTableFooterCellIds(table)];
+}

@@ -158,6 +158,7 @@ export function InspectorColorFieldShell({
       commit();
       event.currentTarget.blur();
     } else if (event.key === "Escape") {
+      event.preventDefault();
       setDraft(value ?? "");
       event.currentTarget.blur();
     }

@@ -29,7 +29,7 @@ import type { DropZone } from "@/features/editor/utils/resolveDropZone";
  */
 export function useInsertElement() {
   const documentModel = useEditorStore((state) => state.document);
-  const selectedElementId = useEditorStore((state) => state.selectedElementId);
+  const primarySelectedId = useEditorStore((state) => state.selection.primaryId ?? null);
   const insertElement = useEditorStore((state) => state.insertElement);
 
   return function insert(
@@ -69,6 +69,6 @@ export function useInsertElement() {
       return;
     }
 
-    insertInto(resolveDestinationParent(documentModel, selectedElementId));
+    insertInto(resolveDestinationParent(documentModel, primarySelectedId));
   };
 }

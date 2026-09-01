@@ -1,6 +1,7 @@
-import { renderHook } from "@testing-library/react";
+﻿import { renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { selectionFromSingle } from "@/features/editor/types/selection";
 import { useInsertElement } from "./useInsertElement";
 
 const initialState = useEditorStore.getState();
@@ -30,7 +31,7 @@ describe("useInsertElement", () => {
     const inserted = state.document.children
       ?.find((child) => child.id === "section-1")
       ?.children?.at(-1);
-    expect(state.selectedElementId).toBe(inserted?.id);
+    expect(state.selection.primaryId).toBe(inserted?.id);
   });
 
   it("falls back to the document root when no target is requested and nothing is selected", () => {
@@ -43,7 +44,7 @@ describe("useInsertElement", () => {
   });
 
   it("targets the current selection when no explicit drop target is requested and the selection can contain children", () => {
-    useEditorStore.setState({ selectedElementId: "section-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("section-1") });
     const { result } = renderHook(() => useInsertElement());
 
     result.current("button");
@@ -55,7 +56,7 @@ describe("useInsertElement", () => {
   });
 
   it("targets the current selection's parent when no explicit drop target is requested and the selection is a leaf", () => {
-    useEditorStore.setState({ selectedElementId: "image-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("image-1") });
     const { result } = renderHook(() => useInsertElement());
 
     result.current("image");
@@ -68,7 +69,7 @@ describe("useInsertElement", () => {
   });
 
   it("falls back to the document root when no explicit drop target is requested and the selected node no longer exists", () => {
-    useEditorStore.setState({ selectedElementId: "does-not-exist" });
+    useEditorStore.setState({ selection: selectionFromSingle("does-not-exist") });
     const { result } = renderHook(() => useInsertElement());
 
     result.current("container");
@@ -231,7 +232,7 @@ describe("useInsertElement — constrained list nesting (Checkpoint 1.6)", () =>
   it("inserts a List Item into a UL", () => {
     const { result: insertList } = renderHook(() => useInsertElement());
     insertList.current("unorderedList", "section-1");
-    const listId = useEditorStore.getState().selectedElementId;
+    const listId = useEditorStore.getState().selection.primaryId;
 
     const { result: insertItem } = renderHook(() => useInsertElement());
     insertItem.current("listItem", listId!);
@@ -247,7 +248,7 @@ describe("useInsertElement — constrained list nesting (Checkpoint 1.6)", () =>
   it("inserts a List Item into an OL", () => {
     const { result: insertList } = renderHook(() => useInsertElement());
     insertList.current("orderedList", "section-1");
-    const listId = useEditorStore.getState().selectedElementId;
+    const listId = useEditorStore.getState().selection.primaryId;
 
     const { result: insertItem } = renderHook(() => useInsertElement());
     insertItem.current("listItem", listId!);
@@ -283,7 +284,7 @@ describe("useInsertElement — constrained list nesting (Checkpoint 1.6)", () =>
   it("rejects inserting a Heading directly into a UL", () => {
     const { result: insertList } = renderHook(() => useInsertElement());
     insertList.current("unorderedList", "section-1");
-    const listId = useEditorStore.getState().selectedElementId;
+    const listId = useEditorStore.getState().selection.primaryId;
     const before = useEditorStore.getState().document;
 
     const { result: insertHeading } = renderHook(() => useInsertElement());
@@ -295,7 +296,7 @@ describe("useInsertElement — constrained list nesting (Checkpoint 1.6)", () =>
   it("rejects inserting an Image directly into an OL", () => {
     const { result: insertList } = renderHook(() => useInsertElement());
     insertList.current("orderedList", "section-1");
-    const listId = useEditorStore.getState().selectedElementId;
+    const listId = useEditorStore.getState().selection.primaryId;
     const before = useEditorStore.getState().document;
 
     const { result: insertImage } = renderHook(() => useInsertElement());
@@ -347,7 +348,7 @@ describe("useInsertElement — semantic sectioning family (Checkpoint 1.8)", () 
   it("inserts a Container into a Header", () => {
     const { result: insertHeader } = renderHook(() => useInsertElement());
     insertHeader.current("header", "section-1");
-    const headerId = useEditorStore.getState().selectedElementId;
+    const headerId = useEditorStore.getState().selection.primaryId;
 
     const { result: insertContainer } = renderHook(() => useInsertElement());
     insertContainer.current("container", headerId!);
@@ -362,11 +363,11 @@ describe("useInsertElement — semantic sectioning family (Checkpoint 1.8)", () 
   it("inserts a Nav into a Header, and a Link into that Nav", () => {
     const { result: insertHeader } = renderHook(() => useInsertElement());
     insertHeader.current("header", "section-1");
-    const headerId = useEditorStore.getState().selectedElementId;
+    const headerId = useEditorStore.getState().selection.primaryId;
 
     const { result: insertNav } = renderHook(() => useInsertElement());
     insertNav.current("nav", headerId!);
-    const navId = useEditorStore.getState().selectedElementId;
+    const navId = useEditorStore.getState().selection.primaryId;
 
     const { result: insertLink } = renderHook(() => useInsertElement());
     insertLink.current("link", navId!);
@@ -382,7 +383,7 @@ describe("useInsertElement — semantic sectioning family (Checkpoint 1.8)", () 
   it("inserts a Main into a Section, and a Section into that Main", () => {
     const { result: insertMain } = renderHook(() => useInsertElement());
     insertMain.current("main", "section-1");
-    const mainId = useEditorStore.getState().selectedElementId;
+    const mainId = useEditorStore.getState().selection.primaryId;
 
     const { result: insertSection } = renderHook(() => useInsertElement());
     insertSection.current("section", mainId!);
@@ -397,7 +398,7 @@ describe("useInsertElement — semantic sectioning family (Checkpoint 1.8)", () 
   it("inserts an Article with a Heading and a Paragraph", () => {
     const { result: insertArticle } = renderHook(() => useInsertElement());
     insertArticle.current("article", "section-1");
-    const articleId = useEditorStore.getState().selectedElementId;
+    const articleId = useEditorStore.getState().selection.primaryId;
 
     const { result: insertHeading } = renderHook(() => useInsertElement());
     insertHeading.current("heading", articleId!);
@@ -414,7 +415,7 @@ describe("useInsertElement — semantic sectioning family (Checkpoint 1.8)", () 
   it("inserts an Aside with a Paragraph", () => {
     const { result: insertAside } = renderHook(() => useInsertElement());
     insertAside.current("aside", "section-1");
-    const asideId = useEditorStore.getState().selectedElementId;
+    const asideId = useEditorStore.getState().selection.primaryId;
 
     const { result: insertParagraph } = renderHook(() => useInsertElement());
     insertParagraph.current("paragraph", asideId!);
@@ -429,7 +430,7 @@ describe("useInsertElement — semantic sectioning family (Checkpoint 1.8)", () 
   it("inserts a Footer with a Container inside it", () => {
     const { result: insertFooter } = renderHook(() => useInsertElement());
     insertFooter.current("footer", "section-1");
-    const footerId = useEditorStore.getState().selectedElementId;
+    const footerId = useEditorStore.getState().selection.primaryId;
 
     const { result: insertContainer } = renderHook(() => useInsertElement());
     insertContainer.current("container", footerId!);
@@ -445,7 +446,7 @@ describe("useInsertElement — semantic sectioning family (Checkpoint 1.8)", () 
     for (const semanticType of ["header", "nav", "main", "article", "aside", "footer"] as const) {
       const { result: insertSemantic } = renderHook(() => useInsertElement());
       insertSemantic.current(semanticType, "section-1");
-      const semanticId = useEditorStore.getState().selectedElementId;
+      const semanticId = useEditorStore.getState().selection.primaryId;
       const before = useEditorStore.getState().document;
 
       const { result: insertItem } = renderHook(() => useInsertElement());
@@ -458,7 +459,7 @@ describe("useInsertElement — semantic sectioning family (Checkpoint 1.8)", () 
   it("still rejects an arbitrary semantic container inserted directly into a UL/OL (only li is a valid list child)", () => {
     const { result: insertList } = renderHook(() => useInsertElement());
     insertList.current("unorderedList", "section-1");
-    const listId = useEditorStore.getState().selectedElementId;
+    const listId = useEditorStore.getState().selection.primaryId;
     const before = useEditorStore.getState().document;
 
     const { result: insertArticle } = renderHook(() => useInsertElement());

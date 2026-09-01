@@ -71,6 +71,7 @@ function OptionTextField({ id, label, value, onCommit, onReset, hasExplicitValue
       suppressNextBlurCommitRef.current = true;
       event.currentTarget.blur();
     } else if (event.key === "Escape") {
+      event.preventDefault();
       setDraft(value);
       setTouched(false);
       suppressNextBlurCommitRef.current = true;

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+﻿import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
@@ -56,7 +56,7 @@ describe("StructureTree", () => {
 
     await user.click(screen.getByText("Heading"));
 
-    expect(useEditorStore.getState().selectedElementId).toBe("heading-1");
+    expect(useEditorStore.getState().selection.primaryId).toBe("heading-1");
   });
 
   it("marks the matching row selected when the store's selection changes externally", () => {
@@ -111,7 +111,7 @@ describe("StructureTree", () => {
     paragraphRow.focus();
     fireEvent.keyDown(paragraphRow, { key: "Enter" });
 
-    expect(useEditorStore.getState().selectedElementId).toBe("paragraph-1");
+    expect(useEditorStore.getState().selection.primaryId).toBe("paragraph-1");
   });
 
   it("keeps only one row in the tab sequence at a time (roving tabindex)", () => {

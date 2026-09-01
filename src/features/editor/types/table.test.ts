@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { getTableBody, getTableBodyRowCount, getTableColumnCount, getTableFoot, getTableHead } from "./table";
+import {
+  getTableBody,
+  getTableBodyCellIds,
+  getTableBodyRowCount,
+  getTableCellIds,
+  getTableColumnCount,
+  getTableFoot,
+  getTableFooterCellIds,
+  getTableHead,
+  getTableHeaderCellIds,
+  getTableRowCellIds,
+} from "./table";
 import { createTableNode } from "@/features/editor/factories/elementFactories";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -84,5 +95,59 @@ describe("getTableBodyRowCount (Checkpoint 1.14)", () => {
   it("is 0 when there is no tbody at all", () => {
     const table: EditorElementNode = { id: "table-1", tag: "table", children: [{ id: "thead-1", tag: "thead", children: [] }] };
     expect(getTableBodyRowCount(table)).toBe(0);
+  });
+});
+
+describe("Table bulk-selection helpers (Checkpoint 1.15.2)", () => {
+  const table: EditorElementNode = {
+    id: "table-1",
+    tag: "table",
+    children: [
+      {
+        id: "thead-1",
+        tag: "thead",
+        children: [{ id: "row-head", tag: "tr", children: [{ id: "th-1", tag: "th" }, { id: "th-2", tag: "th" }] }],
+      },
+      {
+        id: "tbody-1",
+        tag: "tbody",
+        children: [
+          { id: "row-1", tag: "tr", children: [{ id: "td-1", tag: "td" }, { id: "td-2", tag: "td" }] },
+          { id: "row-2", tag: "tr", children: [{ id: "td-3", tag: "td" }, { id: "td-4", tag: "td" }] },
+        ],
+      },
+      {
+        id: "tfoot-1",
+        tag: "tfoot",
+        children: [{ id: "row-foot", tag: "tr", children: [{ id: "td-5", tag: "td" }] }],
+      },
+    ],
+  };
+
+  it("getTableRowCellIds returns just that row's th/td ids", () => {
+    const row = table.children?.find((c) => c.id === "tbody-1")?.children?.[0];
+    expect(row && getTableRowCellIds(row)).toEqual(["td-1", "td-2"]);
+  });
+
+  it("getTableHeaderCellIds / getTableBodyCellIds / getTableFooterCellIds each collect only their own section's cells", () => {
+    expect(getTableHeaderCellIds(table)).toEqual(["th-1", "th-2"]);
+    expect(getTableBodyCellIds(table)).toEqual(["td-1", "td-2", "td-3", "td-4"]);
+    expect(getTableFooterCellIds(table)).toEqual(["td-5"]);
+  });
+
+  it("getTableCellIds collects every real cell across all three sections, in document order", () => {
+    expect(getTableCellIds(table)).toEqual(["th-1", "th-2", "td-1", "td-2", "td-3", "td-4", "td-5"]);
+  });
+
+  it("returns an empty array for a missing section rather than throwing", () => {
+    const headerOnly: EditorElementNode = { id: "t", tag: "table", children: [{ id: "thead-1", tag: "thead", children: [] }] };
+    expect(getTableBodyCellIds(headerOnly)).toEqual([]);
+    expect(getTableFooterCellIds(headerOnly)).toEqual([]);
+  });
+
+  it("never mutates the document — every helper is a pure read", () => {
+    const before = JSON.stringify(table);
+    getTableCellIds(table);
+    expect(JSON.stringify(table)).toBe(before);
   });
 });

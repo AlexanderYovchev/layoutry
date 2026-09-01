@@ -10,8 +10,11 @@ import { StructureTreeNode } from "@/features/editor/components/structure/Struct
 
 export function StructureTree() {
   const documentTree = useEditorStore((state) => state.document);
-  const selectedElementId = useEditorStore((state) => state.selectedElementId);
-  const selectElement = useEditorStore((state) => state.selectElement);
+  const selection = useEditorStore((state) => state.selection);
+  const selectedElementId = selection.primaryId ?? null;
+  const selectOnly = useEditorStore((state) => state.selectOnly);
+  const toggleSelection = useEditorStore((state) => state.toggleSelection);
+  const addToSelection = useEditorStore((state) => state.addToSelection);
 
   // The page root and its immediate children (top-level containers) are
   // expanded by default; everything deeper starts collapsed.
@@ -64,6 +67,16 @@ export function StructureTree() {
     rowRefs.current.get(nextId)?.focus();
   }
 
+  function handleSelect(id: string, event: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) {
+    if (event.ctrlKey || event.metaKey) {
+      toggleSelection(id);
+    } else if (event.shiftKey) {
+      addToSelection(id);
+    } else {
+      selectOnly(id);
+    }
+  }
+
   function handleMoveToEdge(edge: "first" | "last") {
     const visibleIds = getVisibleNodeIds(documentTree, openNodeIds);
     if (visibleIds.length === 0) return;
@@ -106,11 +119,12 @@ export function StructureTree() {
       <StructureTreeNode
         node={documentTree}
         depth={0}
-        selectedElementId={selectedElementId}
+        selectedIds={selection.ids}
+        primarySelectedId={selectedElementId}
         openNodeIds={openNodeIds}
         currentNodeId={currentNodeId}
         onToggle={handleToggle}
-        onSelect={selectElement}
+        onSelect={handleSelect}
         onFocusRow={setCurrentNodeId}
         onMoveFocus={handleMoveFocus}
         onMoveToEdge={handleMoveToEdge}

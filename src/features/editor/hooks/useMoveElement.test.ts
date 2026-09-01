@@ -1,4 +1,4 @@
-import { renderHook } from "@testing-library/react";
+﻿import { renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { useMoveElement } from "./useMoveElement";
@@ -18,7 +18,7 @@ describe("useMoveElement", () => {
     const state = useEditorStore.getState();
     const targetSection = state.document.children?.find((child) => child.id === "section-2");
     expect(targetSection?.children?.map((child) => child.id)).toEqual(["image-1", "button-1"]);
-    expect(state.selectedElementId).toBe("button-1");
+    expect(state.selection.primaryId).toBe("button-1");
   });
 
   it("reorders within the same parent", () => {

@@ -40,21 +40,26 @@ export function CanvasInteractionBoundary({
 }: CanvasInteractionBoundaryProps) {
   const canvasRootRef = useRef<HTMLDivElement>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-  const selectElement = useEditorStore((state) => state.selectElement);
+  const selectOnly = useEditorStore((state) => state.selectOnly);
+  const toggleSelection = useEditorStore((state) => state.toggleSelection);
+  const addToSelection = useEditorStore((state) => state.addToSelection);
   const clearSelection = useEditorStore((state) => state.clearSelection);
-  const selectedElementId = useEditorStore((state) => state.selectedElementId);
+  const primarySelectedId = useEditorStore((state) => state.selection.primaryId ?? null);
 
-  // Reveals the selected node whenever selection changes — including a
-  // newly inserted node, which may render below the fold. scrollIntoView
-  // with block "nearest" is a no-op when the node is already visible, so
-  // this never causes distracting scrolling on an ordinary re-selection.
+  // Reveals the primary selected node whenever selection changes —
+  // including a newly inserted node, which may render below the fold.
+  // scrollIntoView with block "nearest" is a no-op when the node is
+  // already visible, so this never causes distracting scrolling on an
+  // ordinary re-selection. Only the primary scrolls into view for a
+  // multi-selection (Checkpoint 1.15.2) — the same "one anchor" role it
+  // already plays for the Inspector/resize handles.
   useEffect(() => {
-    if (!selectedElementId) return;
+    if (!primarySelectedId) return;
     const target = canvasRootRef.current?.querySelector(
-      `[data-node-id="${CSS.escape(selectedElementId)}"]`,
+      `[data-node-id="${CSS.escape(primarySelectedId)}"]`,
     );
     target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [selectedElementId]);
+  }, [primarySelectedId]);
 
   useEffect(() => {
     function handleClick(event: MouseEvent) {
@@ -75,12 +80,23 @@ export function CanvasInteractionBoundary({
         // The pseudo document root (and any other non-selectable
         // structural wrapper) has no canvas visual identity of its own —
         // clicking it (or blank page-sheet space) clears selection rather
-        // than selecting it.
+        // than selecting it, regardless of any modifier held.
         clearSelection();
         return;
       }
 
-      selectElement(nodeId);
+      // Checkpoint 1.15.2 — Ctrl/Cmd toggles membership; Shift is
+      // additive-only (never a toggle — see addSelectionId's own doc
+      // comment for why Canvas deliberately doesn't attempt a
+      // coordinate-based "range" the way Structure's ordered rows can);
+      // a plain click replaces the whole selection with just this node.
+      if (event.ctrlKey || event.metaKey) {
+        toggleSelection(nodeId);
+      } else if (event.shiftKey) {
+        addToSelection(nodeId);
+      } else {
+        selectOnly(nodeId);
+      }
     }
 
     function handleKeyDown(event: KeyboardEvent) {
@@ -94,7 +110,7 @@ export function CanvasInteractionBoundary({
       window.removeEventListener("click", handleClick);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [selectElement, clearSelection]);
+  }, [selectOnly, toggleSelection, addToSelection, clearSelection]);
 
   function handlePointerOver(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.pointerType === "touch") return;

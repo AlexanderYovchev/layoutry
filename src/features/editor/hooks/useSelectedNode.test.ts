@@ -1,6 +1,7 @@
-import { renderHook } from "@testing-library/react";
+﻿import { renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { selectionFromSingle } from "@/features/editor/types/selection";
 import { useSelectedNode } from "./useSelectedNode";
 
 const initialState = useEditorStore.getState();
@@ -16,7 +17,7 @@ describe("useSelectedNode", () => {
   });
 
   it("resolves the selected node along with its parent id", () => {
-    useEditorStore.setState({ selectedElementId: "heading-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("heading-1") });
 
     const { result } = renderHook(() => useSelectedNode());
 
@@ -25,7 +26,7 @@ describe("useSelectedNode", () => {
   });
 
   it("defaults parentLayoutMode to 'flow' when the parent has no layoutMode set", () => {
-    useEditorStore.setState({ selectedElementId: "heading-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("heading-1") });
 
     const { result } = renderHook(() => useSelectedNode());
 
@@ -36,7 +37,7 @@ describe("useSelectedNode", () => {
     useEditorStore.getState().convertToFreeLayout("section-1", {
       "heading-1": { x: 16, y: 16, width: 240, height: 48 },
     });
-    useEditorStore.setState({ selectedElementId: "heading-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("heading-1") });
 
     const { result } = renderHook(() => useSelectedNode());
 
@@ -44,7 +45,7 @@ describe("useSelectedNode", () => {
   });
 
   it("defaults parentLayoutMode to 'flow' for the document root (no parent at all)", () => {
-    useEditorStore.setState({ selectedElementId: "section-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("section-1") });
 
     const { result } = renderHook(() => useSelectedNode());
 
@@ -53,7 +54,7 @@ describe("useSelectedNode", () => {
   });
 
   it("defaults parentFlowDisplay to 'block' when the parent has no flowLayout set", () => {
-    useEditorStore.setState({ selectedElementId: "heading-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("heading-1") });
 
     const { result } = renderHook(() => useSelectedNode());
 
@@ -62,7 +63,7 @@ describe("useSelectedNode", () => {
 
   it("resolves parentFlowDisplay to 'flex' when the parent's flowLayout.display is flex (Checkpoint 3.5)", () => {
     useEditorStore.getState().setFlowDisplayMode("section-1", "flex");
-    useEditorStore.setState({ selectedElementId: "heading-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("heading-1") });
 
     const { result } = renderHook(() => useSelectedNode());
 
@@ -70,7 +71,7 @@ describe("useSelectedNode", () => {
   });
 
   it("defaults parentFlowDisplay to 'block' for the document root (no parent at all)", () => {
-    useEditorStore.setState({ selectedElementId: "section-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("section-1") });
 
     const { result } = renderHook(() => useSelectedNode());
 
@@ -78,7 +79,7 @@ describe("useSelectedNode", () => {
   });
 
   it("fails safely to null when the selected id no longer resolves", () => {
-    useEditorStore.setState({ selectedElementId: "does-not-exist" });
+    useEditorStore.setState({ selection: selectionFromSingle("does-not-exist") });
 
     const { result } = renderHook(() => useSelectedNode());
 

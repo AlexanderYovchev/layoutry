@@ -1,8 +1,9 @@
-import { render, screen, within } from "@testing-library/react";
+﻿import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { mockContainerElement } from "@/features/inspector/mockSelectedElement";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { selectionFromSingle } from "@/features/editor/types/selection";
 import { InspectorContent } from "./InspectorContent";
 
 const initialState = useEditorStore.getState();
@@ -88,7 +89,7 @@ describe("InspectorContent", () => {
   });
 
   it("shows a real selected node's read-only summary, taking priority over mock data", () => {
-    useEditorStore.setState({ selectedElementId: "heading-1" });
+    useEditorStore.setState({ selection: selectionFromSingle("heading-1") });
 
     render(<InspectorContent selectedElement={mockContainerElement} />);
 
@@ -100,7 +101,7 @@ describe("InspectorContent", () => {
   });
 
   it("falls back to the no-selection state when the selected id no longer resolves", () => {
-    useEditorStore.setState({ selectedElementId: "does-not-exist" });
+    useEditorStore.setState({ selection: selectionFromSingle("does-not-exist") });
 
     render(<InspectorContent />);
 
