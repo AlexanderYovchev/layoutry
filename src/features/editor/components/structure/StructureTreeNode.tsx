@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Lock } from "lucide-react";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -149,6 +149,17 @@ export function StructureTreeNode({
         />
 
         <span className="min-w-0 flex-1 truncate">{displayName}</span>
+
+        {/* Checkpoint 1.15.3, section 42 — owner-only indicator (never on
+            every protected DESCENDANT, which would get noisy fast; the
+            Inspector notice explains descendant protection when needed). */}
+        {node.lockChildStyles === true && (
+          <Lock
+            role="img"
+            aria-label="Lock child styles is on"
+            className="size-3 shrink-0 text-amber-500 dark:text-amber-400"
+          />
+        )}
 
         {shouldShowTagBadge(node) && (
           <span

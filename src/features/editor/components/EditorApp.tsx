@@ -15,6 +15,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import type { EditMenuCommands } from "@/components/layout/applicationMenus";
 import type { CatalogCardPlaceholder } from "@/components/layout/creationToolbarCategories";
 import { DocumentCanvas } from "@/features/canvas/components/DocumentCanvas";
+import { EditorNoticeBanner } from "@/features/editor/components/EditorNoticeBanner";
 import { StructurePanel } from "@/features/editor/components/structure/StructurePanel";
 import { InspectorContent } from "@/features/inspector/components/InspectorContent";
 import { isInsertableElementType } from "@/features/editor/factories/elementFactories";
@@ -133,6 +134,7 @@ export function EditorApp() {
         onActivateCatalogCard={handleActivateCard}
         editMenuCommands={editMenuCommands}
       />
+      <EditorNoticeBanner />
       <DragOverlay>
         {activeDrag && (
           <div className="pointer-events-none flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">

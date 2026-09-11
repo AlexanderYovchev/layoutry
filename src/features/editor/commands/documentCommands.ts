@@ -906,3 +906,36 @@ export function setElementClassName(
 
   return changed ? { ...root, children } : root;
 }
+
+/**
+ * Sets (or clears, via `lockChildStyles: undefined`) nodeId's own "Lock
+ * child styles" toggle (Checkpoint 1.15.3) — same generic, tag-agnostic,
+ * no-op-guarded shape as setElementHtmlId/setElementClassName. Deliberately
+ * NEVER guarded by the style-protection check itself (see
+ * rules/styleProtection.ts): this is editor-only protection metadata, not
+ * a CSS property, so toggling it must keep working even while the owning
+ * node happens to be a protected descendant of some OTHER lock further up
+ * the tree — the same reasoning Identity (htmlId/className) stays editable
+ * under protection.
+ */
+export function setElementLockChildStyles(
+  root: EditorElementNode,
+  nodeId: string,
+  lockChildStyles: boolean | undefined,
+): EditorElementNode {
+  if (root.id === nodeId) {
+    if (root.lockChildStyles === lockChildStyles) return root;
+    return { ...root, lockChildStyles };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setElementLockChildStyles(child, nodeId, lockChildStyles);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}

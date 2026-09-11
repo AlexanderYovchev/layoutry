@@ -1,19 +1,21 @@
-Add SVG and Animation.
+Fix the component free resizing in the containers.
 
-Custom SVG where the users can draw their own SVG image.
+Add more Buttons options (Dropdown etc.)
 
-Containers should have content CSS styling for all of its children and an option button where the user can lock the parent CSS so incase the user tries to change CSS of any of the content elements nothing to happen. If
-the user tries to change the CSS of any of the elements while the CSS parent class is locked should show a message on a visible place that notifies to disable the CSS lock option of the parent.
+The Protection exists but the Containers still doesnt have a Content Parent CSS manipulation. Containers should have Content justifying and aligning, so should have styling like coloring reshaping and more thats responsible
+only for their content.
 
-There should be a multiple selecting elements via "CTRL + LM" and "SHIFT + LM" in case the user want to change the CSS for multiple elements from the same group at once. By same group i mean (only text) or (only Buttons) etc.
-If the user select multiple elements from different groups the CSS inspector should show only the options that are allowed for both elements so it doesnt throw error.
+The grouping is difficult to understand and messy make it more simple, i didnt even knew what i clicked and my both Ordered and Unordered lists inside the Container were linked. When i tried to resize one of them it resized
+the other aswell.
 
-Some of the components (like Table for example) doesnt have a parent where the user can select all of the Cells, he is allowed to select the Cells only 1 by 1 and that makes the work harder in case he wanna bulk change the CSS.
+The content inside a container parent are overlapping when i pick any of the Container Display and Visibility. I want the content to be evenly separated from eachand not step on each other or go out of boundaries and become bigger
+then their parent container itself.
 
-All of the elements should have a field in CSS inspector where it has Id and/or Class so the user can name their HTML parts.
+The current Main issue is the resizing and aligning of the Content inside a Container. The application should be a little bit smarter and understand what NOT to do like overlapping on each other, except when the user clicked
+Free adjustment option!
 
-Some of the Elements duplicated in the Nav Menu. You can Find them in HTML drop tab and in another place. Its more professional to find them only in one relevant for them place. For example Form elements like email
-password, phone fields can be found in HTML and in Forms tab. I know that these fields can be found not only in Forms but this should be refactored in a more clean way.
+Claude should review all of the HTML,Components,Layouts basically all of the options that can be resized and test them, because some if not most of them still cant be adjusted and fit properly inside a container! For example
+i found one where i create a Nav bar and add a button inside. The button cannot be resized the way the user wants.
 
-The containers still doesnt have a reshaping option where the user can change their shape (Not only the default rectangular one with 4 edges).
+There should be a SNAP option of the content where they can align on an even level and not sloppy!
 

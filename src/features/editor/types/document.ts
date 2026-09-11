@@ -344,4 +344,23 @@ export interface EditorElementNode {
    * (Image/Video/Iframe — see this checkpoint's report, section C).
    */
   className?: string;
+  /**
+   * This node's own "Lock child styles" toggle (Checkpoint 1.15.3) —
+   * editor-only protection metadata, NOT a CSS property and NOT exported.
+   * When true, every descendant's authored CSS/style mutations (Typography,
+   * Background, Border, Size, Spacing, Position, Media Fit, Filters,
+   * Display, Flex/Grid child settings, Free-layout geometry, resize, ...)
+   * are blocked by the centralized style-protection guard (see
+   * rules/styleProtection.ts) until this is turned back off. Semantic and
+   * structural edits (text, href, src, form fields, Identity, table/list/
+   * select structure, reordering, delete, duplicate) are entirely
+   * unaffected — this is deliberately a STYLE lock, not a content or
+   * structure lock. Applies recursively to every descendant, not just
+   * direct children; the node that OWNS the lock is never protected by its
+   * own lock (see findNearestStyleLockingAncestor, which walks ancestors
+   * only, never the node itself). Same "store unconditionally, no
+   * synthesized default" convention `htmlId`/`className` already use —
+   * unset (the default) means unlocked.
+   */
+  lockChildStyles?: boolean;
 }

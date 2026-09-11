@@ -8,7 +8,10 @@ import { InspectorBulkPositionSection } from "@/features/inspector/components/In
 import { InspectorBulkSizeSection } from "@/features/inspector/components/InspectorBulkSizeSection";
 import { InspectorBulkSpacingSection } from "@/features/inspector/components/InspectorBulkSpacingSection";
 import { InspectorBulkTypographySection } from "@/features/inspector/components/InspectorBulkTypographySection";
+import { InspectorProtectedStyleGroup } from "@/features/inspector/components/InspectorProtectedStyleGroup";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { intersectElementCapabilities } from "@/features/editor/rules/elementCapabilities";
+import { describeStyleLockNotice, getStyleProtection } from "@/features/editor/rules/styleProtection";
 import { getElementDisplayName } from "@/features/editor/utils/elementDisplayName";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -50,6 +53,19 @@ function describeSelection(nodes: readonly EditorElementNode[]): string {
 export function InspectorMultiNodeSummary({ nodes }: InspectorMultiNodeSummaryProps) {
   const capabilities = intersectElementCapabilities(nodes.map((node) => node.tag));
 
+  // Parent Style Protection (Checkpoint 1.15.3, sections 17-18, 26) — a
+  // SEPARATE concept from capability intersection (section 26's own
+  // explicit distinction): capability answers "can this selection
+  // conceptually support Typography," protection answers "is Layoutry
+  // currently allowing that mutation right now." Sections stay visible
+  // and capability-gated exactly as before; only the interactive style
+  // controls become disabled when ANY selected node is protected, matching
+  // the atomic bulk-guard the store itself already enforces.
+  const documentModel = useEditorStore((state) => state.document);
+  const protections = nodes.map((node) => getStyleProtection(documentModel, node.id));
+  const anyProtected = protections.some((result) => result.protected);
+  const protectionMessage = anyProtected ? describeStyleLockNotice(protections, true) : "";
+
   // Spacing renders unconditionally (matching InspectorNodeSummary's own
   // single-selection behavior — margin/padding are meaningful on
   // literally any tag, no capability gate exists for it there either),
@@ -81,8 +97,18 @@ export function InspectorMultiNodeSummary({ nodes }: InspectorMultiNodeSummaryPr
           <p>No shared style controls are available for this selection.</p>
         </div>
       )}
-      {capabilityGatedSections}
-      <InspectorBulkSpacingSection nodes={nodes} />
+      {anyProtected && (
+        <div
+          role="status"
+          className="mx-3 mb-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300"
+        >
+          <p>{protectionMessage}</p>
+        </div>
+      )}
+      <InspectorProtectedStyleGroup protected={anyProtected}>
+        {capabilityGatedSections}
+        <InspectorBulkSpacingSection nodes={nodes} />
+      </InspectorProtectedStyleGroup>
     </div>
   );
 }

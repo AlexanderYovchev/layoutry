@@ -10,6 +10,7 @@ import {
 import { computeFreeChildMoveResult, type FreeChildMoveStart } from "@/features/canvas/utils/computeFreeChildMoveResult";
 import { measureFreeContainerBounds } from "@/features/canvas/utils/measureFreeContainerBounds";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { describeStyleLockNotice, getStyleProtection } from "@/features/editor/rules/styleProtection";
 
 export interface UseFreeChildMoveSessionResult {
   isDragging: boolean;
@@ -74,6 +75,21 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<Element>) => {
+      // Checkpoint 1.15.3, section 30 — Free-layout movement authors CSS
+      // position, so it's blocked for a protected node the same way
+      // resize is (section 28/29). Deliberately returns BEFORE
+      // stopPropagation/pointer capture: the plain click this same
+      // pointerdown/pointerup pair still produces (for selection, via
+      // CanvasInteractionBoundary's own listener) must keep working
+      // exactly as it does for any other node — only the drag mechanics
+      // are skipped here.
+      const store = useEditorStore.getState();
+      const protection = getStyleProtection(store.document, nodeId);
+      if (protection.protected) {
+        store.showEditorNotice(describeStyleLockNotice([protection], false));
+        return;
+      }
+
       event.stopPropagation();
       event.currentTarget.setPointerCapture(event.pointerId);
       useEditorStore.getState().beginResizeTransaction();

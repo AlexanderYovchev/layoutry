@@ -7,7 +7,9 @@ import { HoverOverlay } from "@/features/canvas/components/overlay/HoverOverlay"
 import { MediaGuideOverlay } from "@/features/canvas/components/overlay/MediaGuideOverlay";
 import { SelectionOverlay } from "@/features/canvas/components/overlay/SelectionOverlay";
 import { useActiveDropIndicator } from "@/features/canvas/hooks/useActiveDropIndicator";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { useSelectedNodes } from "@/features/editor/hooks/useSelectedNode";
+import { isStyleProtected } from "@/features/editor/rules/styleProtection";
 
 interface CanvasOverlayProps {
   canvasRootRef: RefObject<HTMLElement | null>;
@@ -29,13 +31,20 @@ interface CanvasOverlayProps {
  */
 export function CanvasOverlay({ canvasRootRef, hoveredNodeId }: CanvasOverlayProps) {
   const { nodes: selectedNodes, primary } = useSelectedNodes();
+  const documentModel = useEditorStore((state) => state.document);
   const activeDropIndicator = useActiveDropIndicator();
   const showHover =
     hoveredNodeId !== null && hoveredNodeId !== primary?.node.id && !activeDropIndicator;
   // Checkpoint 1.15.2, Part 14 — resize handles only ever render for a
   // genuine single selection; a multi-selection's own outlines are pure
   // visual feedback (see SelectionOverlay's own doc comment for why).
-  const showHandles = selectedNodes.length === 1;
+  // Checkpoint 1.15.3, section 28 — also hidden entirely (not merely
+  // disabled) for a single selection that's itself style-protected, since
+  // resize is a CSS-authoring interaction; the store's own resizeElement/
+  // setFreeChildGeometry(Live) guards are the real enforcement (section 29),
+  // this only keeps the handles from being shown-but-inert.
+  const showHandles =
+    selectedNodes.length === 1 && !isStyleProtected(documentModel, selectedNodes[0].node.id);
 
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0">

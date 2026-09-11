@@ -19,15 +19,20 @@ import { InspectorListSection } from "@/features/inspector/components/InspectorL
 import { InspectorMediaSection } from "@/features/inspector/components/InspectorMediaSection";
 import { InspectorOptionSection } from "@/features/inspector/components/InspectorOptionSection";
 import { InspectorPositionSection } from "@/features/inspector/components/InspectorPositionSection";
+import { InspectorProtectedStyleGroup } from "@/features/inspector/components/InspectorProtectedStyleGroup";
+import { InspectorProtectionSection } from "@/features/inspector/components/InspectorProtectionSection";
 import { InspectorSelectOptionsSection } from "@/features/inspector/components/InspectorSelectOptionsSection";
 import { InspectorSizeSection } from "@/features/inspector/components/InspectorSizeSection";
 import { InspectorSpacingSection } from "@/features/inspector/components/InspectorSpacingSection";
+import { InspectorStyleProtectionNotice } from "@/features/inspector/components/InspectorStyleProtectionNotice";
 import { InspectorTableSection } from "@/features/inspector/components/InspectorTableSection";
 import { InspectorTableSelectionSection } from "@/features/inspector/components/InspectorTableSelectionSection";
 import { InspectorTypographySection } from "@/features/inspector/components/InspectorTypographySection";
 import { InspectorVideoSection } from "@/features/inspector/components/InspectorVideoSection";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { getElementCapabilities } from "@/features/editor/rules/elementCapabilities";
 import { canContainChildren } from "@/features/editor/rules/insertionRules";
+import { canOwnStyleLock, getStyleProtection } from "@/features/editor/rules/styleProtection";
 import { getElementDisplayName } from "@/features/editor/utils/elementDisplayName";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { getLayoutMode, type ContainerLayoutMode } from "@/features/editor/types/layout";
@@ -76,21 +81,52 @@ export function InspectorNodeSummary({
   // types/position.ts's own doc comment for the full ownership conflict.
   const isFreeContainer = getLayoutMode(node) === "free";
 
+  // Parent Style Protection (Checkpoint 1.15.3) — computed once per render
+  // and threaded through every STYLE-only section below via
+  // InspectorProtectedStyleGroup (visible-but-disabled, never hidden — see
+  // that component's own doc comment). Semantic/structural sections
+  // (Identity, Video, Iframe, Link, Heading Level, List, Table, Table
+  // Selection, Option, Form Control, Select Options) are deliberately left
+  // OUTSIDE any protected group — this is a STYLE lock, not a content lock
+  // (section 5).
+  const documentModel = useEditorStore((state) => state.document);
+  const protection = getStyleProtection(documentModel, node.id);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <InspectorElementSummary name={getElementDisplayName(node)} tag={node.tag} />
       <div className="flex flex-col gap-1.5 px-3 py-2">
         <InspectorFieldRow label="Node ID" value={node.id} />
         {parentId && <InspectorFieldRow label="Parent ID" value={parentId} />}
-        {isFreeChild && <InspectorFreeGeometryFields node={node} />}
+        {isFreeChild && (
+          <InspectorProtectedStyleGroup protected={protection.protected}>
+            <InspectorFreeGeometryFields node={node} />
+          </InspectorProtectedStyleGroup>
+        )}
       </div>
       <InspectorIdentitySection node={node} />
+      {canOwnStyleLock(node.tag) && <InspectorProtectionSection node={node} />}
+      <InspectorStyleProtectionNotice protection={protection} />
       {getElementCapabilities(node.tag).supportsAspectRatio && (
-        <InspectorSizeSection node={node} isFreeChild={isFreeChild} />
+        <InspectorProtectedStyleGroup protected={protection.protected}>
+          <InspectorSizeSection node={node} isFreeChild={isFreeChild} />
+        </InspectorProtectedStyleGroup>
       )}
-      {!isFreeChild && parentFlowDisplay === "flex" && <InspectorFlexChildSection node={node} />}
-      {!isFreeChild && parentFlowDisplay === "grid" && <InspectorGridChildSection node={node} />}
-      {getElementCapabilities(node.tag).supportsMediaFit && <InspectorMediaSection node={node} />}
+      {!isFreeChild && parentFlowDisplay === "flex" && (
+        <InspectorProtectedStyleGroup protected={protection.protected}>
+          <InspectorFlexChildSection node={node} />
+        </InspectorProtectedStyleGroup>
+      )}
+      {!isFreeChild && parentFlowDisplay === "grid" && (
+        <InspectorProtectedStyleGroup protected={protection.protected}>
+          <InspectorGridChildSection node={node} />
+        </InspectorProtectedStyleGroup>
+      )}
+      {getElementCapabilities(node.tag).supportsMediaFit && (
+        <InspectorProtectedStyleGroup protected={protection.protected}>
+          <InspectorMediaSection node={node} />
+        </InspectorProtectedStyleGroup>
+      )}
       {node.tag === "video" && <InspectorVideoSection node={node} />}
       {node.tag === "iframe" && <InspectorIframeSection node={node} />}
       {getElementCapabilities(node.tag).supportsHref && <InspectorLinkSection node={node} />}
@@ -101,20 +137,22 @@ export function InspectorNodeSummary({
       {node.tag === "option" && <InspectorOptionSection node={node} parentId={parentId} />}
       {getElementCapabilities(node.tag).supportsFormControl && <InspectorFormControlSection node={node} />}
       {node.tag === "select" && <InspectorSelectOptionsSection node={node} />}
-      {getElementCapabilities(node.tag).supportsTypography && <InspectorTypographySection node={node} />}
-      {getElementCapabilities(node.tag).supportsBackground && <InspectorBackgroundSection node={node} />}
-      {getElementCapabilities(node.tag).supportsBorder && <InspectorBorderSection node={node} />}
-      {getElementCapabilities(node.tag).supportsBorderRadius && <InspectorBorderRadiusSection node={node} />}
-      {getElementCapabilities(node.tag).supportsBoxShadow && <InspectorBoxShadowSection node={node} />}
-      {getElementCapabilities(node.tag).supportsFilters && <InspectorFiltersSection node={node} />}
-      {getElementCapabilities(node.tag).supportsDisplay && <InspectorDisplaySection node={node} />}
-      {getElementCapabilities(node.tag).supportsPosition && !isFreeChild && !isFreeContainer && (
-        <InspectorPositionSection node={node} />
-      )}
-      <InspectorSpacingSection node={node} />
-      {canContainChildren(node.tag) && getElementCapabilities(node.tag).supportsChildLayout && (
-        <InspectorLayoutSection node={node} />
-      )}
+      <InspectorProtectedStyleGroup protected={protection.protected}>
+        {getElementCapabilities(node.tag).supportsTypography && <InspectorTypographySection node={node} />}
+        {getElementCapabilities(node.tag).supportsBackground && <InspectorBackgroundSection node={node} />}
+        {getElementCapabilities(node.tag).supportsBorder && <InspectorBorderSection node={node} />}
+        {getElementCapabilities(node.tag).supportsBorderRadius && <InspectorBorderRadiusSection node={node} />}
+        {getElementCapabilities(node.tag).supportsBoxShadow && <InspectorBoxShadowSection node={node} />}
+        {getElementCapabilities(node.tag).supportsFilters && <InspectorFiltersSection node={node} />}
+        {getElementCapabilities(node.tag).supportsDisplay && <InspectorDisplaySection node={node} />}
+        {getElementCapabilities(node.tag).supportsPosition && !isFreeChild && !isFreeContainer && (
+          <InspectorPositionSection node={node} />
+        )}
+        <InspectorSpacingSection node={node} />
+        {canContainChildren(node.tag) && getElementCapabilities(node.tag).supportsChildLayout && (
+          <InspectorLayoutSection node={node} />
+        )}
+      </InspectorProtectedStyleGroup>
     </div>
   );
 }

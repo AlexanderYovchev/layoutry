@@ -16,6 +16,7 @@ import { measureFreeContainerBounds } from "@/features/canvas/utils/measureFreeC
 import { resolveContainerScalingSnapshot, type ContainerScalingSnapshot } from "@/features/canvas/utils/resolveContainerScalingSnapshot";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { getEffectiveAspectRatioLocked } from "@/features/editor/rules/elementCapabilities";
+import { describeStyleLockNotice, getStyleProtection } from "@/features/editor/rules/styleProtection";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
 import { getResizeConstraintsForTag, type ElementResizeConstraints } from "@/features/editor/types/layout";
 import { RESIZE_HANDLE_CURSORS, type ResizeDirection } from "@/features/editor/types/resize";
@@ -131,6 +132,15 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
       (event: ReactPointerEvent<HTMLDivElement>) => {
         event.stopPropagation();
         event.preventDefault();
+
+        // Checkpoint 1.15.3, section 28/29 — same pre-check as useResizeSession.
+        const store = useEditorStore.getState();
+        const protection = getStyleProtection(store.document, nodeId);
+        if (protection.protected) {
+          store.showEditorNotice(describeStyleLockNotice([protection], false));
+          return;
+        }
+
         event.currentTarget.setPointerCapture(event.pointerId);
         useEditorStore.getState().beginResizeTransaction();
         didMoveRef.current = false;

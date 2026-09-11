@@ -13,6 +13,7 @@ import { computeResizeResult } from "@/features/canvas/utils/computeResizeResult
 import { resolveContainerScalingSnapshot, type ContainerScalingSnapshot } from "@/features/canvas/utils/resolveContainerScalingSnapshot";
 import { resolveResizeBounds } from "@/features/canvas/utils/resolveResizeBounds";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { describeStyleLockNotice, getStyleProtection } from "@/features/editor/rules/styleProtection";
 import { getResizeConstraintsForTag, type ElementResizeConstraints } from "@/features/editor/types/layout";
 import {
   RESIZE_HANDLE_CURSORS,
@@ -156,6 +157,21 @@ export function useResizeSession(
       (event: ReactPointerEvent<HTMLDivElement>) => {
         event.stopPropagation();
         event.preventDefault();
+
+        // Checkpoint 1.15.3, section 28/29 — resize handles are already
+        // hidden entirely for a protected single selection (see
+        // CanvasOverlay), so this is normally unreachable through the UI;
+        // kept as an explicit pre-check anyway (rather than relying only
+        // on the store's own resizeElement guard) so a protected node
+        // never even shows a "stuck" drag with no visible effect — the
+        // user gets the same notice a blocked Inspector edit would show.
+        const store = useEditorStore.getState();
+        const protection = getStyleProtection(store.document, nodeId);
+        if (protection.protected) {
+          store.showEditorNotice(describeStyleLockNotice([protection], false));
+          return;
+        }
+
         event.currentTarget.setPointerCapture(event.pointerId);
         useEditorStore.getState().beginResizeTransaction();
         didMoveRef.current = false;

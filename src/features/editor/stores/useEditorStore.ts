@@ -22,6 +22,7 @@ import {
   setElementTag as setElementTagCommand,
   setElementText as setElementTextCommand,
   setElementTitle as setElementTitleCommand,
+  setElementLockChildStyles as setElementLockChildStylesCommand,
   setElementValue as setElementValueCommand,
   setListItemCount as setListItemCountCommand,
   setOptionCount as setOptionCountCommand,
@@ -86,6 +87,7 @@ import {
   toggleSelectionId,
   type EditorSelection,
 } from "@/features/editor/types/selection";
+import { describeStyleLockNotice, getStyleProtection, type StyleProtectionResult } from "@/features/editor/rules/styleProtection";
 import { clampGridChildPlacement } from "@/features/editor/utils/clampGridChildPlacement";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
 import { cloneNodeWithFreshIds } from "@/features/editor/utils/cloneNodeWithFreshIds";
@@ -137,6 +139,17 @@ interface EditorState {
   future: HistoryEntry[];
   /** Non-null while a continuous interaction (currently: resize) is mid-drag — see beginResizeTransaction. */
   transactionSnapshot: HistoryEntry | null;
+  /**
+   * The one transient, non-modal editor message currently visible
+   * (Checkpoint 1.15.3 — e.g. a blocked-by-style-protection notice). Never
+   * a queue: a new message always replaces whatever's showing (see
+   * showEditorNotice). `id` increments only when the message text actually
+   * changes, so a continuous stream of identical blocked-attempt notices
+   * (e.g. dragging a locked node) never restarts EditorNoticeBanner's own
+   * auto-dismiss timer — see showEditorNotice's own doc comment. Editor
+   * state only, never touched by pushHistory/undo/redo.
+   */
+  editorNotice: { message: string; id: number } | null;
 
   /** Selects exactly this one id, replacing any existing selection — the plain-click behavior, and every internal single-target action (insert/move/duplicate/paste/undo/redo) below. `selectOnly` is the same action under an explicit name for new multi-selection-aware call sites. */
   selectElement: (id: string | null) => void;
@@ -302,6 +315,24 @@ interface EditorState {
   setElementHtmlId: (nodeId: string, htmlId: string | undefined) => void;
   /** One-shot authored HTML `class` edit (Checkpoint 1.15.1 — the Identity Inspector section). */
   setElementClassName: (nodeId: string, className: string | undefined) => void;
+  /**
+   * One-shot "Lock child styles" toggle (Checkpoint 1.15.3 — the
+   * Protection Inspector section). Editor-only protection metadata, never
+   * itself subject to the style-protection guard — see
+   * setElementLockChildStyles's own doc comment in documentCommands.ts.
+   */
+  setElementLockChildStyles: (nodeId: string, lockChildStyles: boolean | undefined) => void;
+
+  /**
+   * Shows one transient, non-modal editor notice (Checkpoint 1.15.3) —
+   * replaces whatever message is currently visible rather than queuing
+   * (see the `editorNotice` field's own doc comment). Every guarded style
+   * mutation below calls this internally (via guardedStyleMutation/
+   * guardedBulkStyleMutation) when a blocked attempt occurs; exposed as
+   * its own action too for any future non-protection use.
+   */
+  showEditorNotice: (message: string) => void;
+  dismissEditorNotice: () => void;
 
   /**
    * Bulk CSS commands (Checkpoint 1.15.2) — the multi-selection Inspector's
@@ -369,6 +400,75 @@ function pushHistory(state: EditorState): Pick<EditorState, "past" | "future"> {
 }
 
 /**
+ * The single central enforcement point for Parent Style Protection
+ * (Checkpoint 1.15.3) — every style-mutating store action below (Typography,
+ * Background, Border, Size, Spacing, Position, Media Fit, Filters, Display,
+ * Flex/Grid child settings, a container's own Flow display/gap/justify
+ * settings, Free-layout geometry, and per-frame resize) is wrapped in this
+ * rather than each independently re-deriving "is this node currently
+ * locked." A protected target makes NO document change and pushes NO
+ * history entry — only a transient notice, so a blocked attempt behaves
+ * exactly like it never happened except for that one visible explanation
+ * (sections 14-16, 37-39). This is deliberately the STORE layer, not the
+ * Inspector layer: it runs the same way whether the mutation came from an
+ * Inspector field, a resize/Free-drag session, or a future caller neither
+ * of those know about (section 14's own explicit "disabled controls are
+ * not enough" requirement).
+ */
+function guardedStyleMutation(
+  state: EditorState,
+  nodeId: string,
+  mutate: (document: EditorElementNode) => EditorElementNode,
+): Partial<EditorState> {
+  const protection = getStyleProtection(state.document, nodeId);
+  if (protection.protected) {
+    return nextEditorNoticeState(state, describeStyleLockNotice([protection], false));
+  }
+
+  const document = mutate(state.document);
+  if (document === state.document) return {};
+  return { ...pushHistory(state), document };
+}
+
+/**
+ * The bulk counterpart to guardedStyleMutation (sections 17-18) — checks
+ * EVERY targeted id before mutating anything. If any target is protected,
+ * the entire bulk mutation is blocked atomically: nothing changes for the
+ * unprotected targets either, matching the existing "one bulk action = one
+ * coherent result" philosophy Checkpoint 1.15.2 already established for
+ * no-op detection. One notice either names the single shared locking
+ * ancestor or, if the blocked targets are protected by different
+ * ancestors, shows one generic message (never one notice per target).
+ */
+function guardedBulkStyleMutation(
+  state: EditorState,
+  ids: readonly string[],
+  mutate: (document: EditorElementNode) => EditorElementNode,
+): Partial<EditorState> {
+  const protections: StyleProtectionResult[] = ids.map((id) => getStyleProtection(state.document, id));
+  if (protections.some((result) => result.protected)) {
+    return nextEditorNoticeState(state, describeStyleLockNotice(protections, true));
+  }
+
+  const document = mutate(state.document);
+  if (document === state.document) return {};
+  return { ...pushHistory(state), document };
+}
+
+/**
+ * Replaces the visible editorNotice with `message`, but returns `{}`
+ * (skips the state write entirely) when that exact message is already
+ * showing — this is what keeps a continuous stream of identical
+ * blocked-attempt notices (e.g. a live Free-drag on a locked node
+ * committing every animation frame) from spamming re-renders or
+ * restarting EditorNoticeBanner's own auto-dismiss timer (section 23).
+ */
+function nextEditorNoticeState(state: EditorState, message: string): Partial<EditorState> {
+  if (state.editorNotice?.message === message) return {};
+  return { editorNotice: { message, id: (state.editorNotice?.id ?? 0) + 1 } };
+}
+
+/**
  * The current PRIMARY selected node, unless there's no selection, the
  * primary is the document root (never a valid copy/cut/duplicate/delete
  * target — see elementCapabilities), or the id no longer resolves in the
@@ -412,6 +512,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   past: [],
   future: [],
   transactionSnapshot: null,
+  editorNotice: null,
 
   selectElement: (id) => set({ selection: selectionFromSingle(id) }),
   selectOnly: (id) => set({ selection: selectionFromSingle(id) }),
@@ -458,10 +559,20 @@ export const useEditorStore = create<EditorState>()((set) => ({
   // call (see beginResizeTransaction/commitResizeTransaction), not here —
   // this fires once per animation frame during a drag, so pushing history
   // on every call would flood the undo stack.
+  // Guarded (Checkpoint 1.15.3): resize handles are already hidden
+  // entirely for a protected node's selection (see CanvasOverlay), and
+  // useResizeSession/useFreeChildResizeSession also refuse to even begin a
+  // transaction for one (section 28's "hide, don't merely disable"
+  // preference) — this store-level check is the section-29 defense-in-
+  // depth backstop for any path that reaches this action directly. No
+  // history push of its own either way (see the comment above), so a
+  // blocked call is a true no-op: document simply keeps its current
+  // reference.
   resizeElement: (nodeId, dimensions) =>
-    set((state) => ({
-      document: resizeNode(state.document, nodeId, dimensions),
-    })),
+    set((state) => {
+      if (getStyleProtection(state.document, nodeId).protected) return {};
+      return { document: resizeNode(state.document, nodeId, dimensions) };
+    }),
 
   beginResizeTransaction: () =>
     set((state) => (state.transactionSnapshot ? {} : { transactionSnapshot: snapshot(state) })),
@@ -479,16 +590,17 @@ export const useEditorStore = create<EditorState>()((set) => ({
   // live document too, not just skip the history push.
   cancelResizeTransaction: () => set({ transactionSnapshot: null }),
 
+  // Free-layout movement authors CSS position (section 30) — guarded the
+  // same way every other one-shot style command is.
   setFreeChildGeometry: (nodeId, geometry) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setFreeChildGeometryCommand(state.document, nodeId, geometry),
-    })),
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setFreeChildGeometryCommand(document, nodeId, geometry))),
 
   setFreeChildGeometryLive: (nodeId, geometry) =>
-    set((state) => ({
-      document: setFreeChildGeometryCommand(state.document, nodeId, geometry),
-    })),
+    set((state) => {
+      const protection = getStyleProtection(state.document, nodeId);
+      if (protection.protected) return nextEditorNoticeState(state, describeStyleLockNotice([protection], false));
+      return { document: setFreeChildGeometryCommand(state.document, nodeId, geometry) };
+    }),
 
   applyFreeContainerChildGeometriesLive: (containerId, selfUpdate, childGeometries) =>
     set((state) => ({
@@ -496,10 +608,9 @@ export const useEditorStore = create<EditorState>()((set) => ({
     })),
 
   setChildResizePolicy: (containerId, policy) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setChildResizePolicyForNode(state.document, containerId, policy),
-    })),
+    set((state) =>
+      guardedStyleMutation(state, containerId, (document) => setChildResizePolicyForNode(document, containerId, policy)),
+    ),
 
   convertToFreeLayout: (containerId, childGeometries, selfUpdate) =>
     set((state) => ({
@@ -513,41 +624,33 @@ export const useEditorStore = create<EditorState>()((set) => ({
       document: convertToFlowLayout(state.document, containerId),
     })),
 
+  // Display/gap/justify/align/grid-template are authored CSS on the
+  // container itself — guarded like every other style command. A locked
+  // container remains free to edit these on ITSELF (the guard checks
+  // ANCESTORS of containerId, never containerId's own lock — section 33),
+  // but a container that is itself protected by some ancestor further up
+  // stays blocked here too, exactly like any other style field on it.
   setFlowDisplayMode: (containerId, display) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setFlowDisplayModeCommand(state.document, containerId, display),
-    })),
+    set((state) => guardedStyleMutation(state, containerId, (document) => setFlowDisplayModeCommand(document, containerId, display))),
 
   setFlexContainerSettings: (containerId, settings) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setFlexContainerSettingsCommand(state.document, containerId, settings),
-    })),
+    set((state) =>
+      guardedStyleMutation(state, containerId, (document) => setFlexContainerSettingsCommand(document, containerId, settings)),
+    ),
 
   setGridContainerSettings: (containerId, settings) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setGridContainerSettingsCommand(state.document, containerId, settings),
-    })),
+    set((state) =>
+      guardedStyleMutation(state, containerId, (document) => setGridContainerSettingsCommand(document, containerId, settings)),
+    ),
 
   setElementMargin: (nodeId, margin) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setElementMarginCommand(state.document, nodeId, margin),
-    })),
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setElementMarginCommand(document, nodeId, margin))),
 
   setElementPadding: (nodeId, padding) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setElementPaddingCommand(state.document, nodeId, padding),
-    })),
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setElementPaddingCommand(document, nodeId, padding))),
 
   setFlexChildSettings: (nodeId, settings) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setFlexChildSettingsCommand(state.document, nodeId, settings),
-    })),
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setFlexChildSettingsCommand(document, nodeId, settings))),
 
   // Grid track bounds are only cheaply known here (the parent is one
   // findParentId/findNodeById lookup away), so the clamp lives at this
@@ -562,99 +665,63 @@ export const useEditorStore = create<EditorState>()((set) => ({
 
       const clamped: GridChildSettings = grid ? clampGridChildPlacement(settings, grid) : settings;
 
-      return {
-        ...pushHistory(state),
-        document: setGridChildSettingsCommand(state.document, nodeId, clamped),
-      };
+      return guardedStyleMutation(state, nodeId, (document) => setGridChildSettingsCommand(document, nodeId, clamped));
     }),
 
   setMediaFitSettings: (nodeId, settings) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setMediaFitSettingsCommand(state.document, nodeId, settings),
-    })),
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setMediaFitSettingsCommand(document, nodeId, settings))),
 
   setElementTypography: (nodeId, typography) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setTypographySettingsCommand(state.document, nodeId, typography),
-    })),
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setTypographySettingsCommand(document, nodeId, typography))),
 
   setElementBackground: (nodeId, background) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setBackgroundSettingsCommand(state.document, nodeId, background),
-    })),
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setBackgroundSettingsCommand(document, nodeId, background))),
 
   setElementBackgroundLive: (nodeId, background) =>
-    set((state) => ({
-      document: setBackgroundSettingsCommand(state.document, nodeId, background),
-    })),
+    set((state) => {
+      const protection = getStyleProtection(state.document, nodeId);
+      if (protection.protected) return nextEditorNoticeState(state, describeStyleLockNotice([protection], false));
+      return { document: setBackgroundSettingsCommand(state.document, nodeId, background) };
+    }),
 
   setElementBorder: (nodeId, border) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setBorderSettingsCommand(state.document, nodeId, border),
-    })),
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setBorderSettingsCommand(document, nodeId, border))),
 
   setElementBorderRadius: (nodeId, borderRadius) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setBorderRadiusSettingsCommand(state.document, nodeId, borderRadius),
-    })),
+    set((state) =>
+      guardedStyleMutation(state, nodeId, (document) => setBorderRadiusSettingsCommand(document, nodeId, borderRadius)),
+    ),
 
   setElementBoxShadow: (nodeId, boxShadow) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setBoxShadowSettingsCommand(state.document, nodeId, boxShadow),
-    })),
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setBoxShadowSettingsCommand(document, nodeId, boxShadow))),
 
   setElementBoxShadowLive: (nodeId, boxShadow) =>
-    set((state) => ({
-      document: setBoxShadowSettingsCommand(state.document, nodeId, boxShadow),
-    })),
+    set((state) => {
+      const protection = getStyleProtection(state.document, nodeId);
+      if (protection.protected) return nextEditorNoticeState(state, describeStyleLockNotice([protection], false));
+      return { document: setBoxShadowSettingsCommand(state.document, nodeId, boxShadow) };
+    }),
 
   setElementFilters: (nodeId, filters) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setFilterSettingsCommand(state.document, nodeId, filters),
-    })),
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setFilterSettingsCommand(document, nodeId, filters))),
 
   setElementDisplay: (nodeId, display) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setDisplaySettingsCommand(state.document, nodeId, display),
-    })),
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setDisplaySettingsCommand(document, nodeId, display))),
 
   setElementPosition: (nodeId, position) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setPositionSettingsCommand(state.document, nodeId, position),
-    })),
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setPositionSettingsCommand(document, nodeId, position))),
 
   setElementAspectRatio: (nodeId, aspectRatio) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setAspectRatioCommand(state.document, nodeId, aspectRatio),
-    })),
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setAspectRatioCommand(document, nodeId, aspectRatio))),
 
   setSizeConstraints: (nodeId, constraints) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setSizeConstraintsCommand(state.document, nodeId, constraints),
-    })),
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setSizeConstraintsCommand(document, nodeId, constraints))),
 
   setElementDimensions: (nodeId, dimensions) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setElementDimensionsCommand(state.document, nodeId, dimensions),
-    })),
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setElementDimensionsCommand(document, nodeId, dimensions))),
 
   setAspectRatioLocked: (nodeId, locked) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: setAspectRatioLockedCommand(state.document, nodeId, locked),
-    })),
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setAspectRatioLockedCommand(document, nodeId, locked))),
 
   setElementText: (nodeId, text) =>
     set((state) => ({
@@ -822,6 +889,20 @@ export const useEditorStore = create<EditorState>()((set) => ({
       return { ...pushHistory(state), document };
     }),
 
+  // Deliberately NOT run through guardedStyleMutation — editor-only
+  // protection metadata, never itself subject to the guard it defines
+  // (see setElementLockChildStyles's own doc comment in
+  // documentCommands.ts and section 5 of this checkpoint's report).
+  setElementLockChildStyles: (nodeId, lockChildStyles) =>
+    set((state) => {
+      const document = setElementLockChildStylesCommand(state.document, nodeId, lockChildStyles);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  showEditorNotice: (message) => set((state) => nextEditorNoticeState(state, message)),
+  dismissEditorNotice: () => set({ editorNotice: null }),
+
   beginTransaction: () =>
     set((state) => (state.transactionSnapshot ? {} : { transactionSnapshot: snapshot(state) })),
 
@@ -913,78 +994,60 @@ export const useEditorStore = create<EditorState>()((set) => ({
       };
     }),
 
+  // Every bulk command below is guarded atomically (Checkpoint 1.15.3,
+  // sections 17-18): if ANY targeted id is style-protected, the WHOLE bulk
+  // mutation is blocked — none of the unprotected targets change either —
+  // matching guardedBulkStyleMutation's own doc comment.
   setElementsTypographyField: (ids, field, value) =>
-    set((state) => {
-      const document = setElementsTypographyFieldCommand(state.document, new Set(ids), field, value);
-      if (document === state.document) return {};
-      return { ...pushHistory(state), document };
-    }),
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) => setElementsTypographyFieldCommand(document, new Set(ids), field, value)),
+    ),
   setElementsBackgroundField: (ids, field, value) =>
-    set((state) => {
-      const document = setElementsBackgroundFieldCommand(state.document, new Set(ids), field, value);
-      if (document === state.document) return {};
-      return { ...pushHistory(state), document };
-    }),
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) => setElementsBackgroundFieldCommand(document, new Set(ids), field, value)),
+    ),
   setElementsBorderAllSidesField: (ids, field, value) =>
-    set((state) => {
-      const document = setElementsBorderAllSidesFieldCommand(state.document, new Set(ids), field, value);
-      if (document === state.document) return {};
-      return { ...pushHistory(state), document };
-    }),
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) =>
+        setElementsBorderAllSidesFieldCommand(document, new Set(ids), field, value),
+      ),
+    ),
   setElementsBorderRadiusAllCorners: (ids, value) =>
-    set((state) => {
-      const document = setElementsBorderRadiusAllCornersCommand(state.document, new Set(ids), value);
-      if (document === state.document) return {};
-      return { ...pushHistory(state), document };
-    }),
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) => setElementsBorderRadiusAllCornersCommand(document, new Set(ids), value)),
+    ),
   setElementsDisplayField: (ids, field, value) =>
-    set((state) => {
-      const document = setElementsDisplayFieldCommand(state.document, new Set(ids), field, value);
-      if (document === state.document) return {};
-      return { ...pushHistory(state), document };
-    }),
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) => setElementsDisplayFieldCommand(document, new Set(ids), field, value)),
+    ),
   setElementsFilterField: (ids, field, value) =>
-    set((state) => {
-      const document = setElementsFilterFieldCommand(state.document, new Set(ids), field, value);
-      if (document === state.document) return {};
-      return { ...pushHistory(state), document };
-    }),
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) => setElementsFilterFieldCommand(document, new Set(ids), field, value)),
+    ),
   setElementsPositionField: (ids, field, value) =>
-    set((state) => {
-      const document = setElementsPositionFieldCommand(state.document, new Set(ids), field, value);
-      if (document === state.document) return {};
-      return { ...pushHistory(state), document };
-    }),
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) => setElementsPositionFieldCommand(document, new Set(ids), field, value)),
+    ),
   setElementsMediaFitField: (ids, field, value) =>
-    set((state) => {
-      const document = setElementsMediaFitFieldCommand(state.document, new Set(ids), field, value);
-      if (document === state.document) return {};
-      return { ...pushHistory(state), document };
-    }),
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) => setElementsMediaFitFieldCommand(document, new Set(ids), field, value)),
+    ),
   setElementsSizeConstraintField: (ids, field, value) =>
-    set((state) => {
-      const document = setElementsSizeConstraintFieldCommand(state.document, new Set(ids), field, value);
-      if (document === state.document) return {};
-      return { ...pushHistory(state), document };
-    }),
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) =>
+        setElementsSizeConstraintFieldCommand(document, new Set(ids), field, value),
+      ),
+    ),
   setElementsSpacingAllSides: (ids, box, value) =>
-    set((state) => {
-      const document = setElementsSpacingAllSidesCommand(state.document, new Set(ids), box, value);
-      if (document === state.document) return {};
-      return { ...pushHistory(state), document };
-    }),
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) => setElementsSpacingAllSidesCommand(document, new Set(ids), box, value)),
+    ),
   setElementsAspectRatio: (ids, aspectRatio) =>
-    set((state) => {
-      const document = setElementsAspectRatioCommand(state.document, new Set(ids), aspectRatio);
-      if (document === state.document) return {};
-      return { ...pushHistory(state), document };
-    }),
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) => setElementsAspectRatioCommand(document, new Set(ids), aspectRatio)),
+    ),
   setElementsDimensions: (ids, dimensions) =>
-    set((state) => {
-      const document = setElementsDimensionsCommand(state.document, new Set(ids), dimensions);
-      if (document === state.document) return {};
-      return { ...pushHistory(state), document };
-    }),
+    set((state) => guardedBulkStyleMutation(state, ids, (document) => setElementsDimensionsCommand(document, new Set(ids), dimensions))),
 
   undo: () =>
     set((state) => {
