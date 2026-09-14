@@ -60,6 +60,26 @@ describe("InspectorMultiNodeSummary (Checkpoint 1.15.2)", () => {
     expect(screen.queryByText("Media")).not.toBeInTheDocument();
   });
 
+  it("shows Shape for Container + Section (both shape-capable, Checkpoint 1.15.4)", () => {
+    const nodes: EditorElementNode[] = [
+      { id: "div-1", tag: "div" },
+      { id: "section-1", tag: "section" },
+    ];
+    render(<InspectorMultiNodeSummary nodes={nodes} />);
+    // "Shape" appears twice (the section header and the grid's own inner
+    // label) — a role-scoped query avoids the getByText ambiguity.
+    expect(screen.getByRole("group", { name: "Shape" })).toBeInTheDocument();
+  });
+
+  it("hides Shape for Container + Paragraph (Paragraph isn't shape-capable)", () => {
+    const nodes: EditorElementNode[] = [
+      { id: "div-1", tag: "div" },
+      { id: "p-1", tag: "p" },
+    ];
+    render(<InspectorMultiNodeSummary nodes={nodes} />);
+    expect(screen.queryByRole("group", { name: "Shape" })).not.toBeInTheDocument();
+  });
+
   it("never renders semantic sections (Identity, Link, Video, Iframe, ...) for a multi-selection", () => {
     const nodes: EditorElementNode[] = [
       { id: "p-1", tag: "p" },

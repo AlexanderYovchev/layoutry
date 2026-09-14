@@ -22,6 +22,7 @@ import { InspectorPositionSection } from "@/features/inspector/components/Inspec
 import { InspectorProtectedStyleGroup } from "@/features/inspector/components/InspectorProtectedStyleGroup";
 import { InspectorProtectionSection } from "@/features/inspector/components/InspectorProtectionSection";
 import { InspectorSelectOptionsSection } from "@/features/inspector/components/InspectorSelectOptionsSection";
+import { InspectorShapeSection } from "@/features/inspector/components/InspectorShapeSection";
 import { InspectorSizeSection } from "@/features/inspector/components/InspectorSizeSection";
 import { InspectorSpacingSection } from "@/features/inspector/components/InspectorSpacingSection";
 import { InspectorStyleProtectionNotice } from "@/features/inspector/components/InspectorStyleProtectionNotice";
@@ -142,6 +143,7 @@ export function InspectorNodeSummary({
         {getElementCapabilities(node.tag).supportsBackground && <InspectorBackgroundSection node={node} />}
         {getElementCapabilities(node.tag).supportsBorder && <InspectorBorderSection node={node} />}
         {getElementCapabilities(node.tag).supportsBorderRadius && <InspectorBorderRadiusSection node={node} />}
+        {getElementCapabilities(node.tag).supportsShape && <InspectorShapeSection node={node} />}
         {getElementCapabilities(node.tag).supportsBoxShadow && <InspectorBoxShadowSection node={node} />}
         {getElementCapabilities(node.tag).supportsFilters && <InspectorFiltersSection node={node} />}
         {getElementCapabilities(node.tag).supportsDisplay && <InspectorDisplaySection node={node} />}

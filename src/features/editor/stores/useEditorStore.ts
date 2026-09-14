@@ -57,6 +57,7 @@ import { setTypographySettings as setTypographySettingsCommand } from "@/feature
 import { setBackgroundSettings as setBackgroundSettingsCommand } from "@/features/editor/commands/backgroundCommands";
 import { setBorderSettings as setBorderSettingsCommand } from "@/features/editor/commands/borderCommands";
 import { setBorderRadiusSettings as setBorderRadiusSettingsCommand } from "@/features/editor/commands/borderRadiusCommands";
+import { setElementShape as setElementShapeCommand } from "@/features/editor/commands/shapeCommands";
 import { setBoxShadowSettings as setBoxShadowSettingsCommand } from "@/features/editor/commands/boxShadowCommands";
 import { setFilterSettings as setFilterSettingsCommand } from "@/features/editor/commands/filterCommands";
 import { setDisplaySettings as setDisplaySettingsCommand } from "@/features/editor/commands/displayCommands";
@@ -75,6 +76,7 @@ import {
   setElementsFilterField as setElementsFilterFieldCommand,
   setElementsMediaFitField as setElementsMediaFitFieldCommand,
   setElementsPositionField as setElementsPositionFieldCommand,
+  setElementsShape as setElementsShapeCommand,
   setElementsSizeConstraintField as setElementsSizeConstraintFieldCommand,
   setElementsSpacingAllSides as setElementsSpacingAllSidesCommand,
   setElementsTypographyField as setElementsTypographyFieldCommand,
@@ -114,6 +116,7 @@ import type { CssLengthValue, TypographySettings } from "@/features/editor/types
 import type { BackgroundSettings } from "@/features/editor/types/background";
 import type { BorderSettings, BorderSideSettings } from "@/features/editor/types/border";
 import type { BorderRadiusSettings } from "@/features/editor/types/borderRadius";
+import type { ShapePreset } from "@/features/editor/types/shape";
 import type { BoxShadowSettings } from "@/features/editor/types/boxShadow";
 import type { FilterSettings } from "@/features/editor/types/filters";
 import type { DisplaySettings } from "@/features/editor/types/display";
@@ -213,6 +216,8 @@ interface EditorState {
   setElementBackgroundLive: (nodeId: string, background: BackgroundSettings | undefined) => void;
   setElementBorder: (nodeId: string, border: BorderSettings | undefined) => void;
   setElementBorderRadius: (nodeId: string, borderRadius: BorderRadiusSettings | undefined) => void;
+  /** This node's own Advanced Container Shape preset (Checkpoint 1.15.4) — see resolveShapeStyle. `"none"` clears it back to a plain rectangle (see setElementShape's own doc comment); never mutates the independently-stored `borderRadius` field. */
+  setElementShape: (nodeId: string, shape: ShapePreset) => void;
   /** This node's own box-shadow layer stack (Checkpoint 4.6) — see resolveBoxShadowStyle. `undefined` clears it entirely. */
   setElementBoxShadow: (nodeId: string, boxShadow: BoxShadowSettings | undefined) => void;
   /** Per-frame box-shadow write during a live drag-reorder session (Checkpoint 4.6) — no history push; wrap in begin/commitTransaction, the same convention setElementBackgroundLive established for gradient stop dragging. */
@@ -352,6 +357,8 @@ interface EditorState {
   /** "All Sides" bulk Border mode (Checkpoint 1.15.2) — per-individual-side bulk editing is deferred, see this checkpoint's report. */
   setElementsBorderAllSidesField: <K extends keyof BorderSideSettings>(ids: readonly string[], field: K, value: BorderSideSettings[K]) => void;
   setElementsBorderRadiusAllCorners: (ids: readonly string[], value: CssLengthValue | undefined) => void;
+  /** Bulk Advanced Container Shape (Checkpoint 1.15.4) — one atomic, one-history-entry commit across every targeted node; see setElementsShape's own doc comment. */
+  setElementsShape: (ids: readonly string[], shape: ShapePreset) => void;
   setElementsDisplayField: <K extends keyof DisplaySettings>(ids: readonly string[], field: K, value: DisplaySettings[K]) => void;
   setElementsFilterField: <K extends keyof FilterSettings>(ids: readonly string[], field: K, value: FilterSettings[K]) => void;
   setElementsPositionField: <K extends keyof PositionSettings>(ids: readonly string[], field: K, value: PositionSettings[K]) => void;
@@ -602,27 +609,56 @@ export const useEditorStore = create<EditorState>()((set) => ({
       return { document: setFreeChildGeometryCommand(state.document, nodeId, geometry) };
     }),
 
+  // Guarded on containerId itself (Checkpoint 1.15.3 closure fix) — a
+  // container's own proportional-scale resize rewrites its direct
+  // children's freeLayout as a coupled side effect of the container's own
+  // size change, exactly like convertToFreeLayout/convertToFlowLayout
+  // below; the container's own protection status is what governs the
+  // whole write. Reachable in the UI only once useResizeSession/
+  // useFreeChildResizeSession's own pointer-down pre-check has already
+  // passed for this same id, but guarded here too so a direct store call
+  // is never unsafe (section 7). No pushHistory here (mirrors
+  // resizeElement/setFreeChildGeometryLive) — this fires once per
+  // animation frame under an already-open begin/commitResizeTransaction.
   applyFreeContainerChildGeometriesLive: (containerId, selfUpdate, childGeometries) =>
-    set((state) => ({
-      document: applyFreeContainerChildGeometries(state.document, containerId, selfUpdate, childGeometries),
-    })),
+    set((state) => {
+      const protection = getStyleProtection(state.document, containerId);
+      if (protection.protected) return nextEditorNoticeState(state, describeStyleLockNotice([protection], false));
+      return {
+        document: applyFreeContainerChildGeometries(state.document, containerId, selfUpdate, childGeometries),
+      };
+    }),
 
   setChildResizePolicy: (containerId, policy) =>
     set((state) =>
       guardedStyleMutation(state, containerId, (document) => setChildResizePolicyForNode(document, containerId, policy)),
     ),
 
+  // Guarded on containerId itself (Checkpoint 1.15.3 closure fix, sections
+  // 3/9/10) — Flow<->Free conversion authors the container's own
+  // layoutMode/dimensions/freeLayout AND rewrites its direct children's
+  // freeLayout/dimensions as a single coupled write (see
+  // layoutCommands.ts's own doc comments), but that child rewrite is
+  // intrinsic bookkeeping for the container's own mode switch, not an
+  // independent per-child style edit — exactly like
+  // setFlexContainerSettings/setGridContainerSettings are guarded only on
+  // the container's own id even though they visually affect children. So
+  // the container's own protection status (is *it* protected by some
+  // ancestor) is what governs the whole atomic write: a lock owner
+  // remains free to convert itself (its own lock never protects itself),
+  // while a protected descendant's conversion is blocked outright with no
+  // document change and no history entry.
   convertToFreeLayout: (containerId, childGeometries, selfUpdate) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: convertToFreeLayout(state.document, containerId, childGeometries, selfUpdate),
-    })),
+    set((state) =>
+      guardedStyleMutation(state, containerId, (document) =>
+        convertToFreeLayout(document, containerId, childGeometries, selfUpdate),
+      ),
+    ),
 
   convertToFlowLayout: (containerId) =>
-    set((state) => ({
-      ...pushHistory(state),
-      document: convertToFlowLayout(state.document, containerId),
-    })),
+    set((state) =>
+      guardedStyleMutation(state, containerId, (document) => convertToFlowLayout(document, containerId)),
+    ),
 
   // Display/gap/justify/align/grid-template are authored CSS on the
   // container itself — guarded like every other style command. A locked
@@ -691,6 +727,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
     set((state) =>
       guardedStyleMutation(state, nodeId, (document) => setBorderRadiusSettingsCommand(document, nodeId, borderRadius)),
     ),
+  setElementShape: (nodeId, shape) =>
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setElementShapeCommand(document, nodeId, shape))),
 
   setElementBoxShadow: (nodeId, boxShadow) =>
     set((state) => guardedStyleMutation(state, nodeId, (document) => setBoxShadowSettingsCommand(document, nodeId, boxShadow))),
@@ -1016,6 +1054,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
     set((state) =>
       guardedBulkStyleMutation(state, ids, (document) => setElementsBorderRadiusAllCornersCommand(document, new Set(ids), value)),
     ),
+  setElementsShape: (ids, shape) =>
+    set((state) => guardedBulkStyleMutation(state, ids, (document) => setElementsShapeCommand(document, new Set(ids), shape))),
   setElementsDisplayField: (ids, field, value) =>
     set((state) =>
       guardedBulkStyleMutation(state, ids, (document) => setElementsDisplayFieldCommand(document, new Set(ids), field, value)),

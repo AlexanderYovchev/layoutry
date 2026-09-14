@@ -21,6 +21,7 @@ import { getPositionSettings, withPositionField, type PositionSettings } from "@
 import { getSizeConstraints, withSizeConstraintField, type SizeConstraints } from "@/features/editor/types/sizeConstraints";
 import { getElementSpacing, type ElementSpacing } from "@/features/editor/types/spacing";
 import type { EdgeValues } from "@/features/editor/types/spacing";
+import { getShapePreset, type ShapePreset } from "@/features/editor/types/shape";
 import { getTypographySettings, withTypographyField, type CssLengthValue, type TypographySettings } from "@/features/editor/types/typography";
 import type { AspectRatioValue } from "@/features/editor/types/aspectRatio";
 import { findParentId } from "@/features/editor/utils/findNodeById";
@@ -223,6 +224,27 @@ export function setElementsBorderRadiusAllCorners(
     const alreadyUniform = BORDER_RADIUS_CORNERS.every((corner) => cssLengthEqual(current[corner], value));
     if (alreadyUniform) return node;
     return { ...node, borderRadius: withBorderRadiusAllCorners(value) };
+  });
+}
+
+/**
+ * Sets every targeted node's Shape preset in one pass (Checkpoint
+ * 1.15.4) — the bulk counterpart to setElementShape, same "none"-
+ * normalizes-to-`undefined` and per-node no-op detection. Used by
+ * InspectorBulkShapeSection; the store's guardedBulkStyleMutation is what
+ * makes this atomic against Parent Style Protection (see this
+ * checkpoint's own report, section J) — this function itself has no
+ * protection awareness, matching every other bulk command in this file.
+ */
+export function setElementsShape(
+  root: EditorElementNode,
+  ids: ReadonlySet<string>,
+  shape: ShapePreset,
+): EditorElementNode {
+  const next = shape === "none" ? undefined : shape;
+  return updateNodesByIds(root, ids, (node) => {
+    if (getShapePreset(node) === (next ?? "none")) return node;
+    return { ...node, shape: next };
   });
 }
 

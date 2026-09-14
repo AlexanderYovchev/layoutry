@@ -113,6 +113,38 @@ describe("elementCapabilities", () => {
     expect(getElementCapabilities("body").supportsBorderRadius).toBe(false);
   });
 
+  it("flags ONLY the narrow container/layout-primitive allowlist as shape-capable (Checkpoint 1.15.4)", () => {
+    for (const tag of ["div", "section", "header", "nav", "main", "article", "aside", "footer", "form", "label"]) {
+      expect(getElementCapabilities(tag).supportsShape, tag).toBe(true);
+    }
+    for (const tag of [
+      "h1",
+      "p",
+      "button",
+      "a",
+      "img",
+      "video",
+      "iframe",
+      "input",
+      "textarea",
+      "select",
+      "option",
+      "table",
+      "thead",
+      "tbody",
+      "tfoot",
+      "tr",
+      "th",
+      "td",
+      "ul",
+      "ol",
+      "page",
+      "body",
+    ]) {
+      expect(getElementCapabilities(tag).supportsShape, tag).toBe(false);
+    }
+  });
+
   it("flags nearly every tag as supporting box shadow, including media tags; only page/body opt out", () => {
     for (const tag of ["div", "section", "h1", "p", "button", "img", "video", "iframe", "form", "table", "input"]) {
       expect(getElementCapabilities(tag).supportsBoxShadow, tag).toBe(true);
@@ -514,5 +546,19 @@ describe("intersectElementCapabilities (Checkpoint 1.15.2 — multi-selection ca
 
   it("throws for an empty tag list", () => {
     expect(() => intersectElementCapabilities([])).toThrow();
+  });
+
+  describe("Shape (Checkpoint 1.15.4, section 44)", () => {
+    it("Container (div) + Section: both shape-capable — stays true", () => {
+      expect(intersectElementCapabilities(["div", "section"]).supportsShape).toBe(true);
+    });
+
+    it("Container + Paragraph: Paragraph isn't shape-capable — false for the pair", () => {
+      expect(intersectElementCapabilities(["div", "p"]).supportsShape).toBe(false);
+    });
+
+    it("Header + Footer: both shape-capable — stays true", () => {
+      expect(intersectElementCapabilities(["header", "footer"]).supportsShape).toBe(true);
+    });
   });
 });

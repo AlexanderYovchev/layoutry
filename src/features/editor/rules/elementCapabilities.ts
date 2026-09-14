@@ -38,6 +38,24 @@ export interface ElementCapabilities {
   supportsBorderRadius: boolean;
   /** Whether a CSS box shadow is meaningful on this tag (Checkpoint 4.6) — a shadow draws around a box's own edge regardless of what fills it, the same reasoning supportsBorder already uses (not supportsBackground's media-tag exclusion), so it shares supportsBorder/supportsBorderRadius's exact default-true / page-body-opt-out rule. */
   supportsBoxShadow: boolean;
+  /**
+   * Whether Advanced Container Shapes (CSS `clip-path`, Checkpoint 1.15.4)
+   * are meaningful on this tag — see resolveShapeStyle and
+   * types/shape.ts's own top comment. Deliberately NOT the same
+   * default-true / page-body-opt-out rule supportsBorder/
+   * supportsBorderRadius/supportsBoxShadow share: this checkpoint's own
+   * brief was explicit that Shape should start scoped to ordinary
+   * container/layout primitives only (SHAPE_CAPABLE_TAGS below), not
+   * every visual box — a text-bearing leaf (h1/p/button), a form control,
+   * a media tag, or a table-structural tag was not called out as a real
+   * user need, and several of them (table/select/option, media replaced
+   * elements) have their own box-model ownership questions this
+   * checkpoint's brief explicitly deferred. Defaults false; computed
+   * directly in getElementCapabilities's own return object below (the
+   * same "named tag Set checked inline" shape TEXT_BEARING_TAGS/
+   * isHeadingTag already use), not via CAPABILITY_OVERRIDES.
+   */
+  supportsShape: boolean;
   /** Whether CSS filters/opacity are meaningful on this tag (Checkpoint 4.7) — a filter/opacity affects a box's *entire* rendered output, including any media content inside it (unlike supportsBackground, which excludes media tags because their content already fills the box and a background would sit invisibly behind it — a filter has no such problem, since it applies on top of everything). Shares supportsBorder/supportsBorderRadius/supportsBoxShadow's exact default-true / page-body-opt-out rule. */
   supportsFilters: boolean;
   /** Whether display/visibility/overflow/interaction CSS is meaningful on this tag (Checkpoint 4.8) — same "applies to a box regardless of what's inside it" reasoning as supportsBorder/supportsBoxShadow/supportsFilters, so it shares their exact default-true / page-body-opt-out rule. */
@@ -120,6 +138,7 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
   supportsBorder: true,
   supportsBorderRadius: true,
   supportsBoxShadow: true,
+  supportsShape: false,
   supportsFilters: true,
   supportsDisplay: true,
   supportsPosition: true,
@@ -139,6 +158,31 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
  * is already correct the moment a factory for one of them is added.
  */
 const TEXT_BEARING_TAGS: ReadonlySet<string> = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "button", "a", "li", "blockquote", "th", "td"]);
+
+/**
+ * Tags eligible for Advanced Container Shapes (Checkpoint 1.15.4) —
+ * ordinary layout/content-grouping containers only, per this checkpoint's
+ * own explicit "Advanced CONTAINER Shapes" scoping (section 8 of its own
+ * brief). Matches Checkpoint 1.15.3's canOwnStyleLock tag list exactly,
+ * by design — both checkpoints independently arrived at the same "these
+ * are the ordinary structural container primitives" set. Deliberately
+ * excludes ul/ol (also rendered by ContainerElement, but not called out
+ * by either checkpoint's own brief) — nothing prevents widening this Set
+ * later; the underlying resolveShapeStyle/clip-path mechanism is already
+ * tag-agnostic.
+ */
+const SHAPE_CAPABLE_TAGS: ReadonlySet<string> = new Set([
+  "div",
+  "section",
+  "header",
+  "nav",
+  "main",
+  "article",
+  "aside",
+  "footer",
+  "form",
+  "label",
+]);
 
 /**
  * Only the document root and the body wrapper opt out of selection and
@@ -429,6 +473,7 @@ export function getElementCapabilities(tag: string): ElementCapabilities {
     // override needed; CAPABILITY_OVERRIDES intentionally adds none for them.
     supportsBackground: canContainChildren(tag) || TEXT_BEARING_TAGS.has(tag),
     supportsHeadingLevel: isHeadingTag(tag),
+    supportsShape: SHAPE_CAPABLE_TAGS.has(tag),
     ...CAPABILITY_OVERRIDES[tag],
   };
 }

@@ -17,6 +17,7 @@ import type { PositionSettings } from "@/features/editor/types/position";
 import type { AspectRatioValue } from "@/features/editor/types/aspectRatio";
 import type { SizeConstraints } from "@/features/editor/types/sizeConstraints";
 import type { InputType } from "@/features/editor/types/input";
+import type { ShapePreset } from "@/features/editor/types/shape";
 
 export interface ElementDimensions {
   /**
@@ -134,6 +135,25 @@ export interface EditorElementNode {
   border?: BorderSettings;
   /** This node's own border radius (Checkpoint 4.5) — only meaningful for a radius-capable tag (see getElementCapabilities().supportsBorderRadius). Independent of `border` — a radius can round a background/media box's corners with no border present at all. Unset corners have no synthesized default — see getBorderRadiusSettings and resolveBorderRadiusStyle. */
   borderRadius?: BorderRadiusSettings;
+  /**
+   * This node's own visual clipping shape (Checkpoint 1.15.4) — only
+   * meaningful for a shape-capable tag (see
+   * getElementCapabilities().supportsShape, deliberately a narrow
+   * container/layout-primitive allowlist, not every visual-box tag the
+   * way supportsBorderRadius is). A CSS styling capability, NOT a new
+   * document node type or a synthetic HTML primitive: the element stays
+   * exactly the same semantic tag, only its authored `clip-path` changes
+   * — see resolveShapeStyle and types/shape.ts's own top comment.
+   * Unset (the ordinary case) renders as a plain rectangle with no
+   * clip-path CSS at all — see getShapePreset, which resolves that case
+   * to the concrete "none" preset for reads. Independent of
+   * `borderRadius`: changing Shape never resets or overwrites stored
+   * border-radius data, even though clip-path visually overrides its
+   * effect for a non-rectangular preset (see this checkpoint's own
+   * report, section 19) — both fields are preserved and restored exactly
+   * as authored if the user switches back and forth.
+   */
+  shape?: ShapePreset;
   /** This node's own stack of box-shadow layers (Checkpoint 4.6) — only meaningful for a shadow-capable tag (see getElementCapabilities().supportsBoxShadow). A list from day one (not a single-layer object) since real CSS box-shadow natively stacks multiple layers — see getBoxShadowLayers and resolveBoxShadowStyle. An empty/absent list renders no box-shadow CSS at all. */
   boxShadow?: BoxShadowSettings;
   /** This node's own visual effects (CSS filters + opacity, Checkpoint 4.7) — only meaningful for a filter-capable tag (see getElementCapabilities().supportsFilters). Like typography/border/boxShadow, unset fields here have no synthesized default — see getFilterSettings and resolveFilterStyle. */

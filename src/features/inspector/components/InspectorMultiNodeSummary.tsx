@@ -6,6 +6,7 @@ import { InspectorBulkFiltersSection } from "@/features/inspector/components/Ins
 import { InspectorBulkMediaFitSection } from "@/features/inspector/components/InspectorBulkMediaFitSection";
 import { InspectorBulkPositionSection } from "@/features/inspector/components/InspectorBulkPositionSection";
 import { InspectorBulkSizeSection } from "@/features/inspector/components/InspectorBulkSizeSection";
+import { InspectorBulkShapeSection } from "@/features/inspector/components/InspectorBulkShapeSection";
 import { InspectorBulkSpacingSection } from "@/features/inspector/components/InspectorBulkSpacingSection";
 import { InspectorBulkTypographySection } from "@/features/inspector/components/InspectorBulkTypographySection";
 import { InspectorProtectedStyleGroup } from "@/features/inspector/components/InspectorProtectedStyleGroup";
@@ -80,6 +81,7 @@ export function InspectorMultiNodeSummary({ nodes }: InspectorMultiNodeSummaryPr
     capabilities.supportsBackground && <InspectorBulkBackgroundSection key="background" nodes={nodes} />,
     capabilities.supportsBorder && <InspectorBulkBorderSection key="border" nodes={nodes} />,
     capabilities.supportsBorderRadius && <InspectorBulkBorderRadiusSection key="borderRadius" nodes={nodes} />,
+    capabilities.supportsShape && <InspectorBulkShapeSection key="shape" nodes={nodes} />,
     capabilities.supportsMediaFit && <InspectorBulkMediaFitSection key="mediaFit" nodes={nodes} />,
     capabilities.supportsAspectRatio && <InspectorBulkSizeSection key="size" nodes={nodes} />,
     capabilities.supportsDisplay && <InspectorBulkDisplaySection key="display" nodes={nodes} />,

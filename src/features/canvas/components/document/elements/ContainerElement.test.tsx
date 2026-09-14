@@ -266,3 +266,56 @@ describe("ContainerElement", () => {
     expect(element).not.toHaveAttribute("id");
   });
 });
+
+describe("ContainerElement — Advanced Container Shapes (Checkpoint 1.15.4)", () => {
+  it("applies the mapped clip-path for a non-rectangle shape preset", () => {
+    const { container } = render(
+      <ContainerElement
+        node={{ id: "container-1", tag: "div", shape: "hexagon", children: [] }}
+        parentId="page-root"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+
+    const element = container.querySelector('[data-node-id="container-1"]') as HTMLElement;
+    expect(element.style.clipPath).toBe("polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)");
+  });
+
+  it("applies no clip-path at all for an unset shape (ordinary rectangle)", () => {
+    const { container } = render(
+      <ContainerElement
+        node={{ id: "container-1", tag: "div", children: [] }}
+        parentId="page-root"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+
+    const element = container.querySelector('[data-node-id="container-1"]') as HTMLElement;
+    expect(element.style.clipPath).toBe("");
+  });
+
+  it("preserves background/border-radius on the same box a non-rectangle shape is applied to", () => {
+    const { container } = render(
+      <ContainerElement
+        node={{
+          id: "container-1",
+          tag: "section",
+          shape: "circle",
+          background: { color: "#ff0000" },
+          borderRadius: { topLeft: { value: 12, unit: "px" } },
+          children: [],
+        }}
+        parentId="page-root"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+
+    const element = container.querySelector('[data-node-id="container-1"]') as HTMLElement;
+    expect(element.style.clipPath).toBe("circle(50% at 50% 50%)");
+    expect(element.style.backgroundColor).toBe("rgb(255, 0, 0)");
+    expect(element.style.borderTopLeftRadius).toBe("12px");
+  });
+});

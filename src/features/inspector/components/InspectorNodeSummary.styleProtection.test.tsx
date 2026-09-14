@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { InspectorNodeSummary } from "./InspectorNodeSummary";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
@@ -54,5 +54,39 @@ describe("InspectorNodeSummary — Parent Style Protection (Checkpoint 1.15.3)",
     setupDocument([{ id: "hero", tag: "div", lockChildStyles: true }]);
     render(<InspectorNodeSummary node={{ id: "hero", tag: "div", lockChildStyles: true }} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />);
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  describe("Shape (Checkpoint 1.15.4)", () => {
+    it("Shape stays visible (not hidden) but is inert for a protected descendant", () => {
+      setupDocument([
+        { id: "hero", tag: "div", htmlId: "hero", lockChildStyles: true, children: [{ id: "child", tag: "div" }] },
+      ]);
+      render(<InspectorNodeSummary node={{ id: "child", tag: "div" }} parentId="hero" parentLayoutMode="flow" parentFlowDisplay="block" />);
+
+      const shapeGroup = screen.getByRole("group", { name: "Shape" });
+      expect(shapeGroup).toBeInTheDocument();
+      expect(shapeGroup.closest("[inert]")).not.toBeNull();
+    });
+
+    it("the store guard still rejects a Shape change on a protected node even if a click reaches the button (defense in depth)", () => {
+      setupDocument([
+        { id: "hero", tag: "div", htmlId: "hero", lockChildStyles: true, children: [{ id: "child", tag: "div" }] },
+      ]);
+      render(<InspectorNodeSummary node={{ id: "child", tag: "div" }} parentId="hero" parentLayoutMode="flow" parentFlowDisplay="block" />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Hexagon" }));
+
+      const child = useEditorStore.getState().document.children![0].children![0];
+      expect(child.shape).toBeUndefined();
+    });
+
+    it("the lock owner remains free to change its own Shape", () => {
+      setupDocument([{ id: "hero", tag: "div", lockChildStyles: true }]);
+      render(<InspectorNodeSummary node={{ id: "hero", tag: "div", lockChildStyles: true }} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Star" }));
+
+      expect(useEditorStore.getState().document.children![0].shape).toBe("star");
+    });
   });
 });

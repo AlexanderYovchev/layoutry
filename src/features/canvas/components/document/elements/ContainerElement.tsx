@@ -14,6 +14,7 @@ import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolveFlowLayoutStyle } from "@/features/canvas/utils/resolveFlowLayoutStyle";
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
+import { resolveShapeStyle } from "@/features/canvas/utils/resolveShapeStyle";
 import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import { getLayoutMode } from "@/features/editor/types/layout";
@@ -172,6 +173,7 @@ export function ContainerElement({
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
         ...resolveDisplayStyle(node),
+        ...resolveShapeStyle(node),
       }}
       {...listeners}
     >

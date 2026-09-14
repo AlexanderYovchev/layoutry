@@ -12,6 +12,7 @@ import {
   setElementsFilterField,
   setElementsMediaFitField,
   setElementsPositionField,
+  setElementsShape,
   setElementsSizeConstraintField,
   setElementsSpacingAllSides,
   setElementsTypographyField,
@@ -192,6 +193,44 @@ describe("setElementsBorderRadiusAllCorners", () => {
     const withRadius = setElementsBorderRadiusAllCorners(tree(), new Set(["p-1"]), { value: 8, unit: "px" });
     const result = setElementsBorderRadiusAllCorners(withRadius, new Set(["p-1"]), { value: 8, unit: "px" });
     expect(result).toBe(withRadius);
+  });
+});
+
+describe("setElementsShape", () => {
+  it("applies the same preset to every targeted node in one pass", () => {
+    const result = setElementsShape(tree(), new Set(["p-1", "p-2"]), "hexagon");
+    const [p1, p2, p3] = result.children![0].children!;
+    expect(p1.shape).toBe("hexagon");
+    expect(p2.shape).toBe("hexagon");
+    expect(p3.shape).toBeUndefined();
+  });
+
+  it("applies uniformly across nodes that start with different (mixed) values", () => {
+    const mixed = setElementsShape(tree(), new Set(["p-1"]), "circle");
+    const result = setElementsShape(mixed, new Set(["p-1", "p-2"]), "triangle");
+    const [p1, p2] = result.children![0].children!;
+    expect(p1.shape).toBe("triangle");
+    expect(p2.shape).toBe("triangle");
+  });
+
+  it("\"none\" clears the field on every targeted node", () => {
+    const withShapes = setElementsShape(tree(), new Set(["p-1", "p-2"]), "star");
+    const result = setElementsShape(withShapes, new Set(["p-1", "p-2"]), "none");
+    const [p1, p2] = result.children![0].children!;
+    expect(p1.shape).toBeUndefined();
+    expect(p2.shape).toBeUndefined();
+  });
+
+  it("is a true no-op (same reference, structural sharing) when every target already matches", () => {
+    const withShapes = setElementsShape(tree(), new Set(["p-1", "p-2"]), "octagon");
+    const result = setElementsShape(withShapes, new Set(["p-1", "p-2"]), "octagon");
+    expect(result).toBe(withShapes);
+  });
+
+  it("preserves unrelated fields on every targeted node", () => {
+    const result = setElementsShape(tree(), new Set(["p-1"]), "pentagon");
+    const p1 = result.children![0].children!.find((node) => node.id === "p-1");
+    expect(p1?.typography).toEqual({ fontWeight: 400 });
   });
 });
 

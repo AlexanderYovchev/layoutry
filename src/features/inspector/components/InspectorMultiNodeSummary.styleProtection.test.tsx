@@ -62,4 +62,19 @@ describe("InspectorMultiNodeSummary — Parent Style Protection (Checkpoint 1.15
     const p1 = useEditorStore.getState().document.children![0].children!.find((c) => c.id === "p-1");
     expect(p1?.typography?.fontWeight).toBeUndefined();
   });
+
+  it("Shape (Checkpoint 1.15.4): one protected + one unlocked target blocks the ENTIRE bulk Shape mutation atomically", () => {
+    setupDocument([
+      { id: "free1", tag: "div" },
+      { id: "hero", tag: "div", htmlId: "hero", lockChildStyles: true, children: [{ id: "locked1", tag: "div" }] },
+    ]);
+    const nodes: EditorElementNode[] = [{ id: "free1", tag: "div" }, { id: "locked1", tag: "div" }];
+    render(<InspectorMultiNodeSummary nodes={nodes} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Hexagon" }));
+
+    const document = useEditorStore.getState().document;
+    expect(document.children![0].shape).toBeUndefined();
+    expect(document.children![1].children![0].shape).toBeUndefined();
+  });
 });
