@@ -18,6 +18,7 @@ import type { AspectRatioValue } from "@/features/editor/types/aspectRatio";
 import type { SizeConstraints } from "@/features/editor/types/sizeConstraints";
 import type { InputType } from "@/features/editor/types/input";
 import type { ShapePreset } from "@/features/editor/types/shape";
+import type { SvgPrimitiveKind, SvgViewBox } from "@/features/editor/types/svg";
 
 export interface ElementDimensions {
   /**
@@ -330,6 +331,65 @@ export interface EditorElementNode {
    * concrete, inert default rather than a foreseeable accessibility gap).
    */
   title?: string;
+  /**
+   * This node's own starter vector geometry (Checkpoint 1.15.5) — only
+   * meaningful for `tag: "svg"`. A genuine `<svg>` document primitive,
+   * NOT arbitrary editable descendant geometry (that belongs to the
+   * later SVG Drawing Tool checkpoint) — see types/svg.ts's own top
+   * comment for the full architectural framing. Content/vector data, not
+   * CSS styling: unlike svgFill/svgStroke/svgStrokeWidth below, changing
+   * svgKind is NOT guarded by Parent Style Protection (see
+   * commands/svgCommands.ts's setSvgKind). Unset renders the default
+   * starter Rectangle — see getSvgKind.
+   */
+  svgKind?: SvgPrimitiveKind;
+  /**
+   * This node's own `viewBox` (Checkpoint 1.15.5) — only meaningful for
+   * `tag: "svg"`. Like svgKind, this is vector content, not CSS styling,
+   * and is NOT guarded by Parent Style Protection. Resizing the SVG's
+   * outer layout box (ordinary `dimensions`/`freeLayout`, exactly like
+   * every other element) never rewrites this field — the browser scales
+   * the vector to fit, native SVG behavior this checkpoint deliberately
+   * relies on rather than reimplementing. Unset renders the default
+   * "0 0 100 100" — see resolveSvgViewBox.
+   */
+  svgViewBox?: SvgViewBox;
+  /**
+   * This node's own SVG `fill` (Checkpoint 1.15.5) — only meaningful for
+   * `tag: "svg"`, applied as a real SVG presentation attribute on the
+   * starter geometry's own child element (`<rect>`/`<circle>`/
+   * `<polygon>`), never as CSS — see this checkpoint's own report,
+   * section F, for why. A CSS-like visual styling concern, unlike
+   * svgKind/svgViewBox above — guarded by Parent Style Protection (see
+   * commands/svgCommands.ts's setSvgFill). Unset renders native SVG's
+   * own initial fill (black) — see resolveSvgFill. Deliberately distinct
+   * from `background` (CSS background on the `<svg>` box itself, which
+   * SVG also independently supports — see this checkpoint's report,
+   * section on Background/Border).
+   */
+  svgFill?: string;
+  /**
+   * This node's own SVG `stroke` (Checkpoint 1.15.5) — only meaningful
+   * for `tag: "svg"`, a real SVG presentation attribute, guarded by
+   * Parent Style Protection exactly like svgFill. NOT the same concept
+   * as CSS `border` (see types/border.ts) — a stroke traces the starter
+   * geometry's own vector outline, a border draws around the `<svg>`
+   * box's rectangular edge; both may be set independently. Unset means
+   * no stroke at all (native SVG's own initial value) — see
+   * resolveSvgStroke.
+   */
+  svgStroke?: string;
+  /**
+   * This node's own SVG `stroke-width` (Checkpoint 1.15.5) — only
+   * meaningful for `tag: "svg"`, guarded by Parent Style Protection
+   * exactly like svgFill/svgStroke. Deliberately preserved independently
+   * of svgStroke: toggling Stroke to "None" never clears this field (see
+   * this checkpoint's own report, section on Stroke Width) — a later
+   * re-enabled stroke picks the previous width back up rather than
+   * resetting to the native default. Unset resolves to native SVG's own
+   * initial stroke-width (1) — see resolveSvgStrokeWidth.
+   */
+  svgStrokeWidth?: number;
   /**
    * This node's own authored HTML `id` attribute (Checkpoint 1.15.1) —
    * genuine semantic HTML identity, meaningful for essentially any

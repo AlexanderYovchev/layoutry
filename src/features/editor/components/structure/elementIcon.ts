@@ -19,6 +19,7 @@ import {
   PanelRight,
   PanelTop,
   Rows3,
+  Spline,
   Table,
   TableRowsSplit,
   Tag,
@@ -90,4 +91,5 @@ export const TAG_ICONS: Record<string, LucideIcon> = {
   td: Type,
   video: Video,
   iframe: AppWindow,
+  svg: Spline,
 };

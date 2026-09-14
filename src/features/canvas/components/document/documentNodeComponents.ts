@@ -11,6 +11,7 @@ import { ListItemElement } from "@/features/canvas/components/document/elements/
 import { OptionElement } from "@/features/canvas/components/document/elements/OptionElement";
 import { ParagraphElement } from "@/features/canvas/components/document/elements/ParagraphElement";
 import { SelectElement } from "@/features/canvas/components/document/elements/SelectElement";
+import { SvgElement } from "@/features/canvas/components/document/elements/SvgElement";
 import { TableCellElement } from "@/features/canvas/components/document/elements/TableCellElement";
 import { TableElement } from "@/features/canvas/components/document/elements/TableElement";
 import { TableRowElement } from "@/features/canvas/components/document/elements/TableRowElement";
@@ -65,4 +66,5 @@ export const documentNodeComponents: Record<string, DocumentElementComponent> =
     td: TableCellElement,
     video: VideoElement,
     iframe: IframeElement,
+    svg: SvgElement,
   };

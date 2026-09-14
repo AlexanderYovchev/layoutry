@@ -73,6 +73,13 @@ const TAG_DISPLAY_NAMES: Record<string, string> = {
   // tag stays "iframe" underneath (see createIframeNode) — see this
   // checkpoint's report, section M, for the full reasoning.
   iframe: "Embed",
+  // "SVG" (Checkpoint 1.15.5) — deliberately just the raw tag name,
+  // unlike Container/List Item/Embed's own purpose-named convention:
+  // geometry (Rectangle/Circle/Triangle/Star) is presentation/content,
+  // not a distinct semantic node type, so Structure stays stable across
+  // a Primitive change (section 30 of this checkpoint's own brief) —
+  // see this checkpoint's report for the full reasoning.
+  svg: "SVG",
 };
 
 /**

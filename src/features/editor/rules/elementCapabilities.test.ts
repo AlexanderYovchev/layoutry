@@ -464,6 +464,48 @@ describe("elementCapabilities", () => {
     });
   });
 
+  describe("SVG Foundation (Checkpoint 1.15.5)", () => {
+    it("SVG is a leaf, not text-bearing, and does not opt into a child-Layout section", () => {
+      const svg = getElementCapabilities("svg");
+      expect(svg.canContainChildren).toBe(false);
+      expect(svg.supportsTypography).toBe(false);
+    });
+
+    it("SVG gets supportsSvgSettings — no other tag does", () => {
+      expect(getElementCapabilities("svg").supportsSvgSettings).toBe(true);
+      for (const tag of ["div", "section", "img", "video", "iframe", "p", "button"]) {
+        expect(getElementCapabilities(tag).supportsSvgSettings, tag).toBe(false);
+      }
+    });
+
+    it("SVG gets an explicit supportsBackground grant (not a container, not text-bearing)", () => {
+      expect(getElementCapabilities("svg").supportsBackground).toBe(true);
+    });
+
+    it("SVG does NOT get Image/Video's own media-fit override — viewBox governs internal content fit instead", () => {
+      const svg = getElementCapabilities("svg");
+      expect(svg.supportsMediaFit).toBe(false);
+      expect(svg.supportsIntrinsicAspectRatio).toBe(false);
+    });
+
+    it("SVG is NOT shape-capable (Checkpoint 1.15.4's clip-path Shape and SVG Foundation stay independent)", () => {
+      expect(getElementCapabilities("svg").supportsShape).toBe(false);
+    });
+
+    it("SVG still gets every other useful box-model capability from DEFAULT_CAPABILITIES — sizing/resize/position/border/border-radius/box-shadow/filters/display", () => {
+      const svg = getElementCapabilities("svg");
+      expect(svg.resizableX).toBe(true);
+      expect(svg.resizableY).toBe(true);
+      expect(svg.supportsAspectRatio).toBe(true);
+      expect(svg.supportsPosition).toBe(true);
+      expect(svg.supportsBorder).toBe(true);
+      expect(svg.supportsBorderRadius).toBe(true);
+      expect(svg.supportsBoxShadow).toBe(true);
+      expect(svg.supportsFilters).toBe(true);
+      expect(svg.supportsDisplay).toBe(true);
+    });
+  });
+
   it("gives an entirely unknown tag the same sensible defaults as any other element", () => {
     const caps = getElementCapabilities("some-future-tag");
 

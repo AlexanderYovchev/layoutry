@@ -94,6 +94,19 @@ export interface ElementCapabilities {
   /** Whether this tag has form-control semantics (Name/Placeholder/Default Value) worth exposing in the Inspector (Checkpoint 1.10 — see InspectorFormControlSection). True only for `input`; the same "own capability flag per semantic Inspector section" precedent supportsHref/supportsHeadingLevel already established, rather than an inline tag comparison in InspectorNodeSummary. */
   supportsFormControl: boolean;
   /**
+   * Whether this tag has SVG-specific settings (Primitive/ViewBox/Fill/
+   * Stroke/Stroke Width) worth exposing in the Inspector (Checkpoint
+   * 1.15.5 — see InspectorSvgSection and types/svg.ts). True only for
+   * `svg`, the same narrow "own capability flag per semantic/foundation
+   * Inspector section" precedent supportsHref/supportsHeadingLevel/
+   * supportsFormControl already established. Deliberately independent of
+   * supportsShape (Checkpoint 1.15.4's CSS clip-path presets) — an `svg`
+   * node never joins SHAPE_CAPABLE_TAGS, and a Shape-capable container
+   * never gets this flag; the two features never overlap on the same
+   * tag.
+   */
+  supportsSvgSettings: boolean;
+  /**
    * Whether the generic Layout section (Flow/Free, then Block/Flex/Grid —
    * see InspectorLayoutSection) is meaningful for this tag's OWN children
    * (Checkpoint 1.14). Deliberately separate from `canContainChildren`:
@@ -146,6 +159,7 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
   supportsHref: false,
   supportsHeadingLevel: false,
   supportsFormControl: false,
+  supportsSvgSettings: false,
   supportsChildLayout: true,
 };
 
@@ -455,6 +469,27 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
     supportsDisplay: false,
     supportsPosition: false,
   },
+
+  /**
+   * Svg (Checkpoint 1.15.5) — not a container (canContainChildren("svg")
+   * is false) and not in TEXT_BEARING_TAGS (its visible output is vector
+   * geometry, not node.text), so supportsBackground needs the same
+   * explicit grant Input/Textarea/Select's own overrides already use —
+   * section 21 of this checkpoint's own brief is explicit that ordinary
+   * CSS background/border on the `<svg>` box itself must remain
+   * available and stay a genuinely separate concept from SVG's own
+   * fill/stroke (see resolveBackgroundStyle vs the real SVG presentation
+   * attributes SvgElement applies). Every other capability this tag
+   * needs (border/border-radius/box-shadow/filters/display/position/
+   * aspect-ratio-and-sizing) is already exactly what DEFAULT_CAPABILITIES
+   * grants an unlisted tag, the same "nothing else needs an override"
+   * shape Iframe's own entry documents. supportsMediaFit intentionally
+   * stays false (default) — SVG's own viewBox already governs internal
+   * content fit; reusing Image/Video's object-fit model here would be a
+   * second, conflicting sizing system (section 23 of this checkpoint's
+   * own brief).
+   */
+  svg: { supportsBackground: true },
 };
 
 export function getElementCapabilities(tag: string): ElementCapabilities {
@@ -474,6 +509,7 @@ export function getElementCapabilities(tag: string): ElementCapabilities {
     supportsBackground: canContainChildren(tag) || TEXT_BEARING_TAGS.has(tag),
     supportsHeadingLevel: isHeadingTag(tag),
     supportsShape: SHAPE_CAPABLE_TAGS.has(tag),
+    supportsSvgSettings: tag === "svg",
     ...CAPABILITY_OVERRIDES[tag],
   };
 }

@@ -15,6 +15,10 @@ import {
   setElementsShape,
   setElementsSizeConstraintField,
   setElementsSpacingAllSides,
+  setElementsSvgFill,
+  setElementsSvgKind,
+  setElementsSvgStroke,
+  setElementsSvgStrokeWidth,
   setElementsTypographyField,
   updateNodesByIds,
 } from "./bulkCommands";
@@ -231,6 +235,53 @@ describe("setElementsShape", () => {
     const result = setElementsShape(tree(), new Set(["p-1"]), "pentagon");
     const p1 = result.children![0].children!.find((node) => node.id === "p-1");
     expect(p1?.typography).toEqual({ fontWeight: 400 });
+  });
+});
+
+function svgTree(): EditorElementNode {
+  return {
+    id: "root",
+    tag: "page",
+    children: [
+      { id: "svg-1", tag: "svg", svgKind: "circle", svgFill: "#ff0000" },
+      { id: "svg-2", tag: "svg", svgKind: "star", svgFill: "#0000ff" },
+    ],
+  };
+}
+
+describe("setElementsSvgKind / setElementsSvgFill / setElementsSvgStroke / setElementsSvgStrokeWidth", () => {
+  it("setElementsSvgKind applies the same primitive to every targeted node", () => {
+    const result = setElementsSvgKind(svgTree(), new Set(["svg-1", "svg-2"]), "triangle");
+    expect(result.children![0].svgKind).toBe("triangle");
+    expect(result.children![1].svgKind).toBe("triangle");
+  });
+
+  it("setElementsSvgKind is a true no-op (same reference) when already uniform", () => {
+    const withKind = setElementsSvgKind(svgTree(), new Set(["svg-1", "svg-2"]), "rectangle");
+    const result = setElementsSvgKind(withKind, new Set(["svg-1", "svg-2"]), "rectangle");
+    expect(result).toBe(withKind);
+  });
+
+  it("setElementsSvgFill applies uniformly across mixed starting values", () => {
+    const result = setElementsSvgFill(svgTree(), new Set(["svg-1", "svg-2"]), "#00ff00");
+    expect(result.children![0].svgFill).toBe("#00ff00");
+    expect(result.children![1].svgFill).toBe("#00ff00");
+  });
+
+  it("setElementsSvgStroke sets None -> color across every targeted node without touching stroke width", () => {
+    const withWidth = setElementsSvgStrokeWidth(svgTree(), new Set(["svg-1", "svg-2"]), 4);
+    const result = setElementsSvgStroke(withWidth, new Set(["svg-1", "svg-2"]), "#000000");
+    expect(result.children![0].svgStroke).toBe("#000000");
+    expect(result.children![1].svgStroke).toBe("#000000");
+    expect(result.children![0].svgStrokeWidth).toBe(4);
+    expect(result.children![1].svgStrokeWidth).toBe(4);
+  });
+
+  it("setElementsSvgStrokeWidth floors at 0 and is a no-op when already matching", () => {
+    const withWidth = setElementsSvgStrokeWidth(svgTree(), new Set(["svg-1", "svg-2"]), -5);
+    expect(withWidth.children![0].svgStrokeWidth).toBe(0);
+    const again = setElementsSvgStrokeWidth(withWidth, new Set(["svg-1", "svg-2"]), 0);
+    expect(again).toBe(withWidth);
   });
 });
 

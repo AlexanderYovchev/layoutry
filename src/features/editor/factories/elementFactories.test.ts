@@ -29,6 +29,7 @@ import {
   createSearchInputNode,
   createSectionNode,
   createSelectNode,
+  createSvgNode,
   createTableDataCellNode,
   createTableHeaderCellNode,
   createTableNode,
@@ -452,6 +453,30 @@ describe("element factories", () => {
     });
   });
 
+  describe("SVG Foundation (Checkpoint 1.15.5)", () => {
+    it("createSvgNode produces a genuine, leaf <svg> with the default starter Rectangle and a visible accent fill", () => {
+      const node = createSvgNode();
+      expect(node.tag).toBe("svg");
+      expect(node.svgKind).toBe("rectangle");
+      expect(node.svgFill).toBe("#3b82f6");
+      expect(node.svgViewBox).toBeUndefined();
+      expect(node.svgStroke).toBeUndefined();
+      expect(node.svgStrokeWidth).toBeUndefined();
+      expect(node.children).toBeUndefined();
+      expect(node.id).toMatch(/^svg-/);
+    });
+
+    it("createSvgNode leaves flowLayout/spacing unset, matching every other leaf primitive", () => {
+      const node = createSvgNode();
+      expect(node.flowLayout).toBeUndefined();
+      expect(node.spacing).toBeUndefined();
+    });
+
+    it("createSvgNode produces a unique id per call", () => {
+      expect(createSvgNode().id).not.toBe(createSvgNode().id);
+    });
+  });
+
   describe("Form + Text Input foundation (Checkpoint 1.10)", () => {
     it("createFormNode produces an empty, childable <form> sharing Container's exact structural defaults", () => {
       const node = createFormNode();
@@ -669,6 +694,7 @@ describe("element factories", () => {
         "table",
         "video",
         "iframe",
+        "svg",
       ]) {
         expect(isInsertableElementType(type)).toBe(true);
       }

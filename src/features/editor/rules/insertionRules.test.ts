@@ -284,3 +284,36 @@ describe("Table containment (Checkpoint 1.14)", () => {
     expect(canParentAcceptChild("select", "option")).toBe(true);
   });
 });
+
+describe("SVG containment (Checkpoint 1.15.5)", () => {
+  it("SVG is a leaf — rejects all children (this checkpoint's own explicit 'SVG = leaf' scoping, section 27)", () => {
+    expect(canContainChildren("svg")).toBe(false);
+  });
+
+  it("is insertable anywhere an ordinary leaf visual element is allowed — Container/Section/Form and every other unrestricted structural container", () => {
+    for (const parentTag of ["div", "section", "form", "label", "header", "nav", "main", "article", "aside", "footer"]) {
+      expect(canParentAcceptChild(parentTag, "svg"), parentTag).toBe(true);
+    }
+  });
+
+  it("is rejected inside every constrained-parent allowlist — UL/OL, Select, and Table's structural primitives", () => {
+    expect(canParentAcceptChild("ul", "svg")).toBe(false);
+    expect(canParentAcceptChild("ol", "svg")).toBe(false);
+    expect(canParentAcceptChild("select", "svg")).toBe(false);
+    expect(canParentAcceptChild("table", "svg")).toBe(false);
+    expect(canParentAcceptChild("thead", "svg")).toBe(false);
+    expect(canParentAcceptChild("tbody", "svg")).toBe(false);
+    expect(canParentAcceptChild("tfoot", "svg")).toBe(false);
+    expect(canParentAcceptChild("tr", "svg")).toBe(false);
+  });
+
+  it("rejects SVG as a parent regardless of child tag — SVG is a leaf", () => {
+    expect(canParentAcceptChild("svg", "div")).toBe(false);
+    expect(canParentAcceptChild("svg", "p")).toBe(false);
+  });
+
+  it("does not weaken any prior allowlist — UL/OL's li-only and Select's option-only rules remain intact", () => {
+    expect(canParentAcceptChild("ul", "li")).toBe(true);
+    expect(canParentAcceptChild("select", "option")).toBe(true);
+  });
+});

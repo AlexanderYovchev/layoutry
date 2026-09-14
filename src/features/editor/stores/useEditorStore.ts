@@ -58,6 +58,13 @@ import { setBackgroundSettings as setBackgroundSettingsCommand } from "@/feature
 import { setBorderSettings as setBorderSettingsCommand } from "@/features/editor/commands/borderCommands";
 import { setBorderRadiusSettings as setBorderRadiusSettingsCommand } from "@/features/editor/commands/borderRadiusCommands";
 import { setElementShape as setElementShapeCommand } from "@/features/editor/commands/shapeCommands";
+import {
+  setSvgFill as setSvgFillCommand,
+  setSvgKind as setSvgKindCommand,
+  setSvgStroke as setSvgStrokeCommand,
+  setSvgStrokeWidth as setSvgStrokeWidthCommand,
+  setSvgViewBox as setSvgViewBoxCommand,
+} from "@/features/editor/commands/svgCommands";
 import { setBoxShadowSettings as setBoxShadowSettingsCommand } from "@/features/editor/commands/boxShadowCommands";
 import { setFilterSettings as setFilterSettingsCommand } from "@/features/editor/commands/filterCommands";
 import { setDisplaySettings as setDisplaySettingsCommand } from "@/features/editor/commands/displayCommands";
@@ -79,6 +86,10 @@ import {
   setElementsShape as setElementsShapeCommand,
   setElementsSizeConstraintField as setElementsSizeConstraintFieldCommand,
   setElementsSpacingAllSides as setElementsSpacingAllSidesCommand,
+  setElementsSvgFill as setElementsSvgFillCommand,
+  setElementsSvgKind as setElementsSvgKindCommand,
+  setElementsSvgStroke as setElementsSvgStrokeCommand,
+  setElementsSvgStrokeWidth as setElementsSvgStrokeWidthCommand,
   setElementsTypographyField as setElementsTypographyFieldCommand,
 } from "@/features/editor/commands/bulkCommands";
 import {
@@ -117,6 +128,7 @@ import type { BackgroundSettings } from "@/features/editor/types/background";
 import type { BorderSettings, BorderSideSettings } from "@/features/editor/types/border";
 import type { BorderRadiusSettings } from "@/features/editor/types/borderRadius";
 import type { ShapePreset } from "@/features/editor/types/shape";
+import type { SvgPrimitiveKind, SvgViewBox } from "@/features/editor/types/svg";
 import type { BoxShadowSettings } from "@/features/editor/types/boxShadow";
 import type { FilterSettings } from "@/features/editor/types/filters";
 import type { DisplaySettings } from "@/features/editor/types/display";
@@ -218,6 +230,16 @@ interface EditorState {
   setElementBorderRadius: (nodeId: string, borderRadius: BorderRadiusSettings | undefined) => void;
   /** This node's own Advanced Container Shape preset (Checkpoint 1.15.4) — see resolveShapeStyle. `"none"` clears it back to a plain rectangle (see setElementShape's own doc comment); never mutates the independently-stored `borderRadius` field. */
   setElementShape: (nodeId: string, shape: ShapePreset) => void;
+  /** SVG's own starter Primitive (Checkpoint 1.15.5) — vector CONTENT, not styling; deliberately NOT guarded by Parent Style Protection (see setSvgKind's own doc comment). */
+  setSvgKind: (nodeId: string, kind: SvgPrimitiveKind) => void;
+  /** SVG's own `viewBox` (Checkpoint 1.15.5) — vector content, like setSvgKind; never guarded. Resizing the element's ordinary layout box never touches this field. */
+  setSvgViewBox: (nodeId: string, viewBox: SvgViewBox) => void;
+  /** SVG's own `fill` presentation attribute (Checkpoint 1.15.5) — visual styling, guarded by Parent Style Protection exactly like every CSS command. */
+  setSvgFill: (nodeId: string, fill: string | undefined) => void;
+  /** SVG's own `stroke` presentation attribute (Checkpoint 1.15.5) — guarded like setSvgFill. `undefined` is the real "None" state and never touches svgStrokeWidth. */
+  setSvgStroke: (nodeId: string, stroke: string | undefined) => void;
+  /** SVG's own `stroke-width` presentation attribute (Checkpoint 1.15.5) — guarded like setSvgFill/setSvgStroke. */
+  setSvgStrokeWidth: (nodeId: string, strokeWidth: number) => void;
   /** This node's own box-shadow layer stack (Checkpoint 4.6) — see resolveBoxShadowStyle. `undefined` clears it entirely. */
   setElementBoxShadow: (nodeId: string, boxShadow: BoxShadowSettings | undefined) => void;
   /** Per-frame box-shadow write during a live drag-reorder session (Checkpoint 4.6) — no history push; wrap in begin/commitTransaction, the same convention setElementBackgroundLive established for gradient stop dragging. */
@@ -359,6 +381,14 @@ interface EditorState {
   setElementsBorderRadiusAllCorners: (ids: readonly string[], value: CssLengthValue | undefined) => void;
   /** Bulk Advanced Container Shape (Checkpoint 1.15.4) — one atomic, one-history-entry commit across every targeted node; see setElementsShape's own doc comment. */
   setElementsShape: (ids: readonly string[], shape: ShapePreset) => void;
+  /** Bulk SVG Primitive (Checkpoint 1.15.5) — vector content, never guarded by Parent Style Protection; see setElementsSvgKind's own doc comment. */
+  setElementsSvgKind: (ids: readonly string[], kind: SvgPrimitiveKind) => void;
+  /** Bulk SVG Fill (Checkpoint 1.15.5) — visual styling, atomic and guarded exactly like every other bulk CSS command. */
+  setElementsSvgFill: (ids: readonly string[], fill: string | undefined) => void;
+  /** Bulk SVG Stroke (Checkpoint 1.15.5) — guarded like setElementsSvgFill. */
+  setElementsSvgStroke: (ids: readonly string[], stroke: string | undefined) => void;
+  /** Bulk SVG Stroke Width (Checkpoint 1.15.5) — guarded like setElementsSvgFill/setElementsSvgStroke. */
+  setElementsSvgStrokeWidth: (ids: readonly string[], strokeWidth: number) => void;
   setElementsDisplayField: <K extends keyof DisplaySettings>(ids: readonly string[], field: K, value: DisplaySettings[K]) => void;
   setElementsFilterField: <K extends keyof FilterSettings>(ids: readonly string[], field: K, value: FilterSettings[K]) => void;
   setElementsPositionField: <K extends keyof PositionSettings>(ids: readonly string[], field: K, value: PositionSettings[K]) => void;
@@ -730,6 +760,36 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setElementShape: (nodeId, shape) =>
     set((state) => guardedStyleMutation(state, nodeId, (document) => setElementShapeCommand(document, nodeId, shape))),
 
+  // Primitive/ViewBox are vector CONTENT (Checkpoint 1.15.5, section 36
+  // of this checkpoint's own brief) — deliberately unguarded, the plain
+  // no-op-detecting pattern every semantic/content command (setElementTag,
+  // setElementHtmlId, ...) already uses, never guardedStyleMutation.
+  setSvgKind: (nodeId, kind) =>
+    set((state) => {
+      const document = setSvgKindCommand(state.document, nodeId, kind);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+  setSvgViewBox: (nodeId, viewBox) =>
+    set((state) => {
+      const document = setSvgViewBoxCommand(state.document, nodeId, viewBox);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  // Fill/Stroke/Stroke Width are visual STYLING — guarded exactly like
+  // every other CSS command, so a protected SVG descendant blocks these
+  // (no document change, no history, existing notice) while its own
+  // Primitive/ViewBox above stay unaffected.
+  setSvgFill: (nodeId, fill) =>
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setSvgFillCommand(document, nodeId, fill))),
+  setSvgStroke: (nodeId, stroke) =>
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setSvgStrokeCommand(document, nodeId, stroke))),
+  setSvgStrokeWidth: (nodeId, strokeWidth) =>
+    set((state) =>
+      guardedStyleMutation(state, nodeId, (document) => setSvgStrokeWidthCommand(document, nodeId, strokeWidth)),
+    ),
+
   setElementBoxShadow: (nodeId, boxShadow) =>
     set((state) => guardedStyleMutation(state, nodeId, (document) => setBoxShadowSettingsCommand(document, nodeId, boxShadow))),
 
@@ -1056,6 +1116,32 @@ export const useEditorStore = create<EditorState>()((set) => ({
     ),
   setElementsShape: (ids, shape) =>
     set((state) => guardedBulkStyleMutation(state, ids, (document) => setElementsShapeCommand(document, new Set(ids), shape))),
+
+  // Bulk Primitive is vector CONTENT (see setSvgKind's own doc comment
+  // above) — unguarded, same plain no-op-detecting shape every unguarded
+  // single-node content command already uses, generalized to a bulk id
+  // set rather than wrapped in guardedBulkStyleMutation.
+  setElementsSvgKind: (ids, kind) =>
+    set((state) => {
+      const document = setElementsSvgKindCommand(state.document, new Set(ids), kind);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+  setElementsSvgFill: (ids, fill) =>
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) => setElementsSvgFillCommand(document, new Set(ids), fill)),
+    ),
+  setElementsSvgStroke: (ids, stroke) =>
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) => setElementsSvgStrokeCommand(document, new Set(ids), stroke)),
+    ),
+  setElementsSvgStrokeWidth: (ids, strokeWidth) =>
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) =>
+        setElementsSvgStrokeWidthCommand(document, new Set(ids), strokeWidth),
+      ),
+    ),
+
   setElementsDisplayField: (ids, field, value) =>
     set((state) =>
       guardedBulkStyleMutation(state, ids, (document) => setElementsDisplayFieldCommand(document, new Set(ids), field, value)),

@@ -26,6 +26,7 @@ import { InspectorShapeSection } from "@/features/inspector/components/Inspector
 import { InspectorSizeSection } from "@/features/inspector/components/InspectorSizeSection";
 import { InspectorSpacingSection } from "@/features/inspector/components/InspectorSpacingSection";
 import { InspectorStyleProtectionNotice } from "@/features/inspector/components/InspectorStyleProtectionNotice";
+import { InspectorSvgSection } from "@/features/inspector/components/InspectorSvgSection";
 import { InspectorTableSection } from "@/features/inspector/components/InspectorTableSection";
 import { InspectorTableSelectionSection } from "@/features/inspector/components/InspectorTableSelectionSection";
 import { InspectorTypographySection } from "@/features/inspector/components/InspectorTypographySection";
@@ -130,6 +131,9 @@ export function InspectorNodeSummary({
       )}
       {node.tag === "video" && <InspectorVideoSection node={node} />}
       {node.tag === "iframe" && <InspectorIframeSection node={node} />}
+      {getElementCapabilities(node.tag).supportsSvgSettings && (
+        <InspectorSvgSection node={node} protection={protection} />
+      )}
       {getElementCapabilities(node.tag).supportsHref && <InspectorLinkSection node={node} />}
       {getElementCapabilities(node.tag).supportsHeadingLevel && <InspectorHeadingLevelSection node={node} />}
       {(node.tag === "ul" || node.tag === "ol") && <InspectorListSection node={node} />}

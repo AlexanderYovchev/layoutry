@@ -80,6 +80,24 @@ describe("InspectorMultiNodeSummary (Checkpoint 1.15.2)", () => {
     expect(screen.queryByRole("group", { name: "Shape" })).not.toBeInTheDocument();
   });
 
+  it("shows SVG for two SVG nodes (Checkpoint 1.15.5)", () => {
+    const nodes: EditorElementNode[] = [
+      { id: "svg-1", tag: "svg" },
+      { id: "svg-2", tag: "svg" },
+    ];
+    render(<InspectorMultiNodeSummary nodes={nodes} />);
+    expect(screen.getByRole("group", { name: "Primitive" })).toBeInTheDocument();
+  });
+
+  it("hides SVG for SVG + Container (Container isn't svg-settings-capable)", () => {
+    const nodes: EditorElementNode[] = [
+      { id: "svg-1", tag: "svg" },
+      { id: "div-1", tag: "div" },
+    ];
+    render(<InspectorMultiNodeSummary nodes={nodes} />);
+    expect(screen.queryByRole("group", { name: "Primitive" })).not.toBeInTheDocument();
+  });
+
   it("never renders semantic sections (Identity, Link, Video, Iframe, ...) for a multi-selection", () => {
     const nodes: EditorElementNode[] = [
       { id: "p-1", tag: "p" },

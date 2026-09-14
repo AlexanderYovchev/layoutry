@@ -22,6 +22,7 @@ import { getSizeConstraints, withSizeConstraintField, type SizeConstraints } fro
 import { getElementSpacing, type ElementSpacing } from "@/features/editor/types/spacing";
 import type { EdgeValues } from "@/features/editor/types/spacing";
 import { getShapePreset, type ShapePreset } from "@/features/editor/types/shape";
+import type { SvgPrimitiveKind } from "@/features/editor/types/svg";
 import { getTypographySettings, withTypographyField, type CssLengthValue, type TypographySettings } from "@/features/editor/types/typography";
 import type { AspectRatioValue } from "@/features/editor/types/aspectRatio";
 import { findParentId } from "@/features/editor/utils/findNodeById";
@@ -245,6 +246,61 @@ export function setElementsShape(
   return updateNodesByIds(root, ids, (node) => {
     if (getShapePreset(node) === (next ?? "none")) return node;
     return { ...node, shape: next };
+  });
+}
+
+/**
+ * Bulk SVG Primitive (Checkpoint 1.15.5, section 35) — vector CONTENT,
+ * not styling (same distinction setSvgKind's own doc comment draws), so
+ * the store wires this WITHOUT guardedBulkStyleMutation — Parent Style
+ * Protection never blocks a Primitive change, single or bulk. Still runs
+ * through the same single-pass updateNodesByIds/no-op-detection every
+ * other bulk command uses; only the protection-guard wrapping differs,
+ * and that decision lives entirely at the store layer, not here.
+ */
+export function setElementsSvgKind(
+  root: EditorElementNode,
+  ids: ReadonlySet<string>,
+  kind: SvgPrimitiveKind,
+): EditorElementNode {
+  return updateNodesByIds(root, ids, (node) => {
+    if (node.svgKind === kind) return node;
+    return { ...node, svgKind: kind };
+  });
+}
+
+export function setElementsSvgFill(
+  root: EditorElementNode,
+  ids: ReadonlySet<string>,
+  fill: string | undefined,
+): EditorElementNode {
+  return updateNodesByIds(root, ids, (node) => {
+    if (node.svgFill === fill) return node;
+    return { ...node, svgFill: fill };
+  });
+}
+
+/** `undefined` = "None" (see setSvgStroke's own doc comment) — never touches svgStrokeWidth on any targeted node. */
+export function setElementsSvgStroke(
+  root: EditorElementNode,
+  ids: ReadonlySet<string>,
+  stroke: string | undefined,
+): EditorElementNode {
+  return updateNodesByIds(root, ids, (node) => {
+    if (node.svgStroke === stroke) return node;
+    return { ...node, svgStroke: stroke };
+  });
+}
+
+export function setElementsSvgStrokeWidth(
+  root: EditorElementNode,
+  ids: ReadonlySet<string>,
+  strokeWidth: number,
+): EditorElementNode {
+  const safeWidth = Math.max(0, strokeWidth);
+  return updateNodesByIds(root, ids, (node) => {
+    if (node.svgStrokeWidth === safeWidth) return node;
+    return { ...node, svgStrokeWidth: safeWidth };
   });
 }
 

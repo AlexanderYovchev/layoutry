@@ -1,4 +1,5 @@
 import { generateNodeId } from "@/features/editor/utils/generateNodeId";
+import { DEFAULT_SVG_FILL } from "@/features/editor/types/svg";
 import { DEFAULT_LINK_HREF } from "@/features/editor/types/link";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { ElementSpacing } from "@/features/editor/types/spacing";
@@ -49,7 +50,8 @@ export type InsertableElementType =
   | "select"
   | "table"
   | "video"
-  | "iframe";
+  | "iframe"
+  | "svg";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -581,6 +583,23 @@ export function createIframeNode(): EditorElementNode {
   return { id: generateNodeId("iframe"), tag: "iframe", title: "Embedded content" };
 }
 
+/**
+ * SVG Foundation (Checkpoint 1.15.5) — a genuine `tag: "svg"` leaf.
+ * Ships with an explicit starter Rectangle and a visible accent fill
+ * (DEFAULT_SVG_FILL — see types/svg.ts's own doc comment for why this
+ * differs from the plain-black fallback an *unset* fill later resolves
+ * to) so a freshly-inserted SVG is never a blank, confusing box — this
+ * checkpoint's own explicit "why use starter geometry" rationale.
+ * svgViewBox/svgStroke/svgStrokeWidth are left unset, resolving to their
+ * own documented defaults (0 0 100 100 / no stroke / native width 1) —
+ * no synthesized default is stored here beyond kind/fill, the same
+ * "only stamp what actually needs a concrete starter value" restraint
+ * createLinkNode/createIframeNode's own stamped defaults already use.
+ */
+export function createSvgNode(): EditorElementNode {
+  return { id: generateNodeId("svg"), tag: "svg", svgKind: "rectangle", svgFill: DEFAULT_SVG_FILL };
+}
+
 const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> = {
   container: createContainerNode,
   section: createSectionNode,
@@ -615,6 +634,7 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   table: createTableNode,
   video: createVideoNode,
   iframe: createIframeNode,
+  svg: createSvgNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -668,6 +688,7 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   table: { width: 480, height: 200 },
   video: { width: 400, height: 225 },
   iframe: { width: 400, height: 300 },
+  svg: { width: 200, height: 200 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };
@@ -698,6 +719,7 @@ const INSERTABLE_TYPE_BY_TAG: Record<string, InsertableElementType> = {
   table: "table",
   video: "video",
   iframe: "iframe",
+  svg: "svg",
 };
 
 /** Falls back to a generic size for a tag with no InsertableElementType entry (e.g. a pasted/duplicated node whose tag isn't one of the five catalog types). */

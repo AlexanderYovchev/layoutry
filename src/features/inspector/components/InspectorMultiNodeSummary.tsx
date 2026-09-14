@@ -8,6 +8,7 @@ import { InspectorBulkPositionSection } from "@/features/inspector/components/In
 import { InspectorBulkSizeSection } from "@/features/inspector/components/InspectorBulkSizeSection";
 import { InspectorBulkShapeSection } from "@/features/inspector/components/InspectorBulkShapeSection";
 import { InspectorBulkSpacingSection } from "@/features/inspector/components/InspectorBulkSpacingSection";
+import { InspectorBulkSvgSection } from "@/features/inspector/components/InspectorBulkSvgSection";
 import { InspectorBulkTypographySection } from "@/features/inspector/components/InspectorBulkTypographySection";
 import { InspectorProtectedStyleGroup } from "@/features/inspector/components/InspectorProtectedStyleGroup";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
@@ -89,12 +90,24 @@ export function InspectorMultiNodeSummary({ nodes }: InspectorMultiNodeSummaryPr
     capabilities.supportsFilters && <InspectorBulkFiltersSection key="filters" nodes={nodes} />,
   ].filter(Boolean);
 
+  // SVG (Checkpoint 1.15.5) is rendered as its own standalone section,
+  // OUTSIDE the shared InspectorProtectedStyleGroup below — unlike every
+  // other bulk section here, it needs PARTIAL protection (Primitive
+  // stays interactive even when protected; Fill/Stroke/Stroke Width
+  // don't), so it owns its own internal protection wrapping instead
+  // (see InspectorBulkSvgSection). Included in the "is there anything to
+  // show" check below for the same reason Spacing is deliberately
+  // excluded from it: SVG DOES have its own capability gate (unlike
+  // Spacing), so its presence must count toward suppressing the "no
+  // shared style controls" message.
+  const hasAnySection = capabilityGatedSections.length > 0 || capabilities.supportsSvgSettings;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="flex flex-col gap-1.5 px-3 py-2">
         <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{describeSelection(nodes)}</p>
       </div>
-      {capabilityGatedSections.length === 0 && (
+      {!hasAnySection && (
         <div className="flex flex-col gap-1 px-3 py-4 text-center text-xs text-zinc-500 dark:text-zinc-400">
           <p>No shared style controls are available for this selection.</p>
         </div>
@@ -107,6 +120,7 @@ export function InspectorMultiNodeSummary({ nodes }: InspectorMultiNodeSummaryPr
           <p>{protectionMessage}</p>
         </div>
       )}
+      {capabilities.supportsSvgSettings && <InspectorBulkSvgSection nodes={nodes} protections={protections} />}
       <InspectorProtectedStyleGroup protected={anyProtected}>
         {capabilityGatedSections}
         <InspectorBulkSpacingSection nodes={nodes} />

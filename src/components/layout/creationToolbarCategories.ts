@@ -26,6 +26,7 @@ import {
   PanelTop,
   Phone,
   Search,
+  Spline,
   SquareCheck,
   Table,
   Video,
@@ -75,7 +76,8 @@ export type InsertableCardType =
   | "select"
   | "table"
   | "video"
-  | "iframe";
+  | "iframe"
+  | "svg";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -329,6 +331,14 @@ function mediaCategory(): ToolbarCategoryContent {
       ]),
       section(id, "audio", "Audio", [
         { name: "Audio Player", description: "Embedded audio player" },
+      ]),
+      section(id, "vector", "Vector Graphics", [
+        {
+          name: "SVG",
+          description: "Scalable vector graphic",
+          elementType: "svg",
+          icon: Spline,
+        },
       ]),
       section(id, "icons", "Icons", [
         { name: "Icon", description: "Single vector icon" },
