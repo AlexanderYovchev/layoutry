@@ -51,7 +51,7 @@ export interface SvgViewBox {
   height: number;
 }
 
-/** 0 0 100 100 — every starter primitive's own coordinates (see canvas/utils/svgPrimitiveGeometry.ts) are authored against this exact box. */
+/** 0 0 100 100 — every starter primitive's own coordinates (see utils/svgPrimitiveGeometry.ts) are authored against this exact box. */
 export const DEFAULT_SVG_VIEW_BOX: SvgViewBox = { minX: 0, minY: 0, width: 100, height: 100 };
 
 /** Width/height must stay positive for `viewBox` to mean anything; minX/minY may be any finite number (a negative min is ordinary, valid SVG). */

@@ -19,6 +19,7 @@ import type { SizeConstraints } from "@/features/editor/types/sizeConstraints";
 import type { InputType } from "@/features/editor/types/input";
 import type { ShapePreset } from "@/features/editor/types/shape";
 import type { SvgPrimitiveKind, SvgViewBox } from "@/features/editor/types/svg";
+import type { SvgScene } from "@/features/editor/types/svgScene";
 
 export interface ElementDimensions {
   /**
@@ -390,6 +391,30 @@ export interface EditorElementNode {
    * initial stroke-width (1) — see resolveSvgStrokeWidth.
    */
   svgStrokeWidth?: number;
+  /**
+   * This node's own SVG Drawing Tool vector scene (Checkpoint 1.15.6) —
+   * only meaningful for `tag: "svg"`. A closed set of typed vector
+   * objects (rect/ellipse/line/polygon/path — see types/svgScene.ts's
+   * own top comment), NOT a tree of further `EditorElementNode`s; the
+   * SVG remains exactly one document node regardless of how many vector
+   * objects its scene holds. Absent/empty means this SVG is still in
+   * Checkpoint 1.15.5's "legacy/simple" mode, rendering its single
+   * svgKind starter primitive — see resolveSvgScene and SvgElement.tsx's
+   * own legacy-vs-scene render branch. Once populated (via entering SVG
+   * Edit Mode, which materializes the starter primitive into an
+   * equivalent scene object — see commands/svgSceneCommands.ts's
+   * materializeSvgStarterIntoScene), the scene becomes the sole
+   * rendering source of truth; svgKind/svgViewBox are never read again
+   * for that node, though they remain stored (never destructively
+   * cleared) so a duplicate or an old in-memory reference stays coherent.
+   * Vector object geometry lives in SVG viewBox coordinates, exactly
+   * like svgViewBox itself. Each object's own fill/stroke/strokeWidth is
+   * a real SVG presentation attribute, guarded by Parent Style
+   * Protection exactly like the legacy svgFill/svgStroke/svgStrokeWidth
+   * fields; adding/removing/moving/resizing an object (and svgKind/
+   * svgViewBox above) is vector CONTENT and is never guarded.
+   */
+  svgScene?: SvgScene;
   /**
    * This node's own authored HTML `id` attribute (Checkpoint 1.15.1) —
    * genuine semantic HTML identity, meaningful for essentially any

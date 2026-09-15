@@ -26,10 +26,12 @@ import { InspectorShapeSection } from "@/features/inspector/components/Inspector
 import { InspectorSizeSection } from "@/features/inspector/components/InspectorSizeSection";
 import { InspectorSpacingSection } from "@/features/inspector/components/InspectorSpacingSection";
 import { InspectorStyleProtectionNotice } from "@/features/inspector/components/InspectorStyleProtectionNotice";
+import { InspectorSvgDrawingModeSection } from "@/features/inspector/components/InspectorSvgDrawingModeSection";
 import { InspectorSvgSection } from "@/features/inspector/components/InspectorSvgSection";
 import { InspectorTableSection } from "@/features/inspector/components/InspectorTableSection";
 import { InspectorTableSelectionSection } from "@/features/inspector/components/InspectorTableSelectionSection";
 import { InspectorTypographySection } from "@/features/inspector/components/InspectorTypographySection";
+import { InspectorVectorObjectSection } from "@/features/inspector/components/InspectorVectorObjectSection";
 import { InspectorVideoSection } from "@/features/inspector/components/InspectorVideoSection";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { getElementCapabilities } from "@/features/editor/rules/elementCapabilities";
@@ -94,6 +96,20 @@ export function InspectorNodeSummary({
   const documentModel = useEditorStore((state) => state.document);
   const protection = getStyleProtection(documentModel, node.id);
 
+  // Checkpoint 1.15.6 — SVG Drawing Mode's own Inspector hierarchy
+  // (section Q of its own brief): normal SVG selection shows Identity/SVG/
+  // CSS as before; entering Drawing Mode swaps InspectorSvgSection for
+  // InspectorSvgDrawingModeSection (Primitive/ViewBox/Fill/Stroke/Stroke
+  // Width on the OUTER node are moot once a vector scene exists), and
+  // selecting a vector object inside it additionally shows Vector Object,
+  // hiding the trailing CSS block (Typography through Layout) so a
+  // selected object's own Fill/Stroke controls are never shown alongside
+  // a second, unrelated set for the outer SVG box at the same time.
+  const svgEditingNodeId = useEditorStore((state) => state.svgEditingNodeId);
+  const selectedSvgObjectIds = useEditorStore((state) => state.selectedSvgObjectIds);
+  const isEditingThisSvg = svgEditingNodeId === node.id;
+  const hasVectorObjectSelection = isEditingThisSvg && selectedSvgObjectIds.length > 0;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <InspectorElementSummary name={getElementDisplayName(node)} tag={node.tag} />
@@ -131,8 +147,12 @@ export function InspectorNodeSummary({
       )}
       {node.tag === "video" && <InspectorVideoSection node={node} />}
       {node.tag === "iframe" && <InspectorIframeSection node={node} />}
-      {getElementCapabilities(node.tag).supportsSvgSettings && (
+      {getElementCapabilities(node.tag).supportsSvgSettings && !isEditingThisSvg && (
         <InspectorSvgSection node={node} protection={protection} />
+      )}
+      {getElementCapabilities(node.tag).supportsSvgSettings && isEditingThisSvg && <InspectorSvgDrawingModeSection />}
+      {hasVectorObjectSelection && (
+        <InspectorVectorObjectSection svgNode={node} objectIds={selectedSvgObjectIds} protection={protection} />
       )}
       {getElementCapabilities(node.tag).supportsHref && <InspectorLinkSection node={node} />}
       {getElementCapabilities(node.tag).supportsHeadingLevel && <InspectorHeadingLevelSection node={node} />}
@@ -142,23 +162,35 @@ export function InspectorNodeSummary({
       {node.tag === "option" && <InspectorOptionSection node={node} parentId={parentId} />}
       {getElementCapabilities(node.tag).supportsFormControl && <InspectorFormControlSection node={node} />}
       {node.tag === "select" && <InspectorSelectOptionsSection node={node} />}
-      <InspectorProtectedStyleGroup protected={protection.protected}>
-        {getElementCapabilities(node.tag).supportsTypography && <InspectorTypographySection node={node} />}
-        {getElementCapabilities(node.tag).supportsBackground && <InspectorBackgroundSection node={node} />}
-        {getElementCapabilities(node.tag).supportsBorder && <InspectorBorderSection node={node} />}
-        {getElementCapabilities(node.tag).supportsBorderRadius && <InspectorBorderRadiusSection node={node} />}
-        {getElementCapabilities(node.tag).supportsShape && <InspectorShapeSection node={node} />}
-        {getElementCapabilities(node.tag).supportsBoxShadow && <InspectorBoxShadowSection node={node} />}
-        {getElementCapabilities(node.tag).supportsFilters && <InspectorFiltersSection node={node} />}
-        {getElementCapabilities(node.tag).supportsDisplay && <InspectorDisplaySection node={node} />}
-        {getElementCapabilities(node.tag).supportsPosition && !isFreeChild && !isFreeContainer && (
-          <InspectorPositionSection node={node} />
-        )}
-        <InspectorSpacingSection node={node} />
-        {canContainChildren(node.tag) && getElementCapabilities(node.tag).supportsChildLayout && (
-          <InspectorLayoutSection node={node} />
-        )}
-      </InspectorProtectedStyleGroup>
+      {/*
+       * Retracted while a vector object is selected inside this SVG
+       * (Checkpoint 1.15.6) — every field in here styles the OUTER SVG
+       * box, not the selected shape, and showing both at once (e.g. this
+       * block's own Background/Border color fields next to Vector
+       * Object's Fill/Stroke) is exactly the "confusing users about what
+       * they're changing" InspectorVectorObjectSection's own doc comment
+       * warns against. Editing this SVG with nothing selected yet still
+       * shows the outer box's own CSS normally.
+       */}
+      {!hasVectorObjectSelection && (
+        <InspectorProtectedStyleGroup protected={protection.protected}>
+          {getElementCapabilities(node.tag).supportsTypography && <InspectorTypographySection node={node} />}
+          {getElementCapabilities(node.tag).supportsBackground && <InspectorBackgroundSection node={node} />}
+          {getElementCapabilities(node.tag).supportsBorder && <InspectorBorderSection node={node} />}
+          {getElementCapabilities(node.tag).supportsBorderRadius && <InspectorBorderRadiusSection node={node} />}
+          {getElementCapabilities(node.tag).supportsShape && <InspectorShapeSection node={node} />}
+          {getElementCapabilities(node.tag).supportsBoxShadow && <InspectorBoxShadowSection node={node} />}
+          {getElementCapabilities(node.tag).supportsFilters && <InspectorFiltersSection node={node} />}
+          {getElementCapabilities(node.tag).supportsDisplay && <InspectorDisplaySection node={node} />}
+          {getElementCapabilities(node.tag).supportsPosition && !isFreeChild && !isFreeContainer && (
+            <InspectorPositionSection node={node} />
+          )}
+          <InspectorSpacingSection node={node} />
+          {canContainChildren(node.tag) && getElementCapabilities(node.tag).supportsChildLayout && (
+            <InspectorLayoutSection node={node} />
+          )}
+        </InspectorProtectedStyleGroup>
+      )}
     </div>
   );
 }

@@ -19,3 +19,5 @@ i found one where i create a Nav bar and add a button inside. The button cannot 
 
 There should be a SNAP option of the content where they can align on an even level and not sloppy!
 
+Instead of arrow clicking add slider adjustments.
+

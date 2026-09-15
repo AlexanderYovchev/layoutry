@@ -43,8 +43,15 @@ export function CanvasOverlay({ canvasRootRef, hoveredNodeId }: CanvasOverlayPro
   // resize is a CSS-authoring interaction; the store's own resizeElement/
   // setFreeChildGeometry(Live) guards are the real enforcement (section 29),
   // this only keeps the handles from being shown-but-inert.
+  // Checkpoint 1.15.6, section 22 — also hidden while the selected SVG is
+  // in Drawing Mode: the outer rectangular handles are an HTML-resize
+  // concern, and while editing inside the SVG its own vector-object resize
+  // handles (rendered by SvgElement itself) take over that role instead.
+  const svgEditingNodeId = useEditorStore((state) => state.svgEditingNodeId);
   const showHandles =
-    selectedNodes.length === 1 && !isStyleProtected(documentModel, selectedNodes[0].node.id);
+    selectedNodes.length === 1 &&
+    selectedNodes[0].node.id !== svgEditingNodeId &&
+    !isStyleProtected(documentModel, selectedNodes[0].node.id);
 
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0">

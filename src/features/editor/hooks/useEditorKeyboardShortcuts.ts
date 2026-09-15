@@ -76,12 +76,63 @@ export function useEditorKeyboardShortcuts(): void {
       }
       if (event.key === "Delete" || event.key === "Backspace") {
         event.preventDefault();
-        store.deleteSelection();
+        // Checkpoint 1.15.6, section N of its own required report: inside
+        // SVG Drawing Mode with one or more vector objects selected,
+        // Delete/Backspace removes THOSE objects — never the outer SVG
+        // document node itself, even though it's still the outer
+        // document's own `selection.primaryId` throughout edit mode (see
+        // enterSvgEditMode). Outside Drawing Mode (or with no vector
+        // selection), this falls through to the ordinary document
+        // deleteSelection() unchanged.
+        if (store.svgEditingNodeId && store.selectedSvgObjectIds.length > 0) {
+          store.removeSvgObjects(store.svgEditingNodeId, store.selectedSvgObjectIds);
+        } else {
+          store.deleteSelection();
+        }
         return;
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // SVG Drawing Mode's own Escape priority (Checkpoint 1.15.6, section N):
+  // (1) an unfinished Polygon/Pen draft -> cancel it, (2) else selected
+  // vector objects -> clear that selection, (3) else -> exit Drawing Mode
+  // entirely. A capture-phase window listener — like every drag-session
+  // hook's own Escape handler (useResizeSession, useSvgShapeDrawingSession,
+  // etc.) — so it runs before CanvasInteractionBoundary's plain bubble-
+  // phase "Escape clears the outer document selection" listener; calling
+  // stopPropagation() when this handler actually acts halts the event's
+  // entire remaining path (capture and bubble alike), so that outer
+  // clear-selection behavior never fires on top of it.
+  //
+  // Deliberately skips entirely while `transactionSnapshot` is set — that
+  // means some OTHER drag/draw session (a live Rectangle/Ellipse/Line
+  // drag, an ordinary resize/move, etc.) is already mid-gesture, and that
+  // session's own Escape handler is the one responsible for restoring its
+  // live-written document changes; this handler firing too on the exact
+  // same keypress could otherwise exit edit mode out from under an
+  // in-progress drag it knows nothing about (a live-drawn Rectangle isn't
+  // `svgDraft` — only Polygon/Pen accumulate through that field).
+  useEffect(() => {
+    function handleSvgEditModeEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      const store = useEditorStore.getState();
+      if (!store.svgEditingNodeId || store.transactionSnapshot) return;
+
+      event.stopPropagation();
+      if (store.svgDraft) {
+        store.cancelSvgDraft();
+      } else if (store.selectedSvgObjectIds.length > 0) {
+        store.clearSvgObjectSelection();
+      } else {
+        store.exitSvgEditMode();
+      }
+    }
+
+    window.addEventListener("keydown", handleSvgEditModeEscape, { capture: true });
+    return () => window.removeEventListener("keydown", handleSvgEditModeEscape, { capture: true });
   }, []);
 }

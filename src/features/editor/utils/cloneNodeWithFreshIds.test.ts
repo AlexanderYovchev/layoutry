@@ -310,6 +310,55 @@ describe("cloneNodeWithFreshIds", () => {
     expect(source.id).toBe("container-1");
     expect(source.children?.[0].id).toBe("heading-1");
   });
+
+  describe("SVG scene (Checkpoint 1.15.6)", () => {
+    it("regenerates every vector object's own id, preserving geometry/style", () => {
+      const source: EditorElementNode = {
+        id: "svg-1",
+        tag: "svg",
+        svgScene: {
+          objects: [
+            { id: "rect-1", type: "rect", x: 1, y: 2, width: 3, height: 4, fill: "#ff0000" },
+            { id: "ellipse-1", type: "ellipse", cx: 5, cy: 6, rx: 7, ry: 8 },
+          ],
+        },
+      };
+
+      const clone = cloneNodeWithFreshIds(source);
+
+      expect(clone.svgScene!.objects[0].id).not.toBe("rect-1");
+      expect(clone.svgScene!.objects[1].id).not.toBe("ellipse-1");
+      expect(clone.svgScene!.objects[0]).toMatchObject({ type: "rect", x: 1, y: 2, width: 3, height: 4, fill: "#ff0000" });
+      expect(clone.svgScene!.objects[1]).toMatchObject({ type: "ellipse", cx: 5, cy: 6, rx: 7, ry: 8 });
+    });
+
+    it("never lets a duplicate's vector ids collide with the original's", () => {
+      const source: EditorElementNode = {
+        id: "svg-1",
+        tag: "svg",
+        svgScene: { objects: [{ id: "rect-1", type: "rect", x: 0, y: 0, width: 1, height: 1 }] },
+      };
+      const clone = cloneNodeWithFreshIds(source);
+      expect(clone.svgScene!.objects[0].id).not.toBe(source.svgScene!.objects[0].id);
+    });
+
+    it("leaves an SVG with no scene (legacy/simple mode) with an undefined svgScene, not a crash", () => {
+      const source: EditorElementNode = { id: "svg-1", tag: "svg", svgKind: "circle" };
+      const clone = cloneNodeWithFreshIds(source);
+      expect(clone.svgScene).toBeUndefined();
+      expect(clone.svgKind).toBe("circle");
+    });
+
+    it("does not mutate the source scene", () => {
+      const source: EditorElementNode = {
+        id: "svg-1",
+        tag: "svg",
+        svgScene: { objects: [{ id: "rect-1", type: "rect", x: 0, y: 0, width: 1, height: 1 }] },
+      };
+      cloneNodeWithFreshIds(source);
+      expect(source.svgScene!.objects[0].id).toBe("rect-1");
+    });
+  });
 });
 
 function collectIds(node: EditorElementNode): string[] {

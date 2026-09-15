@@ -101,4 +101,17 @@ describe("InspectorSvgSection", () => {
       screen.getByText("Primitive and ViewBox are vector content, so they stay editable even when child styles are locked."),
     ).toBeInTheDocument();
   });
+
+  it("clicking Edit SVG enters Drawing Mode for this node (Checkpoint 1.15.6)", () => {
+    useEditorStore.setState((state) => ({
+      document: { ...state.document, children: [{ id: "a", tag: "svg" }] },
+      selection: { ids: ["a"], primaryId: "a" },
+    }));
+    render(<InspectorSvgSection node={{ id: "a", tag: "svg" }} protection={unprotected} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit SVG" }));
+
+    expect(useEditorStore.getState().svgEditingNodeId).toBe("a");
+    expect(useEditorStore.getState().document.children![0].svgScene?.objects).toHaveLength(1);
+  });
 });

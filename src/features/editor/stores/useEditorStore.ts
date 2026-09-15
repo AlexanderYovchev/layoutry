@@ -65,6 +65,20 @@ import {
   setSvgStrokeWidth as setSvgStrokeWidthCommand,
   setSvgViewBox as setSvgViewBoxCommand,
 } from "@/features/editor/commands/svgCommands";
+import {
+  addSvgObject as addSvgObjectCommand,
+  generateSvgObjectId,
+  materializeSvgStarterIntoScene,
+  removeSvgObjects as removeSvgObjectsCommand,
+  resizeSvgObject as resizeSvgObjectCommand,
+  setSvgLineEndpoint as setSvgLineEndpointCommand,
+  setSvgLineStart as setSvgLineStartCommand,
+  setSvgObjectsFill as setSvgObjectsFillCommand,
+  setSvgObjectsStroke as setSvgObjectsStrokeCommand,
+  setSvgObjectsStrokeWidth as setSvgObjectsStrokeWidthCommand,
+  translateSvgObjects as translateSvgObjectsCommand,
+} from "@/features/editor/commands/svgSceneCommands";
+import { resolveSvgObjectCreationStyle } from "@/features/editor/utils/svgObjectDefaults";
 import { setBoxShadowSettings as setBoxShadowSettingsCommand } from "@/features/editor/commands/boxShadowCommands";
 import { setFilterSettings as setFilterSettingsCommand } from "@/features/editor/commands/filterCommands";
 import { setDisplaySettings as setDisplaySettingsCommand } from "@/features/editor/commands/displayCommands";
@@ -129,6 +143,11 @@ import type { BorderSettings, BorderSideSettings } from "@/features/editor/types
 import type { BorderRadiusSettings } from "@/features/editor/types/borderRadius";
 import type { ShapePreset } from "@/features/editor/types/shape";
 import type { SvgPrimitiveKind, SvgViewBox } from "@/features/editor/types/svg";
+import type { SvgDrawingTool, SvgDraft } from "@/features/editor/types/svgEditMode";
+import { hasSvgScene } from "@/features/editor/types/svgScene";
+import type { SvgPathCommand, SvgVectorObject, SvgVectorPoint } from "@/features/editor/types/svgScene";
+import { isValidSvgPath, isValidSvgPolygon } from "@/features/editor/utils/svgObjectGeometry";
+import type { SvgObjectBounds } from "@/features/editor/utils/svgObjectGeometry";
 import type { BoxShadowSettings } from "@/features/editor/types/boxShadow";
 import type { FilterSettings } from "@/features/editor/types/filters";
 import type { DisplaySettings } from "@/features/editor/types/display";
@@ -165,6 +184,25 @@ interface EditorState {
    * state only, never touched by pushHistory/undo/redo.
    */
   editorNotice: { message: string; id: number } | null;
+
+  /**
+   * SVG Edit Mode (Checkpoint 1.15.6) — the id of the one SVG document
+   * node currently being edited, or null while no SVG is being edited.
+   * Deliberately UI state, not document state (section 11 of this
+   * checkpoint's own brief) — never touched by pushHistory/undo/redo,
+   * and automatically cleared by this store's own svgEditMode
+   * subscription (below the store definition) the moment global
+   * selection moves elsewhere or this SVG is deleted, so it can never
+   * point at a stale/nonexistent node.
+   */
+  svgEditingNodeId: string | null;
+  /** SVG-local object selection (Checkpoint 1.15.6) — completely separate from the outer document's own `selection` above; a vector object id is never a valid EditorElementNode id and must never be mixed into that selection model. May transiently contain a stale id for one render after a delete/undo, exactly like `selection.ids` already tolerates — every consumer (Inspector, Canvas overlay) filters against the live scene when rendering, the same lazy-prune convention `selection` itself uses. */
+  selectedSvgObjectIds: string[];
+  primarySvgObjectId: string | null;
+  /** The currently active drawing tool while SVG Edit Mode is open — "select" whenever edit mode is (re-)entered (section 56 of this checkpoint's own brief: the user explicitly chooses a drawing tool, never dropped into one). */
+  activeSvgTool: SvgDrawingTool;
+  /** An in-progress, uncommitted Polygon/Pen path — see types/svgEditMode.ts's own doc comment. Never enters document history; Escape/cancel discards it for free by simply clearing this field. */
+  svgDraft: SvgDraft | null;
 
   /** Selects exactly this one id, replacing any existing selection — the plain-click behavior, and every internal single-target action (insert/move/duplicate/paste/undo/redo) below. `selectOnly` is the same action under an explicit name for new multi-selection-aware call sites. */
   selectElement: (id: string | null) => void;
@@ -417,6 +455,67 @@ interface EditorState {
   commitTransaction: () => void;
   cancelTransaction: () => void;
 
+  /**
+   * Enters SVG Edit Mode for `svgNodeId` (Checkpoint 1.15.6, section 9 of
+   * its own brief) — resets tool/selection/draft to their defaults
+   * (Select tool, nothing selected, no draft) and, if this SVG is still
+   * in 1.15.5's legacy/simple mode, materializes its one starter
+   * primitive into an equivalent scene object first (one real document
+   * mutation, one history entry — see materializeSvgStarterIntoScene's
+   * own doc comment). A no-op for the materialization step (but still
+   * enters edit mode) if a scene already exists.
+   */
+  enterSvgEditMode: (svgNodeId: string) => void;
+  /** Exits SVG Edit Mode — pure UI-state reset, never touches document/history. */
+  exitSvgEditMode: () => void;
+  setActiveSvgTool: (tool: SvgDrawingTool) => void;
+  selectSvgObjectOnly: (objectId: string) => void;
+  toggleSvgObjectSelection: (objectId: string) => void;
+  addSvgObjectToSelection: (objectId: string) => void;
+  clearSvgObjectSelection: () => void;
+  /** Starts a Polygon/Pen draft with one point — see types/svgEditMode.ts's own doc comment. */
+  startSvgDraft: (tool: "polygon" | "pen", point: SvgVectorPoint) => void;
+  addSvgDraftPoint: (point: SvgVectorPoint) => void;
+  /** Validates and commits the current draft as a real vector object (one history entry), then returns to the Select tool with the new object selected (section 56 of this checkpoint's own brief) — a no-op (UI state unchanged, no document mutation) if the draft doesn't meet its own minimum (3+ points for a polygon, an M plus at least one L for a pen path). */
+  commitSvgDraft: () => void;
+  /** Discards the in-progress draft with zero history — the Escape-cancel path. */
+  cancelSvgDraft: () => void;
+
+  /** Vector CONTENT — unguarded by Parent Style Protection (see commands/svgSceneCommands.ts's own doc comment). One history entry, no-op-safe. */
+  addSvgObject: (svgNodeId: string, object: SvgVectorObject) => void;
+  /** Per-frame variant used ONLY by the Rectangle/Ellipse/Line drawing sessions: appends the new object with no history push, wrapped in begin/commitTransaction so the ENTIRE drag (from the object not existing at all to its final drawn geometry) becomes exactly one history entry — see canvas/hooks/useSvgShapeDrawingSession.ts's own doc comment. */
+  addSvgObjectLive: (svgNodeId: string, object: SvgVectorObject) => void;
+  /** Deletes every one of the given vector object ids and clears them from SVG-local selection in the same commit — the Delete-key path inside SVG Edit Mode (never the outer document's own deleteSelection). Vector content, unguarded, one history entry, no-op-safe for an already-stale id. */
+  removeSvgObjects: (svgNodeId: string, objectIds: readonly string[]) => void;
+  /** One-shot translate (vector content, unguarded) — one history entry. */
+  translateSvgObjects: (svgNodeId: string, objectIds: readonly string[], dx: number, dy: number) => void;
+  /** Per-frame translate during a live Select-tool move drag — no history push; wrap in begin/commitTransaction, the same convention every other continuous drag in this store already established. */
+  translateSvgObjectsLive: (svgNodeId: string, objectIds: readonly string[], dx: number, dy: number) => void;
+  /** One-shot resize (Rectangle/Ellipse only — see resizeSvgObject's own doc comment) — one history entry. */
+  resizeSvgObject: (svgNodeId: string, objectId: string, bounds: SvgObjectBounds) => void;
+  /** Per-frame resize during a live Select-tool resize drag — no history push; wrap in begin/commitTransaction. */
+  resizeSvgObjectLive: (svgNodeId: string, objectId: string, bounds: SvgObjectBounds) => void;
+  /** Per-frame Line endpoint write during drawing or post-creation endpoint editing — no history push; wrap in begin/commitTransaction. */
+  setSvgLineEndpointLive: (svgNodeId: string, objectId: string, x2: number, y2: number) => void;
+  /** One-shot Line second-endpoint write — the Vector Inspector's own X2/Y2 fields. One history entry. */
+  setSvgLineEndpoint: (svgNodeId: string, objectId: string, x2: number, y2: number) => void;
+  /** One-shot Line first-endpoint write — the Vector Inspector's own X1/Y1 fields. One history entry. */
+  setSvgLineStart: (svgNodeId: string, objectId: string, x1: number, y1: number) => void;
+  /**
+   * Vector STYLING (Checkpoint 1.15.6, section 33/34 of its own brief) —
+   * guarded by Parent Style Protection exactly like every other CSS
+   * command, checked against the OWNING SVG's own ancestor chain
+   * (`svgNodeId`, never a vector object id — vector ids are not part of
+   * the HTML ancestor tree). Every targeted object shares the same one
+   * owning SVG, so this is a single protection check, not a per-object
+   * bulk scan — if that SVG is protected, the WHOLE styling mutation is
+   * blocked atomically, matching every other bulk CSS command's own
+   * atomicity guarantee.
+   */
+  setSvgObjectsFill: (svgNodeId: string, objectIds: readonly string[], fill: string | undefined) => void;
+  setSvgObjectsStroke: (svgNodeId: string, objectIds: readonly string[], stroke: string | undefined) => void;
+  setSvgObjectsStrokeWidth: (svgNodeId: string, objectIds: readonly string[], strokeWidth: number) => void;
+
   copySelection: () => void;
   cutSelection: () => void;
   pasteClipboard: () => void;
@@ -550,6 +649,11 @@ export const useEditorStore = create<EditorState>()((set) => ({
   future: [],
   transactionSnapshot: null,
   editorNotice: null,
+  svgEditingNodeId: null,
+  selectedSvgObjectIds: [],
+  primarySvgObjectId: null,
+  activeSvgTool: "select",
+  svgDraft: null,
 
   selectElement: (id) => set({ selection: selectionFromSingle(id) }),
   selectOnly: (id) => set({ selection: selectionFromSingle(id) }),
@@ -1012,6 +1116,203 @@ export const useEditorStore = create<EditorState>()((set) => ({
 
   cancelTransaction: () => set({ transactionSnapshot: null }),
 
+  enterSvgEditMode: (svgNodeId) =>
+    set((state) => {
+      const node = findNodeById(state.document, svgNodeId);
+      if (!node || node.tag !== "svg") return {};
+
+      const document = hasSvgScene(node) ? state.document : materializeSvgStarterIntoScene(state.document, svgNodeId);
+      const materialized = document !== state.document;
+
+      return {
+        ...(materialized ? pushHistory(state) : {}),
+        document,
+        // Always makes the SVG the sole primary selection, regardless of
+        // what was selected beforehand — this is what keeps entering edit
+        // mode self-consistent with this store's own svgEditMode
+        // subscription (below the store definition), which immediately
+        // exits edit mode again the moment `selection.primaryId` isn't
+        // exactly this SVG. Entering edit mode via any path (Inspector
+        // button, future double-click) always ends with the SVG selected.
+        selection: selectionFromSingle(svgNodeId),
+        svgEditingNodeId: svgNodeId,
+        selectedSvgObjectIds: [],
+        primarySvgObjectId: null,
+        activeSvgTool: "select",
+        svgDraft: null,
+      };
+    }),
+
+  exitSvgEditMode: () =>
+    set({ svgEditingNodeId: null, selectedSvgObjectIds: [], primarySvgObjectId: null, activeSvgTool: "select", svgDraft: null }),
+
+  // Switching tools mid-Polygon/Pen cancels that in-progress draft
+  // (section 20/56 of this checkpoint's own brief) — a half-built shape
+  // left over from the PREVIOUS tool would otherwise silently persist as
+  // dead UI state.
+  setActiveSvgTool: (tool) => set({ activeSvgTool: tool, svgDraft: null }),
+
+  selectSvgObjectOnly: (objectId) => set({ selectedSvgObjectIds: [objectId], primarySvgObjectId: objectId }),
+
+  toggleSvgObjectSelection: (objectId) =>
+    set((state) => {
+      const alreadySelected = state.selectedSvgObjectIds.includes(objectId);
+      const nextIds = alreadySelected
+        ? state.selectedSvgObjectIds.filter((id) => id !== objectId)
+        : [...state.selectedSvgObjectIds, objectId];
+      const nextPrimary = alreadySelected
+        ? state.primarySvgObjectId === objectId
+          ? (nextIds[nextIds.length - 1] ?? null)
+          : state.primarySvgObjectId
+        : objectId;
+      return { selectedSvgObjectIds: nextIds, primarySvgObjectId: nextPrimary };
+    }),
+
+  addSvgObjectToSelection: (objectId) =>
+    set((state) =>
+      state.selectedSvgObjectIds.includes(objectId)
+        ? { primarySvgObjectId: objectId }
+        : { selectedSvgObjectIds: [...state.selectedSvgObjectIds, objectId], primarySvgObjectId: objectId },
+    ),
+
+  clearSvgObjectSelection: () => set({ selectedSvgObjectIds: [], primarySvgObjectId: null }),
+
+  startSvgDraft: (tool, point) => set({ svgDraft: { tool, points: [point] } }),
+
+  addSvgDraftPoint: (point) =>
+    set((state) => (state.svgDraft ? { svgDraft: { ...state.svgDraft, points: [...state.svgDraft.points, point] } } : {})),
+
+  commitSvgDraft: () =>
+    set((state) => {
+      const draft = state.svgDraft;
+      const svgNodeId = state.svgEditingNodeId;
+      if (!draft || !svgNodeId) return {};
+
+      const svgNode = findNodeById(state.document, svgNodeId);
+      if (!svgNode) return { svgDraft: null };
+
+      if (draft.tool === "polygon") {
+        if (!isValidSvgPolygon(draft.points)) return {};
+        const object: SvgVectorObject = {
+          id: generateSvgObjectId("polygon"),
+          type: "polygon",
+          points: draft.points,
+          ...resolveSvgObjectCreationStyle(svgNode, "polygon"),
+        };
+        return {
+          ...pushHistory(state),
+          document: addSvgObjectCommand(state.document, svgNodeId, object),
+          svgDraft: null,
+          activeSvgTool: "select",
+          selectedSvgObjectIds: [object.id],
+          primarySvgObjectId: object.id,
+        };
+      }
+
+      const commands: SvgPathCommand[] = draft.points.map((point, index) => ({
+        kind: index === 0 ? "M" : "L",
+        x: point.x,
+        y: point.y,
+      }));
+      if (!isValidSvgPath(commands)) return {};
+      const object: SvgVectorObject = {
+        id: generateSvgObjectId("path"),
+        type: "path",
+        commands,
+        ...resolveSvgObjectCreationStyle(svgNode, "path"),
+      };
+      return {
+        ...pushHistory(state),
+        document: addSvgObjectCommand(state.document, svgNodeId, object),
+        svgDraft: null,
+        activeSvgTool: "select",
+        selectedSvgObjectIds: [object.id],
+        primarySvgObjectId: object.id,
+      };
+    }),
+
+  cancelSvgDraft: () => set({ svgDraft: null }),
+
+  addSvgObject: (svgNodeId, object) =>
+    set((state) => {
+      const document = addSvgObjectCommand(state.document, svgNodeId, object);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  addSvgObjectLive: (svgNodeId, object) => set((state) => ({ document: addSvgObjectCommand(state.document, svgNodeId, object) })),
+
+  removeSvgObjects: (svgNodeId, objectIds) =>
+    set((state) => {
+      const document = removeSvgObjectsCommand(state.document, svgNodeId, new Set(objectIds));
+      const idSet = new Set(objectIds);
+      const remainingSelection = state.selectedSvgObjectIds.filter((id) => !idSet.has(id));
+      if (document === state.document) {
+        if (remainingSelection.length === state.selectedSvgObjectIds.length) return {};
+        return {
+          selectedSvgObjectIds: remainingSelection,
+          primarySvgObjectId: idSet.has(state.primarySvgObjectId ?? "") ? (remainingSelection[remainingSelection.length - 1] ?? null) : state.primarySvgObjectId,
+        };
+      }
+      return {
+        ...pushHistory(state),
+        document,
+        selectedSvgObjectIds: remainingSelection,
+        primarySvgObjectId: remainingSelection[remainingSelection.length - 1] ?? null,
+      };
+    }),
+
+  translateSvgObjects: (svgNodeId, objectIds, dx, dy) =>
+    set((state) => {
+      const document = translateSvgObjectsCommand(state.document, svgNodeId, new Set(objectIds), dx, dy);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  // Vector content, unguarded — no history push (mirrors resizeElement/
+  // setFreeChildGeometryLive's identical per-frame-write shape); wrap in
+  // begin/commitTransaction so the whole drag becomes one history entry.
+  translateSvgObjectsLive: (svgNodeId, objectIds, dx, dy) =>
+    set((state) => ({ document: translateSvgObjectsCommand(state.document, svgNodeId, new Set(objectIds), dx, dy) })),
+
+  resizeSvgObject: (svgNodeId, objectId, bounds) =>
+    set((state) => {
+      const document = resizeSvgObjectCommand(state.document, svgNodeId, objectId, bounds);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  resizeSvgObjectLive: (svgNodeId, objectId, bounds) =>
+    set((state) => ({ document: resizeSvgObjectCommand(state.document, svgNodeId, objectId, bounds) })),
+
+  setSvgLineEndpointLive: (svgNodeId, objectId, x2, y2) =>
+    set((state) => ({ document: setSvgLineEndpointCommand(state.document, svgNodeId, objectId, x2, y2) })),
+
+  setSvgLineEndpoint: (svgNodeId, objectId, x2, y2) =>
+    set((state) => {
+      const document = setSvgLineEndpointCommand(state.document, svgNodeId, objectId, x2, y2);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setSvgLineStart: (svgNodeId, objectId, x1, y1) =>
+    set((state) => {
+      const document = setSvgLineStartCommand(state.document, svgNodeId, objectId, x1, y1);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setSvgObjectsFill: (svgNodeId, objectIds, fill) =>
+    set((state) => guardedStyleMutation(state, svgNodeId, (document) => setSvgObjectsFillCommand(document, svgNodeId, new Set(objectIds), fill))),
+
+  setSvgObjectsStroke: (svgNodeId, objectIds, stroke) =>
+    set((state) => guardedStyleMutation(state, svgNodeId, (document) => setSvgObjectsStrokeCommand(document, svgNodeId, new Set(objectIds), stroke))),
+
+  setSvgObjectsStrokeWidth: (svgNodeId, objectIds, strokeWidth) =>
+    set((state) =>
+      guardedStyleMutation(state, svgNodeId, (document) => setSvgObjectsStrokeWidthCommand(document, svgNodeId, new Set(objectIds), strokeWidth)),
+    ),
+
   copySelection: () =>
     set((state) => {
       const node = eligibleSelectedNode(state);
@@ -1199,3 +1500,30 @@ export const useEditorStore = create<EditorState>()((set) => ({
       };
     }),
 }));
+
+/**
+ * SVG Edit Mode's own lifecycle guard (Checkpoint 1.15.6, sections 11/37/
+ * 71 of its own brief) — a single centralized Zustand subscription rather
+ * than patching every one of the dozen-plus places `selection`/`document`
+ * can change (the six direct selection actions, insert/move/delete/
+ * duplicate/paste, undo/redo, ...). Exits SVG Edit Mode the moment either
+ * becomes true: the outer document selection is no longer exactly the
+ * edited SVG itself (covers "changing outer selection exits mode," since
+ * every selection-changing action already funnels through `selection`),
+ * or that SVG node no longer exists in the document at all (covers
+ * "deleting outer SVG cleans mode state," including the rarer path of an
+ * Undo/Redo landing on a document where it was never inserted). Reading
+ * `useEditorStore.getState()` inside the listener (rather than closing
+ * over the `state`/`prevState` the subscription callback already
+ * receives) keeps this resilient to whatever else a future action might
+ * also change in the same `set` call.
+ */
+useEditorStore.subscribe((state) => {
+  const editingId = state.svgEditingNodeId;
+  if (!editingId) return;
+  const stillPrimary = state.selection.primaryId === editingId;
+  const stillExists = findNodeById(state.document, editingId) !== undefined;
+  if (!stillPrimary || !stillExists) {
+    useEditorStore.getState().exitSvgEditMode();
+  }
+});

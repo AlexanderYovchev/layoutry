@@ -50,6 +50,7 @@ export function InspectorSvgSection({ node, protection }: InspectorSvgSectionPro
   const setSvgFill = useEditorStore((state) => state.setSvgFill);
   const setSvgStroke = useEditorStore((state) => state.setSvgStroke);
   const setSvgStrokeWidth = useEditorStore((state) => state.setSvgStrokeWidth);
+  const enterSvgEditMode = useEditorStore((state) => state.enterSvgEditMode);
 
   const [fillError, setFillError] = useState<string | undefined>(undefined);
   const [strokeError, setStrokeError] = useState<string | undefined>(undefined);
@@ -83,7 +84,26 @@ export function InspectorSvgSection({ node, protection }: InspectorSvgSectionPro
   }
 
   return (
-    <InspectorSection label="SVG">
+    <InspectorSection
+      label="SVG"
+      actions={
+        // Checkpoint 1.15.6 — the entry point into SVG Drawing Mode
+        // (double-clicking the SVG on the Canvas is the other one; see
+        // SvgElement.tsx's own handleDoubleClick). Materializes a legacy
+        // starter primitive into an equivalent scene object on first
+        // entry (see enterSvgEditMode's own doc comment) — invisible here,
+        // since InspectorSvgSection itself stops rendering the instant
+        // svgEditingNodeId matches this node (see InspectorNodeSummary's
+        // own routing), replaced by InspectorSvgDrawingModeSection.
+        <button
+          type="button"
+          onClick={() => enterSvgEditMode(node.id)}
+          className="flex h-6 items-center justify-center rounded-md border border-zinc-200 px-2 text-xs font-medium text-zinc-600 transition-colors duration-150 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-800/50"
+        >
+          Edit SVG
+        </button>
+      }
+    >
       <InspectorSegmentedRow
         label="Primitive"
         options={PRIMITIVE_OPTIONS}
