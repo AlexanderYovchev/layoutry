@@ -6,9 +6,11 @@ import {
   Blocks,
   Box,
   ChevronDown,
+  ChevronsDown,
   Circle,
   CircleDot,
   ClipboardList,
+  Columns3,
   Globe,
   Hash,
   Image,
@@ -25,9 +27,13 @@ import {
   PanelRight,
   PanelTop,
   Phone,
+  Pointer,
+  RectangleHorizontal,
   Search,
   Spline,
+  Square,
   SquareCheck,
+  SquareDashed,
   Table,
   Video,
   Tag,
@@ -77,7 +83,13 @@ export type InsertableCardType =
   | "table"
   | "video"
   | "iframe"
-  | "svg";
+  | "svg"
+  | "primaryButton"
+  | "secondaryButton"
+  | "outlineButton"
+  | "ghostButton"
+  | "buttonGroup"
+  | "dropdownButton";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -252,9 +264,13 @@ function componentsCategory(): ToolbarCategoryContent {
     id,
     label: "Components",
     sections: [
-      section(id, "buttons-actions", "Buttons & Actions", [
-        { name: "Primary Button", description: "Main call-to-action button" },
-        { name: "Icon Button", description: "Compact icon-only action" },
+      section(id, "buttons", "Buttons", [
+        { name: "Primary Button", description: "Solid, high-emphasis call-to-action button", elementType: "primaryButton", icon: Square },
+        { name: "Secondary Button", description: "Lighter, medium-emphasis button", elementType: "secondaryButton", icon: RectangleHorizontal },
+        { name: "Outline Button", description: "Transparent fill with a visible border", elementType: "outlineButton", icon: SquareDashed },
+        { name: "Ghost Button", description: "Minimal button with no fill or border", elementType: "ghostButton", icon: Pointer },
+        { name: "Button Group", description: "Row of buttons sharing one Flex container", elementType: "buttonGroup", icon: Columns3 },
+        { name: "Dropdown Button", description: "Button with an attached menu of links, open on Canvas", elementType: "dropdownButton", icon: ChevronsDown },
       ]),
       section(id, "cards-containers", "Cards & Containers", [
         { name: "Card", description: "Content container with elevation" },

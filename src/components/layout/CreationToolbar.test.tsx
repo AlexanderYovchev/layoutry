@@ -187,8 +187,25 @@ describe("CreationToolbar", () => {
     );
     const cards = menu.getAllByRole("menuitem");
     expect(cards.length).toBeGreaterThan(0);
+    // The Buttons family (Checkpoint 1.15.6.2) is the first real,
+    // enabled Components family — every other family (Cards & Containers,
+    // Navigation, Forms & Inputs, Feedback & Overlays, Data Display)
+    // remains a disabled future placeholder.
+    const enabledCardNames = [
+      "Primary Button",
+      "Secondary Button",
+      "Outline Button",
+      "Ghost Button",
+      "Button Group",
+      "Dropdown Button",
+    ];
     for (const card of cards) {
-      expect(card).toBeDisabled();
+      const isEnabledButtonCard = enabledCardNames.some((name) => card.textContent?.startsWith(name));
+      if (isEnabledButtonCard) {
+        expect(card).toBeEnabled();
+      } else {
+        expect(card).toBeDisabled();
+      }
     }
   });
 });

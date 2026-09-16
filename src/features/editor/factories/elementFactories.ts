@@ -1,3 +1,11 @@
+import {
+  createButtonGroupNode,
+  createDropdownButtonNode,
+  createGhostButtonNode,
+  createOutlineButtonNode,
+  createPrimaryButtonNode,
+  createSecondaryButtonNode,
+} from "@/features/editor/factories/buttonCompositions";
 import { generateNodeId } from "@/features/editor/utils/generateNodeId";
 import { DEFAULT_SVG_FILL } from "@/features/editor/types/svg";
 import { DEFAULT_LINK_HREF } from "@/features/editor/types/link";
@@ -51,7 +59,13 @@ export type InsertableElementType =
   | "table"
   | "video"
   | "iframe"
-  | "svg";
+  | "svg"
+  | "primaryButton"
+  | "secondaryButton"
+  | "outlineButton"
+  | "ghostButton"
+  | "buttonGroup"
+  | "dropdownButton";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -635,6 +649,12 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   video: createVideoNode,
   iframe: createIframeNode,
   svg: createSvgNode,
+  primaryButton: createPrimaryButtonNode,
+  secondaryButton: createSecondaryButtonNode,
+  outlineButton: createOutlineButtonNode,
+  ghostButton: createGhostButtonNode,
+  buttonGroup: createButtonGroupNode,
+  dropdownButton: createDropdownButtonNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -689,6 +709,12 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   video: { width: 400, height: 225 },
   iframe: { width: 400, height: 300 },
   svg: { width: 200, height: 200 },
+  primaryButton: { width: 120, height: 44 },
+  secondaryButton: { width: 120, height: 44 },
+  outlineButton: { width: 120, height: 44 },
+  ghostButton: { width: 120, height: 44 },
+  buttonGroup: { width: 280, height: 48 },
+  dropdownButton: { width: 200, height: 160 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };
