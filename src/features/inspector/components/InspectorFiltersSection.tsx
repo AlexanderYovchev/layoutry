@@ -5,6 +5,7 @@ import { InspectorNumericValueControl, type NumericOrAuto } from "@/features/ins
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
+import { InspectorSliderField } from "@/features/inspector/components/InspectorSliderField";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import {
   getFilterSettings,
@@ -13,7 +14,6 @@ import {
   isValidContrastValue,
   isValidGrayscaleValue,
   isValidInvertValue,
-  isValidOpacityValue,
   isValidSaturateValue,
   isValidSepiaValue,
   normalizeHueRotateValue,
@@ -51,18 +51,15 @@ interface PercentFieldConfig {
 }
 
 /**
- * Every plain-percentage filter field, grouped exactly the way the
- * Inspector renders them (Checkpoint 4.7's #4: Transparency, then the
- * Color-adjustment knobs, then Special Effects) — driven by one config
- * array + a single generic commit/reset pair rather than seven near-
- * identical JSX blocks, since InspectorPropertyRow +
+ * Every plain-percentage filter field except Opacity (which got its own
+ * slider control in Checkpoint 1.15.6.1.1 — see the Transparency block
+ * below), grouped exactly the way the Inspector renders them (Checkpoint
+ * 4.7's #4: Color-adjustment knobs, then Special Effects) — driven by
+ * one config array + a single generic commit/reset pair rather than
+ * near-identical JSX blocks, since InspectorPropertyRow +
  * InspectorNumericValueControl already do all the real work; only the
  * label, validator, error message, and neutral fallback differ per field.
  */
-const TRANSPARENCY_FIELDS: readonly PercentFieldConfig[] = [
-  { field: "opacity", label: "Opacity", isValid: isValidOpacityValue, errorMessage: "Enter a value between 0 and 100.", neutralValue: 100 },
-];
-
 const COLOR_PERCENT_FIELDS: readonly PercentFieldConfig[] = [
   { field: "brightness", label: "Brightness", isValid: isValidBrightnessValue, errorMessage: "Brightness can't be negative.", neutralValue: 100 },
   { field: "contrast", label: "Contrast", isValid: isValidContrastValue, errorMessage: "Contrast can't be negative.", neutralValue: 100 },
@@ -97,6 +94,7 @@ const SPECIAL_EFFECTS_FIELDS: readonly PercentFieldConfig[] = [
  */
 export function InspectorFiltersSection({ node }: InspectorFiltersSectionProps) {
   const setElementFilters = useEditorStore((state) => state.setElementFilters);
+  const setElementFiltersLive = useEditorStore((state) => state.setElementFiltersLive);
   const filters = getFilterSettings(node);
 
   const [errors, setErrors] = useState<Partial<Record<PercentField | "blur", string>>>({});
@@ -202,7 +200,36 @@ export function InspectorFiltersSection({ node }: InspectorFiltersSectionProps) 
     >
       <div className="flex flex-col gap-1.5 text-xs">
         <span className="text-zinc-500 dark:text-zinc-400">Transparency</span>
-        {TRANSPARENCY_FIELDS.map(renderPercentRow)}
+        {/* Opacity (Checkpoint 1.15.6.1.1) — the clearest slider candidate
+            of every filter field: a true bounded 0-100% range with no unit
+            choice at all, exactly the "sensible bounded visual range" this
+            checkpoint's own brief asks for (section 30). The other six
+            percent fields (Brightness/Contrast/Saturation/Grayscale/Invert/
+            Sepia) stay on the plain numeric control — deliberately scoped
+            out rather than sliderizing every filter field at once (section
+            31's own "avoid checkpoint scope explosion"). */}
+        <InspectorPropertyRow
+          label="Opacity"
+          variant="stack"
+          state={filters.opacity !== undefined ? "set" : "unset"}
+          reset={
+            <InspectorResetButton
+              onReset={() => resetField("opacity")}
+              disabled={filters.opacity === undefined}
+              label="Reset opacity"
+            />
+          }
+        >
+          <InspectorSliderField
+            label="Opacity"
+            value={filters.opacity ?? 100}
+            min={0}
+            max={100}
+            unit="%"
+            onLiveChange={(value) => setElementFiltersLive(node.id, withFilterField(filters, "opacity", value))}
+            onCommit={(value) => commitField("opacity", value)}
+          />
+        </InspectorPropertyRow>
       </div>
 
       <div className="flex flex-col gap-1.5 border-t border-zinc-200 pt-2 text-xs dark:border-zinc-800">

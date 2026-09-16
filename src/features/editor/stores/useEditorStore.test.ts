@@ -2172,6 +2172,49 @@ describe("useEditorStore — generic transactions (Checkpoint 4.3.1)", () => {
     expect(reverted?.boxShadow).toBeUndefined();
   });
 
+  // Checkpoint 1.15.6.1.1 — the three "Live" setters the new Gap/Opacity
+  // Inspector sliders drive, mirroring setElementBoxShadowLive's own
+  // no-history / one-history-entry-per-whole-drag shape exactly.
+  it("setElementFiltersLive does not push history", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setElementFiltersLive("section-1", { opacity: 40 });
+
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(node?.filters?.opacity).toBe(40);
+  });
+
+  it("collapses an entire Opacity slider drag (multiple live writes between begin/commitTransaction) into one history entry", () => {
+    useEditorStore.getState().beginTransaction();
+    useEditorStore.getState().setElementFiltersLive("section-1", { opacity: 70 });
+    useEditorStore.getState().setElementFiltersLive("section-1", { opacity: 55 });
+    useEditorStore.getState().commitTransaction();
+
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(node?.filters?.opacity).toBe(55);
+    expect(useEditorStore.getState().past).toHaveLength(1);
+  });
+
+  it("setFlexContainerSettingsLive does not push history", () => {
+    const flex = { direction: "row" as const, wrap: "nowrap" as const, justifyContent: "start" as const, alignItems: "stretch" as const, rowGap: 24, columnGap: 24 };
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setFlexContainerSettingsLive("section-1", flex);
+
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(node?.flowLayout?.flex).toEqual(flex);
+  });
+
+  it("setGridContainerSettingsLive does not push history", () => {
+    const grid = { columns: 2 as const, rows: "auto" as const, rowGap: 32, columnGap: 32 };
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setGridContainerSettingsLive("section-1", grid);
+
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);
+    const node = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(node?.flowLayout?.grid).toEqual(grid);
+  });
+
   it("shares the same transactionSnapshot slot as resize transactions (mutually exclusive, not a second parallel mechanism)", () => {
     useEditorStore.getState().beginTransaction();
     const viaGeneric = useEditorStore.getState().transactionSnapshot;

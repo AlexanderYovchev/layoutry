@@ -7,10 +7,17 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { computeFreeChildMoveResult, type FreeChildMoveStart } from "@/features/canvas/utils/computeFreeChildMoveResult";
+import {
+  clampFreeChildAxis,
+  computeRawFreeChildMovePosition,
+  type FreeChildMoveStart,
+} from "@/features/canvas/utils/computeFreeChildMoveResult";
 import { measureFreeContainerBounds } from "@/features/canvas/utils/measureFreeContainerBounds";
+import { resolveFreeMoveSnap, SNAP_THRESHOLD_PX, type FreeMoveSnapBox } from "@/features/canvas/utils/resolveFreeMoveSnap";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { describeStyleLockNotice, getStyleProtection } from "@/features/editor/rules/styleProtection";
+import { findNodeById } from "@/features/editor/utils/findNodeById";
+import type { ActiveSnapGuides } from "@/features/editor/types/snap";
 
 export interface UseFreeChildMoveSessionResult {
   isDragging: boolean;
@@ -47,6 +54,7 @@ export interface UseFreeChildMoveSessionResult {
  */
 export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSessionResult {
   const setFreeChildGeometryLive = useEditorStore((state) => state.setFreeChildGeometryLive);
+  const setActiveSnapGuides = useEditorStore((state) => state.setActiveSnapGuides);
   const [isDragging, setIsDragging] = useState(false);
   const startRef = useRef<FreeChildMoveStart | null>(null);
   const latestPointerRef = useRef({ x: 0, y: 0 });
@@ -60,13 +68,42 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
   // their identical comments). See endSession's own comment for the fix.
   const didMoveRef = useRef(false);
 
+  // Checkpoint 1.15.6.1.1 — Snap inserts itself between the raw pointer-
+  // delta position and the existing parent-containment clamp (section 21:
+  // "proposed geometry -> snapping -> containment/clamp"), so a snap to
+  // the parent's right/bottom edge still gets the exact same final
+  // containment guarantee applied afterward, and Snap-off behaves
+  // byte-for-byte like this hook did before Snap existed.
   const commit = useCallback(() => {
     frameRef.current = null;
     const start = startRef.current;
     if (!start) return;
-    const result = computeFreeChildMoveResult(start, latestPointerRef.current.x, latestPointerRef.current.y);
-    setFreeChildGeometryLive(nodeId, result);
-  }, [nodeId, setFreeChildGeometryLive]);
+
+    const raw = computeRawFreeChildMovePosition(start, latestPointerRef.current.x, latestPointerRef.current.y);
+    let x = raw.x;
+    let y = raw.y;
+    let guides: ActiveSnapGuides | null = null;
+
+    if (useEditorStore.getState().snapEnabled && start.containerId) {
+      const snap = resolveFreeMoveSnap(
+        { x: raw.x, y: raw.y, width: start.width, height: start.height },
+        start.parentBounds,
+        start.siblings ?? [],
+        SNAP_THRESHOLD_PX,
+      );
+      x = snap.x;
+      y = snap.y;
+      if (snap.verticalGuide !== undefined || snap.horizontalGuide !== undefined) {
+        guides = { containerId: start.containerId, vertical: snap.verticalGuide, horizontal: snap.horizontalGuide };
+      }
+    }
+
+    const clampedX = clampFreeChildAxis(x, 0, Math.max(0, start.parentBounds.width - start.width));
+    const clampedY = clampFreeChildAxis(y, 0, Math.max(0, start.parentBounds.height - start.height));
+
+    setActiveSnapGuides(guides);
+    setFreeChildGeometryLive(nodeId, { x: clampedX, y: clampedY, width: start.width, height: start.height });
+  }, [nodeId, setFreeChildGeometryLive, setActiveSnapGuides]);
 
   const scheduleCommit = useCallback(() => {
     if (frameRef.current !== null) return;
@@ -98,11 +135,26 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
       const targetEl = window.document.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(nodeId)}"]`);
       const containerEl = targetEl?.parentElement?.closest<HTMLElement>("[data-node-id]") ?? null;
       const parentBounds = containerEl ? measureFreeContainerBounds(containerEl) : { width: Infinity, height: Infinity };
+      const containerId = containerEl?.getAttribute("data-node-id") ?? null;
 
       const rect = targetEl?.getBoundingClientRect();
       const containerRect = containerEl?.getBoundingClientRect();
       const startX = rect && containerRect ? rect.left - containerRect.left : 0;
       const startY = rect && containerRect ? rect.top - containerRect.top : 0;
+
+      // Snap's own sibling targets (Checkpoint 1.15.6.1.1) — read once
+      // from the DOCUMENT (not re-measured via the DOM) since every
+      // sibling's freeLayout is already the exact parent-content-box-
+      // relative geometry resolveFreeMoveSnap needs, and siblings never
+      // move mid-gesture (only this one node does) so one read at
+      // pointer-down is correct for the whole drag (section 24 — no
+      // per-frame DOM queries). The moving node itself is excluded by
+      // construction (filtered out by id, never by position — see
+      // resolveFreeMoveSnap's own "moving-element exclusion" comment).
+      const containerNode = containerId ? findNodeById(useEditorStore.getState().document, containerId) : undefined;
+      const siblings: FreeMoveSnapBox[] = (containerNode?.children ?? [])
+        .filter((child) => child.id !== nodeId && child.freeLayout)
+        .map((child) => ({ x: child.freeLayout!.x, y: child.freeLayout!.y, width: child.freeLayout!.width, height: child.freeLayout!.height }));
 
       startRef.current = {
         startX,
@@ -112,6 +164,8 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
         startPointerX: event.clientX,
         startPointerY: event.clientY,
         parentBounds,
+        containerId,
+        siblings,
       };
       latestPointerRef.current = { x: event.clientX, y: event.clientY };
       setIsDragging(true);
@@ -149,12 +203,17 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
       } else {
         useEditorStore.getState().cancelResizeTransaction();
       }
+      // Guides are purely a during-the-gesture affordance (section 17 —
+      // "disappear on pointer-up"); the final committed geometry is
+      // already in the document by now regardless of whether it was
+      // reached via a snap.
+      setActiveSnapGuides(null);
 
       event.currentTarget.releasePointerCapture(event.pointerId);
       startRef.current = null;
       setIsDragging(false);
     },
-    [commit],
+    [commit, setActiveSnapGuides],
   );
 
   useEffect(() => {
@@ -173,6 +232,7 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
         useEditorStore.setState({ document: snapshot.document, selection: snapshot.selection });
       }
       store.cancelResizeTransaction();
+      store.setActiveSnapGuides(null);
 
       startRef.current = null;
       setIsDragging(false);

@@ -73,6 +73,32 @@ describe("InspectorLayoutSection", () => {
     expect(section?.childResizePolicy).toBe("clamp");
   });
 
+  it("shows a Snap toggle only in Free mode, defaulting on, as pure editor state (Checkpoint 1.15.6.1.1) — never a document field", () => {
+    useEditorStore.setState((state) => ({
+      document: {
+        ...state.document,
+        children: [{ id: "section-1", tag: "section", layoutMode: "free", children: [] }],
+      },
+    }));
+
+    render(<InspectorLayoutSection node={{ id: "section-1", tag: "section", layoutMode: "free" }} />);
+    const toggle = screen.getByRole("switch", { name: "Snap" });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(toggle);
+
+    expect(useEditorStore.getState().snapEnabled).toBe(false);
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    // Toggling Snap must never touch the document or push history.
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(section).toEqual({ id: "section-1", tag: "section", layoutMode: "free", children: [] });
+  });
+
+  it("does not show the Snap toggle in Flow mode", () => {
+    render(<InspectorLayoutSection node={{ id: "section-1", tag: "section" }} />);
+    expect(screen.queryByRole("switch", { name: "Snap" })).not.toBeInTheDocument();
+  });
+
   it("converts back to Flow layout when Flow is clicked while Free", () => {
     useEditorStore.setState((state) => ({
       document: {
@@ -167,13 +193,28 @@ describe("InspectorLayoutSection — Flow display: Block/Flex/Grid (Checkpoint 3
   it("Flex gap starts linked and writes both row/column gap from one field", () => {
     setup({ id: "section-1", tag: "section", flowLayout: { display: "flex" } });
 
-    const gapInput = screen.getByLabelText("Gap (all)");
+    const gapInput = screen.getByLabelText("Gap (all) (exact value)");
     fireEvent.change(gapInput, { target: { value: "24" } });
     fireEvent.blur(gapInput);
 
     const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
     expect(section?.flowLayout?.flex?.rowGap).toBe(24);
     expect(section?.flowLayout?.flex?.columnGap).toBe(24);
+  });
+
+  it("a real Gap slider drag (through the actual Inspector section) is exactly one history entry, writing both row/column gap", () => {
+    setup({ id: "section-1", tag: "section", flowLayout: { display: "flex" } });
+    const historyLengthBefore = useEditorStore.getState().past.length;
+
+    const slider = screen.getByLabelText("Gap (all)");
+    fireEvent.input(slider, { target: { value: "40" } });
+    fireEvent.input(slider, { target: { value: "24" } });
+    fireEvent.change(slider, { target: { value: "24" } });
+
+    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
+    expect(section?.flowLayout?.flex?.rowGap).toBe(24);
+    expect(section?.flowLayout?.flex?.columnGap).toBe(24);
+    expect(useEditorStore.getState().past.length).toBe(historyLengthBefore + 1);
   });
 
   it("switching Display to Grid reveals Grid controls and dispatches setFlowDisplayMode", () => {

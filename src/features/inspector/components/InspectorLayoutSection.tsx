@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { InspectorBooleanToggle } from "@/features/inspector/components/InspectorBooleanToggle";
 import { InspectorLinkToggle } from "@/features/inspector/components/InspectorLinkToggle";
 import { InspectorNumberFieldRow } from "@/features/inspector/components/InspectorNumberFieldRow";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
+import { InspectorSliderField } from "@/features/inspector/components/InspectorSliderField";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { InspectorSegmentedRow } from "@/features/inspector/components/InspectorSegmentedRow";
 import { useConvertContainerToFreeLayout } from "@/features/editor/hooks/useConvertContainerToFreeLayout";
@@ -80,6 +82,8 @@ export function InspectorLayoutSection({ node }: InspectorLayoutSectionProps) {
   const setFlowDisplayMode = useEditorStore((state) => state.setFlowDisplayMode);
   const setFlexContainerSettings = useEditorStore((state) => state.setFlexContainerSettings);
   const setGridContainerSettings = useEditorStore((state) => state.setGridContainerSettings);
+  const snapEnabled = useEditorStore((state) => state.snapEnabled);
+  const setSnapEnabled = useEditorStore((state) => state.setSnapEnabled);
 
   const isFree = getLayoutMode(node) === "free";
 
@@ -108,12 +112,20 @@ export function InspectorLayoutSection({ node }: InspectorLayoutSectionProps) {
         onSelect={handleLayoutModeSelect}
       />
       {isFree ? (
-        <InspectorSegmentedRow
-          label="Resize contents"
-          options={RESIZE_POLICY_OPTIONS}
-          activeOption={resolveChildResizePolicy(node) === "clamp" ? "Clamp" : "Scale"}
-          onSelect={handlePolicySelect}
-        />
+        <>
+          <InspectorSegmentedRow
+            label="Resize contents"
+            options={RESIZE_POLICY_OPTIONS}
+            activeOption={resolveChildResizePolicy(node) === "clamp" ? "Clamp" : "Scale"}
+            onSelect={handlePolicySelect}
+          />
+          <InspectorPropertyRow
+            label="Snap"
+            help="Helps align freely positioned children to the parent's edges/center and to sibling edges/centers while dragging. Editor assistance only — it never changes what's stored, only where a drag lands."
+          >
+            <InspectorBooleanToggle checked={snapEnabled} onChange={setSnapEnabled} label="Snap" />
+          </InspectorPropertyRow>
+        </>
       ) : (
         <>
           <InspectorSegmentedRow
@@ -152,6 +164,7 @@ interface FlexContainerControlsProps {
 }
 
 function FlexContainerControls({ node, onChange }: FlexContainerControlsProps) {
+  const setFlexContainerSettingsLive = useEditorStore((state) => state.setFlexContainerSettingsLive);
   const flex = getFlexContainerSettings(node);
   const [gapLinked, setGapLinked] = useState(() => flex.rowGap === flex.columnGap);
 
@@ -201,9 +214,13 @@ function FlexContainerControls({ node, onChange }: FlexContainerControlsProps) {
         secondary={<InspectorLinkToggle linked={gapLinked} onToggle={() => setGapLinked((prev) => !prev)} />}
       >
         {gapLinked ? (
-          <InspectorNumberFieldRow
+          <InspectorSliderField
             label="Gap (all)"
             value={flex.rowGap}
+            min={0}
+            max={128}
+            unit="px"
+            onLiveChange={(value) => setFlexContainerSettingsLive(node.id, { ...flex, rowGap: value, columnGap: value })}
             onCommit={(value) => onChange({ ...flex, rowGap: Math.max(0, value), columnGap: Math.max(0, value) })}
           />
         ) : (

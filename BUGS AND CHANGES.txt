@@ -1,23 +1,6 @@
-Fix the component free resizing in the containers.
+A feature where the user can make their own customized font and save it for later and multiple use. It must be like a separate window from one of the navbar dropdown menus called Customize text or something like that.
 
-Add more Buttons options (Dropdown etc.)
 
-The Protection exists but the Containers still doesnt have a Content Parent CSS manipulation. Containers should have Content justifying and aligning, so should have styling like coloring reshaping and more thats responsible
-only for their content.
 
-The grouping is difficult to understand and messy make it more simple, i didnt even knew what i clicked and my both Ordered and Unordered lists inside the Container were linked. When i tried to resize one of them it resized
-the other aswell.
 
-The content inside a container parent are overlapping when i pick any of the Container Display and Visibility. I want the content to be evenly separated from eachand not step on each other or go out of boundaries and become bigger
-then their parent container itself.
-
-The current Main issue is the resizing and aligning of the Content inside a Container. The application should be a little bit smarter and understand what NOT to do like overlapping on each other, except when the user clicked
-Free adjustment option!
-
-Claude should review all of the HTML,Components,Layouts basically all of the options that can be resized and test them, because some if not most of them still cant be adjusted and fit properly inside a container! For example
-i found one where i create a Nav bar and add a button inside. The button cannot be resized the way the user wants.
-
-There should be a SNAP option of the content where they can align on an even level and not sloppy!
-
-Instead of arrow clicking add slider adjustments.
 

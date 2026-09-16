@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createButtonNode, createNavNode, createOrderedListNode, createUnorderedListNode } from "@/features/editor/factories/elementFactories";
+import {
+  createButtonNode,
+  createFooterCompositionNode,
+  createNavNode,
+  createOrderedListNode,
+  createUnorderedListNode,
+} from "@/features/editor/factories/elementFactories";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
 import { useEditorStore } from "./useEditorStore";
 
@@ -150,6 +156,28 @@ describe("useEditorStore — Layout/Resizing Stabilization regressions (Checkpoi
       const ol = findNodeById(useEditorStore.getState().document, "ol-1");
       expect(ul?.dimensions).toBeUndefined();
       expect(ol?.dimensions).toBeUndefined();
+    });
+  });
+
+  describe("Compositions (Checkpoint 1.15.6.1.1, Workstream C, section 55) — built from ordinary primitives, so no tag-specific resize hack should ever be needed", () => {
+    it("resizes the Simple Footer composition's root exactly like an ordinary footer, in Block, Flex, and Grid Content Layout modes, with its internal Nav/Links completely untouched", () => {
+      for (const display of ["block", "flex", "grid"] as const) {
+        const footer = createFooterCompositionNode();
+        footer.id = "footer-1";
+        useEditorStore.setState((state) => ({ document: { ...state.document, children: [footer] } }));
+        if (display !== "block") {
+          useEditorStore.getState().setFlowDisplayMode("footer-1", display);
+        }
+
+        useEditorStore.getState().resizeElement("footer-1", { preferredWidth: 480, preferredHeight: 96, offsetX: 0, offsetY: 0 });
+
+        const resized = findNodeById(useEditorStore.getState().document, "footer-1");
+        expect(resized?.dimensions).toEqual({ preferredWidth: 480, preferredHeight: 96, offsetX: 0, offsetY: 0 });
+        // The composition's own internal div/p/nav/a subtree is exactly what the factory produced — resizing the root never touches it.
+        expect(resized?.children).toEqual(footer.children);
+
+        useEditorStore.setState(initialState, true);
+      }
     });
   });
 });

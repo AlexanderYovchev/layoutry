@@ -26,7 +26,7 @@ describe("InspectorFiltersSection", () => {
     // Opacity/Brightness/Contrast/Saturation display their true CSS-neutral
     // 100% when unset (Checkpoint 1.12.1 fix) — Grayscale/Invert/Sepia's
     // neutral genuinely is 0%, and Blur/Hue Rotate are unrelated units.
-    expect(screen.getByLabelText("Opacity")).toHaveValue(100);
+    expect(screen.getByLabelText("Opacity (exact value)")).toHaveValue(100);
     expect(screen.getByLabelText("Brightness")).toHaveValue(100);
     expect(screen.getByLabelText("Contrast")).toHaveValue(100);
     expect(screen.getByLabelText("Saturation")).toHaveValue(100);
@@ -42,21 +42,34 @@ describe("InspectorFiltersSection", () => {
     setupNode({ id: "container-1", tag: "div" });
     render(<InspectorFiltersSection node={{ id: "container-1", tag: "div" }} />);
 
-    fireEvent.change(screen.getByLabelText("Opacity"), { target: { value: "60" } });
-    fireEvent.blur(screen.getByLabelText("Opacity"));
+    fireEvent.change(screen.getByLabelText("Opacity (exact value)"), { target: { value: "60" } });
+    fireEvent.blur(screen.getByLabelText("Opacity (exact value)"));
 
     expect(committedNode()?.filters?.opacity).toBe(60);
   });
 
-  it("rejects an opacity outside 0-100 with a validation message and does not commit", () => {
+  it("a real Opacity slider drag (through the actual Inspector section, not just the reusable control in isolation) is exactly one history entry", () => {
+    setupNode({ id: "container-1", tag: "div" });
+    render(<InspectorFiltersSection node={{ id: "container-1", tag: "div" }} />);
+    const historyLengthBefore = useEditorStore.getState().past.length;
+
+    const slider = screen.getByLabelText("Opacity");
+    fireEvent.input(slider, { target: { value: "70" } });
+    fireEvent.input(slider, { target: { value: "55" } });
+    fireEvent.change(slider, { target: { value: "55" } });
+
+    expect(committedNode()?.filters?.opacity).toBe(55);
+    expect(useEditorStore.getState().past.length).toBe(historyLengthBefore + 1);
+  });
+
+  it("clamps an opacity entered outside 0-100 rather than committing an invalid value (Checkpoint 1.15.6.1.1 — Opacity is now a slider-paired field; the reusable slider control clamps to min/max instead of erroring, matching ordinary slider UX)", () => {
     setupNode({ id: "container-1", tag: "div" });
     render(<InspectorFiltersSection node={{ id: "container-1", tag: "div" }} />);
 
-    fireEvent.change(screen.getByLabelText("Opacity"), { target: { value: "150" } });
-    fireEvent.blur(screen.getByLabelText("Opacity"));
+    fireEvent.change(screen.getByLabelText("Opacity (exact value)"), { target: { value: "150" } });
+    fireEvent.blur(screen.getByLabelText("Opacity (exact value)"));
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Enter a value between 0 and 100.");
-    expect(committedNode()?.filters?.opacity).toBeUndefined();
+    expect(committedNode()?.filters?.opacity).toBe(100);
   });
 
   it("commits blur with its own unit", () => {
@@ -176,7 +189,7 @@ describe("InspectorFiltersSection", () => {
     // it never re-reads the store itself, so the caller (InspectorPanel)
     // is what feeds it the post-commit node. Simulate that hand-off here.
     rerender(<InspectorFiltersSection node={committedNode()!} />);
-    expect(screen.getByLabelText("Opacity")).toHaveValue(100);
+    expect(screen.getByLabelText("Opacity (exact value)")).toHaveValue(100);
   });
 
   it("Reset Effects clears every filter at once", () => {
@@ -193,8 +206,8 @@ describe("InspectorFiltersSection", () => {
     setupNode({ id: "container-1", tag: "div" });
     render(<InspectorFiltersSection node={{ id: "container-1", tag: "div" }} />);
 
-    fireEvent.change(screen.getByLabelText("Opacity"), { target: { value: "70" } });
-    fireEvent.blur(screen.getByLabelText("Opacity"));
+    fireEvent.change(screen.getByLabelText("Opacity (exact value)"), { target: { value: "70" } });
+    fireEvent.blur(screen.getByLabelText("Opacity (exact value)"));
     expect(committedNode()?.filters?.opacity).toBe(70);
 
     useEditorStore.getState().undo();
@@ -207,8 +220,12 @@ describe("InspectorFiltersSection", () => {
   it("clears a stale validation error when the selected node changes", () => {
     const { rerender } = render(<InspectorFiltersSection node={{ id: "container-1", tag: "div" }} />);
 
-    fireEvent.change(screen.getByLabelText("Opacity"), { target: { value: "150" } });
-    fireEvent.blur(screen.getByLabelText("Opacity"));
+    // Brightness (unlike Opacity) still goes through the generic
+    // validated numeric path — Opacity's slider clamps instead of
+    // erroring, see this file's own "clamps an opacity entered outside
+    // 0-100" test above.
+    fireEvent.change(screen.getByLabelText("Brightness"), { target: { value: "-10" } });
+    fireEvent.blur(screen.getByLabelText("Brightness"));
     expect(screen.getByRole("alert")).toBeInTheDocument();
 
     rerender(<InspectorFiltersSection node={{ id: "container-2", tag: "div" }} />);

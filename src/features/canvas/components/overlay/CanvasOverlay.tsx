@@ -3,6 +3,7 @@
 import type { RefObject } from "react";
 import { DropIndicatorOverlay } from "@/features/canvas/components/overlay/DropIndicatorOverlay";
 import { FormGuideOverlay } from "@/features/canvas/components/overlay/FormGuideOverlay";
+import { FreeSnapGuideOverlay } from "@/features/canvas/components/overlay/FreeSnapGuideOverlay";
 import { HoverOverlay } from "@/features/canvas/components/overlay/HoverOverlay";
 import { MediaGuideOverlay } from "@/features/canvas/components/overlay/MediaGuideOverlay";
 import { SelectionOverlay } from "@/features/canvas/components/overlay/SelectionOverlay";
@@ -57,6 +58,7 @@ export function CanvasOverlay({ canvasRootRef, hoveredNodeId }: CanvasOverlayPro
     <div aria-hidden="true" className="pointer-events-none absolute inset-0">
       <FormGuideOverlay canvasRootRef={canvasRootRef} />
       <MediaGuideOverlay canvasRootRef={canvasRootRef} />
+      <FreeSnapGuideOverlay canvasRootRef={canvasRootRef} />
       {showHover && (
         <HoverOverlay canvasRootRef={canvasRootRef} nodeId={hoveredNodeId} />
       )}

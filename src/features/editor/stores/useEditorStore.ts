@@ -144,6 +144,7 @@ import type { BorderRadiusSettings } from "@/features/editor/types/borderRadius"
 import type { ShapePreset } from "@/features/editor/types/shape";
 import type { SvgPrimitiveKind, SvgViewBox } from "@/features/editor/types/svg";
 import type { SvgDrawingTool, SvgDraft } from "@/features/editor/types/svgEditMode";
+import type { ActiveSnapGuides } from "@/features/editor/types/snap";
 import { hasSvgScene } from "@/features/editor/types/svgScene";
 import type { SvgPathCommand, SvgVectorObject, SvgVectorPoint } from "@/features/editor/types/svgScene";
 import { isValidSvgPath, isValidSvgPolygon } from "@/features/editor/utils/svgObjectGeometry";
@@ -204,6 +205,11 @@ interface EditorState {
   /** An in-progress, uncommitted Polygon/Pen path — see types/svgEditMode.ts's own doc comment. Never enters document history; Escape/cancel discards it for free by simply clearing this field. */
   svgDraft: SvgDraft | null;
 
+  /** Free-layout Snap on/off (Checkpoint 1.15.6.1.1) — pure editor/UI preference, never document content: never pushes history, never mutates any EditorElementNode, has zero effect on exported CSS (see types/snap.ts's own doc comment). Defaults true (beginner-friendly, matches this checkpoint's own recommended default). */
+  snapEnabled: boolean;
+  /** The currently-active snap guide(s) for whichever Free child is mid-drag, or null between drags — ephemeral, cleared on pointerup/cancel, never entered into history (see types/snap.ts). */
+  activeSnapGuides: ActiveSnapGuides | null;
+
   /** Selects exactly this one id, replacing any existing selection — the plain-click behavior, and every internal single-target action (insert/move/duplicate/paste/undo/redo) below. `selectOnly` is the same action under an explicit name for new multi-selection-aware call sites. */
   selectElement: (id: string | null) => void;
   selectOnly: (id: string) => void;
@@ -229,6 +235,10 @@ interface EditorState {
   setFreeChildGeometry: (nodeId: string, geometry: FreeLayoutGeometry) => void;
   /** Per-frame Free-layout geometry write during a live drag/resize session — no history push; wrap in begin/commitResizeTransaction, same convention resize already established. */
   setFreeChildGeometryLive: (nodeId: string, geometry: FreeLayoutGeometry) => void;
+  /** Free-layout Snap on/off toggle (Checkpoint 1.15.6.1.1) — plain editor preference, no history, no document mutation. */
+  setSnapEnabled: (enabled: boolean) => void;
+  /** Sets/replaces the live snap guide(s) during an in-progress Free-child drag — no history, ephemeral (see types/snap.ts). */
+  setActiveSnapGuides: (guides: ActiveSnapGuides | null) => void;
   /** Per-frame atomic write of a Free container's own geometry plus its direct children's scaled/clamped geometries during a live parent-resize session — no history push. */
   applyFreeContainerChildGeometriesLive: (
     containerId: string,
@@ -248,7 +258,11 @@ interface EditorState {
   /** Block/Flex/Grid — retains previously-set flex/grid sub-settings across switches (Checkpoint 3.5). */
   setFlowDisplayMode: (containerId: string, display: FlowDisplayMode) => void;
   setFlexContainerSettings: (containerId: string, settings: FlexContainerSettings) => void;
+  /** Live (no-history) counterpart of setFlexContainerSettings — Checkpoint 1.15.6.1.1's Gap slider wraps a whole drag in beginTransaction()/commitTransaction() and calls this on every tick in between, matching setElementBoxShadowLive's exact shape. */
+  setFlexContainerSettingsLive: (containerId: string, settings: FlexContainerSettings) => void;
   setGridContainerSettings: (containerId: string, settings: GridContainerSettings) => void;
+  /** Live (no-history) counterpart of setGridContainerSettings — same reasoning as setFlexContainerSettingsLive. */
+  setGridContainerSettingsLive: (containerId: string, settings: GridContainerSettings) => void;
   /** Margin never affects Free content bounds — a plain field set, no side effects. */
   setElementMargin: (nodeId: string, margin: EdgeValues) => void;
   /** The containment-critical one: re-normalizes a Free container's direct children into its new (padding-adjusted) content bounds in the same atomic write — see spacingCommands.setElementPadding. */
@@ -284,6 +298,8 @@ interface EditorState {
   setElementBoxShadowLive: (nodeId: string, boxShadow: BoxShadowSettings | undefined) => void;
   /** This node's own visual effects (Checkpoint 4.7) — see resolveFilterStyle. `undefined` clears it entirely. No continuous-drag variant: every filter field is a discrete numeric commit, like Typography, not a draggable gesture. */
   setElementFilters: (nodeId: string, filters: FilterSettings | undefined) => void;
+  /** Live (no-history) counterpart of setElementFilters — Checkpoint 1.15.6.1.1's Opacity slider wraps a whole drag in beginTransaction()/commitTransaction() and calls this on every tick in between, matching setElementBoxShadowLive's exact shape. */
+  setElementFiltersLive: (nodeId: string, filters: FilterSettings | undefined) => void;
   /** This node's own display/visibility/overflow/interaction settings (Checkpoint 4.8) — see resolveDisplayStyle. `undefined` clears it entirely. No continuous-drag variant: every field here is a discrete enum commit, like Filters, not a draggable gesture. */
   setElementDisplay: (nodeId: string, display: DisplaySettings | undefined) => void;
   /** This node's own CSS `position` (Checkpoint 5.1) — see resolvePositionStyle. `undefined` clears it entirely. No continuous-drag variant: a single enum commit, like Display. */
@@ -654,6 +670,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
   primarySvgObjectId: null,
   activeSvgTool: "select",
   svgDraft: null,
+  snapEnabled: true,
+  activeSnapGuides: null,
 
   selectElement: (id) => set({ selection: selectionFromSingle(id) }),
   selectOnly: (id) => set({ selection: selectionFromSingle(id) }),
@@ -743,6 +761,9 @@ export const useEditorStore = create<EditorState>()((set) => ({
       return { document: setFreeChildGeometryCommand(state.document, nodeId, geometry) };
     }),
 
+  setSnapEnabled: (enabled) => set({ snapEnabled: enabled }),
+  setActiveSnapGuides: (guides) => set({ activeSnapGuides: guides }),
+
   // Guarded on containerId itself (Checkpoint 1.15.3 closure fix) — a
   // container's own proportional-scale resize rewrites its direct
   // children's freeLayout as a coupled side effect of the container's own
@@ -808,10 +829,24 @@ export const useEditorStore = create<EditorState>()((set) => ({
       guardedStyleMutation(state, containerId, (document) => setFlexContainerSettingsCommand(document, containerId, settings)),
     ),
 
+  setFlexContainerSettingsLive: (containerId, settings) =>
+    set((state) => {
+      const protection = getStyleProtection(state.document, containerId);
+      if (protection.protected) return nextEditorNoticeState(state, describeStyleLockNotice([protection], false));
+      return { document: setFlexContainerSettingsCommand(state.document, containerId, settings) };
+    }),
+
   setGridContainerSettings: (containerId, settings) =>
     set((state) =>
       guardedStyleMutation(state, containerId, (document) => setGridContainerSettingsCommand(document, containerId, settings)),
     ),
+
+  setGridContainerSettingsLive: (containerId, settings) =>
+    set((state) => {
+      const protection = getStyleProtection(state.document, containerId);
+      if (protection.protected) return nextEditorNoticeState(state, describeStyleLockNotice([protection], false));
+      return { document: setGridContainerSettingsCommand(state.document, containerId, settings) };
+    }),
 
   setElementMargin: (nodeId, margin) =>
     set((state) => guardedStyleMutation(state, nodeId, (document) => setElementMarginCommand(document, nodeId, margin))),
@@ -906,6 +941,13 @@ export const useEditorStore = create<EditorState>()((set) => ({
 
   setElementFilters: (nodeId, filters) =>
     set((state) => guardedStyleMutation(state, nodeId, (document) => setFilterSettingsCommand(document, nodeId, filters))),
+
+  setElementFiltersLive: (nodeId, filters) =>
+    set((state) => {
+      const protection = getStyleProtection(state.document, nodeId);
+      if (protection.protected) return nextEditorNoticeState(state, describeStyleLockNotice([protection], false));
+      return { document: setFilterSettingsCommand(state.document, nodeId, filters) };
+    }),
 
   setElementDisplay: (nodeId, display) =>
     set((state) => guardedStyleMutation(state, nodeId, (document) => setDisplaySettingsCommand(document, nodeId, display))),
