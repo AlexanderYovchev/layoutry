@@ -18,8 +18,11 @@ interface ResizeOverlayProps {
 
 /**
  * Gates and hosts the resize affordance for the current selection: renders
- * nothing for a non-resizable node (heading, paragraph, button, body, the
- * document root), otherwise fills the same box SelectionOverlay already
+ * nothing for a non-resizable node (a table row-group/row/cell, a select's
+ * own option, or a structural page/body wrapper — see canResizeElement/
+ * elementCapabilities.ts for the full, current list; heading/paragraph/
+ * button are all ordinarily resizable), otherwise fills the same box
+ * SelectionOverlay already
  * measured and positioned, so the handles only have to place themselves
  * relative to that box rather than re-deriving canvas coordinates. This is
  * also where future alignment guides and snap indicators are meant to

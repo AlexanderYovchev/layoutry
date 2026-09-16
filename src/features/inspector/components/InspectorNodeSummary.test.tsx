@@ -152,7 +152,7 @@ describe("InspectorNodeSummary — Free layout (Checkpoint 3.4.4)", () => {
       />,
     );
 
-    expect(screen.getByText("Layout")).toBeInTheDocument();
+    expect(screen.getByText("Content Layout")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Flow" })).toBeInTheDocument();
   });
 
@@ -164,7 +164,7 @@ describe("InspectorNodeSummary — Free layout (Checkpoint 3.4.4)", () => {
       />,
     );
 
-    expect(screen.queryByText("Layout")).not.toBeInTheDocument();
+    expect(screen.queryByText("Content Layout")).not.toBeInTheDocument();
   });
 });
 
@@ -695,7 +695,7 @@ describe("InspectorNodeSummary — Select/Option (Checkpoint 1.13)", () => {
         parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block"
       />,
     );
-    expect(screen.queryByText("Layout")).not.toBeInTheDocument();
+    expect(screen.queryByText("Content Layout")).not.toBeInTheDocument();
   });
 
   it("omits the Layout section for Option — a genuine leaf", () => {
@@ -705,7 +705,7 @@ describe("InspectorNodeSummary — Select/Option (Checkpoint 1.13)", () => {
         parentId="select-1" parentLayoutMode="flow" parentFlowDisplay="block"
       />,
     );
-    expect(screen.queryByText("Layout")).not.toBeInTheDocument();
+    expect(screen.queryByText("Content Layout")).not.toBeInTheDocument();
   });
 });
 
@@ -739,7 +739,7 @@ describe("InspectorNodeSummary — Table (Checkpoint 1.14)", () => {
           parentId="parent-1" parentLayoutMode="flow" parentFlowDisplay="block"
         />,
       );
-      expect(screen.queryByText("Layout"), tag).not.toBeInTheDocument();
+      expect(screen.queryByText("Content Layout"), tag).not.toBeInTheDocument();
       unmount();
     }
   });
@@ -751,7 +751,7 @@ describe("InspectorNodeSummary — Table (Checkpoint 1.14)", () => {
         parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
       />,
     );
-    expect(screen.getByText("Layout")).toBeInTheDocument();
+    expect(screen.getByText("Content Layout")).toBeInTheDocument();
   });
 
   it("omits the Size section for Thead/Tbody/Tfoot/Tr — their size is computed entirely by native table layout", () => {
@@ -816,7 +816,7 @@ describe("InspectorNodeSummary — Label (Checkpoint 1.11)", () => {
       />,
     );
 
-    expect(screen.getByText("Layout")).toBeInTheDocument();
+    expect(screen.getByText("Content Layout")).toBeInTheDocument();
     expect(screen.getByText("Background")).toBeInTheDocument();
   });
 
@@ -905,7 +905,7 @@ describe("InspectorNodeSummary — Video + Iframe (Checkpoint 1.15)", () => {
           parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
         />,
       );
-      expect(screen.queryByText("Layout"), tag).not.toBeInTheDocument();
+      expect(screen.queryByText("Content Layout"), tag).not.toBeInTheDocument();
       unmount();
     }
   });

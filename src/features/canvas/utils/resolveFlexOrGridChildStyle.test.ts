@@ -98,4 +98,45 @@ describe("resolveFlexOrGridChildStyle", () => {
     expect(style?.width).toBe("100%");
     expect(style?.height).toBe("100%");
   });
+
+  describe("Resize Semantics (Checkpoint 1.15.6.1) — a manual resize is authored intent, not silently reverted", () => {
+    it("keeps flexShrink:0 for a resized Flex child instead of reasserting the container's default shrink:1 — this was the actual root cause of the reported Nav > Button resize bug once Nav uses Flex", () => {
+      const node: EditorElementNode = { id: "n1", tag: "button", dimensions: { preferredWidth: 120, preferredHeight: 40, offsetX: 0, offsetY: 0 } };
+      const style = resolveFlexOrGridChildStyle(node, "flex");
+      expect(style?.flexShrink).toBe(0);
+    });
+
+    it("lets an explicit flexChild.shrink authored via the Inspector win over the resize-implied 0", () => {
+      const node: EditorElementNode = {
+        id: "n1",
+        tag: "button",
+        dimensions: { preferredWidth: 120, preferredHeight: 40, offsetX: 0, offsetY: 0 },
+        flexChild: { grow: 0, shrink: 1, basis: "auto", alignSelf: "auto" },
+      };
+      const style = resolveFlexOrGridChildStyle(node, "flex");
+      expect(style?.flexShrink).toBe(1);
+    });
+
+    it("still uses the container's default shrink:1 for a never-resized Flex child (unchanged prior behavior)", () => {
+      const node: EditorElementNode = { id: "n1", tag: "button" };
+      const style = resolveFlexOrGridChildStyle(node, "flex");
+      expect(style?.flexShrink).toBe(1);
+    });
+
+    it("does not force width/height: 100% for a resized Grid child — an explicit resize wins over the default track-fill", () => {
+      const node: EditorElementNode = { id: "n1", tag: "button", dimensions: { preferredWidth: 80, preferredHeight: 30, offsetX: 0, offsetY: 0 } };
+      const style = resolveFlexOrGridChildStyle(node, "grid");
+      expect(style?.width).toBeUndefined();
+      expect(style?.height).toBeUndefined();
+      expect(style?.minWidth).toBe(0);
+      expect(style?.minHeight).toBe(0);
+    });
+
+    it("still fills the track by default for a never-resized Grid child (unchanged prior behavior)", () => {
+      const node: EditorElementNode = { id: "n1", tag: "button" };
+      const style = resolveFlexOrGridChildStyle(node, "grid");
+      expect(style?.width).toBe("100%");
+      expect(style?.height).toBe("100%");
+    });
+  });
 });

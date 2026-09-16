@@ -31,7 +31,24 @@ export function DocumentNodeRenderer({
 }: DocumentNodeRendererProps) {
   const ElementComponent = documentNodeComponents[node.tag] ?? FallbackElement;
   const childLayoutMode = getLayoutMode(node);
-  const childFlowDisplay = getFlowLayoutSettings(node).display;
+  // A Free container's flowLayout is deliberately RETAINED (not cleared)
+  // across a Flow -> Free conversion, so switching back to Flow restores
+  // whatever Flex/Grid configuration was there before (see
+  // layoutCommands.ts / useConvertContainerToFreeLayout.ts). That's
+  // correct for the container's OWN future Flow settings, but it means a
+  // stale flowLayout.display of "flex"/"grid" must never reach this
+  // container's actual Free children as their parentFlowDisplay — Free
+  // children are positioned purely via freeLayout (see freeChildStyle),
+  // and resolveFlexOrGridChildStyle has no concept of "free": passing it
+  // a leftover "grid" would force width/height to 100% on an absolutely
+  // positioned Free child, corrupting its authored geometry the moment a
+  // Grid/Flex container is switched to Free (Checkpoint 1.15.6.1,
+  // "Child Containment" — a real bug found during that checkpoint's own
+  // architecture audit, not a hypothetical). "block" is always inert for
+  // a Free parent's children (resolveFlexOrGridChildStyle only ever acts
+  // on "flex"/"grid"), so it's the correct value to force here regardless
+  // of what the container's own retained flowLayout says.
+  const childFlowDisplay = childLayoutMode === "free" ? "block" : getFlowLayoutSettings(node).display;
 
   const children = (node.children ?? []).map((child) => (
     <DocumentNodeRenderer

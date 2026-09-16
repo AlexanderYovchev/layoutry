@@ -275,4 +275,30 @@ describe("DocumentNodeRenderer", () => {
     expect(placeholder).toBeInTheDocument();
     expect(placeholder).toHaveAttribute("data-node-type", "img");
   });
+
+  it("never leaks a Free container's own retained (but inactive) Grid/Flex flowLayout.display down to its Free children as parentFlowDisplay (Checkpoint 1.15.6.1) — flowLayout is deliberately retained across a Flow <-> Free trip so switching back to Flow restores it, but a Free child is positioned purely via freeLayout, and resolveFlexOrGridChildStyle has no 'free' concept: a leaked 'grid' would force width/height:100% onto an absolutely-positioned Free child and corrupt its authored geometry", () => {
+    const tree: EditorElementNode = {
+      id: "container-1",
+      tag: "div",
+      layoutMode: "free",
+      flowLayout: { display: "grid" },
+      children: [
+        {
+          id: "button-1",
+          tag: "button",
+          text: "Go",
+          freeLayout: { x: 10, y: 10, width: 80, height: 30 },
+        },
+      ],
+    };
+
+    const { container } = render(
+      <DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+
+    const button = container.querySelector('[data-node-id="button-1"]') as HTMLElement;
+    expect(button.style.width).toBe("80px");
+    expect(button.style.height).toBe("30px");
+    expect(button.style.position).toBe("absolute");
+  });
 });

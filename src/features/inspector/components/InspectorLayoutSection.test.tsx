@@ -136,6 +136,14 @@ describe("InspectorLayoutSection — Flow display: Block/Flex/Grid (Checkpoint 3
     expect(screen.getByText("Direction")).toBeInTheDocument();
   });
 
+  it("shows a plain-language hint pointing to Flex for alignment while Display is Block (Checkpoint 1.15.6.1, section 10 — Flow never silently gains Flex-style controls of its own)", () => {
+    setup({ id: "section-1", tag: "section" });
+    expect(screen.getByText(/Switch Display to Flex/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Flex" }));
+    expect(screen.queryByText(/Switch Display to Flex/i)).not.toBeInTheDocument();
+  });
+
   it("changing Direction/Wrap/Justify/Align dispatches setFlexContainerSettings", () => {
     setup({ id: "section-1", tag: "section", flowLayout: { display: "flex" } });
 

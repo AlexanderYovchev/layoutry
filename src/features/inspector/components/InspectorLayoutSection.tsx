@@ -99,10 +99,10 @@ export function InspectorLayoutSection({ node }: InspectorLayoutSectionProps) {
   }
 
   return (
-    <InspectorSection label="Layout" defaultOpen>
+    <InspectorSection label="Content Layout" defaultOpen>
       <InspectorSegmentedRow
         label="Layout mode"
-        help="Flow keeps elements in reading order. Free lets you position elements freely, like on a canvas."
+        help="Flow keeps elements in reading order and respects this checkpoint's own child-containment rules. Free lets you position elements freely, like on a canvas — overlap becomes possible here, deliberately."
         options={LAYOUT_MODE_OPTIONS}
         activeOption={isFree ? "Free" : "Flow"}
         onSelect={handleLayoutModeSelect}
@@ -122,6 +122,12 @@ export function InspectorLayoutSection({ node }: InspectorLayoutSectionProps) {
             activeOption={DISPLAY_VALUE_TO_LABEL[display]}
             onSelect={handleDisplaySelect}
           />
+          {display === "block" && (
+            <p className="px-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">
+              Block keeps children stacked in reading order. Switch Display to Flex for horizontal
+              layout and alignment/distribution controls.
+            </p>
+          )}
           {display === "flex" && (
             <FlexContainerControls
               node={node}

@@ -20,16 +20,45 @@ const ALIGN_SELF_CSS: Record<string, CSSProperties["alignSelf"]> = {
  * placement concept), regardless of whether the node happens to carry
  * retained flexChild/gridChild settings from a previous Flex/Grid
  * configuration.
+ *
+ * `wasManuallyResized` (Checkpoint 1.15.6.1, "Resize Semantics") is
+ * true once a node has been dragged via a resize handle at least once
+ * (node.dimensions exists — see resizeNode/resizeElement) — the
+ * signal this resolver uses to tell "the user set an explicit size for
+ * this child" apart from "this child has never been touched, use the
+ * container's own default child-fill behavior." Before this flag
+ * existed, both branches below silently discarded that authored size on
+ * every render: Flex reset flexShrink back to the container's default
+ * (1) and Grid unconditionally forced width/height to 100% of the
+ * track, so a user dragging a Flex/Grid child narrower or shorter than
+ * its siblings/track would watch the drag "snap back" or "fight" the
+ * pointer the instant flex-shrink or the 100% grid-fill kicked back in
+ * (see this checkpoint's own report, section C — the actual root cause
+ * of the reported Nav > Button resize bug once Nav's Content Layout is
+ * set to Flex, the realistic navbar configuration). A manual resize is
+ * only ever treated as authored intent when the user hasn't ALSO
+ * explicitly configured that same axis's flex-shrink via the Flex Child
+ * Inspector (flexChild.shrink !== undefined) — an explicit Inspector
+ * value always wins, exactly like resolveSizeConstraintsStyle already
+ * wins over this resolver's own min-width/min-height:0 default (see
+ * that resolver's own doc comment).
  */
 export function resolveFlexOrGridChildStyle(
   node: EditorElementNode,
   parentFlowDisplay: FlowDisplayMode,
 ): CSSProperties | undefined {
+  const wasManuallyResized = node.dimensions !== undefined;
+
   if (parentFlowDisplay === "flex") {
     const flex = getFlexChildSettings(node);
+    const hasExplicitShrink = node.flexChild?.shrink !== undefined;
     return {
       flexGrow: flex.grow,
-      flexShrink: flex.shrink,
+      // A resized child keeps flex-shrink:0 (matching elementDimensionsStyle's
+      // own flexShrink:0 for the same node) unless the user has explicitly
+      // authored a shrink factor of their own — see this function's own
+      // doc comment.
+      flexShrink: wasManuallyResized && !hasExplicitShrink ? 0 : flex.shrink,
       flexBasis: flex.basis === "auto" ? "auto" : flex.basis,
       alignSelf: ALIGN_SELF_CSS[flex.alignSelf],
       // Flex items default to min-width/min-height: auto, which refuses
@@ -62,11 +91,16 @@ export function resolveFlexOrGridChildStyle(
     // (already-correctly-sized) track rather than its own content size —
     // this is the one containment guarantee this checkpoint could not
     // have caught without live-browser verification, since jsdom has no
-    // real grid track-sizing algorithm.
+    // real grid track-sizing algorithm. Only the *default* (never
+    // resized) case forces 100% — once a user has explicitly resized
+    // this grid child, that authored size wins instead (Checkpoint
+    // 1.15.6.1 — see this function's own doc comment).
     style.minWidth = 0;
     style.minHeight = 0;
-    style.width = "100%";
-    style.height = "100%";
+    if (!wasManuallyResized) {
+      style.width = "100%";
+      style.height = "100%";
+    }
     return style;
   }
 
