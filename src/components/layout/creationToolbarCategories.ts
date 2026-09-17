@@ -12,13 +12,16 @@ import {
   ChevronsRight,
   Circle,
   CircleDot,
+  CircleUserRound,
   ClipboardList,
+  Columns2,
   Columns3,
   Globe,
   Hash,
   Image,
   Layout,
   LayoutPanelTop,
+  LayoutTemplate,
   Link,
   List,
   ListOrdered,
@@ -32,8 +35,10 @@ import {
   PanelTop,
   Phone,
   Pointer,
+  Receipt,
   RectangleHorizontal,
   Search,
+  Sparkles,
   Spline,
   Square,
   SquareCheck,
@@ -99,7 +104,13 @@ export type InsertableCardType =
   | "centeredNavbar"
   | "breadcrumbs"
   | "pagination"
-  | "sidebarNavigation";
+  | "sidebarNavigation"
+  | "basicCard"
+  | "imageCard"
+  | "horizontalCard"
+  | "profileCard"
+  | "featureCard"
+  | "pricingCard";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -283,7 +294,12 @@ function componentsCategory(): ToolbarCategoryContent {
         { name: "Dropdown Button", description: "Button with an attached menu of links, open on Canvas", elementType: "dropdownButton", icon: ChevronsDown },
       ]),
       section(id, "cards-containers", "Cards & Containers", [
-        { name: "Card", description: "Content container with elevation" },
+        { name: "Basic Card", description: "Heading, description, and a Learn More link", elementType: "basicCard", icon: LayoutTemplate },
+        { name: "Image Card", description: "Media above a heading, description, and link", elementType: "imageCard", icon: Image },
+        { name: "Horizontal Card", description: "Media beside a heading, description, and link", elementType: "horizontalCard", icon: Columns2 },
+        { name: "Profile Card", description: "Circular avatar with a name, role, and link", elementType: "profileCard", icon: CircleUserRound },
+        { name: "Feature Card", description: "Heading and description for a landing-page feature", elementType: "featureCard", icon: Sparkles },
+        { name: "Pricing Card", description: "Plan name, price, feature list, and a Choose Plan button", elementType: "pricingCard", icon: Receipt },
         { name: "Panel", description: "Grouped content area" },
       ]),
       section(id, "navigation", "Navigation", [
