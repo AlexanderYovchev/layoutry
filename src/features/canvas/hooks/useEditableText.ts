@@ -49,6 +49,32 @@ export interface EditableTextControl {
  * numeric field already uses (see InspectorNumberFieldRow), applied to
  * the Canvas instead of a side-panel input.
  *
+ * Entering edit mode both focuses the element AND explicitly places the
+ * browser's native Selection inside it (Checkpoint 1.15.6.2.1 — see the
+ * effect below) — not merely a UX nicety (selecting all text so typing
+ * immediately replaces it), but the fix for a real, reproducible bug
+ * found during 1.15.6.2's own browser QA: `.focus()` alone moves
+ * `document.activeElement` but never relocates `document.getSelection()`.
+ * After committing a PRIOR edit elsewhere (Enter -> commit() -> blur()),
+ * the browser's Selection Range is left stale, still anchored inside
+ * that now-non-contentEditable element. Double-clicking a SECOND
+ * text-bearing element then correctly flips it to contentEditable and
+ * correctly focuses it (confirmed via document.activeElement) — but the
+ * stale Selection never moves into it on its own. Chromium's native
+ * Ctrl+A ("select all") resolves relative to the CURRENT Selection's own
+ * scope, not simply "whatever's focused" — with a stale Selection still
+ * rooted in a no-longer-editable element, that scope silently promotes
+ * to the whole document body, so Ctrl+A selects the entire page's text
+ * instead of the newly-focused element's, and typing does nothing useful
+ * to it. This only ever reproduced as the SECOND edit in a sequence
+ * (never on a fresh page, where there is no stale Selection yet to
+ * inherit) — see this checkpoint's own report for the full diagnosis via
+ * `document.getSelection()` before/after each step. Explicitly
+ * re-anchoring the Selection inside the element every time editing
+ * starts — regardless of whatever a previous session left behind — closes
+ * this generically for every text-bearing tag that shares this hook, with
+ * no per-tag or per-sequence special-casing.
+ *
  * The suppressNextBlurCommitRef guard mirrors InspectorNumberFieldRow's
  * own fix for the identical bug class it already found (Checkpoint 5.7):
  * Enter/Escape call element.blur() to visually release focus, which
@@ -72,7 +98,22 @@ export function useEditableText(node: EditorElementNode): EditableTextControl {
   const setElementText = useEditorStore((state) => state.setElementText);
 
   useEffect(() => {
-    if (isEditing) domRef.current?.focus();
+    const element = domRef.current;
+    if (!isEditing || !element) return;
+    element.focus();
+    // Explicitly re-anchors the native Selection inside this element —
+    // see this function's own doc comment above for the real, reproduced
+    // bug this fixes (a stale Selection left over from a PRIOR edit
+    // elsewhere breaks native Ctrl+A/typing on this one otherwise).
+    // Selecting the full existing text also means typing immediately
+    // replaces it, matching how a freshly-focused field commonly behaves.
+    const selection = window.getSelection();
+    if (selection) {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
   }, [isEditing]);
 
   function commit() {
