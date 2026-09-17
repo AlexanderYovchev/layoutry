@@ -187,12 +187,13 @@ describe("CreationToolbar", () => {
     );
     const cards = menu.getAllByRole("menuitem");
     expect(cards.length).toBeGreaterThan(0);
-    // Buttons (Checkpoint 1.15.6.2), Navigation (Checkpoint 1.15.6.3), and
-    // Cards & Containers (Checkpoint 1.15.6.4) are the first three real,
-    // enabled Components families — every other family (Forms & Inputs,
-    // Feedback & Overlays, Data Display) remains a disabled future
-    // placeholder, and "Panel" remains a disabled placeholder within Cards
-    // & Containers itself (not yet implemented).
+    // Buttons (Checkpoint 1.15.6.2), Navigation (Checkpoint 1.15.6.3),
+    // Cards & Containers (Checkpoint 1.15.6.4), and Forms & Inputs
+    // (Checkpoint 1.15.6.5) are the first four real, enabled Components
+    // families — every other family (Feedback & Overlays, Data Display)
+    // remains a disabled future placeholder, and "Panel" remains a
+    // disabled placeholder within Cards & Containers itself (not yet
+    // implemented).
     const enabledCardNames = [
       "Primary Button",
       "Secondary Button",
@@ -212,6 +213,12 @@ describe("CreationToolbar", () => {
       "Profile Card",
       "Feature Card",
       "Pricing Card",
+      "Labeled Text Field",
+      "Search Bar",
+      "Newsletter Signup",
+      "Contact Form",
+      "Login Form",
+      "Labeled Select Field",
     ];
     for (const card of cards) {
       const isEnabledCard = enabledCardNames.some((name) => card.textContent?.startsWith(name));

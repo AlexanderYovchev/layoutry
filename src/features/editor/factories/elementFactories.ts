@@ -22,6 +22,14 @@ import {
   createPricingCardNode,
   createProfileCardNode,
 } from "@/features/editor/factories/cardCompositions";
+import {
+  createContactFormNode,
+  createLabeledSelectFieldNode,
+  createLabeledTextFieldNode,
+  createLoginFormNode,
+  createNewsletterSignupNode,
+  createSearchBarNode,
+} from "@/features/editor/factories/formCompositions";
 import { generateNodeId } from "@/features/editor/utils/generateNodeId";
 import { DEFAULT_SVG_FILL } from "@/features/editor/types/svg";
 import { DEFAULT_LINK_HREF } from "@/features/editor/types/link";
@@ -93,7 +101,13 @@ export type InsertableElementType =
   | "horizontalCard"
   | "profileCard"
   | "featureCard"
-  | "pricingCard";
+  | "pricingCard"
+  | "labeledTextField"
+  | "searchBar"
+  | "newsletterSignup"
+  | "contactForm"
+  | "loginForm"
+  | "labeledSelectField";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -695,6 +709,12 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   profileCard: createProfileCardNode,
   featureCard: createFeatureCardNode,
   pricingCard: createPricingCardNode,
+  labeledTextField: createLabeledTextFieldNode,
+  searchBar: createSearchBarNode,
+  newsletterSignup: createNewsletterSignupNode,
+  contactForm: createContactFormNode,
+  loginForm: createLoginFormNode,
+  labeledSelectField: createLabeledSelectFieldNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -767,6 +787,12 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   profileCard: { width: 240, height: 260 },
   featureCard: { width: 260, height: 120 },
   pricingCard: { width: 260, height: 320 },
+  labeledTextField: { width: 240, height: 70 },
+  searchBar: { width: 320, height: 44 },
+  newsletterSignup: { width: 360, height: 44 },
+  contactForm: { width: 360, height: 420 },
+  loginForm: { width: 340, height: 400 },
+  labeledSelectField: { width: 240, height: 70 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };

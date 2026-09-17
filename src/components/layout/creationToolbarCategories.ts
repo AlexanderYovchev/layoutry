@@ -19,6 +19,7 @@ import {
   Globe,
   Hash,
   Image,
+  KeyRound,
   Layout,
   LayoutPanelTop,
   LayoutTemplate,
@@ -26,6 +27,7 @@ import {
   List,
   ListOrdered,
   Lock,
+  Mail,
   Menu,
   MousePointerClick,
   Newspaper,
@@ -110,7 +112,13 @@ export type InsertableCardType =
   | "horizontalCard"
   | "profileCard"
   | "featureCard"
-  | "pricingCard";
+  | "pricingCard"
+  | "labeledTextField"
+  | "searchBar"
+  | "newsletterSignup"
+  | "contactForm"
+  | "loginForm"
+  | "labeledSelectField";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -311,8 +319,12 @@ function componentsCategory(): ToolbarCategoryContent {
         { name: "Sidebar Navigation", description: "Vertical column of navigation links", elementType: "sidebarNavigation", icon: PanelLeft },
       ]),
       section(id, "forms-inputs", "Forms & Inputs", [
-        { name: "Text Field", description: "Labeled input with validation" },
-        { name: "Select", description: "Dropdown choice control" },
+        { name: "Labeled Text Field", description: "Text input with a visible label", elementType: "labeledTextField", icon: TextCursorInput },
+        { name: "Search Bar", description: "Search input beside a Search button", elementType: "searchBar", icon: Search },
+        { name: "Newsletter Signup", description: "Email input beside a Subscribe button", elementType: "newsletterSignup", icon: Mail },
+        { name: "Contact Form", description: "Name, email, and message fields with a submit button", elementType: "contactForm", icon: ClipboardList },
+        { name: "Login Form", description: "Email and password fields with a Sign In button", elementType: "loginForm", icon: KeyRound },
+        { name: "Labeled Select Field", description: "Dropdown choice field with a visible label", elementType: "labeledSelectField", icon: ChevronDown },
       ]),
       section(id, "feedback-overlays", "Feedback & Overlays", [
         { name: "Modal", description: "Overlay dialog" },
