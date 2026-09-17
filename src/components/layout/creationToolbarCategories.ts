@@ -39,6 +39,7 @@ import {
   Pointer,
   Receipt,
   RectangleHorizontal,
+  Rows3,
   Search,
   Sparkles,
   Spline,
@@ -50,7 +51,9 @@ import {
   Tag,
   TextCursorInput,
   TextQuote,
+  TrendingUp,
   Type,
+  UserRound,
 } from "lucide-react";
 
 /**
@@ -118,7 +121,12 @@ export type InsertableCardType =
   | "newsletterSignup"
   | "contactForm"
   | "loginForm"
-  | "labeledSelectField";
+  | "labeledSelectField"
+  | "badge"
+  | "avatar"
+  | "avatarWithText"
+  | "statCard"
+  | "metadataRow";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -331,8 +339,11 @@ function componentsCategory(): ToolbarCategoryContent {
         { name: "Toast", description: "Temporary status message" },
       ]),
       section(id, "data-display", "Data Display", [
-        { name: "Badge", description: "Small status indicator" },
-        { name: "Avatar", description: "User profile image" },
+        { name: "Badge", description: "Small status indicator", elementType: "badge", icon: Tag },
+        { name: "Avatar", description: "Circular profile image", elementType: "avatar", icon: CircleUserRound },
+        { name: "Avatar with Text", description: "Avatar beside a name and subtitle", elementType: "avatarWithText", icon: UserRound },
+        { name: "Stat Card", description: "Label, value, and supporting text", elementType: "statCard", icon: TrendingUp },
+        { name: "Metadata Row", description: "Key and value spread across a row", elementType: "metadataRow", icon: Rows3 },
       ]),
     ],
   };

@@ -30,6 +30,13 @@ import {
   createNewsletterSignupNode,
   createSearchBarNode,
 } from "@/features/editor/factories/formCompositions";
+import {
+  createAvatarNode,
+  createAvatarWithTextNode,
+  createBadgeNode,
+  createMetadataRowNode,
+  createStatCardNode,
+} from "@/features/editor/factories/dataDisplayCompositions";
 import { generateNodeId } from "@/features/editor/utils/generateNodeId";
 import { DEFAULT_SVG_FILL } from "@/features/editor/types/svg";
 import { DEFAULT_LINK_HREF } from "@/features/editor/types/link";
@@ -107,7 +114,12 @@ export type InsertableElementType =
   | "newsletterSignup"
   | "contactForm"
   | "loginForm"
-  | "labeledSelectField";
+  | "labeledSelectField"
+  | "badge"
+  | "avatar"
+  | "avatarWithText"
+  | "statCard"
+  | "metadataRow";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -715,6 +727,11 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   contactForm: createContactFormNode,
   loginForm: createLoginFormNode,
   labeledSelectField: createLabeledSelectFieldNode,
+  badge: createBadgeNode,
+  avatar: createAvatarNode,
+  avatarWithText: createAvatarWithTextNode,
+  statCard: createStatCardNode,
+  metadataRow: createMetadataRowNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -793,6 +810,11 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   contactForm: { width: 360, height: 420 },
   loginForm: { width: 340, height: 400 },
   labeledSelectField: { width: 240, height: 70 },
+  badge: { width: 90, height: 28 },
+  avatar: { width: 64, height: 64 },
+  avatarWithText: { width: 220, height: 56 },
+  statCard: { width: 220, height: 130 },
+  metadataRow: { width: 260, height: 32 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };
