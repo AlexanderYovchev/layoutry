@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  AlignCenter,
   AlignLeft,
   AppWindow,
   AtSign,
@@ -7,6 +8,8 @@ import {
   Box,
   ChevronDown,
   ChevronsDown,
+  ChevronsLeftRight,
+  ChevronsRight,
   Circle,
   CircleDot,
   ClipboardList,
@@ -24,6 +27,7 @@ import {
   MousePointerClick,
   Newspaper,
   PanelBottom,
+  PanelLeft,
   PanelRight,
   PanelTop,
   Phone,
@@ -89,7 +93,13 @@ export type InsertableCardType =
   | "outlineButton"
   | "ghostButton"
   | "buttonGroup"
-  | "dropdownButton";
+  | "dropdownButton"
+  | "basicNavbar"
+  | "navbarWithCta"
+  | "centeredNavbar"
+  | "breadcrumbs"
+  | "pagination"
+  | "sidebarNavigation";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -277,8 +287,12 @@ function componentsCategory(): ToolbarCategoryContent {
         { name: "Panel", description: "Grouped content area" },
       ]),
       section(id, "navigation", "Navigation", [
-        { name: "Tabs", description: "Switch between views" },
-        { name: "Breadcrumb", description: "Hierarchical location trail" },
+        { name: "Basic Navbar", description: "Nav bar with four starter links", elementType: "basicNavbar", icon: Menu },
+        { name: "Navbar with CTA", description: "Nav links distributed against a call-to-action button", elementType: "navbarWithCta", icon: PanelTop },
+        { name: "Centered Navbar", description: "Nav links centered in the bar", elementType: "centeredNavbar", icon: AlignCenter },
+        { name: "Breadcrumbs", description: "Hierarchical location trail with separators", elementType: "breadcrumbs", icon: ChevronsRight },
+        { name: "Pagination", description: "Previous/Next controls with numbered page links", elementType: "pagination", icon: ChevronsLeftRight },
+        { name: "Sidebar Navigation", description: "Vertical column of navigation links", elementType: "sidebarNavigation", icon: PanelLeft },
       ]),
       section(id, "forms-inputs", "Forms & Inputs", [
         { name: "Text Field", description: "Labeled input with validation" },

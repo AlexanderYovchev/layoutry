@@ -187,10 +187,10 @@ describe("CreationToolbar", () => {
     );
     const cards = menu.getAllByRole("menuitem");
     expect(cards.length).toBeGreaterThan(0);
-    // The Buttons family (Checkpoint 1.15.6.2) is the first real,
-    // enabled Components family — every other family (Cards & Containers,
-    // Navigation, Forms & Inputs, Feedback & Overlays, Data Display)
-    // remains a disabled future placeholder.
+    // Buttons (Checkpoint 1.15.6.2) and Navigation (Checkpoint 1.15.6.3)
+    // are the first two real, enabled Components families — every other
+    // family (Cards & Containers, Forms & Inputs, Feedback & Overlays,
+    // Data Display) remains a disabled future placeholder.
     const enabledCardNames = [
       "Primary Button",
       "Secondary Button",
@@ -198,10 +198,16 @@ describe("CreationToolbar", () => {
       "Ghost Button",
       "Button Group",
       "Dropdown Button",
+      "Basic Navbar",
+      "Navbar with CTA",
+      "Centered Navbar",
+      "Breadcrumbs",
+      "Pagination",
+      "Sidebar Navigation",
     ];
     for (const card of cards) {
-      const isEnabledButtonCard = enabledCardNames.some((name) => card.textContent?.startsWith(name));
-      if (isEnabledButtonCard) {
+      const isEnabledCard = enabledCardNames.some((name) => card.textContent?.startsWith(name));
+      if (isEnabledCard) {
         expect(card).toBeEnabled();
       } else {
         expect(card).toBeDisabled();

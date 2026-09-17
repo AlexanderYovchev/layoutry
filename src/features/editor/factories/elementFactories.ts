@@ -6,6 +6,14 @@ import {
   createPrimaryButtonNode,
   createSecondaryButtonNode,
 } from "@/features/editor/factories/buttonCompositions";
+import {
+  createBasicNavbarNode,
+  createBreadcrumbsNode,
+  createCenteredNavbarNode,
+  createNavbarWithCtaNode,
+  createPaginationNode,
+  createSidebarNavigationNode,
+} from "@/features/editor/factories/navigationCompositions";
 import { generateNodeId } from "@/features/editor/utils/generateNodeId";
 import { DEFAULT_SVG_FILL } from "@/features/editor/types/svg";
 import { DEFAULT_LINK_HREF } from "@/features/editor/types/link";
@@ -65,7 +73,13 @@ export type InsertableElementType =
   | "outlineButton"
   | "ghostButton"
   | "buttonGroup"
-  | "dropdownButton";
+  | "dropdownButton"
+  | "basicNavbar"
+  | "navbarWithCta"
+  | "centeredNavbar"
+  | "breadcrumbs"
+  | "pagination"
+  | "sidebarNavigation";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -655,6 +669,12 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   ghostButton: createGhostButtonNode,
   buttonGroup: createButtonGroupNode,
   dropdownButton: createDropdownButtonNode,
+  basicNavbar: createBasicNavbarNode,
+  navbarWithCta: createNavbarWithCtaNode,
+  centeredNavbar: createCenteredNavbarNode,
+  breadcrumbs: createBreadcrumbsNode,
+  pagination: createPaginationNode,
+  sidebarNavigation: createSidebarNavigationNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -715,6 +735,12 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   ghostButton: { width: 120, height: 44 },
   buttonGroup: { width: 280, height: 48 },
   dropdownButton: { width: 200, height: 160 },
+  basicNavbar: { width: 480, height: 64 },
+  navbarWithCta: { width: 520, height: 64 },
+  centeredNavbar: { width: 480, height: 64 },
+  breadcrumbs: { width: 360, height: 40 },
+  pagination: { width: 320, height: 48 },
+  sidebarNavigation: { width: 220, height: 220 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };
