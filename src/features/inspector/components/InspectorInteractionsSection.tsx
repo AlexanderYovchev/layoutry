@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { getElementDisplayName } from "@/features/editor/utils/elementDisplayName";
 import { getInteractions, type InteractionAction, type InteractionBinding } from "@/features/editor/types/interactions";
+import { getInitialPreviewVisibility, type InitialPreviewVisibility } from "@/features/editor/types/previewVisibility";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import type { EditorElementNode } from "@/features/editor/types/document";
@@ -23,6 +24,46 @@ const ACTION_OPTIONS: readonly { value: InteractionAction; label: string }[] = [
   { value: "hide", label: "Hide" },
   { value: "toggle", label: "Toggle" },
 ];
+
+const INITIAL_STATE_OPTIONS: readonly { value: InitialPreviewVisibility; label: string }[] = [
+  { value: "visible", label: "Visible" },
+  { value: "hidden", label: "Hidden" },
+];
+
+/**
+ * "Initial state" (Checkpoint 1.15.6.8.1) — the generic authored-Preview-
+ * visibility control, kept inside this same behavior-related section
+ * (section 11's own explicit instruction — never under CSS Display/
+ * Visibility) rather than a second new section. Shown for EVERY node this
+ * section renders for, independent of whether that node currently has any
+ * interaction bindings at all — a node can be a pure interaction TARGET
+ * with no bindings of its own (exactly what the Dropdown menu Container
+ * is), and still needs this control.
+ */
+function InitialStateRow({ node }: { node: EditorElementNode }) {
+  const setInitialPreviewVisibility = useEditorStore((state) => state.setInitialPreviewVisibility);
+  const value = getInitialPreviewVisibility(node);
+
+  return (
+    <InspectorPropertyRow label="Initial state">
+      <select
+        aria-label="Initial state"
+        value={value}
+        onChange={(event) => {
+          const next = event.target.value as InitialPreviewVisibility;
+          setInitialPreviewVisibility(node.id, next === "visible" ? undefined : next);
+        }}
+        className="h-7 min-w-24 rounded-md border border-zinc-200 bg-zinc-50 px-1.5 text-xs text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200"
+      >
+        {INITIAL_STATE_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </InspectorPropertyRow>
+  );
+}
 
 /**
  * Every node in the document, human-readable (Checkpoint 1.15.6.8, Part
@@ -155,17 +196,19 @@ export function InspectorInteractionsSection({ node }: InspectorInteractionsSect
   // InspectorSection's own `defaultOpen` is read only once, at mount (see
   // its own doc comment) — it never reacts to a later prop change. That's
   // right for every OTHER section, but here the very first "Add
-  // Interaction" click transitions a node from zero bindings to one, and
-  // the newly-added row should actually become visible without a second,
-  // separate click to expand the section. Controlled mode + the same
-  // "compare during render" pattern InspectorBoxShadowSection's own
+  // Interaction" click (or the first switch to a non-default Initial
+  // state) transitions a node from "nothing configured" to "something
+  // configured," and that change should actually become visible without
+  // a second, separate click to expand the section. Controlled mode + the
+  // same "compare during render" pattern InspectorBoxShadowSection's own
   // lastNodeId reset already uses: open automatically exactly once, on
-  // the 0 -> 1 transition, never fighting a later manual collapse.
-  const [isOpen, setIsOpen] = useState(bindings.length > 0);
-  const [lastBindingCount, setLastBindingCount] = useState(bindings.length);
-  if (bindings.length !== lastBindingCount) {
-    if (bindings.length > 0 && lastBindingCount === 0) setIsOpen(true);
-    setLastBindingCount(bindings.length);
+  // the false -> true transition, never fighting a later manual collapse.
+  const hasConfiguredBehavior = bindings.length > 0 || getInitialPreviewVisibility(node) !== "visible";
+  const [isOpen, setIsOpen] = useState(hasConfiguredBehavior);
+  const [wasConfigured, setWasConfigured] = useState(hasConfiguredBehavior);
+  if (hasConfiguredBehavior !== wasConfigured) {
+    if (hasConfiguredBehavior && !wasConfigured) setIsOpen(true);
+    setWasConfigured(hasConfiguredBehavior);
   }
 
   function handleAdd() {
@@ -175,6 +218,8 @@ export function InspectorInteractionsSection({ node }: InspectorInteractionsSect
 
   return (
     <InspectorSection label="Interactions" isOpen={isOpen} onToggle={setIsOpen}>
+      <InitialStateRow node={node} />
+
       {bindings.length === 0 ? (
         <button
           type="button"
@@ -185,7 +230,7 @@ export function InspectorInteractionsSection({ node }: InspectorInteractionsSect
           Add Interaction
         </button>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 border-t border-zinc-200 pt-2 dark:border-zinc-800">
           {bindings.map((binding) => (
             <InteractionRow key={binding.id} node={node} binding={binding} candidates={candidates} />
           ))}

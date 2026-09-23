@@ -33,6 +33,7 @@ import {
   addInteraction as addInteractionCommand,
   removeInteraction as removeInteractionCommand,
   removeInteractionsTargeting,
+  setInitialPreviewVisibility as setInitialPreviewVisibilityCommand,
   updateInteraction as updateInteractionCommand,
 } from "@/features/editor/commands/interactionCommands";
 import {
@@ -164,6 +165,7 @@ import type { AspectRatioValue } from "@/features/editor/types/aspectRatio";
 import type { SizeConstraints } from "@/features/editor/types/sizeConstraints";
 import { DEFAULT_EDITOR_MODE, type EditorMode } from "@/features/editor/types/editorMode";
 import { getInteractions, type InteractionAction } from "@/features/editor/types/interactions";
+import { getInitialPreviewVisibility, type InitialPreviewVisibility } from "@/features/editor/types/previewVisibility";
 
 interface EditorState {
   document: EditorElementNode;
@@ -290,6 +292,13 @@ interface EditorState {
   updateInteraction: (nodeId: string, interactionId: string, patch: { action?: InteractionAction; targetId?: string }) => void;
   /** Removes one binding by its own id — one history entry, no-op if already gone. */
   removeInteraction: (nodeId: string, interactionId: string) => void;
+  /**
+   * Sets nodeId's own authored initial Preview visibility (Checkpoint
+   * 1.15.6.8.1) — one history entry, true no-op detection, never guarded
+   * by Parent Style Protection (behavior metadata, not CSS). `undefined`
+   * clears back to the default "visible."
+   */
+  setInitialPreviewVisibility: (nodeId: string, value: InitialPreviewVisibility | undefined) => void;
   /**
    * Fires every one of nodeId's own bindings matching `trigger` (Preview
    * click execution) — mutates ONLY `runtimeVisibility`, never the
@@ -710,6 +719,26 @@ function collectDeletedIds(document: EditorElementNode, rootIds: readonly string
   return ids;
 }
 
+/**
+ * One document traversal on Preview entry (Checkpoint 1.15.6.8.1, section
+ * 34's own explicit "prefer one traversal, don't rescan on every render/
+ * click" requirement) — seeds the ephemeral runtimeVisibility slice from
+ * every node's own authored `initialPreviewVisibility`. Only nodes
+ * explicitly authored "hidden" get an entry at all (section 33's own
+ * "avoid unnecessarily populating runtime state for every node" — an
+ * absent entry already means visible, so there is nothing to gain by
+ * also writing `true` for every other node).
+ */
+function buildInitialRuntimeVisibility(document: EditorElementNode): Record<string, boolean> {
+  const visibility: Record<string, boolean> = {};
+  function visit(node: EditorElementNode) {
+    if (getInitialPreviewVisibility(node) === "hidden") visibility[node.id] = false;
+    node.children?.forEach(visit);
+  }
+  visit(document);
+  return visibility;
+}
+
 function eligibleSelectedNode(state: EditorState): EditorElementNode | undefined {
   const id = state.selection.primaryId;
   if (!id || id === state.document.id) {
@@ -847,16 +876,16 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setEditorMode: (mode) => set({ editorMode: mode }),
 
   enterPreview: () =>
-    set({
+    set((state) => ({
       editorMode: "preview",
-      runtimeVisibility: {},
+      runtimeVisibility: buildInitialRuntimeVisibility(state.document),
       svgEditingNodeId: null,
       selectedSvgObjectIds: [],
       primarySvgObjectId: null,
       activeSvgTool: "select",
       svgDraft: null,
       transactionSnapshot: null,
-    }),
+    })),
 
   exitPreview: () => set({ editorMode: "design", runtimeVisibility: {} }),
 
@@ -877,6 +906,13 @@ export const useEditorStore = create<EditorState>()((set) => ({
   removeInteraction: (nodeId, interactionId) =>
     set((state) => {
       const document = removeInteractionCommand(state.document, nodeId, interactionId);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setInitialPreviewVisibility: (nodeId, value) =>
+    set((state) => {
+      const document = setInitialPreviewVisibilityCommand(state.document, nodeId, value);
       if (document === state.document) return {};
       return { ...pushHistory(state), document };
     }),

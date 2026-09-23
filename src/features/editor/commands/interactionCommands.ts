@@ -1,5 +1,6 @@
 import { generateNodeId } from "@/features/editor/utils/generateNodeId";
 import { getInteractions, withInteractions, type InteractionAction, type InteractionBinding } from "@/features/editor/types/interactions";
+import type { InitialPreviewVisibility } from "@/features/editor/types/previewVisibility";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
 /**
@@ -123,6 +124,26 @@ export function removeInteractionsTargeting(root: EditorElementNode, deletedIds:
   }
 
   return { ...root, children: nextChildren, interactions: withInteractions(filtered) };
+}
+
+/**
+ * Sets (or clears) nodeId's own authored initial Preview visibility
+ * (Checkpoint 1.15.6.8.1) — a plain single-field setter, the exact same
+ * shape as documentCommands.setElementLockChildStyles: true no-op
+ * detection (same value in, same root reference out), never routed
+ * through a style-protection guard at the store layer (this is behavior
+ * metadata, not CSS — see types/previewVisibility.ts's own top comment).
+ * `undefined` clears back to the default "visible."
+ */
+export function setInitialPreviewVisibility(
+  root: EditorElementNode,
+  nodeId: string,
+  value: InitialPreviewVisibility | undefined,
+): EditorElementNode {
+  return updateNode(root, nodeId, (node) => {
+    if (node.initialPreviewVisibility === value) return node;
+    return { ...node, initialPreviewVisibility: value };
+  });
 }
 
 /**

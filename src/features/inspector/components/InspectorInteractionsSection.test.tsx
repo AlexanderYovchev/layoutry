@@ -162,4 +162,48 @@ describe("InspectorInteractionsSection (Checkpoint 1.15.6.8)", () => {
     const optionValues = Array.from(targetSelect.options).map((option) => option.value);
     expect(optionValues).not.toContain(rootId);
   });
+
+  describe("Initial state control (Checkpoint 1.15.6.8.1)", () => {
+    it("shows 'Visible' by default, even for a node with zero interaction bindings", () => {
+      setupDocument([{ id: "div-1", tag: "div" }]);
+      render(<InspectorInteractionsSection node={{ id: "div-1", tag: "div" }} />);
+
+      expect(screen.getByRole("combobox", { name: "Initial state" })).toHaveValue("visible");
+    });
+
+    it("reflects an already-authored 'hidden' value", () => {
+      setupDocument([{ id: "div-1", tag: "div", initialPreviewVisibility: "hidden" }]);
+      render(<InspectorInteractionsSection node={{ id: "div-1", tag: "div", initialPreviewVisibility: "hidden" }} />);
+
+      expect(screen.getByRole("combobox", { name: "Initial state" })).toHaveValue("hidden");
+    });
+
+    it("changing Initial state to Hidden commits it through the store", () => {
+      setupDocument([{ id: "div-1", tag: "div" }]);
+      render(<InspectorInteractionsSection node={{ id: "div-1", tag: "div" }} />);
+
+      fireEvent.change(screen.getByRole("combobox", { name: "Initial state" }), { target: { value: "hidden" } });
+
+      const node = useEditorStore.getState().document.children!.find((c) => c.id === "div-1")!;
+      expect(node.initialPreviewVisibility).toBe("hidden");
+    });
+
+    it("changing Initial state back to Visible clears the field to undefined, not an explicit 'visible' string", () => {
+      setupDocument([{ id: "div-1", tag: "div", initialPreviewVisibility: "hidden" }]);
+      render(<InspectorInteractionsSection node={{ id: "div-1", tag: "div", initialPreviewVisibility: "hidden" }} />);
+
+      fireEvent.change(screen.getByRole("combobox", { name: "Initial state" }), { target: { value: "visible" } });
+
+      const node = useEditorStore.getState().document.children!.find((c) => c.id === "div-1")!;
+      expect(node.initialPreviewVisibility).toBeUndefined();
+    });
+
+    it("is present and usable for a node that is a pure interaction TARGET with no bindings of its own (the Dropdown menu's own shape)", () => {
+      setupDocument([{ id: "menu-1", tag: "div", initialPreviewVisibility: "hidden" }]);
+      render(<InspectorInteractionsSection node={{ id: "menu-1", tag: "div", initialPreviewVisibility: "hidden" }} />);
+
+      expect(screen.getByRole("combobox", { name: "Initial state" })).toHaveValue("hidden");
+      expect(screen.getByRole("button", { name: "Add Interaction" })).toBeInTheDocument();
+    });
+  });
 });

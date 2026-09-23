@@ -309,7 +309,7 @@ function componentsCategory(): ToolbarCategoryContent {
         { name: "Outline Button", description: "Transparent fill with a visible border", elementType: "outlineButton", icon: SquareDashed },
         { name: "Ghost Button", description: "Minimal button with no fill or border", elementType: "ghostButton", icon: Pointer },
         { name: "Button Group", description: "Row of buttons sharing one Flex container", elementType: "buttonGroup", icon: Columns3 },
-        { name: "Dropdown Button", description: "Button with an attached menu of links, open on Canvas", elementType: "dropdownButton", icon: ChevronsDown },
+        { name: "Dropdown Button", description: "Button with an attached menu of links — visible on Canvas, toggles in Preview", elementType: "dropdownButton", icon: ChevronsDown },
       ]),
       section(id, "cards-containers", "Cards & Containers", [
         { name: "Basic Card", description: "Heading, description, and a Learn More link", elementType: "basicCard", icon: LayoutTemplate },

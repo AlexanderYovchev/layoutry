@@ -149,50 +149,63 @@ const DROPDOWN_MENU_FLEX: FlexContainerSettings = {
 
 /**
  * Container > (Button, Container > Link x3) (Checkpoint 1.15.6.2,
- * sections 19-27) — a VISUAL composition foundation only; see this
- * checkpoint's own report for why runtime open/close JavaScript behavior
- * is explicitly deferred (Layoutry has no generic interaction/behavior
- * system yet — building a one-off Dropdown-specific runtime would be
- * exactly the kind of proprietary special case this checkpoint's brief
- * warns against). The menu renders OPEN on the Canvas by default and
- * always (there is no closed/hidden state authored anywhere) so its
- * contents stay genuinely selectable/editable rather than hidden behind
- * interaction — matching this checkpoint's own explicit "show the menu
- * open by default" decision. The whole tree uses ordinary managed Flex
- * layout (root: column, trigger Button above the menu Container) rather
- * than Free/absolute positioning — deliberately the simplest stable
- * choice per this checkpoint's own preference; nothing here prevents a
- * future runtime-interaction checkpoint from repositioning the menu
- * (e.g. via a Position: absolute + Free conversion) once a real
- * interaction model exists to justify it.
+ * sections 19-27; upgraded in Checkpoint 1.15.6.8.1 using the generic
+ * interaction foundation proven by Collapsible). The Button now carries
+ * an ordinary `click -> toggle -> menu.id` binding — the exact same
+ * generic `EditorElementNode.interactions` field Collapsible uses, never
+ * a Dropdown-specific `dropdownOpen`/`dropdownTargetId` field — and the
+ * menu Container carries an authored `initialPreviewVisibility: "hidden"`
+ * (Checkpoint 1.15.6.8.1's own generic addition, also not Dropdown-
+ * specific: any node can use it). In DESIGN the menu still renders fully
+ * visible/selectable/editable regardless of that authored value — see
+ * DocumentNodeRenderer's own runtime-visibility check, which only ever
+ * applies while `editorMode === "preview"`. In a fresh PREVIEW session
+ * the menu starts closed with no click required (seeded by
+ * buildInitialRuntimeVisibility on enterPreview), and the Button's own
+ * binding toggles it open/closed exactly like Collapsible's content.
+ *
+ * The whole tree still uses ordinary managed Flex layout (root: column,
+ * trigger Button above the menu Container), not Free/absolute
+ * positioning or any floating/anchored overlay system — deliberately
+ * deferred (see this checkpoint's own report, Part I): true anchored
+ * positioning, viewport-collision handling, and outside-click/Escape
+ * dismissal are all real future capabilities, not smuggled in here as
+ * Dropdown-specific behavior.
  */
 export function createDropdownButtonNode(): EditorElementNode {
+  const menu: EditorElementNode = {
+    id: generateNodeId("div"),
+    tag: "div",
+    flowLayout: { display: "flex", flex: DROPDOWN_MENU_FLEX },
+    background: { color: "#ffffff" },
+    border: {
+      top: { width: { value: 1, unit: "px" }, style: "solid", color: "#e4e4e7" },
+      right: { width: { value: 1, unit: "px" }, style: "solid", color: "#e4e4e7" },
+      bottom: { width: { value: 1, unit: "px" }, style: "solid", color: "#e4e4e7" },
+      left: { width: { value: 1, unit: "px" }, style: "solid", color: "#e4e4e7" },
+    },
+    borderRadius: BUTTON_PRESET_RADIUS,
+    spacing: { margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 8, right: 8, bottom: 8, left: 8 } },
+    initialPreviewVisibility: "hidden",
+    children: [
+      { id: generateNodeId("a"), tag: "a", text: "Item 1", href: DEFAULT_LINK_HREF },
+      { id: generateNodeId("a"), tag: "a", text: "Item 2", href: DEFAULT_LINK_HREF },
+      { id: generateNodeId("a"), tag: "a", text: "Item 3", href: DEFAULT_LINK_HREF },
+    ],
+  };
+
+  const trigger: EditorElementNode = {
+    id: generateNodeId("button"),
+    tag: "button",
+    text: "Menu",
+    interactions: [{ id: generateNodeId("interaction"), trigger: "click", action: "toggle", targetId: menu.id }],
+  };
+
   return {
     id: generateNodeId("div"),
     tag: "div",
     flowLayout: { display: "flex", flex: DROPDOWN_ROOT_FLEX },
     spacing: { margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } },
-    children: [
-      { id: generateNodeId("button"), tag: "button", text: "Menu" },
-      {
-        id: generateNodeId("div"),
-        tag: "div",
-        flowLayout: { display: "flex", flex: DROPDOWN_MENU_FLEX },
-        background: { color: "#ffffff" },
-        border: {
-          top: { width: { value: 1, unit: "px" }, style: "solid", color: "#e4e4e7" },
-          right: { width: { value: 1, unit: "px" }, style: "solid", color: "#e4e4e7" },
-          bottom: { width: { value: 1, unit: "px" }, style: "solid", color: "#e4e4e7" },
-          left: { width: { value: 1, unit: "px" }, style: "solid", color: "#e4e4e7" },
-        },
-        borderRadius: BUTTON_PRESET_RADIUS,
-        spacing: { margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 8, right: 8, bottom: 8, left: 8 } },
-        children: [
-          { id: generateNodeId("a"), tag: "a", text: "Item 1", href: DEFAULT_LINK_HREF },
-          { id: generateNodeId("a"), tag: "a", text: "Item 2", href: DEFAULT_LINK_HREF },
-          { id: generateNodeId("a"), tag: "a", text: "Item 3", href: DEFAULT_LINK_HREF },
-        ],
-      },
-    ],
+    children: [trigger, menu],
   };
 }

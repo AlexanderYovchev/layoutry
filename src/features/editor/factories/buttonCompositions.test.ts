@@ -98,7 +98,7 @@ describe("Button Group (Checkpoint 1.15.6.2, section 17)", () => {
   });
 });
 
-describe("Dropdown Button (Checkpoint 1.15.6.2, sections 19-27)", () => {
+describe("Dropdown Button (Checkpoint 1.15.6.2, sections 19-27; upgraded in Checkpoint 1.15.6.8.1)", () => {
   it("is an ordinary div > (button, div > a x3) composition — no proprietary DropdownButton node", () => {
     const node = createDropdownButtonNode();
     expect(node.tag).toBe("div");
@@ -109,6 +109,29 @@ describe("Dropdown Button (Checkpoint 1.15.6.2, sections 19-27)", () => {
     expect(menu.tag).toBe("div");
     expect(menu.children).toHaveLength(3);
     expect(menu.children?.every((child) => child.tag === "a" && typeof child.href === "string")).toBe(true);
+  });
+
+  it("the Button authors exactly one click->toggle interaction targeting the menu's own real internal id (Checkpoint 1.15.6.8.1)", () => {
+    const [trigger, menu] = createDropdownButtonNode().children!;
+    expect(trigger.interactions).toHaveLength(1);
+    expect(trigger.interactions![0]).toMatchObject({ trigger: "click", action: "toggle", targetId: menu.id });
+  });
+
+  it("the menu authors an initial Preview visibility of hidden — generic field, not a Dropdown-specific one (Checkpoint 1.15.6.8.1)", () => {
+    const [, menu] = createDropdownButtonNode().children!;
+    expect(menu.initialPreviewVisibility).toBe("hidden");
+  });
+
+  it("stores no Dropdown-specific behavior field anywhere in the composition", () => {
+    const node = createDropdownButtonNode() as unknown as Record<string, unknown>;
+    const [trigger, menu] = (node.children as Record<string, unknown>[])!;
+    for (const n of [node, trigger, menu]) {
+      expect(n.dropdownOpen).toBeUndefined();
+      expect(n.dropdownTargetId).toBeUndefined();
+      expect(n.dropdownState).toBeUndefined();
+      expect(n.isDropdown).toBeUndefined();
+      expect(n.componentType).toBeUndefined();
+    }
   });
 
   it("the root uses an ordinary managed Flex Column layout — no Free/absolute positioning anywhere in the composition", () => {
@@ -123,19 +146,23 @@ describe("Dropdown Button (Checkpoint 1.15.6.2, sections 19-27)", () => {
     expect(menu.freeLayout).toBeUndefined();
   });
 
-  it("the menu is authored with no hidden/closed state — nothing marks it collapsed, matching the checkpoint's own 'open by default on Canvas' decision", () => {
+  it("the menu's authored CSS never encodes hidden/closed state — Display/Visibility remain untouched; only the generic Preview-only field marks it initially closed", () => {
     const node = createDropdownButtonNode() as unknown as Record<string, unknown>;
     const menu = (node.children as Array<Record<string, unknown>>)[1];
     expect(menu.display).toBeUndefined();
     expect((menu.display as { visibility?: string } | undefined)?.visibility).toBeUndefined();
   });
 
-  it("every node gets its own fresh, unique id, and two separate compositions never share one", () => {
+  it("every node and every interaction gets its own fresh, unique id, and two separate compositions never share one", () => {
     const idsA = collectIds(createDropdownButtonNode());
     expect(new Set(idsA).size).toBe(idsA.length);
 
     const idsB = collectIds(createDropdownButtonNode());
     expect(idsA.some((id) => idsB.includes(id))).toBe(false);
+
+    const [triggerA] = createDropdownButtonNode().children!;
+    const [triggerB] = createDropdownButtonNode().children!;
+    expect(triggerA.interactions![0].id).not.toBe(triggerB.interactions![0].id);
   });
 
   it("menu items use the existing Link href default, editable like any ordinary Link", () => {

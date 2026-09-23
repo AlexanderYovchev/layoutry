@@ -21,6 +21,7 @@ import type { ShapePreset } from "@/features/editor/types/shape";
 import type { SvgPrimitiveKind, SvgViewBox } from "@/features/editor/types/svg";
 import type { SvgScene } from "@/features/editor/types/svgScene";
 import type { InteractionBinding } from "@/features/editor/types/interactions";
+import type { InitialPreviewVisibility } from "@/features/editor/types/previewVisibility";
 
 export interface ElementDimensions {
   /**
@@ -486,4 +487,20 @@ export interface EditorElementNode {
    * useEditorStore's own `runtimeVisibility` slice).
    */
   interactions?: InteractionBinding[];
+  /**
+   * This node's own authored initial visibility the moment a Preview
+   * session begins (Checkpoint 1.15.6.8.1) — genuinely generic, working
+   * on any node regardless of whether anything currently targets it; NOT
+   * the same field as `display`/`filters` CSS visibility (a real Design-
+   * time CSS box property, unaffected by this) and NOT the ephemeral
+   * CURRENT-visibility-during-Preview slice that lives on the store
+   * instead (`runtimeVisibility`) — see types/previewVisibility.ts's own
+   * top comment for the full three-way distinction. Read exactly once,
+   * at Preview-entry time, to seed that ephemeral slice; toggling a node
+   * via a click interaction during Preview never rewrites this field.
+   * Same "store unconditionally, no synthesized default" convention
+   * `lockChildStyles` already uses — unset (the default, and the only
+   * value every pre-1.15.6.8.1 node has) means "visible."
+   */
+  initialPreviewVisibility?: InitialPreviewVisibility;
 }

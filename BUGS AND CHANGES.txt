@@ -2,5 +2,6 @@ A feature where the user can make their own customized font and save it for late
 
 Having a guide X,Y lines on the cursor showing the snap point of one object to other if they are on same level, to make it easier for the user to adjust his components. This should be available only on Free adjustment in the container!
 
+Add Pagination as a component
 
 

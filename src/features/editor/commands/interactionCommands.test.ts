@@ -4,6 +4,7 @@ import {
   removeInteraction,
   removeInteractionsTargeting,
   remapInteractionTargets,
+  setInitialPreviewVisibility,
   updateInteraction,
 } from "./interactionCommands";
 import type { EditorElementNode } from "@/features/editor/types/document";
@@ -170,6 +171,42 @@ describe("removeInteractionsTargeting", () => {
   it("is a no-op for an empty deleted-id set", () => {
     const root: EditorElementNode = { id: "root", tag: "div" };
     expect(removeInteractionsTargeting(root, new Set())).toBe(root);
+  });
+});
+
+describe("setInitialPreviewVisibility (Checkpoint 1.15.6.8.1)", () => {
+  it("sets an explicit hidden value", () => {
+    const root: EditorElementNode = { id: "div-1", tag: "div" };
+    const result = setInitialPreviewVisibility(root, "div-1", "hidden");
+    expect(result.initialPreviewVisibility).toBe("hidden");
+  });
+
+  it("clears back to undefined (the default 'visible') when given undefined", () => {
+    const root: EditorElementNode = { id: "div-1", tag: "div", initialPreviewVisibility: "hidden" };
+    const result = setInitialPreviewVisibility(root, "div-1", undefined);
+    expect(result.initialPreviewVisibility).toBeUndefined();
+  });
+
+  it("is a true no-op (same root reference) when the value doesn't change", () => {
+    const root: EditorElementNode = { id: "div-1", tag: "div", initialPreviewVisibility: "hidden" };
+    const result = setInitialPreviewVisibility(root, "div-1", "hidden");
+    expect(result).toBe(root);
+  });
+
+  it("is a no-op when nodeId does not resolve", () => {
+    const root: EditorElementNode = { id: "div-1", tag: "div" };
+    const result = setInitialPreviewVisibility(root, "missing-id", "hidden");
+    expect(result).toBe(root);
+  });
+
+  it("finds a deeply nested node", () => {
+    const root: EditorElementNode = {
+      id: "root",
+      tag: "div",
+      children: [{ id: "container", tag: "div", children: [{ id: "target-1", tag: "div" }] }],
+    };
+    const result = setInitialPreviewVisibility(root, "target-1", "hidden");
+    expect(result.children![0].children![0].initialPreviewVisibility).toBe("hidden");
   });
 });
 
