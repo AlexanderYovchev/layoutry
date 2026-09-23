@@ -49,4 +49,21 @@ describe("resolveTypographyStyle", () => {
       textAlign: "center",
     });
   });
+
+  describe("textDecorationLine (Checkpoint 1.15.6.10.3)", () => {
+    it.each(["none", "underline", "overline", "line-through"] as const)("resolves %s verbatim", (value) => {
+      const node: EditorElementNode = { id: "n1", tag: "a", typography: { textDecorationLine: value } };
+      expect(resolveTypographyStyle(node).textDecorationLine).toBe(value);
+    });
+
+    it("is absent when unset — generic CSS, not a Link-specific default", () => {
+      const node: EditorElementNode = { id: "n1", tag: "a" };
+      expect(resolveTypographyStyle(node).textDecorationLine).toBeUndefined();
+    });
+
+    it("works identically for a non-Link text-bearing tag (Paragraph) — generic, not Link-gated", () => {
+      const node: EditorElementNode = { id: "n1", tag: "p", typography: { textDecorationLine: "line-through" } };
+      expect(resolveTypographyStyle(node).textDecorationLine).toBe("line-through");
+    });
+  });
 });

@@ -26,6 +26,7 @@ export function resolveTypographyStyle(node: EditorElementNode): CSSProperties {
   if (typography.textAlign) style.textAlign = typography.textAlign;
   if (typography.lineHeight) style.lineHeight = formatCssLength(typography.lineHeight);
   if (typography.letterSpacing) style.letterSpacing = formatCssLength(typography.letterSpacing);
+  if (typography.textDecorationLine) style.textDecorationLine = typography.textDecorationLine;
 
   return style;
 }

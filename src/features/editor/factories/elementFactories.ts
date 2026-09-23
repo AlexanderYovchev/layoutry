@@ -169,9 +169,27 @@ export function createButtonNode(): EditorElementNode {
  * in) — a Link is only genuinely a link, semantically and for keyboard
  * focus, once it has a real destination; see types/link.ts's own doc
  * comment for why DEFAULT_LINK_HREF ("#") is a safe, inert choice.
+ *
+ * `typography.textDecorationLine: "underline"` (Checkpoint 1.15.6.10.3)
+ * is the same move for Link's own starter underline: previously an
+ * unconditional, un-overridable LinkElement className, now real authored
+ * document CSS — visible as "Set" in the Typography Inspector, changeable,
+ * resettable, exportable. LinkElement's own renderer still carries a
+ * legacy underline fallback (active only while `textDecorationLine` is
+ * unset) so the many OTHER call sites that construct a raw `tag: "a"`
+ * node directly (Simple Footer, Dropdown Button's menu items, Navbar/Card
+ * compositions with their own stamped typography) keep looking exactly as
+ * they always have without each needing this same field individually —
+ * see LinkElement's own doc comment for the full reasoning.
  */
 export function createLinkNode(): EditorElementNode {
-  return { id: generateNodeId("a"), tag: "a", text: "Link text", href: DEFAULT_LINK_HREF };
+  return {
+    id: generateNodeId("a"),
+    tag: "a",
+    text: "Link text",
+    href: DEFAULT_LINK_HREF,
+    typography: { textDecorationLine: "underline" },
+  };
 }
 
 /** A single, freshly-created list item — used both standalone (the "List Item" catalog entry) and as list-starter content below. */

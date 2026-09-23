@@ -39,6 +39,9 @@ describe("InspectorTypographySection", () => {
     for (const name of ["Left", "Center", "Right", "Justify"]) {
       expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "false");
     }
+    for (const name of ["None", "Underline", "Overline", "Line Through"]) {
+      expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "false");
+    }
   });
 
   it("commits a Font Family selection through setElementTypography", () => {
@@ -109,6 +112,41 @@ describe("InspectorTypographySection", () => {
     fireEvent.click(screen.getByRole("button", { name: "Italic" }));
 
     expect(committedNode()?.typography?.fontStyle).toBe("italic");
+  });
+
+  describe("Text Decoration (Checkpoint 1.15.6.10.3)", () => {
+    it("commits a Text Decoration selection", () => {
+      setupNode({ id: "heading-1", tag: "h1" });
+      render(<InspectorTypographySection node={{ id: "heading-1", tag: "h1" }} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Line Through" }));
+
+      expect(committedNode()?.typography?.textDecorationLine).toBe("line-through");
+    });
+
+    it("commits 'None' as a real, distinct authored value — not the same as leaving it unset", () => {
+      setupNode({ id: "heading-1", tag: "a", typography: { textDecorationLine: "underline" } });
+      render(<InspectorTypographySection node={{ id: "heading-1", tag: "a", typography: { textDecorationLine: "underline" } }} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "None" }));
+
+      expect(committedNode()?.typography?.textDecorationLine).toBe("none");
+      expect(committedNode()?.typography?.textDecorationLine).not.toBeUndefined();
+    });
+
+    it("shows Underline as the active option for a Link with the factory's own starter decoration", () => {
+      render(<InspectorTypographySection node={{ id: "heading-1", tag: "a", typography: { textDecorationLine: "underline" } }} />);
+      expect(screen.getByRole("button", { name: "Underline" })).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("resets Text Decoration back to genuinely unset", () => {
+      setupNode({ id: "heading-1", tag: "a", typography: { textDecorationLine: "underline" } });
+      render(<InspectorTypographySection node={{ id: "heading-1", tag: "a", typography: { textDecorationLine: "underline" } }} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Reset text decoration" }));
+
+      expect(committedNode()?.typography?.textDecorationLine).toBeUndefined();
+    });
   });
 
   it("commits a valid hex Text Color", () => {

@@ -124,6 +124,10 @@ describe("element factories", () => {
     expect(createLinkNode().spacing).toBeUndefined();
   });
 
+  it("createLinkNode authors a real, overridable starter underline (Checkpoint 1.15.6.10.3)", () => {
+    expect(createLinkNode().typography).toEqual({ textDecorationLine: "underline" });
+  });
+
   it("every factory produces a unique id per call", () => {
     const first = createButtonNode();
     const second = createButtonNode();

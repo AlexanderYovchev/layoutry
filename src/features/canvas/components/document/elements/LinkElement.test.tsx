@@ -92,4 +92,59 @@ describe("LinkElement", () => {
     expect(spy).toHaveBeenCalledWith("link-1", "Read the docs");
     expect(link).toHaveAttribute("contenteditable", "false");
   });
+
+  describe("Legacy underline chrome (Checkpoint 1.15.6.10.3)", () => {
+    it("renders underlined by default when no decoration is authored — the legacy fallback", () => {
+      render(<LinkElement node={{ id: "link-1", tag: "a", text: "Learn more", href: "/about" }} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+      expect(screen.getByRole("link", { name: "Learn more" }).className).toContain("underline");
+    });
+
+    it("yields the legacy underline class entirely once a real decoration is authored", () => {
+      render(
+        <LinkElement
+          node={{ id: "link-1", tag: "a", text: "Learn more", href: "/about", typography: { textDecorationLine: "underline" } }}
+          parentId="section-1"
+          parentLayoutMode="flow"
+          parentFlowDisplay="block"
+        />,
+      );
+      const link = screen.getByRole("link", { name: "Learn more" });
+      // The class-level legacy underline is gone; the real underline now
+      // comes from resolveTypographyStyle's own inline style instead.
+      expect(link.className).not.toContain("underline");
+      expect(link.style.textDecorationLine).toBe("underline");
+    });
+
+    it("authoring 'none' actually removes the underline — not the same as leaving it unset", () => {
+      render(
+        <LinkElement
+          node={{ id: "link-1", tag: "a", text: "Learn more", href: "/about", typography: { textDecorationLine: "none" } }}
+          parentId="section-1"
+          parentLayoutMode="flow"
+          parentFlowDisplay="block"
+        />,
+      );
+      const link = screen.getByRole("link", { name: "Learn more" });
+      expect(link.className).not.toContain("underline");
+      expect(link.style.textDecorationLine).toBe("none");
+    });
+
+    it("never renders the w-fit class — removed unconditionally, not made conditional", () => {
+      render(<LinkElement node={{ id: "link-1", tag: "a", text: "Learn more", href: "/about" }} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+      const classList = screen.getByRole("link", { name: "Learn more" }).className.split(" ");
+      expect(classList).not.toContain("w-fit");
+    });
+
+    it("stays inline-block regardless of authored decoration", () => {
+      render(
+        <LinkElement
+          node={{ id: "link-1", tag: "a", text: "Learn more", href: "/about", typography: { textDecorationLine: "overline" } }}
+          parentId="section-1"
+          parentLayoutMode="flow"
+          parentFlowDisplay="block"
+        />,
+      );
+      expect(screen.getByRole("link", { name: "Learn more" }).className).toContain("inline-block");
+    });
+  });
 });

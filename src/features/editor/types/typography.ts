@@ -34,6 +34,18 @@ export type CssUnit = "px" | "%" | "rem" | "em" | "vw" | "vh" | "unitless" | "de
 export type FontWeight = 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900;
 export type FontStyleValue = "normal" | "italic" | "oblique";
 export type TextAlign = "left" | "center" | "right" | "justify";
+/**
+ * CSS `text-decoration-line` (Checkpoint 1.15.6.10.3) — deliberately just
+ * the line keyword, not the full `text-decoration` shorthand or its
+ * style/color/thickness sub-properties (out of this checkpoint's own
+ * narrow scope; see its report). Generic Typography state, not a
+ * Link-specific boolean: any text-bearing tag that already supports
+ * Typography can author this, exactly like every other field here — see
+ * resolveTypographyStyle. Link is simply the first, and so far only,
+ * consumer whose FACTORY stamps a starter value (createLinkNode) rather
+ * than leaving it unset.
+ */
+export type TextDecorationLine = "none" | "underline" | "overline" | "line-through";
 
 export interface CssLengthValue {
   value: number;
@@ -50,6 +62,7 @@ export interface TypographySettings {
   textAlign?: TextAlign;
   lineHeight?: CssLengthValue;
   letterSpacing?: CssLengthValue;
+  textDecorationLine?: TextDecorationLine;
 }
 
 /** A node with no typography set renders using its own tag's default presentation (see resolveTypographyStyle) — there is no synthesized TypographySettings default here, unlike getMediaFitSettings. */

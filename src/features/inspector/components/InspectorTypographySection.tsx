@@ -21,6 +21,7 @@ import {
   type FontStyleValue,
   type FontWeight,
   type TextAlign,
+  type TextDecorationLine,
   type TypographySettings,
 } from "@/features/editor/types/typography";
 import type { EditorElementNode } from "@/features/editor/types/document";
@@ -66,6 +67,20 @@ const FONT_WEIGHT_VALUE_TO_LABEL = Object.fromEntries(
 const FONT_STYLE_OPTIONS = ["Normal", "Italic", "Oblique"];
 const FONT_STYLE_LABEL_TO_VALUE: Record<string, FontStyleValue> = { Normal: "normal", Italic: "italic", Oblique: "oblique" };
 const FONT_STYLE_VALUE_TO_LABEL: Record<FontStyleValue, string> = { normal: "Normal", italic: "Italic", oblique: "Oblique" };
+
+const TEXT_DECORATION_OPTIONS = ["None", "Underline", "Overline", "Line Through"];
+const TEXT_DECORATION_LABEL_TO_VALUE: Record<string, TextDecorationLine> = {
+  None: "none",
+  Underline: "underline",
+  Overline: "overline",
+  "Line Through": "line-through",
+};
+const TEXT_DECORATION_VALUE_TO_LABEL: Record<TextDecorationLine, string> = {
+  none: "None",
+  underline: "Underline",
+  overline: "Overline",
+  "line-through": "Line Through",
+};
 
 const TEXT_ALIGN_OPTIONS = ["Left", "Center", "Right", "Justify"];
 const TEXT_ALIGN_LABEL_TO_VALUE: Record<string, TextAlign> = { Left: "left", Center: "center", Right: "right", Justify: "justify" };
@@ -205,6 +220,21 @@ export function InspectorTypographySection({ node }: InspectorTypographySectionP
         activeOption={typography.fontStyle ? FONT_STYLE_VALUE_TO_LABEL[typography.fontStyle] : NO_ACTIVE_OPTION}
         onSelect={(option) => commitField("fontStyle", FONT_STYLE_LABEL_TO_VALUE[option])}
         reset={<InspectorResetButton onReset={() => resetField("fontStyle")} disabled={!typography.fontStyle} label="Reset font style" />}
+      />
+
+      <InspectorSegmentedRow
+        label="Decoration"
+        state={typography.textDecorationLine ? "set" : "unset"}
+        options={TEXT_DECORATION_OPTIONS}
+        activeOption={typography.textDecorationLine ? TEXT_DECORATION_VALUE_TO_LABEL[typography.textDecorationLine] : NO_ACTIVE_OPTION}
+        onSelect={(option) => commitField("textDecorationLine", TEXT_DECORATION_LABEL_TO_VALUE[option])}
+        reset={
+          <InspectorResetButton
+            onReset={() => resetField("textDecorationLine")}
+            disabled={!typography.textDecorationLine}
+            label="Reset text decoration"
+          />
+        }
       />
 
       <InspectorPropertyRow

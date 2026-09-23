@@ -44,6 +44,20 @@ export function LinkElement({ node, parentId, parentLayoutMode, parentFlowDispla
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const editable = useEditableText(node);
   const usesLegacyOverflowClip = !node.display?.overflow && !node.display?.overflowX && !node.display?.overflowY;
+  // Checkpoint 1.15.6.10.3 — the same "legacy chrome gets out of the way
+  // entirely once real data exists" rule usesLegacyBorderChrome/
+  // usesLegacyRadiusChrome (ContainerElement, ImageElement, ...) already
+  // established, now for Link's own starter underline: the 1.15.6.10
+  // audit found this was previously an unconditional class with no
+  // authored-CSS override path at all (unlike every other Typography
+  // field, which already yields to resolveTypographyStyle's own inline
+  // style). `underline-offset-2` yields together with `underline` — not
+  // independently — since it's purely decorative to that specific legacy
+  // treatment and there is no authored text-underline-offset field (out
+  // of this checkpoint's own narrow scope); once ANY real decoration
+  // value is authored (including "none"), the whole legacy pairing steps
+  // aside for resolveTypographyStyle's own inline text-decoration-line.
+  const usesLegacyUnderline = node.typography?.textDecorationLine === undefined;
 
   return (
     <a
@@ -54,7 +68,22 @@ export function LinkElement({ node, parentId, parentLayoutMode, parentFlowDispla
       {...documentNodeAttributes(node, parentId)}
       {...editable.editableProps}
       className={cn(
-        "inline-block w-fit text-blue-600 underline underline-offset-2 dark:text-blue-400",
+        // Checkpoint 1.15.6.10.3 — `w-fit` removed entirely, not made
+        // conditional: `inline-block` (kept, still needed for Canvas
+        // selection/resize/padding/border/background exactly as before —
+        // real Chromium QA confirmed removing it broke nothing this
+        // checkpoint changed) already sizes via the same shrink-to-fit
+        // algorithm `w-fit` was forcing, so ordinary Flow appearance is
+        // unaffected; the one case where the two genuinely differed was
+        // inside a Flex parent with align-items: stretch, where `w-fit`'s
+        // explicit `width: fit-content` — unlike inline-block's own
+        // `width: auto`, which a flex item's blockification step lets
+        // align-self: stretch act on — silently defeated natural
+        // stretching. Grid/Free/explicit-resize were never affected
+        // either way: each already sets a stronger inline width that
+        // already won over `w-fit`.
+        "inline-block text-blue-600 dark:text-blue-400",
+        usesLegacyUnderline && "underline underline-offset-2",
         editable.isEditing && "outline-none",
         isDragging && "opacity-40",
         node.className,
