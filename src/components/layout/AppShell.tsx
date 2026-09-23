@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { CreationToolbar } from "@/components/layout/CreationToolbar";
+import type { PreviewControl } from "@/components/layout/GlobalActions";
 import { InspectorPanel } from "@/components/layout/InspectorPanel";
 import { ResourceSidebar } from "@/components/layout/ResourceSidebar";
 import { StatusBar } from "@/components/layout/StatusBar";
@@ -20,6 +21,7 @@ interface AppShellProps {
   structureContent?: ReactNode;
   onActivateCatalogCard?: (card: CatalogCardPlaceholder) => void;
   editMenuCommands: EditMenuCommands;
+  previewControl: PreviewControl;
 }
 
 const initialViewState: ViewState = {
@@ -53,6 +55,7 @@ export function AppShell({
   structureContent,
   onActivateCatalogCard,
   editMenuCommands,
+  previewControl,
 }: AppShellProps) {
   const [viewState, setViewState] = useState<ViewState>(initialViewState);
   const viewportWidth = useViewportWidth();
@@ -101,6 +104,7 @@ export function AppShell({
         viewState={viewState}
         onToggleView={handleToggleView}
         editMenuCommands={editMenuCommands}
+        previewControl={previewControl}
       />
       <CreationToolbar onActivateCard={onActivateCatalogCard} />
       <div className="flex min-h-0 flex-1 overflow-x-auto">

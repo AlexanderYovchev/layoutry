@@ -9,6 +9,9 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { AppHeader } from "./AppHeader";
 import type { EditMenuCommands, ViewState } from "./applicationMenus";
+import type { PreviewControl } from "./GlobalActions";
+
+const noopPreviewControl: PreviewControl = { mode: "design", onToggle: () => {} };
 
 const defaultViewState: ViewState = {
   resourcePanelVisible: true,
@@ -40,6 +43,7 @@ function renderAppHeader(viewState: ViewState = defaultViewState) {
       viewState={viewState}
       onToggleView={onToggleView}
       editMenuCommands={noopEditMenuCommands}
+      previewControl={noopPreviewControl}
     />,
   );
   return { onToggleView };
@@ -287,6 +291,7 @@ describe("AppHeader", () => {
         viewState={defaultViewState}
         onToggleView={vi.fn()}
         editMenuCommands={noopEditMenuCommands}
+        previewControl={noopPreviewControl}
       />,
     );
 
@@ -305,6 +310,7 @@ describe("AppHeader", () => {
         viewState={defaultViewState}
         onToggleView={vi.fn()}
         editMenuCommands={{ ...noopEditMenuCommands, canCopy: true, onCopy }}
+        previewControl={noopPreviewControl}
       />,
     );
 

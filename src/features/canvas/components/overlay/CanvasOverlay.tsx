@@ -31,6 +31,7 @@ interface CanvasOverlayProps {
  * URL" hint visible regardless of selection.
  */
 export function CanvasOverlay({ canvasRootRef, hoveredNodeId }: CanvasOverlayProps) {
+  const isPreview = useEditorStore((state) => state.editorMode === "preview");
   const { nodes: selectedNodes, primary } = useSelectedNodes();
   const documentModel = useEditorStore((state) => state.document);
   const activeDropIndicator = useActiveDropIndicator();
@@ -53,6 +54,15 @@ export function CanvasOverlay({ canvasRootRef, hoveredNodeId }: CanvasOverlayPro
     selectedNodes.length === 1 &&
     selectedNodes[0].node.id !== svgEditingNodeId &&
     !isStyleProtected(documentModel, selectedNodes[0].node.id);
+
+  // Preview Mode (Checkpoint 1.15.6.8, Part L/section 58) — every one of
+  // these overlays is Design-time editing chrome (hover, selection
+  // outlines, resize handles, Free/Snap guides, Form/Media empty-state
+  // hints, drop indicators); none of it belongs while previewing
+  // authored behavior. Computed AFTER every hook above runs
+  // unconditionally (React's own rule) — only the render output is
+  // skipped, not the hooks themselves.
+  if (isPreview) return null;
 
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0">

@@ -45,6 +45,9 @@ export function CanvasInteractionBoundary({
   const addToSelection = useEditorStore((state) => state.addToSelection);
   const clearSelection = useEditorStore((state) => state.clearSelection);
   const primarySelectedId = useEditorStore((state) => state.selection.primaryId ?? null);
+  const isPreview = useEditorStore((state) => state.editorMode === "preview");
+  const executeInteractionsForNode = useEditorStore((state) => state.executeInteractionsForNode);
+  const exitPreview = useEditorStore((state) => state.exitPreview);
 
   // Reveals the primary selected node whenever selection changes —
   // including a newly inserted node, which may render below the fold.
@@ -80,8 +83,24 @@ export function CanvasInteractionBoundary({
         // The pseudo document root (and any other non-selectable
         // structural wrapper) has no canvas visual identity of its own —
         // clicking it (or blank page-sheet space) clears selection rather
-        // than selecting it, regardless of any modifier held.
-        clearSelection();
+        // than selecting it, regardless of any modifier held. In Preview
+        // there is no selection concept to clear either — this is simply
+        // a no-op click on blank space.
+        if (!isPreview) clearSelection();
+        return;
+      }
+
+      // Preview Mode (Checkpoint 1.15.6.8, Part F) — a click EXECUTES the
+      // node's own authored click bindings (Design's own selection/
+      // toggle/additive branches below never run) rather than selecting
+      // it. Deliberately still reads `event.target` through the exact
+      // same resolveHoverableNodeId path Design selection uses (no
+      // second click-resolution mechanism to keep in sync), and this
+      // handler never calls stopPropagation/preventDefault — the 1.15.6.7
+      // audit's own "preventDefault only, never stopPropagation" event
+      // invariant is preserved unchanged.
+      if (isPreview) {
+        executeInteractionsForNode(nodeId, "click");
         return;
       }
 
@@ -101,6 +120,13 @@ export function CanvasInteractionBoundary({
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape" || event.defaultPrevented) return;
+      // Escape is a convenience exit from Preview (section 57), never the
+      // ONLY way out — the header's own Preview/Design toggle always
+      // works too (see GlobalActions).
+      if (isPreview) {
+        exitPreview();
+        return;
+      }
       clearSelection();
     }
 
@@ -110,7 +136,7 @@ export function CanvasInteractionBoundary({
       window.removeEventListener("click", handleClick);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [selectOnly, toggleSelection, addToSelection, clearSelection]);
+  }, [selectOnly, toggleSelection, addToSelection, clearSelection, isPreview, executeInteractionsForNode, exitPreview]);
 
   function handlePointerOver(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.pointerType === "touch") return;

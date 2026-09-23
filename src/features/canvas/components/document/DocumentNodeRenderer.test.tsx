@@ -1,9 +1,55 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { DocumentNodeRenderer } from "./DocumentNodeRenderer";
 
+const initialStoreState = useEditorStore.getState();
+
 describe("DocumentNodeRenderer", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialStoreState, true);
+  });
+
+  describe("Runtime visibility override (Checkpoint 1.15.6.8)", () => {
+    const tree: EditorElementNode = {
+      id: "root-1",
+      tag: "div",
+      children: [{ id: "content-1", tag: "div", children: [{ id: "p-1", tag: "p", text: "Hideable" }] }],
+    };
+
+    it("renders normally in Design mode regardless of runtimeVisibility", () => {
+      useEditorStore.setState({ editorMode: "design", runtimeVisibility: { "content-1": false } });
+      render(<DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />);
+      expect(screen.getByText("Hideable")).toBeInTheDocument();
+    });
+
+    it("does not render a node (or its subtree) explicitly marked hidden while in Preview", () => {
+      useEditorStore.setState({ editorMode: "preview", runtimeVisibility: { "content-1": false } });
+      render(<DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />);
+      expect(screen.queryByText("Hideable")).not.toBeInTheDocument();
+      expect(document.querySelector('[data-node-id="content-1"]')).not.toBeInTheDocument();
+    });
+
+    it("renders normally in Preview when there is no explicit runtimeVisibility entry (default visible)", () => {
+      useEditorStore.setState({ editorMode: "preview", runtimeVisibility: {} });
+      render(<DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />);
+      expect(screen.getByText("Hideable")).toBeInTheDocument();
+    });
+
+    it("renders normally in Preview when explicitly marked visible", () => {
+      useEditorStore.setState({ editorMode: "preview", runtimeVisibility: { "content-1": true } });
+      render(<DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />);
+      expect(screen.getByText("Hideable")).toBeInTheDocument();
+    });
+
+    it("never touches the node's own authored flowLayout — only the render output is skipped", () => {
+      useEditorStore.setState({ editorMode: "preview", runtimeVisibility: { "content-1": false } });
+      render(<DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />);
+      expect(tree.children![0].flowLayout).toBeUndefined();
+    });
+  });
+
   it("recursively renders nested nodes as their real HTML tags with content", () => {
     const tree: EditorElementNode = {
       id: "container-1",

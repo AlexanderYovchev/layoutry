@@ -10,16 +10,17 @@ import {
   type ViewState,
 } from "@/components/layout/applicationMenus";
 import { ProjectIdentity } from "@/components/layout/ProjectIdentity";
-import { GlobalActions } from "@/components/layout/GlobalActions";
+import { GlobalActions, type PreviewControl } from "@/components/layout/GlobalActions";
 import { HelpDialogs } from "@/components/layout/HelpDialogs";
 
 interface AppHeaderProps {
   viewState: ViewState;
   onToggleView: (region: keyof ViewState) => void;
   editMenuCommands: EditMenuCommands;
+  previewControl: PreviewControl;
 }
 
-export function AppHeader({ viewState, onToggleView, editMenuCommands }: AppHeaderProps) {
+export function AppHeader({ viewState, onToggleView, editMenuCommands, previewControl }: AppHeaderProps) {
   const [openDialogId, setOpenDialogId] = useState<HelpDialogId | null>(null);
 
   const menus = buildApplicationMenus({
@@ -55,7 +56,7 @@ export function AppHeader({ viewState, onToggleView, editMenuCommands }: AppHead
 
         <ProjectIdentity />
 
-        <GlobalActions />
+        <GlobalActions previewControl={previewControl} />
       </header>
 
       <HelpDialogs

@@ -30,6 +30,12 @@ import {
   type InsertPosition,
 } from "@/features/editor/commands/documentCommands";
 import {
+  addInteraction as addInteractionCommand,
+  removeInteraction as removeInteractionCommand,
+  removeInteractionsTargeting,
+  updateInteraction as updateInteractionCommand,
+} from "@/features/editor/commands/interactionCommands";
+import {
   setTableBodyRowCount as setTableBodyRowCountCommand,
   setTableColumnCount as setTableColumnCountCommand,
   setTableFooterEnabled as setTableFooterEnabledCommand,
@@ -118,6 +124,7 @@ import { describeStyleLockNotice, getStyleProtection, type StyleProtectionResult
 import { clampGridChildPlacement } from "@/features/editor/utils/clampGridChildPlacement";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
 import { cloneNodeWithFreshIds } from "@/features/editor/utils/cloneNodeWithFreshIds";
+import { collectNodeIds } from "@/features/editor/utils/collectNodeIds";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
 import { resolveFreeDestinationPlacement } from "@/features/editor/utils/resolveFreeDestinationPlacement";
 import { resolveDeletionFallbackSelection } from "@/features/editor/utils/resolveDeletionFallbackSelection";
@@ -155,6 +162,8 @@ import type { DisplaySettings } from "@/features/editor/types/display";
 import type { PositionSettings } from "@/features/editor/types/position";
 import type { AspectRatioValue } from "@/features/editor/types/aspectRatio";
 import type { SizeConstraints } from "@/features/editor/types/sizeConstraints";
+import { DEFAULT_EDITOR_MODE, type EditorMode } from "@/features/editor/types/editorMode";
+import { getInteractions, type InteractionAction } from "@/features/editor/types/interactions";
 
 interface EditorState {
   document: EditorElementNode;
@@ -210,6 +219,26 @@ interface EditorState {
   /** The currently-active snap guide(s) for whichever Free child is mid-drag, or null between drags — ephemeral, cleared on pointerup/cancel, never entered into history (see types/snap.ts). */
   activeSnapGuides: ActiveSnapGuides | null;
 
+  /**
+   * Design vs Preview (Checkpoint 1.15.6.8) — see types/editorMode.ts's
+   * own doc comment. Editor UI state, exactly like svgEditingNodeId:
+   * never touched by pushHistory/undo/redo, never duplicated, never
+   * export data. Defaults to "design", today's existing behavior.
+   */
+  editorMode: EditorMode;
+  /**
+   * Ephemeral Preview-only visibility overrides (Checkpoint 1.15.6.8),
+   * keyed by node id — `true` visible, `false` hidden; an id with no
+   * entry renders exactly as authored (the default, unset state). Never
+   * touched by pushHistory/undo/redo, never persisted, and always reset
+   * to `{}` on every Preview entry/exit (see enterPreview/exitPreview) so
+   * one session's runtime state never leaks into the next. Shadows
+   * authored `flowLayout`/`display` at RENDER time only (see
+   * DocumentNodeRenderer) — executeInteractionsForNode never mutates the
+   * document itself.
+   */
+  runtimeVisibility: Record<string, boolean>;
+
   /** Selects exactly this one id, replacing any existing selection — the plain-click behavior, and every internal single-target action (insert/move/duplicate/paste/undo/redo) below. `selectOnly` is the same action under an explicit name for new multi-selection-aware call sites. */
   selectElement: (id: string | null) => void;
   selectOnly: (id: string) => void;
@@ -239,6 +268,37 @@ interface EditorState {
   setSnapEnabled: (enabled: boolean) => void;
   /** Sets/replaces the live snap guide(s) during an in-progress Free-child drag — no history, ephemeral (see types/snap.ts). */
   setActiveSnapGuides: (guides: ActiveSnapGuides | null) => void;
+
+  /** Direct mode set — editor UI state, no history (Checkpoint 1.15.6.8). */
+  setEditorMode: (mode: EditorMode) => void;
+  /**
+   * Enters Preview: switches mode, resets runtime visibility to empty
+   * (deterministic start — section 15), and safely exits SVG Edit Mode
+   * (Drawing Mode's own overlays/tools have no meaning once Canvas clicks
+   * stop selecting). Selection itself is deliberately left untouched
+   * (Part C, section 13's "least destructive" choice) — Preview simply
+   * renders no selection chrome for it (see CanvasOverlay), so returning
+   * to Design lands the user back where they were.
+   */
+  enterPreview: () => void;
+  /** Exits Preview back to Design — resets runtime visibility (section 14) so a later Preview entry never inherits stale state; authored document and history are untouched by construction (neither is read nor written here). */
+  exitPreview: () => void;
+
+  /** Adds one new click interaction binding to nodeId (Checkpoint 1.15.6.8, Part G) — one history entry, never guarded by Parent Style Protection (this is semantic/behavioral data, not style — section 34). */
+  addInteraction: (nodeId: string, binding: { trigger: "click"; action: InteractionAction; targetId: string }) => void;
+  /** Patches one existing binding's action/target by its own id — one history entry, no-op if nothing actually changes. */
+  updateInteraction: (nodeId: string, interactionId: string, patch: { action?: InteractionAction; targetId?: string }) => void;
+  /** Removes one binding by its own id — one history entry, no-op if already gone. */
+  removeInteraction: (nodeId: string, interactionId: string) => void;
+  /**
+   * Fires every one of nodeId's own bindings matching `trigger` (Preview
+   * click execution) — mutates ONLY `runtimeVisibility`, never the
+   * document, never history (Part E/section 21-25). Safely no-ops per
+   * binding whose `targetId` no longer resolves in the document (missing-
+   * target safety, section 25) — deletion cleanup should normally already
+   * prevent this, but the executor stays defensive regardless.
+   */
+  executeInteractionsForNode: (nodeId: string, trigger: "click") => void;
   /** Per-frame atomic write of a Free container's own geometry plus its direct children's scaled/clamped geometries during a live parent-resize session — no history push. */
   applyFreeContainerChildGeometriesLive: (
     containerId: string,
@@ -632,6 +692,24 @@ function nextEditorNoticeState(state: EditorState, message: string): Partial<Edi
  * the one clipboard-family command with a genuine multi-selection path
  * (see deleteSelection below).
  */
+/**
+ * Every id inside each of `rootIds`' own subtree, unioned together —
+ * computed BEFORE removal (while the nodes still resolve in the current
+ * document), so removeInteractionsTargeting knows exactly which targetIds
+ * just disappeared, including nodes nested arbitrarily deep inside a
+ * deleted subtree (Checkpoint 1.15.6.8, Part H, section 37), not just the
+ * root ids themselves.
+ */
+function collectDeletedIds(document: EditorElementNode, rootIds: readonly string[]): Set<string> {
+  const ids = new Set<string>();
+  for (const rootId of rootIds) {
+    const node = findNodeById(document, rootId);
+    if (!node) continue;
+    for (const id of collectNodeIds(node)) ids.add(id);
+  }
+  return ids;
+}
+
 function eligibleSelectedNode(state: EditorState): EditorElementNode | undefined {
   const id = state.selection.primaryId;
   if (!id || id === state.document.id) {
@@ -665,6 +743,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
   future: [],
   transactionSnapshot: null,
   editorNotice: null,
+  editorMode: DEFAULT_EDITOR_MODE,
+  runtimeVisibility: {},
   svgEditingNodeId: null,
   selectedSvgObjectIds: [],
   primarySvgObjectId: null,
@@ -763,6 +843,72 @@ export const useEditorStore = create<EditorState>()((set) => ({
 
   setSnapEnabled: (enabled) => set({ snapEnabled: enabled }),
   setActiveSnapGuides: (guides) => set({ activeSnapGuides: guides }),
+
+  setEditorMode: (mode) => set({ editorMode: mode }),
+
+  enterPreview: () =>
+    set({
+      editorMode: "preview",
+      runtimeVisibility: {},
+      svgEditingNodeId: null,
+      selectedSvgObjectIds: [],
+      primarySvgObjectId: null,
+      activeSvgTool: "select",
+      svgDraft: null,
+      transactionSnapshot: null,
+    }),
+
+  exitPreview: () => set({ editorMode: "design", runtimeVisibility: {} }),
+
+  addInteraction: (nodeId, binding) =>
+    set((state) => {
+      const document = addInteractionCommand(state.document, nodeId, binding);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  updateInteraction: (nodeId, interactionId, patch) =>
+    set((state) => {
+      const document = updateInteractionCommand(state.document, nodeId, interactionId, patch);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  removeInteraction: (nodeId, interactionId) =>
+    set((state) => {
+      const document = removeInteractionCommand(state.document, nodeId, interactionId);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  // Preview click execution — mutates ONLY runtimeVisibility, never the
+  // document, never history (Part E). `existingIds` is recomputed from
+  // the CURRENT document on every call rather than cached, so a binding
+  // whose target was deleted after the binding itself was authored (an
+  // edge case deletion cleanup should already prevent, but the executor
+  // stays defensive regardless — section 25) is silently skipped, never
+  // throwing or corrupting runtimeVisibility.
+  executeInteractionsForNode: (nodeId, trigger) =>
+    set((state) => {
+      const node = findNodeById(state.document, nodeId);
+      if (!node) return {};
+      const bindings = getInteractions(node).filter((binding) => binding.trigger === trigger);
+      if (bindings.length === 0) return {};
+
+      const existingIds = collectNodeIds(state.document);
+      let nextVisibility = state.runtimeVisibility;
+      for (const binding of bindings) {
+        if (!existingIds.has(binding.targetId)) continue;
+        const currentlyVisible = nextVisibility[binding.targetId] ?? true;
+        const nextVisible =
+          binding.action === "show" ? true : binding.action === "hide" ? false : !currentlyVisible;
+        if (nextVisible === currentlyVisible) continue;
+        if (nextVisibility === state.runtimeVisibility) nextVisibility = { ...state.runtimeVisibility };
+        nextVisibility[binding.targetId] = nextVisible;
+      }
+      if (nextVisibility === state.runtimeVisibility) return {};
+      return { runtimeVisibility: nextVisibility };
+    }),
 
   // Guarded on containerId itself (Checkpoint 1.15.3 closure fix) — a
   // container's own proportional-scale resize rewrites its direct
@@ -1368,7 +1514,9 @@ export const useEditorStore = create<EditorState>()((set) => ({
       const node = eligibleSelectedNode(state);
       if (!node) return {};
       const sourceParentId = findParentId(state.document, node.id);
-      const document = removeNode(state.document, node.id);
+      const deletedIds = collectNodeIds(node);
+      const afterRemoval = removeNode(state.document, node.id);
+      const document = removeInteractionsTargeting(afterRemoval, deletedIds);
       return {
         ...pushHistory(state),
         document,
@@ -1426,8 +1574,10 @@ export const useEditorStore = create<EditorState>()((set) => ({
       const roots = normalizeSelectionRoots(state.document, state.selection.ids);
       if (roots.length === 0) return {};
       const parentId = findParentId(state.document, roots[0]);
-      const document = removeNodesByIds(state.document, new Set(roots));
-      if (document === state.document) return {};
+      const deletedIds = collectDeletedIds(state.document, roots);
+      const afterRemoval = removeNodesByIds(state.document, new Set(roots));
+      if (afterRemoval === state.document) return {};
+      const document = removeInteractionsTargeting(afterRemoval, deletedIds);
       return {
         ...pushHistory(state),
         document,

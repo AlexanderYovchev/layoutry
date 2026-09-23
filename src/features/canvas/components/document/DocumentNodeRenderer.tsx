@@ -2,6 +2,7 @@ import { documentNodeComponents } from "@/features/canvas/components/document/do
 import { FallbackElement } from "@/features/canvas/components/document/elements/FallbackElement";
 import { getLayoutMode } from "@/features/editor/types/layout";
 import { getFlowLayoutSettings } from "@/features/editor/types/flowLayout";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { ContainerLayoutMode } from "@/features/editor/types/layout";
 import type { FlowDisplayMode } from "@/features/editor/types/flowLayout";
@@ -29,7 +30,22 @@ export function DocumentNodeRenderer({
   parentLayoutMode,
   parentFlowDisplay,
 }: DocumentNodeRendererProps) {
+  // Runtime visibility override (Checkpoint 1.15.6.8, Part D/section 18) —
+  // Preview-only, ephemeral, never touches this node's own authored
+  // flowLayout/display: a node explicitly hidden via an authored click
+  // interaction simply isn't rendered for this pass at all (its authored
+  // CSS is never read back as "none" and is never mutated), which also
+  // means its siblings reflow to fill the gap exactly like a real
+  // collapsed panel would. In Design mode this override is always
+  // ignored — `runtimeHidden` only has a chance to be true once
+  // editorMode is "preview" (see enterPreview, which always resets
+  // runtimeVisibility to {} first, and every other lookup below).
+  const isRuntimeHidden = useEditorStore(
+    (state) => state.editorMode === "preview" && state.runtimeVisibility[node.id] === false,
+  );
   const ElementComponent = documentNodeComponents[node.tag] ?? FallbackElement;
+
+  if (isRuntimeHidden) return null;
   const childLayoutMode = getLayoutMode(node);
   // A Free container's flowLayout is deliberately RETAINED (not cleared)
   // across a Flow -> Free conversion, so switching back to Flow restores

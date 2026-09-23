@@ -164,6 +164,15 @@ export function useNativeFormValueEditing(
   }
 
   function handleDoubleClick() {
+    // Preview Mode (Checkpoint 1.15.6.8, Part F/section 91) — a
+    // double-click during Preview is runtime interaction input (two
+    // rapid clicks, each already handled by CanvasInteractionBoundary's
+    // own click executor), never a request to enter native value
+    // editing. Read via getState() rather than a reactive subscription —
+    // this only needs to be correct at the moment of the event, not on
+    // every render, the same convention useEditorKeyboardShortcuts
+    // already uses for its own handler.
+    if (useEditorStore.getState().editorMode === "preview") return;
     setIsEditing(true);
   }
 

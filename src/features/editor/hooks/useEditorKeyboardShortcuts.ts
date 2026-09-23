@@ -35,9 +35,18 @@ export function useEditorKeyboardShortcuts(): void {
     function handleKeyDown(event: KeyboardEvent) {
       if (isEditableTarget(event.target)) return;
 
+      const store = useEditorStore.getState();
+      // Preview Mode (Checkpoint 1.15.6.8, Part F/section 27) — none of
+      // these document-editing shortcuts (Undo/Redo/Copy/Cut/Paste/
+      // Duplicate/Delete) may fire while previewing: the user is testing
+      // authored behavior, not editing, and a stale `selection` left over
+      // from Design (deliberately never cleared on Preview entry — see
+      // enterPreview) must never let a stray Delete/Ctrl+D silently
+      // mutate the real authored document underneath them.
+      if (store.editorMode === "preview") return;
+
       const meta = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
-      const store = useEditorStore.getState();
 
       if (meta && key === "z" && event.shiftKey) {
         event.preventDefault();

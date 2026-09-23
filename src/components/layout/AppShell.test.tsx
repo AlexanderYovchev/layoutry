@@ -3,6 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "./AppShell";
 import type { EditMenuCommands } from "./applicationMenus";
+import type { PreviewControl } from "./GlobalActions";
+
+const noopPreviewControl: PreviewControl = { mode: "design", onToggle: () => {} };
 
 const noopEditMenuCommands: EditMenuCommands = {
   canUndo: false,
@@ -37,6 +40,7 @@ function renderShell() {
       workspaceContent={<div>workspace content</div>}
       inspectorContent={<div>inspector content</div>}
       editMenuCommands={noopEditMenuCommands}
+      previewControl={noopPreviewControl}
     />,
   );
 }

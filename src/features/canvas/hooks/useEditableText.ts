@@ -130,6 +130,11 @@ export function useEditableText(node: EditorElementNode): EditableTextControl {
   }
 
   function handleDoubleClick() {
+    // Preview Mode (Checkpoint 1.15.6.8, Part F/section 91) — same
+    // reasoning as useNativeFormValueEditing's identical guard: a
+    // double-click during Preview is runtime click input, never a
+    // request to enter contentEditable text editing.
+    if (useEditorStore.getState().editorMode === "preview") return;
     setIsEditing(true);
   }
 

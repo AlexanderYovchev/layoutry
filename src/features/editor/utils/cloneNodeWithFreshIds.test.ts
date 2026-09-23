@@ -359,6 +359,72 @@ describe("cloneNodeWithFreshIds", () => {
       expect(source.svgScene!.objects[0].id).toBe("rect-1");
     });
   });
+
+  describe("Interaction bindings (Checkpoint 1.15.6.8)", () => {
+    it("remaps an INTERNAL target reference to the corresponding cloned node (Part I)", () => {
+      const source: EditorElementNode = {
+        id: "root-1",
+        tag: "div",
+        children: [
+          { id: "button-1", tag: "button", text: "Toggle", interactions: [{ id: "int-1", trigger: "click", action: "toggle", targetId: "content-1" }] },
+          { id: "content-1", tag: "div", children: [{ id: "p-1", tag: "p", text: "Content" }] },
+        ],
+      };
+
+      const clone = cloneNodeWithFreshIds(source);
+      const [clonedButton, clonedContent] = clone.children!;
+
+      expect(clonedButton.interactions).toHaveLength(1);
+      expect(clonedButton.interactions![0].targetId).toBe(clonedContent.id);
+      expect(clonedButton.interactions![0].targetId).not.toBe("content-1");
+    });
+
+    it("leaves an EXTERNAL target reference (outside the cloned subtree) completely untouched", () => {
+      const source: EditorElementNode = {
+        id: "button-1",
+        tag: "button",
+        text: "Toggle",
+        interactions: [{ id: "int-1", trigger: "click", action: "toggle", targetId: "external-target-1" }],
+      };
+
+      const clone = cloneNodeWithFreshIds(source);
+
+      expect(clone.interactions![0].targetId).toBe("external-target-1");
+    });
+
+    it("gives every duplicated binding its own fresh interaction id, never reusing the original's", () => {
+      const source: EditorElementNode = {
+        id: "button-1",
+        tag: "button",
+        interactions: [{ id: "int-1", trigger: "click", action: "show", targetId: "target-1" }],
+      };
+
+      const clone = cloneNodeWithFreshIds(source);
+
+      expect(clone.interactions![0].id).not.toBe("int-1");
+    });
+
+    it("leaves a node with no interactions at all with interactions still undefined", () => {
+      const source: EditorElementNode = { id: "div-1", tag: "div" };
+      const clone = cloneNodeWithFreshIds(source);
+      expect(clone.interactions).toBeUndefined();
+    });
+
+    it("does not mutate the source's own interactions array", () => {
+      const source: EditorElementNode = {
+        id: "root-1",
+        tag: "div",
+        children: [
+          { id: "button-1", tag: "button", interactions: [{ id: "int-1", trigger: "click", action: "toggle", targetId: "content-1" }] },
+          { id: "content-1", tag: "div" },
+        ],
+      };
+
+      cloneNodeWithFreshIds(source);
+
+      expect(source.children![0].interactions![0]).toEqual({ id: "int-1", trigger: "click", action: "toggle", targetId: "content-1" });
+    });
+  });
 });
 
 function collectIds(node: EditorElementNode): string[] {

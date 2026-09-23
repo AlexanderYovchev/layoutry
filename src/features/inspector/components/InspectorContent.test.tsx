@@ -21,6 +21,21 @@ describe("InspectorContent", () => {
     expect(screen.getByText("No element selected")).toBeInTheDocument();
   });
 
+  it("replaces the editable body with a Preview placeholder while editorMode is preview (Checkpoint 1.15.6.8)", () => {
+    useEditorStore.setState((state) => ({
+      document: { ...state.document, children: [{ id: "button-1", tag: "button", text: "Go" }] },
+      selection: selectionFromSingle("button-1"),
+      editorMode: "preview",
+    }));
+
+    render(<InspectorContent />);
+
+    expect(screen.getByText("Previewing")).toBeInTheDocument();
+    expect(screen.getByText("Previewing authored behavior")).toBeInTheDocument();
+    expect(screen.queryByText("1 element selected")).not.toBeInTheDocument();
+    expect(screen.queryByText("Go")).not.toBeInTheDocument();
+  });
+
   it("shows the element summary and sections for a mock selected element", () => {
     render(<InspectorContent selectedElement={mockContainerElement} />);
 

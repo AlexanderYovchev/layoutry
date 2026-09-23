@@ -8,6 +8,7 @@ import {
   Box,
   ChevronDown,
   ChevronsDown,
+  ChevronsUpDown,
   ChevronsLeftRight,
   ChevronsRight,
   Circle,
@@ -126,7 +127,8 @@ export type InsertableCardType =
   | "avatar"
   | "avatarWithText"
   | "statCard"
-  | "metadataRow";
+  | "metadataRow"
+  | "collapsible";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -333,6 +335,9 @@ function componentsCategory(): ToolbarCategoryContent {
         { name: "Contact Form", description: "Name, email, and message fields with a submit button", elementType: "contactForm", icon: ClipboardList },
         { name: "Login Form", description: "Email and password fields with a Sign In button", elementType: "loginForm", icon: KeyRound },
         { name: "Labeled Select Field", description: "Dropdown choice field with a visible label", elementType: "labeledSelectField", icon: ChevronDown },
+      ]),
+      section(id, "interactive", "Interactive", [
+        { name: "Collapsible", description: "Button toggles a content panel", elementType: "collapsible", icon: ChevronsUpDown },
       ]),
       section(id, "feedback-overlays", "Feedback & Overlays", [
         { name: "Modal", description: "Overlay dialog" },

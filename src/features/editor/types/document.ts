@@ -20,6 +20,7 @@ import type { InputType } from "@/features/editor/types/input";
 import type { ShapePreset } from "@/features/editor/types/shape";
 import type { SvgPrimitiveKind, SvgViewBox } from "@/features/editor/types/svg";
 import type { SvgScene } from "@/features/editor/types/svgScene";
+import type { InteractionBinding } from "@/features/editor/types/interactions";
 
 export interface ElementDimensions {
   /**
@@ -468,4 +469,21 @@ export interface EditorElementNode {
    * unset (the default) means unlocked.
    */
   lockChildStyles?: boolean;
+  /**
+   * This node's own authored interaction bindings (Checkpoint 1.15.6.8) —
+   * generic, persistent, history-aware authored behavior ("when this node
+   * is clicked, show/hide/toggle that node"), never component-specific
+   * state (no `modalOpen`/`dropdownOpen`/`accordionOpen`/`activeTab`
+   * field exists or is planned). Deliberately NOT the same concern as
+   * `lockChildStyles` above (an editor-only protection flag with no CSS
+   * meaning) — this is genuinely authored document content, the FIRST
+   * node-to-node reference this document model has ever had (see
+   * types/interactions.ts's own top comment). Same "store unconditionally,
+   * no synthesized default" convention `htmlId`/`className` already use,
+   * except normalized back to `undefined` rather than `[]` once empty —
+   * see withInteractions. Whether a target is CURRENTLY visible during a
+   * Preview session is unrelated runtime state, never stored here (see
+   * useEditorStore's own `runtimeVisibility` slice).
+   */
+  interactions?: InteractionBinding[];
 }

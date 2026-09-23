@@ -51,6 +51,7 @@ export function EditorApp() {
   const clipboard = useEditorStore((state) => state.clipboard);
   const hasPast = useEditorStore((state) => state.past.length > 0);
   const hasFuture = useEditorStore((state) => state.future.length > 0);
+  const editorMode = useEditorStore((state) => state.editorMode);
   const insert = useInsertElement();
   const move = useMoveElement();
   const [activeDrag, setActiveDrag] = useState<ActiveDragPreview | null>(null);
@@ -85,6 +86,14 @@ export function EditorApp() {
     onPaste: () => useEditorStore.getState().pasteClipboard(),
     onDuplicate: () => useEditorStore.getState().duplicateSelection(),
     onDelete: () => useEditorStore.getState().deleteSelection(),
+  };
+
+  const previewControl = {
+    mode: editorMode,
+    onToggle: () =>
+      editorMode === "preview"
+        ? useEditorStore.getState().exitPreview()
+        : useEditorStore.getState().enterPreview(),
   };
 
   function handleDragStart(event: DragStartEvent) {
@@ -133,6 +142,7 @@ export function EditorApp() {
         structureContent={<StructurePanel />}
         onActivateCatalogCard={handleActivateCard}
         editMenuCommands={editMenuCommands}
+        previewControl={previewControl}
       />
       <EditorNoticeBanner />
       <DragOverlay>

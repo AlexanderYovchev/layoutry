@@ -37,6 +37,7 @@ import {
   createMetadataRowNode,
   createStatCardNode,
 } from "@/features/editor/factories/dataDisplayCompositions";
+import { createCollapsibleNode } from "@/features/editor/factories/interactionCompositions";
 import { generateNodeId } from "@/features/editor/utils/generateNodeId";
 import { DEFAULT_SVG_FILL } from "@/features/editor/types/svg";
 import { DEFAULT_LINK_HREF } from "@/features/editor/types/link";
@@ -119,7 +120,8 @@ export type InsertableElementType =
   | "avatar"
   | "avatarWithText"
   | "statCard"
-  | "metadataRow";
+  | "metadataRow"
+  | "collapsible";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -732,6 +734,7 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   avatarWithText: createAvatarWithTextNode,
   statCard: createStatCardNode,
   metadataRow: createMetadataRowNode,
+  collapsible: createCollapsibleNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -815,6 +818,7 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   avatarWithText: { width: 220, height: 56 },
   statCard: { width: 220, height: 130 },
   metadataRow: { width: 260, height: 32 },
+  collapsible: { width: 260, height: 100 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };

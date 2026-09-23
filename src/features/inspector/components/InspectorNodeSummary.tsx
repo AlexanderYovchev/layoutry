@@ -13,6 +13,7 @@ import { InspectorGridChildSection } from "@/features/inspector/components/Inspe
 import { InspectorHeadingLevelSection } from "@/features/inspector/components/InspectorHeadingLevelSection";
 import { InspectorIdentitySection } from "@/features/inspector/components/InspectorIdentitySection";
 import { InspectorIframeSection } from "@/features/inspector/components/InspectorIframeSection";
+import { InspectorInteractionsSection } from "@/features/inspector/components/InspectorInteractionsSection";
 import { InspectorLayoutSection } from "@/features/inspector/components/InspectorLayoutSection";
 import { InspectorLinkSection } from "@/features/inspector/components/InspectorLinkSection";
 import { InspectorListSection } from "@/features/inspector/components/InspectorListSection";
@@ -124,6 +125,7 @@ export function InspectorNodeSummary({
       </div>
       <InspectorIdentitySection node={node} />
       {canOwnStyleLock(node.tag) && <InspectorProtectionSection node={node} />}
+      {node.id !== documentModel.id && <InspectorInteractionsSection node={node} />}
       <InspectorStyleProtectionNotice protection={protection} />
       {getElementCapabilities(node.tag).supportsAspectRatio && (
         <InspectorProtectedStyleGroup protected={protection.protected}>
