@@ -10,7 +10,7 @@ import {
   type ViewState,
 } from "@/components/layout/applicationMenus";
 import { ProjectIdentity } from "@/components/layout/ProjectIdentity";
-import { GlobalActions, type PreviewControl } from "@/components/layout/GlobalActions";
+import { GlobalActions, type HistoryControl, type PreviewControl } from "@/components/layout/GlobalActions";
 import { HelpDialogs } from "@/components/layout/HelpDialogs";
 
 interface AppHeaderProps {
@@ -29,6 +29,19 @@ export function AppHeader({ viewState, onToggleView, editMenuCommands, previewCo
     onOpenHelpDialog: setOpenDialogId,
     editMenuCommands,
   });
+
+  // Checkpoint 1.15.6.10.2 — the exact same canUndo/canRedo/onUndo/onRedo
+  // values already feeding the Edit menu above, just narrowed to
+  // GlobalActions' own minimal HistoryControl shape rather than handing it
+  // the whole EditMenuCommands object (which also carries Cut/Copy/Paste/
+  // Duplicate/Delete — irrelevant to a plain Undo/Redo toolbar control).
+  // One source of truth, two consumers.
+  const historyControl: HistoryControl = {
+    canUndo: editMenuCommands.canUndo,
+    canRedo: editMenuCommands.canRedo,
+    onUndo: editMenuCommands.onUndo,
+    onRedo: editMenuCommands.onRedo,
+  };
 
   return (
     <>
@@ -56,7 +69,7 @@ export function AppHeader({ viewState, onToggleView, editMenuCommands, previewCo
 
         <ProjectIdentity />
 
-        <GlobalActions previewControl={previewControl} />
+        <GlobalActions historyControl={historyControl} previewControl={previewControl} />
       </header>
 
       <HelpDialogs

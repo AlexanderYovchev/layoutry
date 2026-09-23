@@ -14,32 +14,52 @@ export interface PreviewControl {
   onToggle: () => void;
 }
 
+/**
+ * Checkpoint 1.15.6.10.2 — the same plain-callback shape PreviewControl
+ * above already established, now for Undo/Redo. This toolbar consumes
+ * the SAME canUndo/canRedo/onUndo/onRedo values EditorApp.tsx already
+ * computes for the Edit menu (`EditMenuCommands`, applicationMenus.ts) —
+ * AppHeader passes the matching slice of that same object down to both
+ * MenuBarTrigger (via buildApplicationMenus) and here, so there is only
+ * ever ONE history source of truth; GlobalActions itself holds no local
+ * canUndo/canRedo state of its own to go stale.
+ */
+export interface HistoryControl {
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
+}
+
 interface GlobalActionsProps {
+  historyControl: HistoryControl;
   previewControl: PreviewControl;
 }
 
-export function GlobalActions({ previewControl }: GlobalActionsProps) {
+export function GlobalActions({ historyControl, previewControl }: GlobalActionsProps) {
   const isPreview = previewControl.mode === "preview";
 
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <Tooltip label="Undo (no history yet)">
+      <Tooltip label="Undo">
         <button
           type="button"
-          disabled
-          aria-label="Undo (no history yet)"
-          className="flex size-8 items-center justify-center rounded-md text-zinc-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed dark:text-zinc-700"
+          disabled={!historyControl.canUndo}
+          onClick={historyControl.onUndo}
+          aria-label="Undo"
+          className="flex size-8 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-900 dark:disabled:text-zinc-700"
         >
           <Undo2 aria-hidden="true" className="size-4" />
         </button>
       </Tooltip>
 
-      <Tooltip label="Redo (no history yet)">
+      <Tooltip label="Redo">
         <button
           type="button"
-          disabled
-          aria-label="Redo (no history yet)"
-          className="flex size-8 items-center justify-center rounded-md text-zinc-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed dark:text-zinc-700"
+          disabled={!historyControl.canRedo}
+          onClick={historyControl.onRedo}
+          aria-label="Redo"
+          className="flex size-8 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-900 dark:disabled:text-zinc-700"
         >
           <Redo2 aria-hidden="true" className="size-4" />
         </button>
