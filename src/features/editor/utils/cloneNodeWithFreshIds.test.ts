@@ -444,6 +444,26 @@ describe("cloneNodeWithFreshIds", () => {
       // relationship survives duplication intact, for BOTH triggers.
       expect(clonedOpenButton.interactions![0].targetId).toBe(clonedCloseButton.interactions![0].targetId);
     });
+
+    it("Checkpoint 1.15.6.9.1 — a cloned Modal's Dialog derives its own accessible name/description from its own (cloned) heading/paragraph text, independent of the original", () => {
+      const modal = createModalNode();
+      const [, dialog] = modal.children!;
+      const clone = cloneNodeWithFreshIds(modal);
+      const [, clonedDialog] = clone.children!;
+
+      const [content] = dialog.children!;
+      const [clonedContent] = clonedDialog.children!;
+
+      // Not the SAME node objects (real, independent clones)...
+      expect(clonedContent.children![0]).not.toBe(content.children![0]);
+      // ...but carrying the same authored text, since resolveDialogAccessibleName
+      // reads text content directly with no id/reference involved at all —
+      // there is no htmlId/labelledby relationship that duplication could
+      // leave dangling or pointing at the original.
+      expect(clonedContent.children![0].text).toBe(content.children![0].text);
+      expect(clonedDialog.htmlId).toBeUndefined();
+      expect(dialog.htmlId).toBeUndefined();
+    });
   });
 });
 

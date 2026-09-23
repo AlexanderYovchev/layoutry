@@ -1,6 +1,7 @@
 import { fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import type { EditorElementNode } from "@/features/editor/types/document";
 import { DialogElement } from "./DialogElement";
 
 const initialState = useEditorStore.getState();
@@ -212,5 +213,35 @@ describe("DialogElement (Checkpoint 1.15.6.9)", () => {
     );
     const event = fireEvent.keyDown(container.querySelector("dialog")!, { key: "Escape" });
     expect(event).toBe(true); // fireEvent returns false only when preventDefault was called
+  });
+
+  it("Checkpoint 1.15.6.9.1: gets aria-label/aria-description derived from its own heading/paragraph descendants", () => {
+    const node: EditorElementNode = {
+      id: "dialog-1",
+      tag: "dialog",
+      children: [
+        {
+          id: "content",
+          tag: "div",
+          children: [
+            { id: "h", tag: "h2", text: "Modal Title" },
+            { id: "p", tag: "p", text: "Modal content goes here." },
+          ],
+        },
+      ],
+    };
+    const { container } = render(<DialogElement node={node} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+    const dialog = container.querySelector("dialog")!;
+    expect(dialog).toHaveAttribute("aria-label", "Modal Title");
+    expect(dialog).toHaveAttribute("aria-description", "Modal content goes here.");
+  });
+
+  it("Checkpoint 1.15.6.9.1: a bare Dialog with no heading/paragraph descendant gets neither attribute — no invented title", () => {
+    const { container } = render(
+      <DialogElement node={{ id: "dialog-1", tag: "dialog", children: [] }} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+    const dialog = container.querySelector("dialog")!;
+    expect(dialog).not.toHaveAttribute("aria-label");
+    expect(dialog).not.toHaveAttribute("aria-description");
   });
 });

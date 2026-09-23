@@ -2,7 +2,7 @@
 
 import {
   useCallback,
-  useEffect,
+  useLayoutEffect,
   useRef,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -19,6 +19,7 @@ import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
 import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowStyle";
 import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
+import { resolveDialogAccessibleDescription, resolveDialogAccessibleName } from "@/features/canvas/utils/resolveDialogAccessibleName";
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
 import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
@@ -102,7 +103,26 @@ export function DialogElement({ node, parentId, parentLayoutMode, parentFlowDisp
   // back after a NATIVE close (Escape/cancel, backdrop, or an explicit
   // `.close()` call from anywhere) needs; no new store action exists for
   // this.
-  useEffect(() => {
+  // Checkpoint 1.15.6.9.1 — deliberately useLayoutEffect, not useEffect.
+  // On unmount (the Close Button's generic hide binding flips
+  // runtimeVisibility false, which unmounts this component entirely — see
+  // this file's own top comment), a PASSIVE effect's cleanup runs AFTER
+  // React has already removed the dialog's DOM node from the document
+  // (commit happens first, passive cleanup is scheduled after paint) — by
+  // the time `dialogEl.close()` ran there, the browser had already forced
+  // the dialog out of the top layer via its own node-removal steps, which
+  // do NOT run the same focus-restoration algorithm an explicit `close()`
+  // call on a still-connected dialog does (confirmed live during this
+  // checkpoint's own QA: Close-Button-driven close left focus on
+  // `document.body`, never back on "Open Modal", while Escape/backdrop —
+  // which call `dialogRef.current?.close()` directly, synchronously,
+  // while still mounted — correctly restored it). A LAYOUT effect's
+  // unmount cleanup runs synchronously, BEFORE React mutates the DOM for
+  // that subtree, so `close()` now always runs while the dialog is still
+  // genuinely connected, letting the browser's own native focus-restore
+  // handle every closure path identically — no manual focus-tracking code
+  // needed (Part 22/23 of this checkpoint's own brief).
+  useLayoutEffect(() => {
     const dialogEl = dialogRef.current;
     if (!dialogEl) return;
 
@@ -188,15 +208,26 @@ export function DialogElement({ node, parentId, parentLayoutMode, parentFlowDisp
   const usesLegacyRadiusChrome = !node.borderRadius;
   const usesLegacyBorderChrome = !node.border;
 
+  // Checkpoint 1.15.6.9.1 — see resolveDialogAccessibleName.ts's own top
+  // comment for why this is derived at render time rather than stored.
+  // Honestly absent (not a synthesized fallback) for a bare Dialog with no
+  // heading/paragraph descendant — matches this checkpoint's own bare-
+  // Dialog honesty requirement.
+  const accessibleName = resolveDialogAccessibleName(node);
+  const accessibleDescription = resolveDialogAccessibleDescription(node);
+
   return (
+    // eslint-disable-next-line jsx-a11y/role-supports-aria-props -- this plugin's static ARIA role table predates aria-description being added as a global property in the current WAI-ARIA spec; verified live via Chromium's own CDP Accessibility.getFullAXTree that it correctly populates the dialog's computed accessible description (this checkpoint's own report, section A/B).
     <dialog
       id={node.htmlId}
       ref={mergeRefs<HTMLElement>(dropRef, dragRef, setDialogRef) as unknown as Ref<HTMLDialogElement>}
       {...documentNodeAttributes(node, parentId)}
+      aria-label={accessibleName}
+      aria-description={accessibleDescription}
       onClick={handleBackdropClick}
       onKeyDown={handleDialogKeyDown}
       className={cn(
-        "m-0 max-w-none bg-white p-8 text-zinc-900 backdrop:bg-black/40 dark:bg-zinc-950 dark:text-zinc-50",
+        "max-w-none bg-white p-8 text-zinc-900 backdrop:bg-black/40 dark:bg-zinc-950 dark:text-zinc-50",
         usesLegacyRadiusChrome && "rounded-lg",
         usesLegacyBorderChrome && "border border-zinc-100 dark:border-zinc-900",
         isDragging && "opacity-40",
@@ -226,6 +257,27 @@ export function DialogElement({ node, parentId, parentLayoutMode, parentFlowDisp
         // case by construction (see this file's own top comment), so
         // `isPreview` alone is sufficient to distinguish the two.
         ...(!isPreview ? { position: "static" as const } : {}),
+        // Checkpoint 1.15.6.9.1 — the companion fix to the `position`
+        // override just above, but for the opposite direction: Tailwind's
+        // own Preflight resets `margin: 0` on literally every element
+        // (`*, ::before, ::after, ::backdrop` — confirmed live via this
+        // checkpoint's own QA by inspecting the actual parsed `@layer
+        // base` rule, not assumed), which is an AUTHOR-origin rule and so
+        // unconditionally wins over the UA's own `dialog:modal { margin:
+        // auto }` centering rule regardless of specificity — origin beats
+        // specificity in the cascade, so no amount of removing our OWN
+        // classes could ever "lose" to the UA rule on purpose (this file
+        // briefly tried a Design-only `m-0` utility class for the
+        // Design-mode side of this same conflict; it turned out to be
+        // entirely redundant with Preflight's own reset and was removed).
+        // Explicitly restoring `margin: auto` only while Preview's real
+        // showModal() is active reclaims the browser's own centering
+        // trick (inset: 0 + margin: auto + a fit-content intrinsic width,
+        // all still supplied by the UA `dialog`/`dialog:modal` rules,
+        // none of which this component overrides) without touching
+        // Design at all, where Preflight's margin: 0 is exactly the
+        // ordinary-flow-participation behavior Part 7/8 already wants.
+        ...(isPreview ? { margin: "auto" as const } : {}),
         ...resolvePositionStyle(node),
         ...elementPositionStyle(node, parentLayoutMode),
         ...resolveAspectRatioStyle(node),
