@@ -80,6 +80,7 @@ const TAG_DISPLAY_NAMES: Record<string, string> = {
   // a Primitive change (section 30 of this checkpoint's own brief) —
   // see this checkpoint's report for the full reasoning.
   svg: "SVG",
+  dialog: "Dialog",
 };
 
 /**

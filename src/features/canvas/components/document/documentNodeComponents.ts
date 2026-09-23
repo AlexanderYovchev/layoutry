@@ -1,6 +1,7 @@
 import { BodyElement } from "@/features/canvas/components/document/elements/BodyElement";
 import { ButtonElement } from "@/features/canvas/components/document/elements/ButtonElement";
 import { ContainerElement } from "@/features/canvas/components/document/elements/ContainerElement";
+import { DialogElement } from "@/features/canvas/components/document/elements/DialogElement";
 import { DocumentRootElement } from "@/features/canvas/components/document/elements/DocumentRootElement";
 import { HeadingElement } from "@/features/canvas/components/document/elements/HeadingElement";
 import { IframeElement } from "@/features/canvas/components/document/elements/IframeElement";
@@ -67,4 +68,5 @@ export const documentNodeComponents: Record<string, DocumentElementComponent> =
     video: VideoElement,
     iframe: IframeElement,
     svg: SvgElement,
+    dialog: DialogElement,
   };

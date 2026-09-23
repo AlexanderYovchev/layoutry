@@ -191,10 +191,12 @@ describe("CreationToolbar", () => {
     // Cards & Containers (Checkpoint 1.15.6.4), Forms & Inputs
     // (Checkpoint 1.15.6.5), Data Display (Checkpoint 1.15.6.6), and
     // Interactive (Checkpoint 1.15.6.8) are the first six real, enabled
-    // Components families — Feedback & Overlays remains a disabled future
-    // placeholder, and "Panel" remains a disabled placeholder within
-    // Cards & Containers itself (audited in 1.15.6.6 and deliberately
-    // left disabled — see that checkpoint's report).
+    // Components families. Feedback & Overlays gained its own first real
+    // entry in Checkpoint 1.15.6.9 ("Modal" — a genuine native <dialog>
+    // composition); "Toast" remains a disabled future placeholder there,
+    // and "Panel" remains a disabled placeholder within Cards & Containers
+    // itself (audited in 1.15.6.6 and deliberately left disabled — see
+    // that checkpoint's report).
     const enabledCardNames = [
       "Primary Button",
       "Secondary Button",
@@ -226,6 +228,7 @@ describe("CreationToolbar", () => {
       "Stat Card",
       "Metadata Row",
       "Collapsible",
+      "Modal",
     ];
     for (const card of cards) {
       const isEnabledCard = enabledCardNames.some((name) => card.textContent?.startsWith(name));

@@ -37,7 +37,7 @@ import {
   createMetadataRowNode,
   createStatCardNode,
 } from "@/features/editor/factories/dataDisplayCompositions";
-import { createCollapsibleNode } from "@/features/editor/factories/interactionCompositions";
+import { createCollapsibleNode, createModalNode } from "@/features/editor/factories/interactionCompositions";
 import { generateNodeId } from "@/features/editor/utils/generateNodeId";
 import { DEFAULT_SVG_FILL } from "@/features/editor/types/svg";
 import { DEFAULT_LINK_HREF } from "@/features/editor/types/link";
@@ -92,6 +92,7 @@ export type InsertableElementType =
   | "video"
   | "iframe"
   | "svg"
+  | "dialog"
   | "primaryButton"
   | "secondaryButton"
   | "outlineButton"
@@ -121,7 +122,8 @@ export type InsertableElementType =
   | "avatarWithText"
   | "statCard"
   | "metadataRow"
-  | "collapsible";
+  | "collapsible"
+  | "modal";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -670,6 +672,25 @@ export function createSvgNode(): EditorElementNode {
   return { id: generateNodeId("svg"), tag: "svg", svgKind: "rectangle", svgFill: DEFAULT_SVG_FILL };
 }
 
+/**
+ * Dialog Foundation (Checkpoint 1.15.6.9) — a genuine `tag: "dialog"`
+ * leaf, childable like any other container primitive (empty `children`,
+ * same starting shape createContainerNode uses). `initialPreviewVisibility:
+ * "hidden"` is set here too, not only on createModalNode's own Dialog
+ * (interactionCompositions.ts) — a bare, unwired Dialog primitive with no
+ * authored default would otherwise call `showModal()` the INSTANT Preview
+ * begins (see DialogElement's own doc comment: mounting during Preview
+ * with nothing marking it hidden IS the "should be open" signal), an
+ * honestly surprising result for a primitive the user hasn't wired any
+ * trigger to yet. "Closed until something opens it" is this tag's own
+ * inherent nature, independent of whether it's used bare or as part of a
+ * larger composition — the same default createDropdownButtonNode's own
+ * menu Container already established for exactly this reason.
+ */
+export function createDialogNode(): EditorElementNode {
+  return { id: generateNodeId("dialog"), tag: "dialog", children: [], initialPreviewVisibility: "hidden" };
+}
+
 const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> = {
   container: createContainerNode,
   section: createSectionNode,
@@ -705,6 +726,7 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   video: createVideoNode,
   iframe: createIframeNode,
   svg: createSvgNode,
+  dialog: createDialogNode,
   primaryButton: createPrimaryButtonNode,
   secondaryButton: createSecondaryButtonNode,
   outlineButton: createOutlineButtonNode,
@@ -735,6 +757,7 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   statCard: createStatCardNode,
   metadataRow: createMetadataRowNode,
   collapsible: createCollapsibleNode,
+  modal: createModalNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -789,6 +812,7 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   video: { width: 400, height: 225 },
   iframe: { width: 400, height: 300 },
   svg: { width: 200, height: 200 },
+  dialog: { width: 320, height: 200 },
   primaryButton: { width: 120, height: 44 },
   secondaryButton: { width: 120, height: 44 },
   outlineButton: { width: 120, height: 44 },
@@ -819,6 +843,7 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   statCard: { width: 220, height: 130 },
   metadataRow: { width: 260, height: 32 },
   collapsible: { width: 260, height: 100 },
+  modal: { width: 320, height: 160 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };
@@ -850,6 +875,7 @@ const INSERTABLE_TYPE_BY_TAG: Record<string, InsertableElementType> = {
   video: "video",
   iframe: "iframe",
   svg: "svg",
+  dialog: "dialog",
 };
 
 /** Falls back to a generic size for a tag with no InsertableElementType entry (e.g. a pasted/duplicated node whose tag isn't one of the five catalog types). */

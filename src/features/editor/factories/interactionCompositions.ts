@@ -72,3 +72,96 @@ export function createCollapsibleNode(): EditorElementNode {
     children: [trigger, content],
   };
 }
+
+const MODAL_CONTENT_FLEX: FlexContainerSettings = {
+  direction: "column",
+  wrap: "nowrap",
+  justifyContent: "start",
+  alignItems: "stretch",
+  rowGap: 12,
+  columnGap: 12,
+};
+
+const MODAL_CONTENT_SPACING: ElementSpacing = {
+  margin: ZERO_EDGES,
+  padding: ZERO_EDGES,
+};
+
+/**
+ * Modal (Checkpoint 1.15.6.9) — the first Interactive composition to use
+ * a genuine `tag: "dialog"` (DialogElement/documentNodeComponents.ts)
+ * rather than an ordinary div standing in for an overlay, and the first
+ * composition where TWO different triggers (Open, Close) target the
+ * exact SAME node — a real, deliberate exercise of
+ * cloneNodeWithFreshIds/remapInteractionTargets' own two-pass id-map
+ * design (both already handle this correctly per-binding, with zero new
+ * code: see this checkpoint's own report, section W).
+ *
+ * Open/Close use `show`/`hide`, not `toggle` (Part I, section 38 of this
+ * checkpoint's own brief) — the semantic intent is explicit per button,
+ * which also has a real architectural consequence documented in the
+ * report (section V): findDismissibleRelationships' V1 rule only ever
+ * qualifies a `click`+`toggle` relationship, so this Dialog is correctly,
+ * automatically EXCLUDED from Checkpoint 1.15.6.8.3's generic outside-
+ * click/Escape dismissal — no broadening of that utility was needed or
+ * made. Backdrop click and native Escape are instead owned entirely by
+ * DialogElement itself, using the browser's own native `<dialog>`
+ * lifecycle (showModal/close/the native `close` event) — see its own doc
+ * comment.
+ *
+ * Dialog's own box owns no Flow/Flex/Grid layout of its own
+ * (supportsChildLayout: false — elementCapabilities.ts); the actual
+ * Flex-column/gap/padding arrangement of Heading/Paragraph/Close Button
+ * lives one level down, on this ordinary content Container, exactly the
+ * "dialog > content Container" shape this checkpoint's own brief asks
+ * for (Part 5).
+ */
+export function createModalNode(): EditorElementNode {
+  // The dialog's own id is decided before any of its ancestors/descendants
+  // are built — the same "target id known up front, no remapping needed
+  // at creation time" shape createCollapsibleNode/createDropdownButtonNode
+  // already use, now proven for TWO different triggers (Open, Close)
+  // referencing the exact same id.
+  const dialogId = generateNodeId("dialog");
+
+  const closeButton: EditorElementNode = {
+    id: generateNodeId("button"),
+    tag: "button",
+    text: "Close",
+    interactions: [{ id: generateNodeId("interaction"), trigger: "click", action: "hide", targetId: dialogId }],
+  };
+
+  const content: EditorElementNode = {
+    id: generateNodeId("div"),
+    tag: "div",
+    flowLayout: { display: "flex", flex: MODAL_CONTENT_FLEX },
+    spacing: MODAL_CONTENT_SPACING,
+    children: [
+      { id: generateNodeId("h2"), tag: "h2", text: "Modal Title" },
+      { id: generateNodeId("p"), tag: "p", text: "Modal content goes here." },
+      closeButton,
+    ],
+  };
+
+  const dialog: EditorElementNode = {
+    id: dialogId,
+    tag: "dialog",
+    initialPreviewVisibility: "hidden",
+    spacing: { margin: ZERO_EDGES, padding: { top: 24, right: 24, bottom: 24, left: 24 } },
+    children: [content],
+  };
+
+  const openButton: EditorElementNode = {
+    id: generateNodeId("button"),
+    tag: "button",
+    text: "Open Modal",
+    interactions: [{ id: generateNodeId("interaction"), trigger: "click", action: "show", targetId: dialogId }],
+  };
+
+  return {
+    id: generateNodeId("div"),
+    tag: "div",
+    flowLayout: { display: "flex", flex: COLLAPSIBLE_ROOT_FLEX },
+    children: [openButton, dialog],
+  };
+}

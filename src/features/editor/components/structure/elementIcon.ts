@@ -18,6 +18,7 @@ import {
   PanelBottom,
   PanelRight,
   PanelTop,
+  PictureInPicture2,
   Rows3,
   Spline,
   Table,
@@ -92,4 +93,5 @@ export const TAG_ICONS: Record<string, LucideIcon> = {
   video: Video,
   iframe: AppWindow,
   svg: Spline,
+  dialog: PictureInPicture2,
 };

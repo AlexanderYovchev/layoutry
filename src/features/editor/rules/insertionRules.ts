@@ -57,6 +57,14 @@ const CONTAINER_TAGS: ReadonlySet<string> = new Set([
   // "select" (Checkpoint 1.13) is a container for exactly the same
   // constrained-nesting reason ul/ol are — see ALLOWED_CHILD_TAGS below.
   "select",
+  // "dialog" (Checkpoint 1.15.6.9) — a genuine native `<dialog>`, ordinary
+  // and UNCONSTRAINED like div/section: it accepts any insertable child
+  // (see DialogElement's own doc comment for why its own children still
+  // use ordinary Flow/Flex/Grid via an inner content Container, never the
+  // dialog box itself). No ALLOWED_CHILD_TAGS/CONSTRAINED_CHILD_TAGS entry
+  // is needed below, the same "absent entry means unrestricted" default
+  // every other unconstrained container tag already relies on.
+  "dialog",
 ]);
 
 export function canContainChildren(tag: string): boolean {

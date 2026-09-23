@@ -506,6 +506,43 @@ describe("elementCapabilities", () => {
     });
   });
 
+  describe("Dialog Foundation (Checkpoint 1.15.6.9)", () => {
+    it("Dialog is childable (a genuine container, via CONTAINER_TAGS) and not text-bearing", () => {
+      const dialog = getElementCapabilities("dialog");
+      expect(dialog.canContainChildren).toBe(true);
+      expect(dialog.supportsTypography).toBe(false);
+    });
+
+    it("Dialog gets an implicit supportsBackground grant, the same generic container rule every other container tag already gets — no explicit override needed", () => {
+      expect(getElementCapabilities("dialog").supportsBackground).toBe(true);
+    });
+
+    it("Dialog opts OUT of the generic child-Layout section — its own box never gets Flow/Flex/Grid authority (DialogElement's own content Container owns that one level down)", () => {
+      expect(getElementCapabilities("dialog").supportsChildLayout).toBe(false);
+    });
+
+    it("Dialog opts OUT of Display/Visibility — an authored display:none would fight showModal()'s own top-layer state (this checkpoint's own 'Critical Conflict' finding)", () => {
+      expect(getElementCapabilities("dialog").supportsDisplay).toBe(false);
+    });
+
+    it("Dialog is NOT shape-capable and does not own Style Protection locking — a Modal composition's own root Container already owns both, the same way Dropdown's root does", () => {
+      expect(getElementCapabilities("dialog").supportsShape).toBe(false);
+    });
+
+    it("Dialog still gets every other ordinary box-model capability from DEFAULT_CAPABILITIES — sizing/resize/position/border/border-radius/box-shadow/filters", () => {
+      const dialog = getElementCapabilities("dialog");
+      expect(dialog.resizableX).toBe(true);
+      expect(dialog.resizableY).toBe(true);
+      expect(dialog.selectable).toBe(true);
+      expect(dialog.supportsAspectRatio).toBe(true);
+      expect(dialog.supportsPosition).toBe(true);
+      expect(dialog.supportsBorder).toBe(true);
+      expect(dialog.supportsBorderRadius).toBe(true);
+      expect(dialog.supportsBoxShadow).toBe(true);
+      expect(dialog.supportsFilters).toBe(true);
+    });
+  });
+
   it("gives an entirely unknown tag the same sensible defaults as any other element", () => {
     const caps = getElementCapabilities("some-future-tag");
 

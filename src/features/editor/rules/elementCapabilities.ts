@@ -490,6 +490,53 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
    * own brief).
    */
   svg: { supportsBackground: true },
+
+  /**
+   * Dialog (Checkpoint 1.15.6.9) — a genuine native `<dialog>`, childable
+   * (canContainChildren("dialog") is already true via CONTAINER_TAGS,
+   * needing no override here) and background-capable via the same generic
+   * container rule getElementCapabilities's own return object below
+   * already grants every container tag, needing no explicit override
+   * either. Two explicit, deliberate opt-outs, both to avoid a real
+   * conflict this checkpoint's own audit found rather than a "not useful"
+   * judgment call:
+   *
+   * supportsChildLayout: false — the same reasoning Table's own override
+   * documents: this element's OWN box must never be handed Flow/Flex/Grid
+   * arrangement authority (see DialogElement's own doc comment for why),
+   * so the Inspector's generic Layout section — which would only ever
+   * apply to the dialog's own children, never useful for a Modal
+   * composition whose real content-arranging Container lives one level
+   * deeper — stays hidden, exactly like Table/Select's own children being
+   * native-layout-governed rather than Layoutry-governed.
+   *
+   * supportsDisplay: false — the genuinely narrow, checkpoint-specific
+   * reason (not merely "not useful"): a native modal dialog's own open/
+   * closed state is partly owned by the browser's own top-layer algorithm
+   * (showModal()/close()), and letting an AUTHORED `display: none`
+   * fight that — most browsers now force a `display: none` dialog out of
+   * the top layer entirely, silently breaking `showModal()`'s own
+   * subsequent calls — is exactly the "Critical Conflict" this
+   * checkpoint's own brief calls out by name. Excluding the whole Display/
+   * Visibility/Overflow/Interaction Inspector section for this one tag
+   * avoids the entire conflict class by construction (the same minimal-
+   * risk choice Option/Thead/Tbody/Tfoot/Tr/Th/Td's own supportsDisplay
+   * overrides already make for their own, unrelated "would silently break
+   * native layout" reasons) rather than attempting to detect/prevent the
+   * conflict at runtime.
+   *
+   * Every other capability (Position/AspectRatio-and-Size/Border/
+   * BorderRadius/BoxShadow/Filters) stays at DEFAULT_CAPABILITIES' true —
+   * an ordinary box concern regardless of what's inside it or how it's
+   * currently shown, the same reasoning Iframe/Svg/Table's own minimal
+   * override entries already rely on. supportsShape and Style Protection
+   * ownership (see SHAPE_CAPABLE_TAGS/canOwnStyleLock, both in separate
+   * files) are deliberately NOT extended to "dialog" — a Modal
+   * composition's own root (an ordinary div, per createModalNode) is
+   * already the correct lock/shape owner, exactly like Dropdown's own
+   * root, so this tag needs neither.
+   */
+  dialog: { supportsChildLayout: false, supportsDisplay: false },
 };
 
 export function getElementCapabilities(tag: string): ElementCapabilities {

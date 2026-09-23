@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { DocumentNodeRenderer } from "@/features/canvas/components/document/DocumentNodeRenderer";
 import { ButtonElement } from "@/features/canvas/components/document/elements/ButtonElement";
 import { ContainerElement } from "@/features/canvas/components/document/elements/ContainerElement";
+import { DialogElement } from "@/features/canvas/components/document/elements/DialogElement";
 import { HeadingElement } from "@/features/canvas/components/document/elements/HeadingElement";
 import { IframeElement } from "@/features/canvas/components/document/elements/IframeElement";
 import { ImageElement } from "@/features/canvas/components/document/elements/ImageElement";
@@ -89,6 +90,7 @@ const CASES: MatrixCase[] = [
   { label: "Input (and every same-tag subtype: email/password/number/search/url/tel/checkbox/radio)", Component: InputElement, node: { id: "n1", tag: "input", inputType: "text" } },
   { label: "Textarea", Component: TextareaElement, node: { id: "n1", tag: "textarea" } },
   { label: "Select", Component: SelectElement, node: { id: "n1", tag: "select", children: [] } },
+  { label: "Dialog", Component: DialogElement, node: { id: "n1", tag: "dialog", children: [] } },
 ];
 
 const FLOW_DISPLAYS: FlowDisplayMode[] = ["block", "flex", "grid"];

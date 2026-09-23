@@ -37,6 +37,7 @@ import {
   PanelRight,
   PanelTop,
   Phone,
+  PictureInPicture2,
   Pointer,
   Receipt,
   RectangleHorizontal,
@@ -99,6 +100,7 @@ export type InsertableCardType =
   | "video"
   | "iframe"
   | "svg"
+  | "dialog"
   | "primaryButton"
   | "secondaryButton"
   | "outlineButton"
@@ -128,7 +130,8 @@ export type InsertableCardType =
   | "avatarWithText"
   | "statCard"
   | "metadataRow"
-  | "collapsible";
+  | "collapsible"
+  | "modal";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -240,6 +243,12 @@ function htmlCategory(): ToolbarCategoryContent {
           elementType: "button",
           icon: MousePointerClick,
         },
+        {
+          name: "Dialog",
+          description: "Native dialog element — visible and editable in Design, opens/closes via generic show/hide/toggle interactions in Preview",
+          elementType: "dialog",
+          icon: PictureInPicture2,
+        },
       ]),
       section(id, "tables", "Tables", [
         {
@@ -340,7 +349,12 @@ function componentsCategory(): ToolbarCategoryContent {
         { name: "Collapsible", description: "Button toggles a content panel", elementType: "collapsible", icon: ChevronsUpDown },
       ]),
       section(id, "feedback-overlays", "Feedback & Overlays", [
-        { name: "Modal", description: "Overlay dialog" },
+        {
+          name: "Modal",
+          description: "Open/Close buttons around a native dialog — visible on Canvas, opens/closes in Preview",
+          elementType: "modal",
+          icon: PictureInPicture2,
+        },
         { name: "Toast", description: "Temporary status message" },
       ]),
       section(id, "data-display", "Data Display", [

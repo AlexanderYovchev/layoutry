@@ -317,3 +317,34 @@ describe("SVG containment (Checkpoint 1.15.5)", () => {
     expect(canParentAcceptChild("select", "option")).toBe(true);
   });
 });
+
+describe("Dialog containment (Checkpoint 1.15.6.9)", () => {
+  it("Dialog is a genuine, UNCONSTRAINED container — same as div/section, not a leaf like SVG", () => {
+    expect(canContainChildren("dialog")).toBe(true);
+  });
+
+  it("accepts any ordinary insertable child, the same as div/section — no ALLOWED_CHILD_TAGS entry was needed", () => {
+    for (const childTag of ["div", "h1", "p", "button", "img", "a", "svg"]) {
+      expect(canParentAcceptChild("dialog", childTag), childTag).toBe(true);
+    }
+  });
+
+  it("rejects a constrained-child tag that means nothing outside its own one allowed parent (li/option/table row primitives)", () => {
+    expect(canParentAcceptChild("dialog", "li")).toBe(false);
+    expect(canParentAcceptChild("dialog", "option")).toBe(false);
+    expect(canParentAcceptChild("dialog", "tr")).toBe(false);
+  });
+
+  it("is insertable anywhere an ordinary structural container is allowed — Container/Section/Form and every other unrestricted parent", () => {
+    for (const parentTag of ["div", "section", "form", "label", "header", "nav", "main", "article", "aside", "footer"]) {
+      expect(canParentAcceptChild(parentTag, "dialog"), parentTag).toBe(true);
+    }
+  });
+
+  it("is rejected inside every constrained-parent allowlist — UL/OL, Select, and Table's structural primitives", () => {
+    expect(canParentAcceptChild("ul", "dialog")).toBe(false);
+    expect(canParentAcceptChild("ol", "dialog")).toBe(false);
+    expect(canParentAcceptChild("select", "dialog")).toBe(false);
+    expect(canParentAcceptChild("table", "dialog")).toBe(false);
+  });
+});

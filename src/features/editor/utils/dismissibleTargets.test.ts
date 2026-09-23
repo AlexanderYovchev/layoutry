@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createModalNode } from "@/features/editor/factories/interactionCompositions";
 import { findDismissibleRelationships } from "./dismissibleTargets";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -84,5 +85,11 @@ describe("findDismissibleRelationships", () => {
 
   it("returns an empty array for a document with no interactions anywhere", () => {
     expect(findDismissibleRelationships({ id: "root", tag: "div" }, {})).toEqual([]);
+  });
+
+  it("Checkpoint 1.15.6.9 — a real Modal's Dialog is never dismissible via this generic rule, even while open: Open/Close use show/hide, not toggle", () => {
+    const modal = createModalNode();
+    const [, dialog] = modal.children!;
+    expect(findDismissibleRelationships(modal, { [dialog.id]: true })).toEqual([]);
   });
 });

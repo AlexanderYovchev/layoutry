@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createModalNode } from "@/features/editor/factories/interactionCompositions";
 import { cloneNodeWithFreshIds } from "./cloneNodeWithFreshIds";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -423,6 +424,25 @@ describe("cloneNodeWithFreshIds", () => {
       cloneNodeWithFreshIds(source);
 
       expect(source.children![0].interactions![0]).toEqual({ id: "int-1", trigger: "click", action: "toggle", targetId: "content-1" });
+    });
+
+    it("Checkpoint 1.15.6.9 — remaps TWO different triggers that target the SAME node to the SAME cloned target (a real Modal, not a synthetic fixture)", () => {
+      const modal = createModalNode();
+      const [openButton, dialog] = modal.children!;
+      const closeButton = dialog.children![0].children![2];
+      expect(openButton.interactions![0].targetId).toBe(dialog.id);
+      expect(closeButton.interactions![0].targetId).toBe(dialog.id);
+
+      const clone = cloneNodeWithFreshIds(modal);
+      const [clonedOpenButton, clonedDialog] = clone.children!;
+      const clonedCloseButton = clonedDialog.children![0].children![2];
+
+      expect(clonedDialog.id).not.toBe(dialog.id);
+      expect(clonedOpenButton.interactions![0].targetId).toBe(clonedDialog.id);
+      expect(clonedCloseButton.interactions![0].targetId).toBe(clonedDialog.id);
+      // Both bindings converge on the exact same cloned id — the
+      // relationship survives duplication intact, for BOTH triggers.
+      expect(clonedOpenButton.interactions![0].targetId).toBe(clonedCloseButton.interactions![0].targetId);
     });
   });
 });

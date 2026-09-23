@@ -1,7 +1,7 @@
 ﻿import { fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createDropdownButtonNode } from "@/features/editor/factories/buttonCompositions";
-import { createCollapsibleNode } from "@/features/editor/factories/interactionCompositions";
+import { createCollapsibleNode, createModalNode } from "@/features/editor/factories/interactionCompositions";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { selectionFromSingle } from "@/features/editor/types/selection";
 import { StructureTree } from "@/features/editor/components/structure/StructureTree";
@@ -382,6 +382,95 @@ describe("CanvasInteractionBoundary", () => {
       fireEvent.click(container.querySelector('main[aria-label="Workspace"]')!);
 
       expect(useEditorStore.getState().runtimeVisibility[menu.id]).toBe(true);
+    });
+  });
+
+  describe("Native Dialog / Modal (Checkpoint 1.15.6.9)", () => {
+    // jsdom does not implement HTMLDialogElement.showModal()/close() at
+    // all — see DialogElement.test.tsx's own top comment for the full
+    // explanation. Mocked here too since a real Modal's <dialog> genuinely
+    // mounts into this exact CanvasInteractionBoundary tree once the Open
+    // Button is clicked in Preview; this proves the real click pipeline
+    // and the real `window`-level Escape listener's interaction with
+    // DialogElement's own stopPropagation, which an isolated DialogElement
+    // render (a plain wrapping <div>, not the production listener) cannot.
+    const originalShowModal = HTMLDialogElement.prototype.showModal;
+    const originalClose = HTMLDialogElement.prototype.close;
+
+    beforeEach(() => {
+      HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+        this.setAttribute("open", "");
+      };
+      HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+        const wasOpen = this.hasAttribute("open");
+        this.removeAttribute("open");
+        if (wasOpen) this.dispatchEvent(new Event("close"));
+      };
+    });
+
+    afterEach(() => {
+      HTMLDialogElement.prototype.showModal = originalShowModal;
+      HTMLDialogElement.prototype.close = originalClose;
+    });
+
+    it("Open Button click mounts and opens the real Dialog; Close Button click closes and unmounts it", () => {
+      const modal = createModalNode();
+      useEditorStore.setState((state) => ({ document: { ...state.document, children: [modal] } }));
+      useEditorStore.getState().enterPreview();
+      renderInWorkspace(useEditorStore.getState().document);
+
+      expect(screen.queryByText("Modal content goes here.")).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Open Modal" }));
+      expect(screen.getByText("Modal content goes here.")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      expect(screen.queryByText("Modal content goes here.")).not.toBeInTheDocument();
+    });
+
+    it("Escape while the Modal is open does NOT exit Preview — DialogElement's own stopPropagation claims the event before it ever bubbles up to CanvasInteractionBoundary's window listener", () => {
+      const modal = createModalNode();
+      useEditorStore.setState((state) => ({ document: { ...state.document, children: [modal] } }));
+      useEditorStore.getState().enterPreview();
+      const { container } = renderInWorkspace(useEditorStore.getState().document);
+
+      fireEvent.click(screen.getByRole("button", { name: "Open Modal" }));
+      expect(screen.getByText("Modal content goes here.")).toBeInTheDocument();
+
+      // Real showModal() moves focus INTO the dialog, so the real Escape
+      // keydown's target — and its bubble path up through the dialog
+      // element, then to window — starts there, not at `window` directly.
+      // fireEvent.keyDown(window, ...) would bypass DialogElement's own
+      // handler entirely and prove nothing about this checkpoint's own
+      // stopPropagation claim.
+      fireEvent.keyDown(container.querySelector("dialog")!, { key: "Escape" });
+
+      expect(useEditorStore.getState().editorMode).toBe("preview");
+      expect(screen.getByText("Modal content goes here.")).toBeInTheDocument();
+    });
+
+    it("Escape once the Modal is already closed falls through normally and exits Preview", () => {
+      const modal = createModalNode();
+      useEditorStore.setState((state) => ({ document: { ...state.document, children: [modal] } }));
+      useEditorStore.getState().enterPreview();
+      renderInWorkspace(useEditorStore.getState().document);
+
+      fireEvent.keyDown(window, { key: "Escape" });
+
+      expect(useEditorStore.getState().editorMode).toBe("design");
+    });
+
+    it("opening and closing the Modal never touches history", () => {
+      const modal = createModalNode();
+      useEditorStore.setState((state) => ({ document: { ...state.document, children: [modal] } }));
+      useEditorStore.getState().enterPreview();
+      renderInWorkspace(useEditorStore.getState().document);
+      const pastLengthBefore = useEditorStore.getState().past.length;
+
+      fireEvent.click(screen.getByRole("button", { name: "Open Modal" }));
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+      expect(useEditorStore.getState().past.length).toBe(pastLengthBefore);
     });
   });
 });

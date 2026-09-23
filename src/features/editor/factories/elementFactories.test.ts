@@ -5,6 +5,7 @@ import {
   createButtonNode,
   createCheckboxNode,
   createContainerNode,
+  createDialogNode,
   createElementNode,
   createEmailInputNode,
   createFooterCompositionNode,
@@ -477,6 +478,24 @@ describe("element factories", () => {
     });
   });
 
+  describe("Dialog Foundation (Checkpoint 1.15.6.9)", () => {
+    it("createDialogNode produces a genuine, childable <dialog>, starting hidden", () => {
+      const node = createDialogNode();
+      expect(node.tag).toBe("dialog");
+      expect(node.children).toEqual([]);
+      expect(node.initialPreviewVisibility).toBe("hidden");
+      expect(node.id).toMatch(/^dialog-/);
+    });
+
+    it("createDialogNode leaves flowLayout unset — this tag's own box never owns Flow/Flex/Grid arrangement", () => {
+      expect(createDialogNode().flowLayout).toBeUndefined();
+    });
+
+    it("createDialogNode produces a unique id per call", () => {
+      expect(createDialogNode().id).not.toBe(createDialogNode().id);
+    });
+  });
+
   describe("Form + Text Input foundation (Checkpoint 1.10)", () => {
     it("createFormNode produces an empty, childable <form> sharing Container's exact structural defaults", () => {
       const node = createFormNode();
@@ -695,6 +714,7 @@ describe("element factories", () => {
         "video",
         "iframe",
         "svg",
+        "dialog",
       ]) {
         expect(isInsertableElementType(type)).toBe(true);
       }
