@@ -308,6 +308,18 @@ interface EditorState {
    * prevent this, but the executor stays defensive regardless.
    */
   executeInteractionsForNode: (nodeId: string, trigger: "click") => void;
+  /**
+   * Runtime-only dismissal (Checkpoint 1.15.6.8.3) — forces exactly one
+   * target's `runtimeVisibility` to false. No history, no authored
+   * mutation (never touches `initialPreviewVisibility`, `interactions`,
+   * or any CSS field), safe no-op if already hidden. The counterpart to
+   * executeInteractionsForNode's own "hide" branch for callers that have
+   * a bare `targetId` with no originating trigger click of their own —
+   * outside-click and Escape dismissal (see
+   * utils/dismissibleTargets.ts's own findDismissibleRelationships,
+   * which supplies that targetId).
+   */
+  dismissRuntimeTarget: (targetId: string) => void;
   /** Per-frame atomic write of a Free container's own geometry plus its direct children's scaled/clamped geometries during a live parent-resize session — no history push. */
   applyFreeContainerChildGeometriesLive: (
     containerId: string,
@@ -944,6 +956,12 @@ export const useEditorStore = create<EditorState>()((set) => ({
       }
       if (nextVisibility === state.runtimeVisibility) return {};
       return { runtimeVisibility: nextVisibility };
+    }),
+
+  dismissRuntimeTarget: (targetId) =>
+    set((state) => {
+      if (state.runtimeVisibility[targetId] === false) return {};
+      return { runtimeVisibility: { ...state.runtimeVisibility, [targetId]: false } };
     }),
 
   // Guarded on containerId itself (Checkpoint 1.15.3 closure fix) — a
