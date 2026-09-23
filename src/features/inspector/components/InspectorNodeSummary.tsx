@@ -13,6 +13,7 @@ import { InspectorGridChildSection } from "@/features/inspector/components/Inspe
 import { InspectorHeadingLevelSection } from "@/features/inspector/components/InspectorHeadingLevelSection";
 import { InspectorIdentitySection } from "@/features/inspector/components/InspectorIdentitySection";
 import { InspectorIframeSection } from "@/features/inspector/components/InspectorIframeSection";
+import { InspectorImageSection } from "@/features/inspector/components/InspectorImageSection";
 import { InspectorInteractionsSection } from "@/features/inspector/components/InspectorInteractionsSection";
 import { InspectorLayoutSection } from "@/features/inspector/components/InspectorLayoutSection";
 import { InspectorLinkSection } from "@/features/inspector/components/InspectorLinkSection";
@@ -147,6 +148,7 @@ export function InspectorNodeSummary({
           <InspectorMediaSection node={node} />
         </InspectorProtectedStyleGroup>
       )}
+      {node.tag === "img" && <InspectorImageSection node={node} />}
       {node.tag === "video" && <InspectorVideoSection node={node} />}
       {node.tag === "iframe" && <InspectorIframeSection node={node} />}
       {getElementCapabilities(node.tag).supportsSvgSettings && !isEditingThisSvg && (
