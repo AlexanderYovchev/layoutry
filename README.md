@@ -2,76 +2,125 @@
 
 **Build layouts visually. Own the code.**
 
-Layoutry is a professional visual HTML & CSS editor that enables developers and designers to build responsive interfaces visually while generating clean, production-ready code. It lets users select elements on a page — text, containers, buttons, and more — and adjust their styling in real time through an intuitive CSS control panel, without writing a single line of code by hand.
+Layoutry is a browser-based visual HTML & CSS editor. It lets you build real web page layouts by selecting elements on a live-rendered canvas and adjusting their styling through a visual Inspector — spacing, typography, backgrounds, borders, layout, and more — instead of hand-writing markup and CSS from scratch.
 
-## Vision
+It's aimed at anyone who wants to construct a page visually using real HTML and CSS concepts: beginners and students learning how layout works, designers exploring ideas, and frontend developers who want a faster, visual way to build interfaces.
 
-Not everyone who wants to design a web page knows CSS, and not everyone who knows CSS wants to write it from scratch for every experiment. Layoutry bridges that gap: it works like a drawing tool, but instead of a canvas and a drawing toolbar, it gives you a live-rendered page and a toolbar of CSS controls.
+## What is Layoutry?
 
-The core workflow:
+Every page you build in Layoutry is represented internally as a typed document model — not raw HTML strings, not an iframe, not a `contentEditable` region. The Canvas, the Structure panel, and the Inspector all read from and write to that same model, which keeps the whole editor consistent and gives every change a real undo/redo history.
 
-1. Open the tool in your browser — no installation required.
-2. Select one or more HTML elements on the page (text, containers, buttons, etc.).
-3. A contextual CSS panel appears above the selection, exposing the relevant properties — spacing, sizing, color, typography, z-index, and more.
-4. Adjust values with sliders, pickers, and inputs, and watch the page update instantly.
-5. When satisfied, export or copy the generated HTML/CSS source code (available to subscribed users).
+Reusable pieces (buttons, cards, navbars, forms, and so on) are not a separate, opaque component system — they're pre-assembled compositions of the same ordinary HTML primitives (containers, headings, paragraphs, links, images, buttons) you can insert and edit individually. Once inserted, a component behaves exactly like anything you built by hand: every element inside it is a normal node in the document tree, editable like any other.
 
-Layoutry is aimed at anyone who wants to explore and refine a page's look and feel before committing to code — designers prototyping ideas, developers iterating quickly, and non-technical users who just want to see "what if."
+## Current Status
 
-## Product Principles
+Layoutry is under active development. The visual editing foundation — the Canvas, the document model, the Inspector, layout systems, a substantial HTML primitive and component library, and a generic interaction system with a live Preview mode — is functional today. Source-code export, backend/account features, and production hardening are not implemented yet; see [Roadmap](#roadmap).
 
-- **Real-time feedback** — every style change renders immediately, with no build step or page reload.
-- **No prior CSS knowledge required** — the interface exposes CSS concepts through familiar, visual controls.
-- **Code you can trust** — the HTML/CSS generated behind the scenes is clean and exportable, not a black box.
-- **Freemium by design** — anyone can experiment freely; exporting production-ready source code is a subscription feature.
+## Core Features
 
-## Status
+### Visual Editor
 
-Layoutry has a working technical foundation: a Next.js App Router application with TypeScript, Tailwind CSS, linting, formatting, and a test suite are all in place and passing. **The editor itself — canvas, element selection, style inspector, drag-and-drop, and export — has not yet been implemented.** The current UI is a minimal placeholder shell that confirms the foundation is operational, nothing more.
+- A live-rendered Canvas that shows the document exactly as it will appear, with click-to-select, resize handles, and drag-to-move.
+- Single and multi-element selection, with compatible style operations applicable across the whole selection at once.
+- A Structure panel showing the full element tree, for selecting and navigating elements directly.
+- Undo/redo, available from the toolbar, the Edit menu, and keyboard shortcuts, all backed by the same history.
+- A Design/Preview toggle: Design mode is always fully editable; Preview mode renders the page as a visitor would experience it, including real interactive behavior (see [Interactions & Preview](#interactions--preview)).
+- A "Free" layout mode for absolute positioning within a container, with alignment-guide snapping against parent and sibling edges while dragging.
 
-## Technology Stack
+### Layout & CSS
 
-- **Framework:** Next.js (App Router, Turbopack)
+Any container can be arranged as normal document flow, a Flexbox container, or a CSS Grid container, configured visually through the Inspector. Elements support sizing (width/height, min/max constraints), spacing (margin/padding), CSS position (relative/absolute/fixed and offsets), aspect ratio, and overflow.
+
+The Inspector exposes visual controls for a growing set of commonly used CSS properties, including:
+
+- Typography (font family, size, weight, style, color, alignment, line height, letter spacing, text decoration)
+- Backgrounds, including gradients
+- Borders and border radius
+- Box shadows
+- Visual effects/filters and opacity
+- Display, visibility, and overflow
+- Image/video fit and positioning (`object-fit` / `object-position`)
+- Flex-item and Grid-item placement for a selected child
+
+This is not full CSS coverage — it's a deliberately curated, visual subset of the properties people reach for most often.
+
+A container can also protect its descendants' styling from accidental edits ("lock child styles") while still allowing content and structural changes underneath it.
+
+### HTML Elements
+
+A substantial set of real HTML primitives can be inserted directly, including:
+
+- Structural: Container (`div`), Section, Header, Nav, Main, Article, Aside, Footer
+- Text: Heading (`h1`–`h6`), Paragraph, Link
+- Lists: Unordered List, Ordered List, List Item
+- Tables: a full Table with header/body/footer rows and cells
+- Forms: Form, Label, text-like Inputs (text/email/password/number/search/url/tel), Textarea, Select with Options, Checkbox, Radio
+- Media: Image, Video, an embeddable iframe, SVG
+- Interactive: Button, and a native `<dialog>` element
+- Buttons and native dialogs are rendered using the real browser elements, not editor-only stand-ins
+
+### Components
+
+Ready-made compositions, built entirely from the primitives above, currently include:
+
+- **Buttons** — Primary, Secondary, Outline, Ghost, Button Group, Dropdown Button
+- **Navigation** — Basic Navbar, Navbar with CTA, Centered Navbar, Breadcrumbs, Pagination, Sidebar Navigation
+- **Cards** — Basic, Image, Horizontal, Profile, Feature, Pricing
+- **Forms** — Labeled Text Field, Search Bar, Newsletter Signup, Contact Form, Login Form, Labeled Select Field
+- **Data Display** — Badge, Avatar, Avatar with Text, Stat Card, Metadata Row
+- **Interactive** — Collapsible, Modal
+
+Once inserted, a component is indistinguishable from hand-assembled primitives — there's no special "component mode" to edit it in.
+
+### SVG & Shapes
+
+A basic SVG primitive can be inserted with a starter shape (rectangle, circle, or similar) and its own fill/stroke. A separate SVG Drawing mode allows constructing a small vector scene from basic shape objects directly on the canvas. This is a focused drawing foundation, not a full vector illustration tool.
+
+Separately, containers support a small set of CSS `clip-path` shape presets ("Advanced Shapes") for non-rectangular container silhouettes.
+
+### Interactions & Preview
+
+Elements can be given a simple click interaction: **on click, show / hide / toggle** another element. This generic mechanism — not special-cased per component — is what powers Collapsible, Dropdown Button, and Modal. Modal specifically uses a real native `<dialog>` element with the browser's own `showModal()`/`close()` lifecycle, rather than a fake overlay.
+
+Interactions only run in **Preview mode** — a one-click toggle that renders the page in its "live" state so you can click through the behavior you've authored, then return to editing.
+
+Interactions are currently limited to click-triggered show/hide/toggle. Hover triggers, timers, animation, and conditional logic are not implemented.
+
+## Architecture Philosophy
+
+```
+HTML primitives  →  Reusable compositions/components  →  Pages
+```
+
+Components are never a proprietary node type — they're ordinary primitives assembled together at creation time. A Card is a Container with a Heading, a Paragraph, and a Link inside it; nothing distinguishes it from one you built by hand once it's on the canvas. Interactive components (Dropdown, Collapsible, Modal) are built on the same generic click/show/hide/toggle mechanism every element has access to, not bespoke per-component runtime state.
+
+## Tech Stack
+
+- **Framework:** Next.js (App Router)
 - **Language:** TypeScript (strict mode)
 - **UI:** React
 - **Styling:** Tailwind CSS
-- **State management:** Zustand (installed, not yet wired to any editor state)
-- **Drag & drop:** @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities (installed for future canvas interactions)
-- **Validation:** Zod (installed for future project/schema validation)
+- **State management:** Zustand
+- **Drag & drop:** dnd-kit
+- **Validation:** Zod
 - **Icons:** lucide-react
-- **Class composition:** clsx + tailwind-merge
-- **Linting/formatting:** ESLint (Next.js recommended config), Prettier (with prettier-plugin-tailwindcss)
-- **Testing:** Vitest + React Testing Library (unit/component), Playwright (end-to-end)
-- **Package manager:** npm
+- **Testing:** Vitest + React Testing Library (unit/component), Playwright (browser end-to-end), axe-core (accessibility checks)
+- **Linting/formatting:** ESLint, Prettier
 
-## Prerequisites
-
-- Node.js (a current LTS or newer release)
-- npm
-
-## Installation
+## Getting Started
 
 ```bash
+git clone https://github.com/AlexanderYovchev/layoutry.git
+cd layoutry
 npm install
-```
-
-## Development
-
-```bash
 npm run dev
 ```
 
-Starts the local dev server at `http://localhost:3000`.
+The dev server runs at `http://localhost:3000`.
 
-## Testing
+**Prerequisites:** Node.js (current LTS or newer) and npm.
 
-```bash
-npm run test        # unit/component tests (Vitest + React Testing Library)
-npm run test:watch  # unit/component tests in watch mode
-npm run test:e2e     # end-to-end smoke test (Playwright; downloads a browser binary on first run)
-```
-
-## Other commands
+## Development
 
 ```bash
 npm run build          # production build
@@ -82,35 +131,47 @@ npm run format             # Prettier, write
 npm run format:check        # Prettier, check only
 ```
 
-## Initial Architecture
+## Testing
 
-```
-src/
-  app/                    Next.js App Router entry (layout, page, global styles)
-  components/
-    ui/                   Shared UI primitives (empty — none needed yet)
-    layout/               Structural layout components (AppHeader)
-  features/
-    editor/                Editor state/logic (not yet implemented)
-    canvas/                 Canvas rendering (not yet implemented)
-    inspector/               Style inspector (placeholder only)
-    components-library/       Reusable element library (not yet implemented)
-    export/                     HTML/CSS export logic (not yet implemented)
-  lib/                          Shared utilities (e.g. cn() class helper)
-  styles/                        Reserved for future design tokens
-test/                              Vitest setup
-e2e/                                 Playwright specs
+```bash
+npm run test         # unit/component tests (Vitest + React Testing Library)
+npm run test:watch   # unit/component tests in watch mode
+npm run test:e2e      # browser end-to-end tests (Playwright)
 ```
 
-The `features/` directories are organized so the eventual editor engine can be introduced cleanly. The long-term plan is for the canvas to render a **typed, serializable document model** as its source of truth — not an iframe, raw HTML string, uncontrolled `contentEditable` region, or direct DOM mutation. That engine is intentionally not implemented yet; only the directory structure and placeholder UI exist at this stage.
+The project has extensive Vitest coverage across the document model, layout resolvers, and Inspector, plus Playwright end-to-end tests (including automated accessibility checks) that exercise real browser behavior the way a person would use the app.
 
-## Repository Architecture
+## Roadmap
 
-Layoutry uses a feature-based architecture: product functionality lives under `src/features/*` (editor, canvas, inspector, components-library, export), each owning its own components, hooks, stores, types, and tests, with explicit rules for what may depend on what.
+Implemented today:
 
-- [CLAUDE.md](./CLAUDE.md) — the operating manual for Claude Code sessions working in this repo: ownership boundaries, dependency direction, file placement, and safety rules.
-- [docs/architecture/README.md](./docs/architecture/README.md) — full architecture documentation: repository structure, dependency rules, the editor's document-model principle, and testing strategy.
-- [docs/roadmap/milestones.md](./docs/roadmap/milestones.md) — the milestone sequence this project is working through.
+- Visual Canvas, selection (single and multi), drag/resize, undo/redo
+- Typed document model with a Structure panel
+- Flow, Flexbox, Grid, and Free (absolute) layout, with alignment snapping
+- A curated visual CSS Inspector (typography, background, borders, shadows, effects, display, position, media fit)
+- A substantial HTML primitive library and a components library across Buttons, Navigation, Cards, Forms, Data Display, and Interactive families
+- A generic click → show/hide/toggle interaction system with a Design/Preview toggle
+- An SVG primitive, a small SVG Drawing mode, and CSS clip-path shape presets
+- Parent-level style protection
+
+Planned:
+
+- Remaining component families (e.g. Toast, Tooltip, Tabs, Drawer)
+- Additional HTML/media primitives
+- A source-code export engine (HTML/CSS, with framework-oriented output such as Tailwind, React, or Vue under consideration)
+- Accounts, cloud-saved projects, and related backend infrastructure
+- A subscription tier for advanced/export capabilities
+- Animation tooling
+- AI-assisted editing
+- Production hardening ahead of a public release
+
+## Contributing
+
+Layoutry's editor architecture (the document model, feature boundaries, and dependency rules between them) is deliberate and actively relied on — see [CLAUDE.md](./CLAUDE.md) and [docs/architecture/](./docs/architecture/) for the full ownership and dependency rules. If you're contributing:
+
+- Keep changes focused and scoped to the task at hand rather than opportunistic refactors.
+- Preserve existing architectural boundaries (what each feature owns, what it must not depend on).
+- Include tests for behavior changes — the project relies on its Vitest/Playwright coverage to catch regressions.
 
 ## License
 
