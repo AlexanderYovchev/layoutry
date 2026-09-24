@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createBasicTabsNode, createModalNode } from "@/features/editor/factories/interactionCompositions";
+import { createBasicTabsNode, createDrawerNode, createModalNode } from "@/features/editor/factories/interactionCompositions";
 import { createDismissibleAlertNode, createManualToastNode, createPopoverNode } from "@/features/editor/factories/feedbackCompositions";
 import { cloneNodeWithFreshIds } from "./cloneNodeWithFreshIds";
 import type { EditorElementNode } from "@/features/editor/types/document";
@@ -444,6 +444,27 @@ describe("cloneNodeWithFreshIds", () => {
       // Both bindings converge on the exact same cloned id — the
       // relationship survives duplication intact, for BOTH triggers.
       expect(clonedOpenButton.interactions![0].targetId).toBe(clonedCloseButton.interactions![0].targetId);
+    });
+
+    it("Checkpoint 1.15.6.11.3 — remaps a Drawer's TWO different triggers (Open, Close) that target the SAME Dialog, the same two-pass shape Modal already proved — no Drawer-specific cloning logic exists or is needed", () => {
+      const drawer = createDrawerNode();
+      const [openButton, dialog] = drawer.children!;
+      const closeButton = dialog.children![0].children![2];
+      expect(openButton.interactions![0].targetId).toBe(dialog.id);
+      expect(closeButton.interactions![0].targetId).toBe(dialog.id);
+
+      const clone = cloneNodeWithFreshIds(drawer);
+      const [clonedOpenButton, clonedDialog] = clone.children!;
+      const clonedCloseButton = clonedDialog.children![0].children![2];
+
+      expect(clonedDialog.id).not.toBe(dialog.id);
+      expect(clonedOpenButton.interactions![0].targetId).toBe(clonedDialog.id);
+      expect(clonedCloseButton.interactions![0].targetId).toBe(clonedDialog.id);
+      expect(clonedOpenButton.interactions![0].targetId).toBe(clonedCloseButton.interactions![0].targetId);
+      // Positioning/dimensions are ordinary authored data, copied verbatim
+      // by the clone like any other field — no remapping needed for them.
+      expect(clonedDialog.position).toEqual(dialog.position);
+      expect(clonedDialog.dimensions).toEqual(dialog.dimensions);
     });
 
     it("Checkpoint 1.15.6.9.1 — a cloned Modal's Dialog derives its own accessible name/description from its own (cloned) heading/paragraph text, independent of the original", () => {

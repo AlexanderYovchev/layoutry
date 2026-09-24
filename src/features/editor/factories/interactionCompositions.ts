@@ -22,6 +22,7 @@
  */
 
 import { generateNodeId } from "@/features/editor/utils/generateNodeId";
+import { applyShadowPreset } from "@/features/editor/types/boxShadow";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { FlexContainerSettings } from "@/features/editor/types/flowLayout";
 import type { ElementSpacing } from "@/features/editor/types/spacing";
@@ -294,5 +295,97 @@ export function createBasicTabsNode(): EditorElementNode {
     tag: "div",
     flowLayout: { display: "flex", flex: COLLAPSIBLE_ROOT_FLEX },
     children: [controls, panels],
+  };
+}
+
+const DRAWER_CONTENT_FLEX: FlexContainerSettings = {
+  direction: "column",
+  wrap: "nowrap",
+  justifyContent: "start",
+  alignItems: "stretch",
+  rowGap: 12,
+  columnGap: 12,
+};
+
+/**
+ * Drawer (Checkpoint 1.15.6.11.3) — the exact same genuine `tag: "dialog"`
+ * Modal already uses, with ordinary authored CSS distinguishing the two:
+ * no `tag: "drawer"`, no `drawerSide`/`isDrawer` field, no second Dialog
+ * implementation. The feasibility gate for this (proving native
+ * `showModal()` can anchor to the right edge and span full height without
+ * fighting DialogElement's own Preview-only centering fix) was verified
+ * live BEFORE this factory was written — see this checkpoint's own report,
+ * Parts A-C — and required exactly one small, generic change to
+ * DialogElement itself (see its own doc comment on `hasExplicitPosition`),
+ * not a Drawer-specific renderer branch.
+ *
+ * The Dialog authors:
+ * - `position: { position: "fixed", top: 0, right: 0, bottom: 0, left:
+ *   "auto" }` — reusing the pre-existing, already-generic Position field
+ *   (Checkpoint 5.1-5.3). The explicit `left: "auto"` is load-bearing, not
+ *   redundant: Chrome's own `dialog:modal` UA rule sets `inset: 0` (all
+ *   four sides), and an author who only overrides top/right/bottom leaves
+ *   the UA's own `left: 0` in effect, over-constraining the box and
+ *   silently pinning it to the LEFT edge instead (confirmed live during
+ *   this checkpoint's own feasibility probe).
+ * - `dimensions: { preferredWidth: 360, preferredHeight: 480, offsetX: 0,
+ *   offsetY: 0 }` — the same pre-existing per-node resize-stamp every
+ *   resizable element already uses (Checkpoint 3.4.3), not a new concept;
+ *   it is what gives the Drawer a real, editable, resizable box in Design
+ *   (480 tall is a reasonable Design-mode default — full-viewport height
+ *   only applies in Preview, via DialogElement's own conditional `height:
+ *   auto` override reacting to the explicit `position` above).
+ *
+ * No `vh`/percentage unit was added anywhere: full-height in Preview comes
+ * entirely from ordinary CSS abspos resolution (`top: 0; bottom: 0; height:
+ * auto` -> the browser solves height to fill the gap), confirmed live to
+ * track viewport height dynamically, not a one-time computed number.
+ */
+export function createDrawerNode(): EditorElementNode {
+  const dialogId = generateNodeId("dialog");
+
+  const closeButton: EditorElementNode = {
+    id: generateNodeId("button"),
+    tag: "button",
+    text: "Close",
+    interactions: [{ id: generateNodeId("interaction"), trigger: "click", action: "hide", targetId: dialogId }],
+  };
+
+  const content: EditorElementNode = {
+    id: generateNodeId("div"),
+    tag: "div",
+    flowLayout: { display: "flex", flex: DRAWER_CONTENT_FLEX },
+    spacing: MODAL_CONTENT_SPACING,
+    children: [
+      { id: generateNodeId("h2"), tag: "h2", text: "Drawer" },
+      { id: generateNodeId("p"), tag: "p", text: "Add navigation, settings, filters, or other content here." },
+      closeButton,
+    ],
+  };
+
+  const dialog: EditorElementNode = {
+    id: dialogId,
+    tag: "dialog",
+    initialPreviewVisibility: "hidden",
+    position: { position: "fixed", top: { value: 0, unit: "px" }, right: { value: 0, unit: "px" }, bottom: { value: 0, unit: "px" }, left: "auto" },
+    dimensions: { preferredWidth: 360, preferredHeight: 480, offsetX: 0, offsetY: 0 },
+    background: { color: "#ffffff" },
+    boxShadow: applyShadowPreset("floatingCard"),
+    spacing: { margin: ZERO_EDGES, padding: { top: 24, right: 24, bottom: 24, left: 24 } },
+    children: [content],
+  };
+
+  const openButton: EditorElementNode = {
+    id: generateNodeId("button"),
+    tag: "button",
+    text: "Open Drawer",
+    interactions: [{ id: generateNodeId("interaction"), trigger: "click", action: "show", targetId: dialogId }],
+  };
+
+  return {
+    id: generateNodeId("div"),
+    tag: "div",
+    flowLayout: { display: "flex", flex: COLLAPSIBLE_ROOT_FLEX },
+    children: [openButton, dialog],
   };
 }

@@ -244,4 +244,61 @@ describe("DialogElement (Checkpoint 1.15.6.9)", () => {
     expect(dialog).not.toHaveAttribute("aria-label");
     expect(dialog).not.toHaveAttribute("aria-description");
   });
+
+  describe("Checkpoint 1.15.6.11.3 — explicit-position centering split (Drawer feasibility)", () => {
+    it("Modal case (no authored position): Preview still applies margin:auto exactly as before, with no explicit height override", () => {
+      useEditorStore.setState({ editorMode: "preview" });
+      const { container } = render(
+        <DialogElement node={{ id: "dialog-1", tag: "dialog", children: [] }} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+      );
+      const dialog = container.querySelector("dialog")!;
+      expect(dialog.style.margin).toBe("auto");
+      expect(dialog.style.height).toBe("");
+    });
+
+    it("Drawer case (authored position:fixed): Preview does NOT apply margin:auto, and instead explicitly forces height:auto to defeat the UA's height:fit-content", () => {
+      useEditorStore.setState({ editorMode: "preview" });
+      const node: EditorElementNode = {
+        id: "dialog-1",
+        tag: "dialog",
+        position: { position: "fixed", top: { value: 0, unit: "px" }, right: { value: 0, unit: "px" }, bottom: { value: 0, unit: "px" }, left: "auto" },
+      };
+      const { container } = render(<DialogElement node={node} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+      const dialog = container.querySelector("dialog")!;
+      expect(dialog.style.margin).not.toBe("auto");
+      expect(dialog.style.height).toBe("auto");
+      expect(dialog.style.position).toBe("fixed");
+      expect(dialog.style.top).toBe("0px");
+      expect(dialog.style.right).toBe("0px");
+      expect(dialog.style.bottom).toBe("0px");
+      expect(dialog.style.left).toBe("auto");
+    });
+
+    it("Drawer case in Design: the authored Position is entirely deferred to Preview — the box stays an ordinary static, in-flow, fully editable element, never floating fixed over the app's own chrome", () => {
+      useEditorStore.setState({ editorMode: "design" });
+      const node: EditorElementNode = {
+        id: "dialog-1",
+        tag: "dialog",
+        position: { position: "fixed", top: { value: 0, unit: "px" }, right: { value: 0, unit: "px" }, bottom: { value: 0, unit: "px" }, left: "auto" },
+      };
+      const { container } = render(<DialogElement node={node} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+      const dialog = container.querySelector("dialog")!;
+      expect(dialog.style.margin).not.toBe("auto");
+      expect(dialog.style.height).toBe("");
+      expect(dialog.style.position).toBe("static");
+      expect(dialog.style.top).toBe("");
+      expect(dialog.style.right).toBe("");
+      expect(dialog.style.bottom).toBe("");
+      expect(dialog.style.left).toBe("");
+    });
+
+    it("a Dialog with position explicitly authored as 'static' is treated the same as no authored position at all — margin:auto still applies", () => {
+      useEditorStore.setState({ editorMode: "preview" });
+      const node: EditorElementNode = { id: "dialog-1", tag: "dialog", position: { position: "static" } };
+      const { container } = render(<DialogElement node={node} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+      const dialog = container.querySelector("dialog")!;
+      expect(dialog.style.margin).toBe("auto");
+      expect(dialog.style.height).toBe("");
+    });
+  });
 });

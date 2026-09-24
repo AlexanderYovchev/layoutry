@@ -208,6 +208,39 @@ export function DialogElement({ node, parentId, parentLayoutMode, parentFlowDisp
   const usesLegacyRadiusChrome = !node.borderRadius;
   const usesLegacyBorderChrome = !node.border;
 
+  // Checkpoint 1.15.6.11.3 — generic centering-vs-explicit-positioning
+  // split, verified live via an isolated CSS ground-truth probe before
+  // being written here (see this checkpoint's own report, Part C). Chrome's
+  // real `dialog:modal` UA rule is effectively `inset: 0; width/height:
+  // fit-content; margin: auto` — exactly what makes Modal's own
+  // no-authored-position case center correctly. The unconditional
+  // `margin: auto` this file already applied in Preview (Checkpoint
+  // 1.15.6.9.1) is scoped here to ONLY the case where the author hasn't
+  // opted into an explicit CSS `position` (the pre-existing, already-
+  // generic PositionSettings field — no new field) — once an author sets
+  // e.g. `position: fixed` with authored offsets (an edge-anchored Drawer),
+  // margin: auto would silently re-center the box over those offsets
+  // (confirmed live: it ignores authored top/right/bottom entirely and
+  // centers using the dialog's own intrinsic content size instead).
+  //
+  // The companion `height: auto` override undoes the OTHER half of that
+  // same UA rule — `height: fit-content` — which is not something
+  // resolvePositionStyle (top/right/bottom/left/zIndex only) can ever
+  // touch, and which otherwise silently prevents an author's own
+  // `top: 0; bottom: 0` from stretching the box to fill the viewport
+  // (confirmed live: with fit-content still in effect, bottom is ignored
+  // as over-constrained and the box just shrink-wraps its own content at
+  // the top edge instead of spanning full height). Explicit `auto` restores
+  // the ordinary CSS abspos rule ("top and bottom both set, height auto ->
+  // solve height to fill the gap"), which is also confirmed live to track
+  // the viewport dynamically, not a one-time computed pixel value. Applied
+  // only in Preview (Design never uses showModal()/the top layer, so
+  // neither UA rule is ever in effect there) and only when the author has
+  // an explicit non-static position, so Modal's own centering path is
+  // untouched by construction — this reads an existing generic field, adds
+  // no new one, and does not know Drawer/Modal/any composition by name.
+  const hasExplicitPosition = node.position?.position !== undefined && node.position.position !== "static";
+
   // Checkpoint 1.15.6.9.1 — see resolveDialogAccessibleName.ts's own top
   // comment for why this is derived at render time rather than stored.
   // Honestly absent (not a synthesized fallback) for a bare Dialog with no
@@ -277,9 +310,36 @@ export function DialogElement({ node, parentId, parentLayoutMode, parentFlowDisp
         // none of which this component overrides) without touching
         // Design at all, where Preflight's margin: 0 is exactly the
         // ordinary-flow-participation behavior Part 7/8 already wants.
-        ...(isPreview ? { margin: "auto" as const } : {}),
-        ...resolvePositionStyle(node),
+        ...(isPreview && !hasExplicitPosition ? { margin: "auto" as const } : {}),
+        // Checkpoint 1.15.6.11.3 — a real, live-QA-caught finding: Position
+        // (Checkpoint 5.1) is unconditional for every OTHER element
+        // (ContainerElement etc. always spread resolvePositionStyle
+        // regardless of Design/Preview), and initially this component did
+        // the same. That is exactly correct for an ordinary box, but not
+        // here: Dialog already has its own bespoke Design-mode positioning
+        // story distinct from every other tag (the `position: static`
+        // override immediately above exists solely because Design must
+        // never let this box escape ordinary flow) — Part 16 of this
+        // checkpoint's own brief explicitly says Design showing the Dialog
+        // as ordinary inline/non-modal content, while only Preview uses the
+        // real top-layer/edge-anchored presentation, is an already-accepted
+        // difference, not something to make WYSIWYG-perfect. Confirmed live
+        // during this checkpoint's own QA that spreading an authored
+        // `position: fixed; inset: 0 auto 0 0` unconditionally (matching
+        // every other element) makes a real Drawer's own Dialog float fixed
+        // over the ENTIRE viewport in Design too — physically covering the
+        // app's own toolbar chrome, making it unclickable. Gating this
+        // resolver's own spread on `isPreview` keeps Design's dialog exactly
+        // where the `position: static` restoration above already puts it —
+        // an ordinary, fully editable, in-flow box — and defers the
+        // authored Position entirely to Preview, the only mode where a
+        // Dialog's own CSS position is ever actually meaningful (native
+        // top-layer promotion). Generic to Dialog, not Drawer: any future
+        // composition that authors Position on a Dialog gets the same
+        // Design-safe behavior with no per-composition code.
+        ...(isPreview ? resolvePositionStyle(node) : {}),
         ...elementPositionStyle(node, parentLayoutMode),
+        ...(isPreview && hasExplicitPosition ? { height: "auto" as const } : {}),
         ...resolveAspectRatioStyle(node),
         ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
         ...resolveSizeConstraintsStyle(node, parentLayoutMode),

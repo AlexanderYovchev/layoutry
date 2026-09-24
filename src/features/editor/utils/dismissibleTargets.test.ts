@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createModalNode } from "@/features/editor/factories/interactionCompositions";
+import { createDrawerNode, createModalNode } from "@/features/editor/factories/interactionCompositions";
 import { createDismissibleAlertNode, createManualToastNode, createPopoverNode } from "@/features/editor/factories/feedbackCompositions";
 import { findDismissibleRelationships } from "./dismissibleTargets";
 import type { EditorElementNode } from "@/features/editor/types/document";
@@ -110,5 +110,11 @@ describe("findDismissibleRelationships", () => {
     const [trigger, panel] = popover.children!;
     const relationships = findDismissibleRelationships(popover, { [panel.id]: true });
     expect(relationships).toEqual([{ triggerId: trigger.id, targetId: panel.id, bindingId: trigger.interactions![0].id }]);
+  });
+
+  it("Checkpoint 1.15.6.11.3 — a real Drawer's Dialog is never dismissible via this generic rule, even while open: Open/Close use show/hide, not toggle — exactly like Modal, since Drawer reuses the same Dialog primitive and the same generic interaction vocabulary", () => {
+    const drawer = createDrawerNode();
+    const [, dialog] = drawer.children!;
+    expect(findDismissibleRelationships(drawer, { [dialog.id]: true })).toEqual([]);
   });
 });

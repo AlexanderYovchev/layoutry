@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createBasicTabsNode, createCollapsibleNode } from "@/features/editor/factories/interactionCompositions";
+import { createBasicTabsNode, createCollapsibleNode, createDrawerNode } from "@/features/editor/factories/interactionCompositions";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
 import { useEditorStore } from "./useEditorStore";
 
@@ -436,6 +436,71 @@ describe("Interaction & Preview foundation — store integration (Checkpoint 1.1
       expect(visibility[panel1.id] ?? true).toBe(true);
       expect(visibility[panel2.id]).toBe(false);
       expect(visibility[panel3.id]).toBe(false);
+    });
+  });
+
+  /**
+   * Checkpoint 1.15.6.11.3 — Drawer reuses the exact generic
+   * Dialog/interaction machinery Modal already proved (Checkpoint 1.15.6.9):
+   * these tests exist to confirm that reuse holds for a real Drawer
+   * composition too, not to re-prove anything new about the store itself.
+   */
+  describe("Drawer — runtime open/close, zero history, Preview reset (Checkpoint 1.15.6.11.3)", () => {
+    function setupDrawer() {
+      const drawer = createDrawerNode();
+      useEditorStore.setState((state) => ({ document: { ...state.document, children: [drawer] } }));
+      const [openButton, dialog] = drawer.children!;
+      useEditorStore.getState().enterPreview();
+      return { openButton, dialog };
+    }
+
+    it("Preview entry seeds the Dialog hidden, from authored initial visibility alone", () => {
+      const { dialog } = setupDrawer();
+      expect(useEditorStore.getState().runtimeVisibility[dialog.id]).toBe(false);
+    });
+
+    it("clicking Open shows the Dialog; zero history entries", () => {
+      const { openButton, dialog } = setupDrawer();
+      const historyBefore = useEditorStore.getState().past.length;
+
+      useEditorStore.getState().executeInteractionsForNode(openButton.id, "click");
+
+      expect(useEditorStore.getState().runtimeVisibility[dialog.id]).toBe(true);
+      expect(useEditorStore.getState().past.length).toBe(historyBefore);
+    });
+
+    it("clicking Close hides the Dialog again; zero history entries", () => {
+      const { openButton, dialog } = setupDrawer();
+      useEditorStore.getState().executeInteractionsForNode(openButton.id, "click");
+      const closeButton = dialog.children![0].children![2];
+      const historyBefore = useEditorStore.getState().past.length;
+
+      useEditorStore.getState().executeInteractionsForNode(closeButton.id, "click");
+
+      expect(useEditorStore.getState().runtimeVisibility[dialog.id]).toBe(false);
+      expect(useEditorStore.getState().past.length).toBe(historyBefore);
+    });
+
+    it("re-entering Preview after opening resets the Dialog to hidden", () => {
+      const { openButton, dialog } = setupDrawer();
+      useEditorStore.getState().executeInteractionsForNode(openButton.id, "click");
+      expect(useEditorStore.getState().runtimeVisibility[dialog.id]).toBe(true);
+
+      useEditorStore.getState().exitPreview();
+      useEditorStore.getState().enterPreview();
+
+      expect(useEditorStore.getState().runtimeVisibility[dialog.id]).toBe(false);
+    });
+
+    it("deleting the Dialog removes Open's binding — no dangling target, the existing generic deletion behavior, no Drawer-specific cleanup", () => {
+      const { openButton, dialog } = setupDrawer();
+      useEditorStore.getState().exitPreview();
+      useEditorStore.getState().selectOnly(dialog.id);
+
+      useEditorStore.getState().deleteSelection();
+
+      expect(findNodeById(useEditorStore.getState().document, dialog.id)).toBeUndefined();
+      expect(findNodeById(useEditorStore.getState().document, openButton.id)?.interactions).toBeUndefined();
     });
   });
 });

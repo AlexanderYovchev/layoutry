@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createBasicTabsNode, createCollapsibleNode, createModalNode } from "./interactionCompositions";
+import { createBasicTabsNode, createCollapsibleNode, createDrawerNode, createModalNode } from "./interactionCompositions";
 
 /**
  * Checkpoint 1.15.6.8 — the Collapsible proof composition. Must be an
@@ -241,6 +241,93 @@ describe("createBasicTabsNode (Checkpoint 1.15.6.11.2)", () => {
     const idsA = collectIds(createBasicTabsNode() as unknown as AnyNode);
     expect(new Set(idsA).size).toBe(idsA.length);
     const idsB = collectIds(createBasicTabsNode() as unknown as AnyNode);
+    expect(idsA.some((id) => idsB.includes(id))).toBe(false);
+  });
+});
+
+describe("createDrawerNode (Checkpoint 1.15.6.11.3)", () => {
+  it("is div (Flex Column) > button 'Open Drawer', dialog > div (Flex Column) > h2, p, button 'Close' — the exact same shape as createModalNode", () => {
+    const node = createDrawerNode();
+    expect(node.tag).toBe("div");
+    expect(node.flowLayout?.display).toBe("flex");
+
+    const [openButton, dialog] = node.children!;
+    expect(openButton.tag).toBe("button");
+    expect(openButton.text).toBe("Open Drawer");
+    expect(dialog.tag).toBe("dialog");
+
+    const [content] = dialog.children!;
+    expect(content.tag).toBe("div");
+    expect(content.flowLayout?.display).toBe("flex");
+    const [heading, paragraph, closeButton] = content.children!;
+    expect(heading.tag).toBe("h2");
+    expect(heading.text).toBe("Drawer");
+    expect(paragraph.tag).toBe("p");
+    expect(closeButton.tag).toBe("button");
+    expect(closeButton.text).toBe("Close");
+  });
+
+  it("Open Button authors exactly one click->show interaction targeting the Dialog's real internal id", () => {
+    const node = createDrawerNode();
+    const [openButton, dialog] = node.children!;
+    expect(openButton.interactions).toHaveLength(1);
+    expect(openButton.interactions![0]).toMatchObject({ trigger: "click", action: "show", targetId: dialog.id });
+  });
+
+  it("Close Button authors exactly one click->hide interaction targeting the SAME Dialog id", () => {
+    const node = createDrawerNode();
+    const [openButton, dialog] = node.children!;
+    const closeButton = dialog.children![0].children![2];
+    expect(closeButton.interactions).toHaveLength(1);
+    expect(closeButton.interactions![0]).toMatchObject({ trigger: "click", action: "hide", targetId: dialog.id });
+    expect(closeButton.interactions![0].targetId).toBe(openButton.interactions![0].targetId);
+  });
+
+  it("Dialog itself carries no interaction of its own, and starts hidden", () => {
+    const [, dialog] = createDrawerNode().children!;
+    expect(dialog.interactions).toBeUndefined();
+    expect(dialog.initialPreviewVisibility).toBe("hidden");
+  });
+
+  it("uses show/hide, not toggle — deliberately excluded from generic click->toggle dismissal, exactly like Modal", () => {
+    const [openButton, dialog] = createDrawerNode().children!;
+    const closeButton = dialog.children![0].children![2];
+    expect(openButton.interactions![0].action).not.toBe("toggle");
+    expect(closeButton.interactions![0].action).not.toBe("toggle");
+  });
+
+  it("authors right-edge positioning via the pre-existing, generic PositionSettings field — position:fixed, top/right/bottom:0, and an explicit left:'auto' (load-bearing: defeats the UA dialog:modal inset:0 default that would otherwise pin the box to the left edge)", () => {
+    const [, dialog] = createDrawerNode().children!;
+    expect(dialog.position).toEqual({
+      position: "fixed",
+      top: { value: 0, unit: "px" },
+      right: { value: 0, unit: "px" },
+      bottom: { value: 0, unit: "px" },
+      left: "auto",
+    });
+  });
+
+  it("authors an explicit width via the pre-existing generic dimensions resize-stamp field — no new sizing concept, no vh/percentage unit added", () => {
+    const [, dialog] = createDrawerNode().children!;
+    expect(dialog.dimensions).toEqual({ preferredWidth: 360, preferredHeight: 480, offsetX: 0, offsetY: 0 });
+  });
+
+  it("stores no proprietary tag or state field anywhere — no tag:'drawer', no drawerSide, no isDrawer", () => {
+    function collectNodes(n: Record<string, unknown> & { children?: Record<string, unknown>[] }): Record<string, unknown>[] {
+      return [n, ...((n.children as Record<string, unknown>[] | undefined) ?? []).flatMap(collectNodes)];
+    }
+    for (const n of collectNodes(createDrawerNode() as unknown as Record<string, unknown> & { children?: Record<string, unknown>[] })) {
+      expect(n.tag).not.toBe("drawer");
+      expect(n.drawerSide).toBeUndefined();
+      expect(n.isDrawer).toBeUndefined();
+      expect(n.componentType).toBeUndefined();
+    }
+  });
+
+  it("every node and every interaction gets its own fresh id, and two separate compositions never share one", () => {
+    const idsA = collectIds(createDrawerNode() as unknown as AnyNode);
+    expect(new Set(idsA).size).toBe(idsA.length);
+    const idsB = collectIds(createDrawerNode() as unknown as AnyNode);
     expect(idsA.some((id) => idsB.includes(id))).toBe(false);
   });
 });

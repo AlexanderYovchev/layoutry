@@ -147,7 +147,8 @@ export type InsertableCardType =
   | "dismissibleAlert"
   | "manualToast"
   | "popover"
-  | "basicTabs";
+  | "basicTabs"
+  | "drawer";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -398,6 +399,12 @@ function componentsCategory(): ToolbarCategoryContent {
           description: "Button toggles a contextual content panel — visible on Canvas, toggles in Preview",
           elementType: "popover",
           icon: MessageCircle,
+        },
+        {
+          name: "Drawer",
+          description: "Right-anchored panel over a native dialog — visible and editable in Design, opens/closes in Preview",
+          elementType: "drawer",
+          icon: PanelRight,
         },
       ]),
       section(id, "data-display", "Data Display", [

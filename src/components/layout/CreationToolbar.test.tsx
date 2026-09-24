@@ -238,6 +238,7 @@ describe("CreationToolbar", () => {
       "Dismissible Alert",
       "Manual Toast",
       "Popover",
+      "Drawer",
       "Basic Tabs",
     ];
     for (const card of cards) {
