@@ -171,7 +171,7 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
  * insertionRules.ts's CONTAINER_TAGS already uses), so typography support
  * is already correct the moment a factory for one of them is added.
  */
-const TEXT_BEARING_TAGS: ReadonlySet<string> = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "button", "a", "li", "blockquote", "th", "td"]);
+const TEXT_BEARING_TAGS: ReadonlySet<string> = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "button", "a", "li", "blockquote", "th", "td", "legend"]);
 
 /**
  * Tags eligible for Advanced Container Shapes (Checkpoint 1.15.4) —

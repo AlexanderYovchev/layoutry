@@ -8,6 +8,7 @@ import {
   createHeadingNode,
   createInputNode,
   createLabelNode,
+  createLegendNode,
   createLinkNode,
   createListItemNode,
   createRadioNode,
@@ -119,6 +120,19 @@ describe("useEditorStore", () => {
 
     // A List Item aimed at an ordinary Section — invalid outside a ul/ol.
     useEditorStore.getState().insertElement("section-1", createListItemNode());
+
+    expect(useEditorStore.getState().document).toBe(before);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);
+    expect(useEditorStore.getState().selection.primaryId).toBe("heading-1");
+  });
+
+  it("an insertion rejected by Legend's own constrained nesting does not alter the document, push history, or change selection (Checkpoint 1.15.6.12.1 — the same 'safe no-op' shape List Item's own rejection above already proves, now for CONSTRAINED_CHILD_EXTRA_PARENTS)", () => {
+    const before = useEditorStore.getState().document;
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().selectElement("heading-1");
+
+    // A Legend aimed at an ordinary Section — invalid outside a fieldset.
+    useEditorStore.getState().insertElement("section-1", createLegendNode());
 
     expect(useEditorStore.getState().document).toBe(before);
     expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);

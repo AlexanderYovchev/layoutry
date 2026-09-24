@@ -228,6 +228,29 @@ describe("ContainerElement", () => {
     expect(notCancelled).toBe(false);
   });
 
+  it("renders a fieldset-tagged node as a real <fieldset>, not a div standing in for one (Checkpoint 1.15.6.12.1)", () => {
+    const { container } = render(
+      <ContainerElement node={{ id: "fieldset-1", tag: "fieldset", children: [] }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+
+    const element = container.querySelector('[data-node-id="fieldset-1"]');
+    expect(element?.tagName).toBe("FIELDSET");
+    expect(element).toHaveAttribute("data-node-type", "fieldset");
+  });
+
+  it("renders its children inside a real <fieldset> — no onSubmit/onClick special-case attached, unlike Form/Label", () => {
+    const { container } = render(
+      <ContainerElement node={{ id: "fieldset-1", tag: "fieldset", children: [] }} parentId="form-1" parentLayoutMode="flow" parentFlowDisplay="block">
+        <input type="text" />
+      </ContainerElement>,
+    );
+
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+    const fieldset = container.querySelector('[data-node-id="fieldset-1"]') as HTMLFieldSetElement;
+    const notCancelled = fireEvent.click(fieldset);
+    expect(notCancelled).toBe(true);
+  });
+
   it("does not attach a click-activation guard to non-label semantic tags", () => {
     const { container } = render(
       <ContainerElement node={{ id: "form-1", tag: "form", children: [] }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,

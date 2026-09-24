@@ -2,11 +2,13 @@ import { BodyElement } from "@/features/canvas/components/document/elements/Body
 import { ButtonElement } from "@/features/canvas/components/document/elements/ButtonElement";
 import { ContainerElement } from "@/features/canvas/components/document/elements/ContainerElement";
 import { DialogElement } from "@/features/canvas/components/document/elements/DialogElement";
+import { DividerElement } from "@/features/canvas/components/document/elements/DividerElement";
 import { DocumentRootElement } from "@/features/canvas/components/document/elements/DocumentRootElement";
 import { HeadingElement } from "@/features/canvas/components/document/elements/HeadingElement";
 import { IframeElement } from "@/features/canvas/components/document/elements/IframeElement";
 import { ImageElement } from "@/features/canvas/components/document/elements/ImageElement";
 import { InputElement } from "@/features/canvas/components/document/elements/InputElement";
+import { LegendElement } from "@/features/canvas/components/document/elements/LegendElement";
 import { LinkElement } from "@/features/canvas/components/document/elements/LinkElement";
 import { ListItemElement } from "@/features/canvas/components/document/elements/ListItemElement";
 import { OptionElement } from "@/features/canvas/components/document/elements/OptionElement";
@@ -69,4 +71,7 @@ export const documentNodeComponents: Record<string, DocumentElementComponent> =
     iframe: IframeElement,
     svg: SvgElement,
     dialog: DialogElement,
+    hr: DividerElement,
+    fieldset: ContainerElement,
+    legend: LegendElement,
   };

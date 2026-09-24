@@ -34,6 +34,7 @@ import {
   Lock,
   Mail,
   Menu,
+  Minus,
   MessageCircle,
   MousePointerClick,
   Newspaper,
@@ -148,7 +149,9 @@ export type InsertableCardType =
   | "manualToast"
   | "popover"
   | "basicTabs"
-  | "drawer";
+  | "drawer"
+  | "divider"
+  | "fieldset";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -218,6 +221,14 @@ function htmlCategory(): ToolbarCategoryContent {
           description: "Generic content section",
           elementType: "section",
           icon: Layout,
+        },
+      ]),
+      section(id, "content", "Content", [
+        {
+          name: "Divider",
+          description: "Horizontal separator line — a genuine hr, not a styled container",
+          elementType: "divider",
+          icon: Minus,
         },
       ]),
       section(id, "typography", "Typography", [
@@ -438,7 +449,9 @@ function layoutCategory(): ToolbarCategoryContent {
       ]),
       section(id, "spacers-dividers", "Spacers & Dividers", [
         { name: "Spacer", description: "Empty flexible space" },
-        { name: "Divider", description: "Horizontal separator line" },
+        // Divider shipped as a genuine <hr> primitive under HTML -> Content
+        // (Checkpoint 1.15.6.12.1) rather than here — this disabled
+        // placeholder was removed to avoid two cards with the same name.
       ]),
       section(id, "responsive-presets", "Responsive Presets", [
         { name: "Two Column", description: "Responsive two-column layout" },
@@ -592,7 +605,12 @@ function formsCategory(): ToolbarCategoryContent {
         { name: "Helper Text", description: "Supplementary field guidance" },
       ]),
       section(id, "layout-grouping", "Layout & Grouping", [
-        { name: "Fieldset", description: "Grouped form fields" },
+        {
+          name: "Fieldset",
+          description: "Grouped form fields with a genuine legend — a real fieldset, not a styled container",
+          elementType: "fieldset",
+          icon: SquareDashed,
+        },
         { name: "Form Row", description: "Horizontal field grouping" },
       ]),
     ],

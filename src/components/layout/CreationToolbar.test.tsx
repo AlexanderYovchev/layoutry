@@ -62,6 +62,7 @@ describe("CreationToolbar", () => {
 
     for (const section of [
       "Containers",
+      "Content",
       "Typography",
       "Navigation",
       "Lists",

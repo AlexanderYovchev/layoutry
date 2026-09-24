@@ -13,6 +13,7 @@ import {
   List,
   ListOrdered,
   Menu,
+  Minus,
   MousePointerClick,
   Newspaper,
   PanelBottom,
@@ -21,6 +22,7 @@ import {
   PictureInPicture2,
   Rows3,
   Spline,
+  SquareDashed,
   Table,
   TableRowsSplit,
   Tag,
@@ -94,4 +96,10 @@ export const TAG_ICONS: Record<string, LucideIcon> = {
   iframe: AppWindow,
   svg: Spline,
   dialog: PictureInPicture2,
+  // Divider/Fieldset/Legend (Checkpoint 1.15.6.12.1). Legend shares Type —
+  // the same "text-bearing leaf with no distinct icon need" reasoning
+  // th/td/li/option's own shared icons already establish above.
+  hr: Minus,
+  fieldset: SquareDashed,
+  legend: Type,
 };

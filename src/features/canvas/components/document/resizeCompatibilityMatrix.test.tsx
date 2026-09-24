@@ -4,6 +4,7 @@ import { DocumentNodeRenderer } from "@/features/canvas/components/document/Docu
 import { ButtonElement } from "@/features/canvas/components/document/elements/ButtonElement";
 import { ContainerElement } from "@/features/canvas/components/document/elements/ContainerElement";
 import { DialogElement } from "@/features/canvas/components/document/elements/DialogElement";
+import { DividerElement } from "@/features/canvas/components/document/elements/DividerElement";
 import { HeadingElement } from "@/features/canvas/components/document/elements/HeadingElement";
 import { IframeElement } from "@/features/canvas/components/document/elements/IframeElement";
 import { ImageElement } from "@/features/canvas/components/document/elements/ImageElement";
@@ -27,15 +28,16 @@ import type { FlowDisplayMode } from "@/features/editor/types/flowLayout";
  * this exhaustive pass). Every currently ENABLED Creation Toolbar card
  * (see creationToolbarCategories.ts — a card with no `elementType` is a
  * disabled future placeholder and is correctly excluded per this
- * checkpoint's own section 40) maps to exactly one of the 14 distinct
+ * checkpoint's own section 40) maps to exactly one of the 16 distinct
  * DocumentElementComponents exercised below:
  *
  *   container/section/unorderedList/orderedList/header/nav/main/article/
- *   aside/footer/footerComposition/form/label -> ContainerElement (13 catalog
- *     entries, all registered to the identical component in
+ *   aside/footer/footerComposition/form/label/fieldset -> ContainerElement
+ *     (14 catalog entries, all registered to the identical component in
  *     documentNodeComponents.ts, verified by direct inspection — grouped
  *     into one representative case per this checkpoint's own section 49
- *     precedent for equivalent Input subtypes, generalized)
+ *     precedent for equivalent Input subtypes, generalized; fieldset added
+ *     in Checkpoint 1.15.6.12.1)
  *   heading -> HeadingElement
  *   paragraph -> ParagraphElement
  *   link -> LinkElement
@@ -53,8 +55,11 @@ import type { FlowDisplayMode } from "@/features/editor/types/flowLayout";
  *     branches on inputType, so one representative case covers all 9)
  *   textarea -> TextareaElement
  *   select -> SelectElement
+ *   dialog -> DialogElement
+ *   divider -> DividerElement (Checkpoint 1.15.6.12.1, a genuine new
+ *     leaf renderer, not collapsed into any existing case)
  *
- * 34 catalog entries in total, collapsing to these 14 representative
+ * 36 catalog entries in total, collapsing to these 16 representative
  * component cases with no coverage gap — every one of them was directly
  * confirmed (via `grep resolveFlexOrGridChildStyle` across every file in
  * this directory) to run through the exact same shared resolver pipeline
@@ -76,7 +81,7 @@ interface MatrixCase {
 }
 
 const CASES: MatrixCase[] = [
-  { label: "Container (div/section/ul/ol/header/nav/main/article/aside/footer/form/label)", Component: ContainerElement, node: { id: "n1", tag: "div" } },
+  { label: "Container (div/section/ul/ol/header/nav/main/article/aside/footer/form/label/fieldset)", Component: ContainerElement, node: { id: "n1", tag: "div" } },
   { label: "Heading", Component: HeadingElement, node: { id: "n1", tag: "h1", text: "Title" } },
   { label: "Paragraph", Component: ParagraphElement, node: { id: "n1", tag: "p", text: "Body" } },
   { label: "Link", Component: LinkElement, node: { id: "n1", tag: "a", text: "Learn more", href: "/about" } },
@@ -91,6 +96,7 @@ const CASES: MatrixCase[] = [
   { label: "Textarea", Component: TextareaElement, node: { id: "n1", tag: "textarea" } },
   { label: "Select", Component: SelectElement, node: { id: "n1", tag: "select", children: [] } },
   { label: "Dialog", Component: DialogElement, node: { id: "n1", tag: "dialog", children: [] } },
+  { label: "Divider", Component: DividerElement, node: { id: "n1", tag: "hr" } },
 ];
 
 const FLOW_DISPLAYS: FlowDisplayMode[] = ["block", "flex", "grid"];

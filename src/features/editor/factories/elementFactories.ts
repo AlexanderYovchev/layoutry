@@ -141,7 +141,9 @@ export type InsertableElementType =
   | "manualToast"
   | "popover"
   | "basicTabs"
-  | "drawer";
+  | "drawer"
+  | "divider"
+  | "fieldset";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -175,6 +177,23 @@ export function createHeadingNode(): EditorElementNode {
 
 export function createParagraphNode(): EditorElementNode {
   return { id: generateNodeId("p"), tag: "p", text: "New paragraph text." };
+}
+
+/**
+ * Divider (Checkpoint 1.15.6.12.1) — a genuine `tag: "hr"`, with ZERO
+ * proprietary fields (no dividerColor/dividerThickness/dividerStyle — see
+ * this checkpoint's own brief, Part B.2): its conventional thin-neutral-
+ * line appearance comes entirely from DividerElement's own legacy-chrome
+ * default plus Tailwind Preflight's own real `hr` reset, both already in
+ * place before any authored data exists, and every visual property a user
+ * might want (color/thickness/style/radius/shadow/spacing/size) is already
+ * an ordinary generic CSS field (Border/Spacing/Size) the Inspector already
+ * exposes — the same "the authored node owns its appearance" requirement
+ * every other primitive's factory already satisfies with zero special-case
+ * fields.
+ */
+export function createDividerNode(): EditorElementNode {
+  return { id: generateNodeId("hr"), tag: "hr" };
 }
 
 export function createButtonNode(): EditorElementNode {
@@ -473,6 +492,42 @@ export function createLabelNode(): EditorElementNode {
 }
 
 /**
+ * Legend (Checkpoint 1.15.6.12.1) — a genuine `<legend>` text-bearing leaf,
+ * the same shape createHeadingNode/createParagraphNode already use. NOT
+ * registered in InsertableElementType/FACTORIES_BY_TYPE below: it is only
+ * ever meaningful as Fieldset's own first child (see
+ * canParentAcceptChild's own CONSTRAINED_CHILD_EXTRA_PARENTS), the exact
+ * same "real factory, no standalone toolbar entry" shape
+ * createTableHeaderCellNode/createOptionNode already established for
+ * th/option — Structure selection still works for any Legend that exists
+ * in the document, since that reads the tree directly and needs no
+ * toolbar registration at all.
+ */
+export function createLegendNode(): EditorElementNode {
+  return { id: generateNodeId("legend"), tag: "legend", text: "Group" };
+}
+
+/**
+ * Fieldset (Checkpoint 1.15.6.12.1) — a genuine `<fieldset>`, sharing
+ * Container/Section/Label's exact structural defaults (see
+ * ContainerElement, which now also renders this tag) and, per this
+ * checkpoint's own brief, the smallest useful starter: one Legend child
+ * only, not an opinionated starter Label+Input. Mirrors createLabelNode's
+ * own "ships childable but otherwise empty" precedent — Label itself has
+ * no starter Input either, so a bare starter Legend (rather than a stamped
+ * Label/Input pair) is the established, not merely convenient, choice.
+ */
+export function createFieldsetNode(): EditorElementNode {
+  return {
+    id: generateNodeId("fieldset"),
+    tag: "fieldset",
+    children: [createLegendNode()],
+    flowLayout: { display: "block" },
+    spacing: DEFAULT_CONTAINER_SPACING,
+  };
+}
+
+/**
  * Textarea (Checkpoint 1.12) — a genuine `tag: "textarea"` leaf, not
  * Input with a variant: multiline text is a real, distinct native
  * element, not another `inputType`. Reuses Input's own `name`/
@@ -732,6 +787,7 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   section: createSectionNode,
   heading: createHeadingNode,
   paragraph: createParagraphNode,
+  divider: createDividerNode,
   button: createButtonNode,
   image: createImageNode,
   link: createLinkNode,
@@ -803,6 +859,7 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   popover: createPopoverNode,
   basicTabs: createBasicTabsNode,
   drawer: createDrawerNode,
+  fieldset: createFieldsetNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -827,6 +884,7 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   section: { width: 200, height: 150 },
   heading: { width: 240, height: 48 },
   paragraph: { width: 240, height: 80 },
+  divider: { width: 200, height: 4 },
   button: { width: 120, height: 40 },
   image: { width: 200, height: 150 },
   link: { width: 120, height: 32 },
@@ -898,6 +956,7 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   popover: { width: 240, height: 140 },
   basicTabs: { width: 360, height: 220 },
   drawer: { width: 320, height: 160 },
+  fieldset: { width: 280, height: 120 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };

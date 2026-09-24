@@ -6,8 +6,10 @@ import {
   createCheckboxNode,
   createContainerNode,
   createDialogNode,
+  createDividerNode,
   createElementNode,
   createEmailInputNode,
+  createFieldsetNode,
   createFooterCompositionNode,
   createFooterNode,
   createFormNode,
@@ -17,6 +19,7 @@ import {
   createImageNode,
   createInputNode,
   createLabelNode,
+  createLegendNode,
   createLinkNode,
   createListItemNode,
   createMainNode,
@@ -500,6 +503,56 @@ describe("element factories", () => {
     });
   });
 
+  describe("Divider, Fieldset & Legend Foundation (Checkpoint 1.15.6.12.1)", () => {
+    it("createDividerNode produces a genuine, leaf <hr> with zero proprietary fields", () => {
+      const node = createDividerNode();
+      expect(node.tag).toBe("hr");
+      expect(node.id).toMatch(/^hr-/);
+      expect(node.children).toBeUndefined();
+      expect(node.text).toBeUndefined();
+      const withUnknowns = node as unknown as Record<string, unknown>;
+      expect(withUnknowns.dividerColor).toBeUndefined();
+      expect(withUnknowns.dividerThickness).toBeUndefined();
+      expect(withUnknowns.dividerStyle).toBeUndefined();
+    });
+
+    it("createDividerNode produces a unique id per call", () => {
+      expect(createDividerNode().id).not.toBe(createDividerNode().id);
+    });
+
+    it("createLegendNode produces a genuine, text-bearing leaf <legend>", () => {
+      const node = createLegendNode();
+      expect(node.tag).toBe("legend");
+      expect(node.text).toBe("Group");
+      expect(node.children).toBeUndefined();
+      expect(node.id).toMatch(/^legend-/);
+    });
+
+    it("createLegendNode produces a unique id per call", () => {
+      expect(createLegendNode().id).not.toBe(createLegendNode().id);
+    });
+
+    it("createFieldsetNode produces a genuine, childable <fieldset> sharing Container's exact structural defaults, with exactly one starter Legend child (not an opinionated Label/Input starter)", () => {
+      const node = createFieldsetNode();
+      const container = createContainerNode();
+
+      expect(node.tag).toBe("fieldset");
+      expect(node.id).toMatch(/^fieldset-/);
+      expect(node.flowLayout).toEqual(container.flowLayout);
+      expect(node.spacing).toEqual(container.spacing);
+      expect(node.children).toHaveLength(1);
+      expect(node.children![0].tag).toBe("legend");
+      expect(node.children![0].text).toBe("Group");
+    });
+
+    it("createFieldsetNode produces a unique id per call, and each call's Legend gets its own fresh id too", () => {
+      const a = createFieldsetNode();
+      const b = createFieldsetNode();
+      expect(a.id).not.toBe(b.id);
+      expect(a.children![0].id).not.toBe(b.children![0].id);
+    });
+  });
+
   describe("Form + Text Input foundation (Checkpoint 1.10)", () => {
     it("createFormNode produces an empty, childable <form> sharing Container's exact structural defaults", () => {
       const node = createFormNode();
@@ -719,6 +772,8 @@ describe("element factories", () => {
         "iframe",
         "svg",
         "dialog",
+        "divider",
+        "fieldset",
       ]) {
         expect(isInsertableElementType(type)).toBe(true);
       }
@@ -732,6 +787,10 @@ describe("element factories", () => {
       for (const tag of ["thead", "tbody", "tfoot", "tr", "th", "td"]) {
         expect(isInsertableElementType(tag)).toBe(false);
       }
+    });
+
+    it("does NOT recognize 'legend' as a standalone insertable type (Checkpoint 1.15.6.12.1 — Legend is only ever created via createFieldsetNode's own starter, the same 'real factory, no catalog entry' precedent Option/table structural primitives already established, and deliberately avoids toolbar-flooding a single-purpose supporting primitive)", () => {
+      expect(isInsertableElementType("legend")).toBe(false);
     });
 
     it("rejects unknown strings", () => {

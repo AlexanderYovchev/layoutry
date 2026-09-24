@@ -65,6 +65,13 @@ const CONTAINER_TAGS: ReadonlySet<string> = new Set([
   // is needed below, the same "absent entry means unrestricted" default
   // every other unconstrained container tag already relies on.
   "dialog",
+  // "fieldset" (Checkpoint 1.15.6.12.1) — ordinary and UNCONSTRAINED like
+  // div/section/dialog: it accepts any ordinary insertable child. Its one
+  // extra rule — accepting "legend" too, which every other open container
+  // must still reject — is expressed via CONSTRAINED_CHILD_EXTRA_PARENTS
+  // below, not a new entry here or in ALLOWED_CHILD_TAGS (an allowlist
+  // there would wrongly turn Fieldset into a closed container).
+  "fieldset",
 ]);
 
 export function canContainChildren(tag: string): boolean {
@@ -126,7 +133,35 @@ const CONSTRAINED_CHILD_TAGS: ReadonlySet<string> = new Set([
   "tr",
   "th",
   "td",
+  // "legend" (Checkpoint 1.15.6.12.1) — meaningful only inside "fieldset",
+  // the same shape "option" has for "select". Unlike every constrained tag
+  // above, though, its one valid parent ("fieldset") is itself an OPEN
+  // container that must keep accepting ordinary children too — see
+  // CONSTRAINED_CHILD_EXTRA_PARENTS below for how that's expressed.
+  "legend",
 ]);
+
+/**
+ * The exception list for a constrained child tag whose one valid parent is
+ * itself an OPEN (unconstrained) container — Checkpoint 1.15.6.12.1's
+ * smallest generic extension to the nesting engine, added because
+ * "fieldset" doesn't fit either of the two existing shapes: it can't get
+ * an ALLOWED_CHILD_TAGS entry (that would wrongly turn it into a CLOSED
+ * container accepting only "legend", the same mistake this checkpoint's
+ * own brief explicitly warns against), and without this table "legend"
+ * would be rejected everywhere, including under its own valid parent,
+ * since CONSTRAINED_CHILD_TAGS membership alone always rejects a child
+ * under any parent with no ALLOWED_CHILD_TAGS entry. Only ever consulted
+ * for a constrained child under a parent that has no ALLOWED_CHILD_TAGS
+ * entry of its own (ul/ol/select/table/thead/tbody/tfoot/tr already
+ * express their own closed allowlist directly and never reach this table).
+ * Generic and reusable: a future constrained child with the same
+ * "one valid parent, but that parent must stay open" shape reuses this
+ * table with one more entry, not a new mechanism.
+ */
+const CONSTRAINED_CHILD_EXTRA_PARENTS: Readonly<Record<string, ReadonlySet<string>>> = {
+  legend: new Set(["fieldset"]),
+};
 
 export function canParentAcceptChild(parentTag: string, childTag: string): boolean {
   if (!canContainChildren(parentTag)) return false;
@@ -134,5 +169,8 @@ export function canParentAcceptChild(parentTag: string, childTag: string): boole
   const allowedChildren = ALLOWED_CHILD_TAGS[parentTag];
   if (allowedChildren) return allowedChildren.has(childTag);
 
-  return !CONSTRAINED_CHILD_TAGS.has(childTag);
+  if (CONSTRAINED_CHILD_TAGS.has(childTag)) {
+    return CONSTRAINED_CHILD_EXTRA_PARENTS[childTag]?.has(parentTag) ?? false;
+  }
+  return true;
 }

@@ -543,6 +543,44 @@ describe("elementCapabilities", () => {
     });
   });
 
+  describe("Divider, Fieldset & Legend Foundation (Checkpoint 1.15.6.12.1)", () => {
+    it("hr is neither childable nor text-bearing — a genuine leaf, zero CAPABILITY_OVERRIDES entry needed", () => {
+      const hr = getElementCapabilities("hr");
+      expect(hr.canContainChildren).toBe(false);
+      expect(hr.supportsTypography).toBe(false);
+      expect(hr.supportsBackground).toBe(false);
+    });
+
+    it("hr still gets every ordinary box-model capability from DEFAULT_CAPABILITIES — sizing/resize/position/border/border-radius/box-shadow/filters/display", () => {
+      const hr = getElementCapabilities("hr");
+      expect(hr.resizableX).toBe(true);
+      expect(hr.resizableY).toBe(true);
+      expect(hr.selectable).toBe(true);
+      expect(hr.supportsAspectRatio).toBe(true);
+      expect(hr.supportsPosition).toBe(true);
+      expect(hr.supportsBorder).toBe(true);
+      expect(hr.supportsBorderRadius).toBe(true);
+      expect(hr.supportsBoxShadow).toBe(true);
+      expect(hr.supportsFilters).toBe(true);
+      expect(hr.supportsDisplay).toBe(true);
+    });
+
+    it("fieldset is childable (via CONTAINER_TAGS) and gets the same implicit supportsBackground/supportsChildLayout grants every other structural container gets — zero CAPABILITY_OVERRIDES entry needed", () => {
+      const fieldset = getElementCapabilities("fieldset");
+      expect(fieldset.canContainChildren).toBe(true);
+      expect(fieldset.supportsTypography).toBe(false);
+      expect(fieldset.supportsBackground).toBe(true);
+      expect(fieldset.supportsChildLayout).toBe(true);
+    });
+
+    it("legend is text-bearing (via TEXT_BEARING_TAGS), gaining supportsTypography/supportsBackground purely from that membership — the same derivation th/td/li already use, zero CAPABILITY_OVERRIDES entry needed", () => {
+      const legend = getElementCapabilities("legend");
+      expect(legend.canContainChildren).toBe(false);
+      expect(legend.supportsTypography).toBe(true);
+      expect(legend.supportsBackground).toBe(true);
+    });
+  });
+
   it("gives an entirely unknown tag the same sensible defaults as any other element", () => {
     const caps = getElementCapabilities("some-future-tag");
 

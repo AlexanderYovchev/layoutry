@@ -81,6 +81,13 @@ const TAG_DISPLAY_NAMES: Record<string, string> = {
   // see this checkpoint's report for the full reasoning.
   svg: "SVG",
   dialog: "Dialog",
+  // "Divider" (Checkpoint 1.15.6.12.1), not "HR" — the same beginner-
+  // friendly, purpose-named convention this table already uses throughout
+  // (div -> "Container", iframe -> "Embed"). The real tag stays "hr"
+  // underneath (see createDividerNode).
+  hr: "Divider",
+  fieldset: "Fieldset",
+  legend: "Legend",
 };
 
 /**

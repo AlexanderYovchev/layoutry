@@ -65,6 +65,7 @@ describe("creationToolbarCategories — one primary home per element (Checkpoint
       "Select",
       "Checkbox",
       "Radio Button",
+      "Fieldset",
     ]);
   });
 

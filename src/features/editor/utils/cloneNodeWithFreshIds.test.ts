@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createBasicTabsNode, createDrawerNode, createModalNode } from "@/features/editor/factories/interactionCompositions";
 import { createDismissibleAlertNode, createManualToastNode, createPopoverNode } from "@/features/editor/factories/feedbackCompositions";
+import { createDividerNode, createFieldsetNode } from "@/features/editor/factories/elementFactories";
 import { cloneNodeWithFreshIds } from "./cloneNodeWithFreshIds";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -142,6 +143,25 @@ describe("cloneNodeWithFreshIds", () => {
     for (const id of cloneIds) {
       expect(sourceIds).not.toContain(id);
     }
+  });
+
+  it("Checkpoint 1.15.6.12.1 — clones a Divider with a fresh id, no special clone logic needed", () => {
+    const source = createDividerNode();
+    const clone = cloneNodeWithFreshIds(source);
+    expect(clone.id).not.toBe(source.id);
+    expect(clone.tag).toBe("hr");
+  });
+
+  it("Checkpoint 1.15.6.12.1 — clones a real Fieldset + its starter Legend recursively, both with fresh ids", () => {
+    const source = createFieldsetNode();
+    const clone = cloneNodeWithFreshIds(source);
+
+    expect(clone.id).not.toBe(source.id);
+    expect(clone.tag).toBe("fieldset");
+    expect(clone.children).toHaveLength(1);
+    expect(clone.children![0].tag).toBe("legend");
+    expect(clone.children![0].text).toBe("Group");
+    expect(clone.children![0].id).not.toBe(source.children![0].id);
   });
 
   it("preserves typography (Checkpoint 4.2)", () => {

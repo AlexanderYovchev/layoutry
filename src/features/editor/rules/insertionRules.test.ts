@@ -348,3 +348,57 @@ describe("Dialog containment (Checkpoint 1.15.6.9)", () => {
     expect(canParentAcceptChild("table", "dialog")).toBe(false);
   });
 });
+
+describe("Fieldset/Legend containment (Checkpoint 1.15.6.12.1)", () => {
+  it("Fieldset is a genuine, UNCONSTRAINED container — same as div/section/dialog, not a closed allowlist accepting only legend", () => {
+    expect(canContainChildren("fieldset")).toBe(true);
+  });
+
+  it("Fieldset accepts any ordinary insertable child, the same as div/section", () => {
+    for (const childTag of ["div", "h1", "p", "button", "img", "a", "input", "label"]) {
+      expect(canParentAcceptChild("fieldset", childTag), childTag).toBe(true);
+    }
+  });
+
+  it("Fieldset ALSO accepts legend — the one exception CONSTRAINED_CHILD_EXTRA_PARENTS exists for", () => {
+    expect(canParentAcceptChild("fieldset", "legend")).toBe(true);
+  });
+
+  it("Fieldset still rejects every other constrained-child tag meaningful only under its own one allowed parent", () => {
+    expect(canParentAcceptChild("fieldset", "li")).toBe(false);
+    expect(canParentAcceptChild("fieldset", "option")).toBe(false);
+    expect(canParentAcceptChild("fieldset", "tr")).toBe(false);
+  });
+
+  it("legend is rejected under every ordinary open container — div/section/form/label/dialog and the semantic sectioning family", () => {
+    for (const parentTag of ["div", "section", "form", "label", "dialog", "header", "nav", "main", "article", "aside", "footer"]) {
+      expect(canParentAcceptChild(parentTag, "legend"), parentTag).toBe(false);
+    }
+  });
+
+  it("legend is rejected under every constrained-parent allowlist too — UL/OL, Select, Table's structural primitives", () => {
+    expect(canParentAcceptChild("ul", "legend")).toBe(false);
+    expect(canParentAcceptChild("ol", "legend")).toBe(false);
+    expect(canParentAcceptChild("select", "legend")).toBe(false);
+    expect(canParentAcceptChild("table", "legend")).toBe(false);
+  });
+
+  it("Fieldset itself is insertable anywhere an ordinary structural container is allowed", () => {
+    for (const parentTag of ["div", "section", "form", "label", "header", "nav", "main", "article", "aside", "footer"]) {
+      expect(canParentAcceptChild(parentTag, "fieldset"), parentTag).toBe(true);
+    }
+  });
+
+  it("Fieldset is rejected inside every constrained-parent allowlist — UL/OL, Select, and Table's structural primitives", () => {
+    expect(canParentAcceptChild("ul", "fieldset")).toBe(false);
+    expect(canParentAcceptChild("ol", "fieldset")).toBe(false);
+    expect(canParentAcceptChild("select", "fieldset")).toBe(false);
+    expect(canParentAcceptChild("table", "fieldset")).toBe(false);
+  });
+
+  it("does not weaken any prior allowlist — UL/OL's li-only, Select's option-only, and Dialog's own unconstrained containment remain intact", () => {
+    expect(canParentAcceptChild("ul", "li")).toBe(true);
+    expect(canParentAcceptChild("select", "option")).toBe(true);
+    expect(canParentAcceptChild("dialog", "div")).toBe(true);
+  });
+});
