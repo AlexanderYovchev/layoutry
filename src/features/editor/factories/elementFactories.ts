@@ -38,6 +38,14 @@ import {
   createStatCardNode,
 } from "@/features/editor/factories/dataDisplayCompositions";
 import { createCollapsibleNode, createModalNode } from "@/features/editor/factories/interactionCompositions";
+import {
+  createDismissibleAlertNode,
+  createErrorAlertNode,
+  createInfoAlertNode,
+  createManualToastNode,
+  createSuccessAlertNode,
+  createWarningAlertNode,
+} from "@/features/editor/factories/feedbackCompositions";
 import { generateNodeId } from "@/features/editor/utils/generateNodeId";
 import { DEFAULT_SVG_FILL } from "@/features/editor/types/svg";
 import { DEFAULT_LINK_HREF } from "@/features/editor/types/link";
@@ -123,7 +131,13 @@ export type InsertableElementType =
   | "statCard"
   | "metadataRow"
   | "collapsible"
-  | "modal";
+  | "modal"
+  | "infoAlert"
+  | "successAlert"
+  | "warningAlert"
+  | "errorAlert"
+  | "dismissibleAlert"
+  | "manualToast";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -776,6 +790,12 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   metadataRow: createMetadataRowNode,
   collapsible: createCollapsibleNode,
   modal: createModalNode,
+  infoAlert: createInfoAlertNode,
+  successAlert: createSuccessAlertNode,
+  warningAlert: createWarningAlertNode,
+  errorAlert: createErrorAlertNode,
+  dismissibleAlert: createDismissibleAlertNode,
+  manualToast: createManualToastNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -862,6 +882,12 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   metadataRow: { width: 260, height: 32 },
   collapsible: { width: 260, height: 100 },
   modal: { width: 320, height: 160 },
+  infoAlert: { width: 320, height: 100 },
+  successAlert: { width: 320, height: 100 },
+  warningAlert: { width: 320, height: 100 },
+  errorAlert: { width: 320, height: 100 },
+  dismissibleAlert: { width: 360, height: 100 },
+  manualToast: { width: 280, height: 120 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };

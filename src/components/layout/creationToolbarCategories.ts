@@ -4,6 +4,7 @@ import {
   AlignLeft,
   AppWindow,
   AtSign,
+  Bell,
   Blocks,
   Box,
   ChevronDown,
@@ -12,14 +13,17 @@ import {
   ChevronsLeftRight,
   ChevronsRight,
   Circle,
+  CircleCheck,
   CircleDot,
   CircleUserRound,
+  CircleX,
   ClipboardList,
   Columns2,
   Columns3,
   Globe,
   Hash,
   Image,
+  Info,
   KeyRound,
   Layout,
   LayoutPanelTop,
@@ -54,8 +58,10 @@ import {
   TextCursorInput,
   TextQuote,
   TrendingUp,
+  TriangleAlert,
   Type,
   UserRound,
+  X,
 } from "lucide-react";
 
 /**
@@ -131,7 +137,13 @@ export type InsertableCardType =
   | "statCard"
   | "metadataRow"
   | "collapsible"
-  | "modal";
+  | "modal"
+  | "infoAlert"
+  | "successAlert"
+  | "warningAlert"
+  | "errorAlert"
+  | "dismissibleAlert"
+  | "manualToast";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -355,7 +367,22 @@ function componentsCategory(): ToolbarCategoryContent {
           elementType: "modal",
           icon: PictureInPicture2,
         },
-        { name: "Toast", description: "Temporary status message" },
+        { name: "Info Alert", description: "Static informational message", elementType: "infoAlert", icon: Info },
+        { name: "Success Alert", description: "Static success message", elementType: "successAlert", icon: CircleCheck },
+        { name: "Warning Alert", description: "Static warning message", elementType: "warningAlert", icon: TriangleAlert },
+        { name: "Error Alert", description: "Static error message", elementType: "errorAlert", icon: CircleX },
+        {
+          name: "Dismissible Alert",
+          description: "Alert with a Dismiss button — visible on Canvas, hides in Preview when dismissed",
+          elementType: "dismissibleAlert",
+          icon: X,
+        },
+        {
+          name: "Manual Toast",
+          description: "Button shows a message in the corner; its own Close button hides it again — no auto-timeout",
+          elementType: "manualToast",
+          icon: Bell,
+        },
       ]),
       section(id, "data-display", "Data Display", [
         { name: "Badge", description: "Small status indicator", elementType: "badge", icon: Tag },

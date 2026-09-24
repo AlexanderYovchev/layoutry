@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createModalNode } from "@/features/editor/factories/interactionCompositions";
+import { createDismissibleAlertNode, createManualToastNode } from "@/features/editor/factories/feedbackCompositions";
 import { findDismissibleRelationships } from "./dismissibleTargets";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -91,5 +92,16 @@ describe("findDismissibleRelationships", () => {
     const modal = createModalNode();
     const [, dialog] = modal.children!;
     expect(findDismissibleRelationships(modal, { [dialog.id]: true })).toEqual([]);
+  });
+
+  it("Checkpoint 1.15.6.11.1 — a real Manual Toast's target is never dismissible via this generic rule, even while shown: Show/Close use show/hide, not toggle", () => {
+    const toastComposition = createManualToastNode();
+    const [, toast] = toastComposition.children!;
+    expect(findDismissibleRelationships(toastComposition, { [toast.id]: true })).toEqual([]);
+  });
+
+  it("Checkpoint 1.15.6.11.1 — a real Dismissible Alert is never dismissible via this generic rule, even while visible: Dismiss uses hide, not toggle, and the root has no initialPreviewVisibility: hidden anyway", () => {
+    const alert = createDismissibleAlertNode();
+    expect(findDismissibleRelationships(alert, { [alert.id]: true })).toEqual([]);
   });
 });

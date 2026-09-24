@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createModalNode } from "@/features/editor/factories/interactionCompositions";
+import { createDismissibleAlertNode, createManualToastNode } from "@/features/editor/factories/feedbackCompositions";
 import { cloneNodeWithFreshIds } from "./cloneNodeWithFreshIds";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -463,6 +464,36 @@ describe("cloneNodeWithFreshIds", () => {
       expect(clonedContent.children![0].text).toBe(content.children![0].text);
       expect(clonedDialog.htmlId).toBeUndefined();
       expect(dialog.htmlId).toBeUndefined();
+    });
+
+    it("Checkpoint 1.15.6.11.1 — remaps a Manual Toast's TWO different triggers (Show, Close) that target the SAME node, the same two-pass shape Modal already proved", () => {
+      const toastComposition = createManualToastNode();
+      const [showButton, toast] = toastComposition.children!;
+      const [, closeButton] = toast.children!;
+      expect(showButton.interactions![0].targetId).toBe(toast.id);
+      expect(closeButton.interactions![0].targetId).toBe(toast.id);
+
+      const clone = cloneNodeWithFreshIds(toastComposition);
+      const [clonedShowButton, clonedToast] = clone.children!;
+      const [, clonedCloseButton] = clonedToast.children!;
+
+      expect(clonedToast.id).not.toBe(toast.id);
+      expect(clonedShowButton.interactions![0].targetId).toBe(clonedToast.id);
+      expect(clonedCloseButton.interactions![0].targetId).toBe(clonedToast.id);
+      expect(clonedShowButton.interactions![0].targetId).toBe(clonedCloseButton.interactions![0].targetId);
+    });
+
+    it("Checkpoint 1.15.6.11.1 — remaps a Dismissible Alert's own Dismiss Button to hide the DUPLICATED root, never the original", () => {
+      const alert = createDismissibleAlertNode();
+      const [, dismissButton] = alert.children!;
+      expect(dismissButton.interactions![0].targetId).toBe(alert.id);
+
+      const clone = cloneNodeWithFreshIds(alert);
+      const [, clonedDismissButton] = clone.children!;
+
+      expect(clone.id).not.toBe(alert.id);
+      expect(clonedDismissButton.interactions![0].targetId).toBe(clone.id);
+      expect(clonedDismissButton.interactions![0].targetId).not.toBe(alert.id);
     });
   });
 });
