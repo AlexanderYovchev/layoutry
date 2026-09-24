@@ -37,12 +37,13 @@ import {
   createMetadataRowNode,
   createStatCardNode,
 } from "@/features/editor/factories/dataDisplayCompositions";
-import { createCollapsibleNode, createModalNode } from "@/features/editor/factories/interactionCompositions";
+import { createBasicTabsNode, createCollapsibleNode, createModalNode } from "@/features/editor/factories/interactionCompositions";
 import {
   createDismissibleAlertNode,
   createErrorAlertNode,
   createInfoAlertNode,
   createManualToastNode,
+  createPopoverNode,
   createSuccessAlertNode,
   createWarningAlertNode,
 } from "@/features/editor/factories/feedbackCompositions";
@@ -137,7 +138,9 @@ export type InsertableElementType =
   | "warningAlert"
   | "errorAlert"
   | "dismissibleAlert"
-  | "manualToast";
+  | "manualToast"
+  | "popover"
+  | "basicTabs";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -796,6 +799,8 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   errorAlert: createErrorAlertNode,
   dismissibleAlert: createDismissibleAlertNode,
   manualToast: createManualToastNode,
+  popover: createPopoverNode,
+  basicTabs: createBasicTabsNode,
 };
 
 /** Every element factory dispatches through here — the one place new insertable types get registered. */
@@ -888,6 +893,8 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   errorAlert: { width: 320, height: 100 },
   dismissibleAlert: { width: 360, height: 100 },
   manualToast: { width: 280, height: 120 },
+  popover: { width: 240, height: 140 },
+  basicTabs: { width: 360, height: 220 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };

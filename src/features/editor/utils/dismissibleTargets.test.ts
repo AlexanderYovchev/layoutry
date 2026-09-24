@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createModalNode } from "@/features/editor/factories/interactionCompositions";
-import { createDismissibleAlertNode, createManualToastNode } from "@/features/editor/factories/feedbackCompositions";
+import { createDismissibleAlertNode, createManualToastNode, createPopoverNode } from "@/features/editor/factories/feedbackCompositions";
 import { findDismissibleRelationships } from "./dismissibleTargets";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -103,5 +103,12 @@ describe("findDismissibleRelationships", () => {
   it("Checkpoint 1.15.6.11.1 — a real Dismissible Alert is never dismissible via this generic rule, even while visible: Dismiss uses hide, not toggle, and the root has no initialPreviewVisibility: hidden anyway", () => {
     const alert = createDismissibleAlertNode();
     expect(findDismissibleRelationships(alert, { [alert.id]: true })).toEqual([]);
+  });
+
+  it("Checkpoint 1.15.6.11.2 — a real Popover's Panel DOES naturally qualify for generic dismissal while open, with zero new inclusion logic: it uses click+toggle+initially-hidden, exactly like Dropdown's own menu", () => {
+    const popover = createPopoverNode();
+    const [trigger, panel] = popover.children!;
+    const relationships = findDismissibleRelationships(popover, { [panel.id]: true });
+    expect(relationships).toEqual([{ triggerId: trigger.id, targetId: panel.id, bindingId: trigger.interactions![0].id }]);
   });
 });

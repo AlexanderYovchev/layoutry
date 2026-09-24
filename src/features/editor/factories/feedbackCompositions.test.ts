@@ -4,6 +4,7 @@ import {
   createErrorAlertNode,
   createInfoAlertNode,
   createManualToastNode,
+  createPopoverNode,
   createSuccessAlertNode,
   createWarningAlertNode,
 } from "./feedbackCompositions";
@@ -185,6 +186,54 @@ describe("createManualToastNode (Checkpoint 1.15.6.11.1)", () => {
   it("every node and interaction gets its own fresh id, and two compositions never share one", () => {
     const idsA = collectIds(createManualToastNode() as unknown as AnyNode);
     const idsB = collectIds(createManualToastNode() as unknown as AnyNode);
+    expect(new Set(idsA).size).toBe(idsA.length);
+    expect(idsA.some((id) => idsB.includes(id))).toBe(false);
+  });
+});
+
+describe("createPopoverNode (Checkpoint 1.15.6.11.2)", () => {
+  it("is div (Flex Column) > Button 'Open Popover', Panel div > h3, p", () => {
+    const node = createPopoverNode();
+    expect(node.tag).toBe("div");
+    const [trigger, panel] = node.children!;
+    expect(trigger.tag).toBe("button");
+    expect(trigger.text).toBe("Open Popover");
+    expect(panel.tag).toBe("div");
+    const [heading, paragraph] = panel.children!;
+    expect(heading.tag).toBe("h3");
+    expect(paragraph.tag).toBe("p");
+  });
+
+  it("trigger authors exactly one click->toggle interaction targeting the Panel's own real id", () => {
+    const node = createPopoverNode();
+    const [trigger, panel] = node.children!;
+    expect(trigger.interactions).toHaveLength(1);
+    expect(trigger.interactions![0]).toMatchObject({ trigger: "click", action: "toggle", targetId: panel.id });
+  });
+
+  it("Panel starts hidden in Preview", () => {
+    const [, panel] = createPopoverNode().children!;
+    expect(panel.initialPreviewVisibility).toBe("hidden");
+  });
+
+  it("uses toggle — deliberately qualifies for the SAME generic click->toggle dismissal Dropdown already uses (Checkpoint 1.15.6.8.3), no new exclusion or inclusion logic needed", () => {
+    const [trigger] = createPopoverNode().children!;
+    expect(trigger.interactions![0].action).toBe("toggle");
+  });
+
+  it("stores no proprietary component tag or state field anywhere", () => {
+    for (const n of collectNodes(createPopoverNode() as unknown as Record<string, unknown> & { children?: Record<string, unknown>[] })) {
+      expect(n.tag).not.toBe("popover");
+      expect(n.popoverOpen).toBeUndefined();
+      expect(n.popoverState).toBeUndefined();
+      expect(n.popoverTarget).toBeUndefined();
+      expect(n.popoverPosition).toBeUndefined();
+    }
+  });
+
+  it("every node and interaction gets its own fresh id, and two compositions never share one", () => {
+    const idsA = collectIds(createPopoverNode() as unknown as AnyNode);
+    const idsB = collectIds(createPopoverNode() as unknown as AnyNode);
     expect(new Set(idsA).size).toBe(idsA.length);
     expect(idsA.some((id) => idsB.includes(id))).toBe(false);
   });

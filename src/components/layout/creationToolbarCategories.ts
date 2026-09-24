@@ -34,12 +34,14 @@ import {
   Lock,
   Mail,
   Menu,
+  MessageCircle,
   MousePointerClick,
   Newspaper,
   PanelBottom,
   PanelLeft,
   PanelRight,
   PanelTop,
+  PanelsTopLeft,
   Phone,
   PictureInPicture2,
   Pointer,
@@ -143,7 +145,9 @@ export type InsertableCardType =
   | "warningAlert"
   | "errorAlert"
   | "dismissibleAlert"
-  | "manualToast";
+  | "manualToast"
+  | "popover"
+  | "basicTabs";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -359,6 +363,12 @@ function componentsCategory(): ToolbarCategoryContent {
       ]),
       section(id, "interactive", "Interactive", [
         { name: "Collapsible", description: "Button toggles a content panel", elementType: "collapsible", icon: ChevronsUpDown },
+        {
+          name: "Basic Tabs",
+          description: "Switch between multiple content panels in Preview — visual click-switching only, no keyboard/ARIA tab semantics yet",
+          elementType: "basicTabs",
+          icon: PanelsTopLeft,
+        },
       ]),
       section(id, "feedback-overlays", "Feedback & Overlays", [
         {
@@ -382,6 +392,12 @@ function componentsCategory(): ToolbarCategoryContent {
           description: "Button shows a message in the corner; its own Close button hides it again — no auto-timeout",
           elementType: "manualToast",
           icon: Bell,
+        },
+        {
+          name: "Popover",
+          description: "Button toggles a contextual content panel — visible on Canvas, toggles in Preview",
+          elementType: "popover",
+          icon: MessageCircle,
         },
       ]),
       section(id, "data-display", "Data Display", [

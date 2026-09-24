@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createModalNode } from "@/features/editor/factories/interactionCompositions";
-import { createDismissibleAlertNode, createManualToastNode } from "@/features/editor/factories/feedbackCompositions";
+import { createBasicTabsNode, createModalNode } from "@/features/editor/factories/interactionCompositions";
+import { createDismissibleAlertNode, createManualToastNode, createPopoverNode } from "@/features/editor/factories/feedbackCompositions";
 import { cloneNodeWithFreshIds } from "./cloneNodeWithFreshIds";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -494,6 +494,54 @@ describe("cloneNodeWithFreshIds", () => {
       expect(clone.id).not.toBe(alert.id);
       expect(clonedDismissButton.interactions![0].targetId).toBe(clone.id);
       expect(clonedDismissButton.interactions![0].targetId).not.toBe(alert.id);
+    });
+
+    it("Checkpoint 1.15.6.11.2 — remaps a Popover's own trigger to toggle the DUPLICATED Panel, never the original", () => {
+      const popover = createPopoverNode();
+      const [trigger, panel] = popover.children!;
+      expect(trigger.interactions![0].targetId).toBe(panel.id);
+
+      const clone = cloneNodeWithFreshIds(popover);
+      const [clonedTrigger, clonedPanel] = clone.children!;
+
+      expect(clonedPanel.id).not.toBe(panel.id);
+      expect(clonedTrigger.interactions![0].targetId).toBe(clonedPanel.id);
+      expect(clonedTrigger.interactions![0].targetId).not.toBe(panel.id);
+    });
+
+    it("Checkpoint 1.15.6.11.2 — remaps ALL NINE of a duplicated Basic Tabs' interaction targets to the duplicated Panels, never the originals", () => {
+      const tabs = createBasicTabsNode();
+      const [controls, panels] = tabs.children!;
+      const [panel1, panel2, panel3] = panels.children!;
+
+      const clone = cloneNodeWithFreshIds(tabs);
+      const [clonedControls, clonedPanels] = clone.children!;
+      const [clonedPanel1, clonedPanel2, clonedPanel3] = clonedPanels.children!;
+
+      expect(clonedPanel1.id).not.toBe(panel1.id);
+      expect(clonedPanel2.id).not.toBe(panel2.id);
+      expect(clonedPanel3.id).not.toBe(panel3.id);
+
+      const originalPanelIds = new Set([panel1.id, panel2.id, panel3.id]);
+      const clonedPanelIds = new Set([clonedPanel1.id, clonedPanel2.id, clonedPanel3.id]);
+
+      let totalBindings = 0;
+      for (const clonedTab of clonedControls.children!) {
+        expect(clonedTab.interactions).toHaveLength(3);
+        for (const binding of clonedTab.interactions!) {
+          totalBindings += 1;
+          expect(clonedPanelIds.has(binding.targetId)).toBe(true);
+          expect(originalPanelIds.has(binding.targetId)).toBe(false);
+        }
+      }
+      expect(totalBindings).toBe(9);
+
+      // Originals remain completely untouched.
+      for (const tab of controls.children!) {
+        for (const binding of tab.interactions!) {
+          expect(originalPanelIds.has(binding.targetId)).toBe(true);
+        }
+      }
     });
   });
 });

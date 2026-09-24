@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createCollapsibleNode } from "@/features/editor/factories/interactionCompositions";
+import { createBasicTabsNode, createCollapsibleNode } from "@/features/editor/factories/interactionCompositions";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
 import { useEditorStore } from "./useEditorStore";
 
@@ -318,6 +318,124 @@ describe("Interaction & Preview foundation — store integration (Checkpoint 1.1
       expect(store.collapsibleOpen).toBeUndefined();
       expect(store.dropdownOpen).toBeUndefined();
       expect(store.setModalOpen).toBeUndefined();
+    });
+  });
+
+  /**
+   * Checkpoint 1.15.6.11.2 — the central architectural proof the
+   * 1.15.6.11 audit set out to confirm: one trigger node's MULTIPLE
+   * matching click bindings all execute within a single
+   * executeInteractionsForNode call, landing in one runtimeVisibility
+   * write. Uses the real Basic Tabs composition (three Buttons, each
+   * owning three ordinary show/hide bindings) rather than a synthetic
+   * fixture, so this exercises the exact document shape a real user gets
+   * from the Creation Toolbar.
+   */
+  describe("Basic Tabs — multi-binding execution proof (Checkpoint 1.15.6.11.2)", () => {
+    function setupTabs() {
+      const tabs = createBasicTabsNode();
+      useEditorStore.setState((state) => ({ document: { ...state.document, children: [tabs] } }));
+      const [controls, panels] = tabs.children!;
+      const [tab1, tab2, tab3] = controls.children!;
+      const [panel1, panel2, panel3] = panels.children!;
+      useEditorStore.getState().enterPreview();
+      return { tab1, tab2, tab3, panel1, panel2, panel3 };
+    }
+
+    it("Preview entry seeds exactly Panel 1 visible, Panels 2/3 hidden, from authored initial visibility alone", () => {
+      const { panel1, panel2, panel3 } = setupTabs();
+      const visibility = useEditorStore.getState().runtimeVisibility;
+      expect(visibility[panel1.id] ?? true).toBe(true);
+      expect(visibility[panel2.id]).toBe(false);
+      expect(visibility[panel3.id]).toBe(false);
+    });
+
+    it("clicking Tab 2 shows Panel 2 and hides Panels 1 and 3 — all three bindings applied from one executeInteractionsForNode call", () => {
+      const { tab2, panel1, panel2, panel3 } = setupTabs();
+
+      useEditorStore.getState().executeInteractionsForNode(tab2.id, "click");
+
+      const visibility = useEditorStore.getState().runtimeVisibility;
+      expect(visibility[panel1.id]).toBe(false);
+      expect(visibility[panel2.id]).toBe(true);
+      expect(visibility[panel3.id]).toBe(false);
+    });
+
+    it("full cycle 1 -> 2 -> 3 -> 1: exactly one panel visible after every click", () => {
+      const { tab1, tab2, tab3, panel1, panel2, panel3 } = setupTabs();
+      const store = useEditorStore.getState();
+
+      store.executeInteractionsForNode(tab2.id, "click");
+      let v = useEditorStore.getState().runtimeVisibility;
+      expect([v[panel1.id], v[panel2.id], v[panel3.id]]).toEqual([false, true, false]);
+
+      store.executeInteractionsForNode(tab3.id, "click");
+      v = useEditorStore.getState().runtimeVisibility;
+      expect([v[panel1.id], v[panel2.id], v[panel3.id]]).toEqual([false, false, true]);
+
+      store.executeInteractionsForNode(tab1.id, "click");
+      v = useEditorStore.getState().runtimeVisibility;
+      expect([v[panel1.id] ?? true, v[panel2.id], v[panel3.id]]).toEqual([true, false, false]);
+    });
+
+    it("tab switching never touches the document or history — one call, zero history entries, zero document mutation", () => {
+      const { tab2 } = setupTabs();
+      const documentBefore = useEditorStore.getState().document;
+      const historyBefore = useEditorStore.getState().past.length;
+
+      useEditorStore.getState().executeInteractionsForNode(tab2.id, "click");
+
+      expect(useEditorStore.getState().document).toBe(documentBefore);
+      expect(useEditorStore.getState().past.length).toBe(historyBefore);
+    });
+
+    it("deleting Panel 2 removes the bindings that targeted it from all three Tab Buttons, leaving the Panel 1/3 bindings intact — no Tabs-specific cleanup code, the existing generic deletion behavior", () => {
+      const { tab1, tab2, tab3, panel1, panel2, panel3 } = setupTabs();
+      useEditorStore.getState().exitPreview();
+      useEditorStore.getState().selectOnly(panel2.id);
+
+      useEditorStore.getState().deleteSelection();
+
+      const document = useEditorStore.getState().document;
+      function findNode(id: string) {
+        function visit(n: import("@/features/editor/types/document").EditorElementNode): import("@/features/editor/types/document").EditorElementNode | undefined {
+          if (n.id === id) return n;
+          for (const child of n.children ?? []) {
+            const found = visit(child);
+            if (found) return found;
+          }
+          return undefined;
+        }
+        return visit(document);
+      }
+
+      expect(findNode(panel2.id)).toBeUndefined();
+      expect(findNode(panel1.id)).toBeDefined();
+      expect(findNode(panel3.id)).toBeDefined();
+
+      for (const tabId of [tab1.id, tab2.id, tab3.id]) {
+        const tab = findNode(tabId)!;
+        expect(tab.interactions!.some((b) => b.targetId === panel2.id)).toBe(false);
+      }
+      // Tab 1's own show->Panel1 and hide->Panel3 bindings survive untouched.
+      const survivingTab1 = findNode(tab1.id)!;
+      expect(survivingTab1.interactions).toHaveLength(2);
+      expect(survivingTab1.interactions!.find((b) => b.targetId === panel1.id)?.action).toBe("show");
+      expect(survivingTab1.interactions!.find((b) => b.targetId === panel3.id)?.action).toBe("hide");
+    });
+
+    it("re-entering Preview after switching tabs resets to Panel 1 visible again — runtime state is never carried across Preview sessions", () => {
+      const { tab3, panel1, panel2, panel3 } = setupTabs();
+      useEditorStore.getState().executeInteractionsForNode(tab3.id, "click");
+      expect(useEditorStore.getState().runtimeVisibility[panel3.id]).toBe(true);
+
+      useEditorStore.getState().exitPreview();
+      useEditorStore.getState().enterPreview();
+
+      const visibility = useEditorStore.getState().runtimeVisibility;
+      expect(visibility[panel1.id] ?? true).toBe(true);
+      expect(visibility[panel2.id]).toBe(false);
+      expect(visibility[panel3.id]).toBe(false);
     });
   });
 });

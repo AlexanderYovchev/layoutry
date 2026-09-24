@@ -165,3 +165,134 @@ export function createModalNode(): EditorElementNode {
     children: [openButton, dialog],
   };
 }
+
+const TAB_CONTROLS_FLEX: FlexContainerSettings = {
+  direction: "row",
+  wrap: "nowrap",
+  justifyContent: "start",
+  alignItems: "stretch",
+  rowGap: 8,
+  columnGap: 8,
+};
+
+const TAB_PANELS_FLEX: FlexContainerSettings = {
+  direction: "column",
+  wrap: "nowrap",
+  justifyContent: "start",
+  alignItems: "stretch",
+  rowGap: 8,
+  columnGap: 8,
+};
+
+const TAB_PANEL_CONTENT_FLEX: FlexContainerSettings = {
+  direction: "column",
+  wrap: "nowrap",
+  justifyContent: "start",
+  alignItems: "stretch",
+  rowGap: 8,
+  columnGap: 8,
+};
+
+function tabPanel(id: string, hidden: boolean, title: string, body: string): EditorElementNode {
+  return {
+    id,
+    tag: "div",
+    ...(hidden ? { initialPreviewVisibility: "hidden" as const } : {}),
+    flowLayout: { display: "flex", flex: TAB_PANEL_CONTENT_FLEX },
+    spacing: COLLAPSIBLE_CONTENT_PADDING,
+    children: [
+      { id: generateNodeId("h3"), tag: "h3", text: title, typography: { fontSize: { value: 16, unit: "px" }, fontWeight: 600 } },
+      { id: generateNodeId("p"), tag: "p", text: body },
+    ],
+  };
+}
+
+function tabButton(text: string, bindings: { targetId: string; action: "show" | "hide" }[]): EditorElementNode {
+  return {
+    id: generateNodeId("button"),
+    tag: "button",
+    text,
+    interactions: bindings.map(({ targetId, action }) => ({ id: generateNodeId("interaction"), trigger: "click", action, targetId })),
+  };
+}
+
+/**
+ * div (Flex Column) > Tab Controls div (Flex Row) > button x3, Panels div
+ * (Flex Column) > panel div x3 (Checkpoint 1.15.6.11.2) — the central
+ * architectural proof the 1.15.6.11 audit set out to confirm: a single
+ * trigger node can already own MULTIPLE click bindings, and
+ * executeInteractionsForNode (useEditorStore.ts) already applies every
+ * one of them in a single state update. Each Tab Button therefore owns
+ * exactly three ordinary bindings — one `show` (its own panel) and two
+ * `hide` (the other two panels) — using the EXACT SAME generic
+ * `EditorElementNode.interactions` array every other composition already
+ * uses. No `switchTab`/`showOnly`/`activeTab` action or field was added
+ * or needed; this is not a new interaction primitive, only a new
+ * *arrangement* of the existing one.
+ *
+ * Panel 1 starts visible (the ordinary default — no
+ * `initialPreviewVisibility` written at all, exactly like any other
+ * node); Panels 2 and 3 start hidden, the same generic field Dropdown's
+ * menu/Modal's Dialog/Toast's target already use. All three panels remain
+ * fully visible and independently editable in Design regardless of this
+ * authored state (DocumentNodeRenderer's own isRuntimeHidden formula is
+ * Preview-only) — zero special-casing needed for that either.
+ *
+ * Deliberately excluded from generic dismissal (Checkpoint 1.15.6.8.3):
+ * every binding here is `show`/`hide`, never `toggle`, so
+ * findDismissibleRelationships' V1 signature never qualifies any of them
+ * — outside-click/Escape must never close a Tab panel, and this is true
+ * automatically, with no exclusion logic written for Tabs specifically.
+ *
+ * No ARIA tablist/tab/tabpanel semantics, no aria-selected/aria-controls,
+ * no keyboard arrow navigation, and no active-tab visual styling are
+ * implemented — Layoutry has no generic ARIA/attributes infrastructure to
+ * build them honestly on (see the 1.15.6.11 audit's own Part 22/R). This
+ * is explicitly a visual click-switching composition, not semantic Tabs.
+ */
+export function createBasicTabsNode(): EditorElementNode {
+  const panel1Id = generateNodeId("div");
+  const panel2Id = generateNodeId("div");
+  const panel3Id = generateNodeId("div");
+
+  const tab1 = tabButton("Tab 1", [
+    { targetId: panel1Id, action: "show" },
+    { targetId: panel2Id, action: "hide" },
+    { targetId: panel3Id, action: "hide" },
+  ]);
+  const tab2 = tabButton("Tab 2", [
+    { targetId: panel1Id, action: "hide" },
+    { targetId: panel2Id, action: "show" },
+    { targetId: panel3Id, action: "hide" },
+  ]);
+  const tab3 = tabButton("Tab 3", [
+    { targetId: panel1Id, action: "hide" },
+    { targetId: panel2Id, action: "hide" },
+    { targetId: panel3Id, action: "show" },
+  ]);
+
+  const controls: EditorElementNode = {
+    id: generateNodeId("div"),
+    tag: "div",
+    flowLayout: { display: "flex", flex: TAB_CONTROLS_FLEX },
+    children: [tab1, tab2, tab3],
+  };
+
+  const panels: EditorElementNode = {
+    id: generateNodeId("div"),
+    tag: "div",
+    flowLayout: { display: "flex", flex: TAB_PANELS_FLEX },
+    children: [
+      tabPanel(panel1Id, false, "Tab 1 Content", "This is the content for the first tab."),
+      tabPanel(panel2Id, true, "Tab 2 Content", "This is the content for the second tab."),
+      tabPanel(panel3Id, true, "Tab 3 Content", "This is the content for the third tab."),
+    ],
+  };
+
+  return {
+    id: generateNodeId("div"),
+    tag: "div",
+    flowLayout: { display: "flex", flex: COLLAPSIBLE_ROOT_FLEX },
+    children: [controls, panels],
+  };
+}

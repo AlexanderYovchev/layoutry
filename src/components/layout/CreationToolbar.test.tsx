@@ -237,6 +237,8 @@ describe("CreationToolbar", () => {
       "Error Alert",
       "Dismissible Alert",
       "Manual Toast",
+      "Popover",
+      "Basic Tabs",
     ];
     for (const card of cards) {
       const isEnabledCard = enabledCardNames.some((name) => card.textContent?.startsWith(name));

@@ -280,3 +280,69 @@ export function createManualToastNode(): EditorElementNode {
     children: [showButton, toast],
   };
 }
+
+const POPOVER_ROOT_FLEX: FlexContainerSettings = {
+  direction: "column",
+  wrap: "nowrap",
+  justifyContent: "start",
+  alignItems: "start",
+  rowGap: 8,
+  columnGap: 8,
+};
+
+const POPOVER_PANEL_FLEX: FlexContainerSettings = {
+  direction: "column",
+  wrap: "nowrap",
+  justifyContent: "start",
+  alignItems: "stretch",
+  rowGap: 8,
+  columnGap: 8,
+};
+
+/**
+ * div (Flex Column) > Button "Open Popover" (click->toggle->panel), Panel
+ * div (Flex Column, initialPreviewVisibility: hidden) > h3, p (Checkpoint
+ * 1.15.6.11.2). Architecturally identical to createDropdownButtonNode
+ * (interactionCompositions.ts) — the 1.15.6.11 audit's own conclusion was
+ * that Popover IS Dropdown's own pattern under a different name, so this
+ * deliberately reuses it verbatim rather than inventing a second one:
+ * the same managed Flex-Column stacked layout (trigger above panel, no
+ * Free/absolute positioning, no anchored/floating overlay system — kept
+ * out per this checkpoint's own explicit "keep V1 simple" instruction),
+ * the same single `click -> toggle -> panel.id` binding, and the same
+ * `initialPreviewVisibility: "hidden"` on the panel. Generic dismissal
+ * (Checkpoint 1.15.6.8.3) already qualifies this relationship with zero
+ * new code, exactly like Dropdown's own menu.
+ */
+export function createPopoverNode(): EditorElementNode {
+  const panelId = generateNodeId("div");
+
+  const trigger: EditorElementNode = {
+    ...createButtonNode(),
+    text: "Open Popover",
+    interactions: [{ id: generateNodeId("interaction"), trigger: "click", action: "toggle", targetId: panelId }],
+  };
+
+  const panel: EditorElementNode = {
+    id: panelId,
+    tag: "div",
+    initialPreviewVisibility: "hidden",
+    flowLayout: { display: "flex", flex: POPOVER_PANEL_FLEX },
+    background: { color: "#ffffff" },
+    border: alertBorder("#e4e4e7"),
+    borderRadius: ALERT_RADIUS,
+    boxShadow: applyShadowPreset("medium"),
+    spacing: { margin: ZERO_EDGES, padding: { top: 16, right: 16, bottom: 16, left: 16 } },
+    children: [
+      { id: generateNodeId("h3"), tag: "h3", text: "Popover Title", typography: { fontSize: { value: 15, unit: "px" }, fontWeight: 600, color: "#18181b" } },
+      alertBody("Popover content goes here."),
+    ],
+  };
+
+  return {
+    id: generateNodeId("div"),
+    tag: "div",
+    flowLayout: { display: "flex", flex: POPOVER_ROOT_FLEX },
+    children: [trigger, panel],
+  };
+}

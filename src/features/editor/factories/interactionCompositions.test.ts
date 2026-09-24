@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCollapsibleNode, createModalNode } from "./interactionCompositions";
+import { createBasicTabsNode, createCollapsibleNode, createModalNode } from "./interactionCompositions";
 
 /**
  * Checkpoint 1.15.6.8 — the Collapsible proof composition. Must be an
@@ -152,6 +152,95 @@ describe("createModalNode", () => {
     const idsA = collectIds(createModalNode() as unknown as AnyNode);
     expect(new Set(idsA).size).toBe(idsA.length);
     const idsB = collectIds(createModalNode() as unknown as AnyNode);
+    expect(idsA.some((id) => idsB.includes(id))).toBe(false);
+  });
+});
+
+describe("createBasicTabsNode (Checkpoint 1.15.6.11.2)", () => {
+  it("is div (Flex Column) > controls div (Flex Row) > button x3, panels div (Flex Column) > panel div x3 (h3, p each)", () => {
+    const node = createBasicTabsNode();
+    expect(node.tag).toBe("div");
+    const [controls, panels] = node.children!;
+    expect(controls.tag).toBe("div");
+    expect(controls.children).toHaveLength(3);
+    for (const tab of controls.children!) expect(tab.tag).toBe("button");
+    expect(panels.tag).toBe("div");
+    expect(panels.children).toHaveLength(3);
+    for (const panel of panels.children!) {
+      expect(panel.tag).toBe("div");
+      const [heading, paragraph] = panel.children!;
+      expect(heading.tag).toBe("h3");
+      expect(paragraph.tag).toBe("p");
+    }
+  });
+
+  it("Panel 1 starts visible (no initialPreviewVisibility written); Panels 2 and 3 start hidden", () => {
+    const [, panels] = createBasicTabsNode().children!;
+    const [panel1, panel2, panel3] = panels.children!;
+    expect(panel1.initialPreviewVisibility).toBeUndefined();
+    expect(panel2.initialPreviewVisibility).toBe("hidden");
+    expect(panel3.initialPreviewVisibility).toBe("hidden");
+  });
+
+  it("each Tab Button owns exactly three ordinary click bindings — one show, two hide", () => {
+    const [controls] = createBasicTabsNode().children!;
+    for (const tab of controls.children!) {
+      expect(tab.interactions).toHaveLength(3);
+      for (const binding of tab.interactions!) {
+        expect(binding.trigger).toBe("click");
+        expect(["show", "hide"]).toContain(binding.action);
+      }
+      expect(tab.interactions!.filter((b) => b.action === "show")).toHaveLength(1);
+      expect(tab.interactions!.filter((b) => b.action === "hide")).toHaveLength(2);
+    }
+  });
+
+  it("Tab 1 shows Panel 1 and hides Panels 2/3; Tab 2 shows Panel 2 and hides 1/3; Tab 3 shows Panel 3 and hides 1/2", () => {
+    const node = createBasicTabsNode();
+    const [controls, panels] = node.children!;
+    const [tab1, tab2, tab3] = controls.children!;
+    const [panel1, panel2, panel3] = panels.children!;
+
+    function actionFor(tab: typeof tab1, targetId: string) {
+      return tab.interactions!.find((b) => b.targetId === targetId)?.action;
+    }
+
+    expect(actionFor(tab1, panel1.id)).toBe("show");
+    expect(actionFor(tab1, panel2.id)).toBe("hide");
+    expect(actionFor(tab1, panel3.id)).toBe("hide");
+
+    expect(actionFor(tab2, panel1.id)).toBe("hide");
+    expect(actionFor(tab2, panel2.id)).toBe("show");
+    expect(actionFor(tab2, panel3.id)).toBe("hide");
+
+    expect(actionFor(tab3, panel1.id)).toBe("hide");
+    expect(actionFor(tab3, panel2.id)).toBe("hide");
+    expect(actionFor(tab3, panel3.id)).toBe("show");
+  });
+
+  it("no binding ever uses toggle — Tabs is correctly, automatically excluded from generic click->toggle dismissal with zero exclusion logic written", () => {
+    const [controls] = createBasicTabsNode().children!;
+    for (const tab of controls.children!) {
+      for (const binding of tab.interactions!) expect(binding.action).not.toBe("toggle");
+    }
+  });
+
+  it("stores no proprietary tag or state field anywhere (no tag:'tabs'/'tab'/'tabpanel', no activeTab/selectedTab)", () => {
+    function collectNodes(n: Record<string, unknown> & { children?: Record<string, unknown>[] }): Record<string, unknown>[] {
+      return [n, ...((n.children as Record<string, unknown>[] | undefined) ?? []).flatMap(collectNodes)];
+    }
+    for (const n of collectNodes(createBasicTabsNode() as unknown as Record<string, unknown> & { children?: Record<string, unknown>[] })) {
+      expect(["tabs", "tab", "tabpanel"]).not.toContain(n.tag);
+      expect(n.activeTab).toBeUndefined();
+      expect(n.selectedTab).toBeUndefined();
+      expect(n.tabGroup).toBeUndefined();
+    }
+  });
+
+  it("every node and every interaction gets its own fresh id, and two separate compositions never share one", () => {
+    const idsA = collectIds(createBasicTabsNode() as unknown as AnyNode);
+    expect(new Set(idsA).size).toBe(idsA.length);
+    const idsB = collectIds(createBasicTabsNode() as unknown as AnyNode);
     expect(idsA.some((id) => idsB.includes(id))).toBe(false);
   });
 });
