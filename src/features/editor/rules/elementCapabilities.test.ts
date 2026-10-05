@@ -464,6 +464,45 @@ describe("elementCapabilities", () => {
     });
   });
 
+  describe("Audio (Checkpoint 1.15.6.12.3)", () => {
+    it("Audio is a leaf (not a container) and not text-bearing", () => {
+      const audio = getElementCapabilities("audio");
+      expect(audio.canContainChildren).toBe(false);
+      expect(audio.supportsTypography).toBe(false);
+    });
+
+    it("Audio gets NO supportsIntrinsicAspectRatio/supportsMediaFit — unlike Video/Image, no visual replaced content exists for object-fit, and no ratio worth resize-locking", () => {
+      const audio = getElementCapabilities("audio");
+      expect(audio.supportsIntrinsicAspectRatio).toBe(false);
+      expect(audio.supportsMediaFit).toBe(false);
+    });
+
+    it("Audio DOES get supportsBackground — unlike Video/Image/Iframe — verified live: a native audio control bar keeps a fixed ~54px height regardless of wrapper height, so a resized wrapper can genuinely reveal background behind it", () => {
+      expect(getElementCapabilities("audio").supportsBackground).toBe(true);
+      for (const tag of ["img", "video", "iframe"]) {
+        expect(getElementCapabilities(tag).supportsBackground, tag).toBe(false);
+      }
+    });
+
+    it("Audio still gets every other useful box-model capability from DEFAULT_CAPABILITIES — resize/sizing/position/border/border-radius/box-shadow/filters/display", () => {
+      const audio = getElementCapabilities("audio");
+      expect(audio.resizableX).toBe(true);
+      expect(audio.resizableY).toBe(true);
+      expect(audio.supportsAspectRatio).toBe(true);
+      expect(audio.supportsPosition).toBe(true);
+      expect(audio.supportsBorder).toBe(true);
+      expect(audio.supportsBorderRadius).toBe(true);
+      expect(audio.supportsBoxShadow).toBe(true);
+      expect(audio.supportsFilters).toBe(true);
+      expect(audio.supportsDisplay).toBe(true);
+      expect(audio.selectable).toBe(true);
+    });
+
+    it("Audio does not expose the child-Layout section — a leaf (canContainChildren already gates it, no override needed)", () => {
+      expect(getElementCapabilities("audio").canContainChildren).toBe(false);
+    });
+  });
+
   describe("SVG Foundation (Checkpoint 1.15.5)", () => {
     it("SVG is a leaf, not text-bearing, and does not opt into a child-Layout section", () => {
       const svg = getElementCapabilities("svg");
@@ -698,6 +737,25 @@ describe("intersectElementCapabilities (Checkpoint 1.15.2 — multi-selection ca
 
   it("Image + Iframe: Iframe doesn't support Media Fit — false for the pair", () => {
     expect(intersectElementCapabilities(["img", "iframe"]).supportsMediaFit).toBe(false);
+  });
+
+  it("Audio + Video (Checkpoint 1.15.6.12.3): Audio never supports Media Fit, so the intersection correctly hides it even though Video alone does", () => {
+    const result = intersectElementCapabilities(["audio", "video"]);
+    expect(result.supportsMediaFit).toBe(false);
+    expect(result.supportsIntrinsicAspectRatio).toBe(false);
+  });
+
+  it("Audio + Video: both support Background/Border/Position/Display/resize — true for the pair", () => {
+    const result = intersectElementCapabilities(["audio", "video"]);
+    expect(result.supportsBorder).toBe(true);
+    expect(result.supportsPosition).toBe(true);
+    expect(result.supportsDisplay).toBe(true);
+    expect(result.resizableX).toBe(true);
+    expect(result.resizableY).toBe(true);
+  });
+
+  it("Audio + Image: Image doesn't support Background the way Audio does — false for the pair", () => {
+    expect(intersectElementCapabilities(["audio", "img"]).supportsBackground).toBe(false);
   });
 
   it("every boolean flag is a true logical AND across three or more tags", () => {

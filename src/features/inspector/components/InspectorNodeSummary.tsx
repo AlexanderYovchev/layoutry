@@ -1,3 +1,4 @@
+import { InspectorAudioSection } from "@/features/inspector/components/InspectorAudioSection";
 import { InspectorBackgroundSection } from "@/features/inspector/components/InspectorBackgroundSection";
 import { InspectorBorderRadiusSection } from "@/features/inspector/components/InspectorBorderRadiusSection";
 import { InspectorBorderSection } from "@/features/inspector/components/InspectorBorderSection";
@@ -150,6 +151,7 @@ export function InspectorNodeSummary({
       )}
       {node.tag === "img" && <InspectorImageSection node={node} />}
       {node.tag === "video" && <InspectorVideoSection node={node} />}
+      {node.tag === "audio" && <InspectorAudioSection node={node} />}
       {node.tag === "iframe" && <InspectorIframeSection node={node} />}
       {getElementCapabilities(node.tag).supportsSvgSettings && !isEditingThisSvg && (
         <InspectorSvgSection node={node} protection={protection} />

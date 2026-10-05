@@ -1,13 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { InspectorBooleanToggle } from "@/features/inspector/components/InspectorBooleanToggle";
+import { InspectorMediaPlaybackFields } from "@/features/inspector/components/InspectorMediaPlaybackFields";
 import { InspectorMediaTextField } from "@/features/inspector/components/InspectorMediaTextField";
-import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { isValidLinkHref } from "@/features/editor/types/link";
-import { getVideoControls } from "@/features/editor/types/video";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
 interface InspectorVideoSectionProps {
@@ -38,10 +36,6 @@ interface InspectorVideoSectionProps {
 export function InspectorVideoSection({ node }: InspectorVideoSectionProps) {
   const setElementSrc = useEditorStore((state) => state.setElementSrc);
   const setElementPoster = useEditorStore((state) => state.setElementPoster);
-  const setElementControls = useEditorStore((state) => state.setElementControls);
-  const setElementAutoplay = useEditorStore((state) => state.setElementAutoplay);
-  const setElementMuted = useEditorStore((state) => state.setElementMuted);
-  const setElementLoop = useEditorStore((state) => state.setElementLoop);
 
   const [srcError, setSrcError] = useState<string | undefined>(undefined);
   const [posterError, setPosterError] = useState<string | undefined>(undefined);
@@ -99,29 +93,7 @@ export function InspectorVideoSection({ node }: InspectorVideoSectionProps) {
         }}
         error={posterError}
       />
-      <InspectorPropertyRow label="Controls">
-        <InspectorBooleanToggle
-          checked={getVideoControls(node)}
-          onChange={(checked) => setElementControls(node.id, checked)}
-          label="Controls"
-        />
-      </InspectorPropertyRow>
-      <InspectorPropertyRow label="Autoplay">
-        <InspectorBooleanToggle
-          checked={node.autoplay ?? false}
-          onChange={(checked) => setElementAutoplay(node.id, checked)}
-          label="Autoplay"
-        />
-      </InspectorPropertyRow>
-      <p className="px-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">
-        Most browsers only allow autoplay when the video is muted.
-      </p>
-      <InspectorPropertyRow label="Muted">
-        <InspectorBooleanToggle checked={node.muted ?? false} onChange={(checked) => setElementMuted(node.id, checked)} label="Muted" />
-      </InspectorPropertyRow>
-      <InspectorPropertyRow label="Loop">
-        <InspectorBooleanToggle checked={node.loop ?? false} onChange={(checked) => setElementLoop(node.id, checked)} label="Loop" />
-      </InspectorPropertyRow>
+      <InspectorMediaPlaybackFields node={node} />
     </InspectorSection>
   );
 }

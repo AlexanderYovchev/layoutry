@@ -69,8 +69,8 @@ describe("creationToolbarCategories — one primary home per element (Checkpoint
     ]);
   });
 
-  it("Media owns Image/Video/SVG/Embed, with exactly one enabled card per primitive", () => {
+  it("Media owns Image/Video/Audio/SVG/Embed, with exactly one enabled card per primitive", () => {
     const mediaNames = enabledCardNames("Media");
-    expect(mediaNames).toEqual(["Image", "Video", "SVG", "Embed"]);
+    expect(mediaNames).toEqual(["Image", "Video", "Audio Player", "SVG", "Embed"]);
   });
 });

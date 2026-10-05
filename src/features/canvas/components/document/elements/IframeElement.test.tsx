@@ -77,4 +77,16 @@ describe("IframeElement (Checkpoint 1.15)", () => {
     expect(wrapper).not.toHaveAttribute("id");
     expect(wrapper.className).not.toContain("my-custom-class");
   });
+
+  it("Checkpoint 1.15.6.12.3 — the MediaInteractionShield is present in Design (unchanged) but absent in Preview (the fix), so the embedded document becomes reachable", () => {
+    const { rerender } = render(
+      <IframeElement node={{ id: "iframe-1", tag: "iframe" }} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+    expect(document.querySelector("[aria-hidden='true']")).not.toBeNull();
+
+    useEditorStore.setState({ editorMode: "preview" });
+    rerender(<IframeElement node={{ id: "iframe-1", tag: "iframe" }} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+    expect(document.querySelector("[aria-hidden='true']")).toBeNull();
+    expect(document.querySelector("iframe")).not.toBeNull();
+  });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createArticleNode,
   createAsideNode,
+  createAudioNode,
   createButtonNode,
   createCheckboxNode,
   createContainerNode,
@@ -47,6 +48,7 @@ import {
   createUnorderedListNode,
   createUrlInputNode,
   createVideoNode,
+  getDefaultFreeElementSize,
   isInsertableElementType,
 } from "./elementFactories";
 
@@ -464,6 +466,42 @@ describe("element factories", () => {
     });
   });
 
+  describe("Audio Foundation (Checkpoint 1.15.6.12.3)", () => {
+    it("createAudioNode produces a genuine, leaf <audio> with no src/controls/autoplay/muted/loop", () => {
+      const node = createAudioNode();
+      expect(node.tag).toBe("audio");
+      expect(node.src).toBeUndefined();
+      expect(node.controls).toBeUndefined();
+      expect(node.autoplay).toBeUndefined();
+      expect(node.muted).toBeUndefined();
+      expect(node.loop).toBeUndefined();
+      expect(node.children).toBeUndefined();
+      expect(node.id).toMatch(/^audio-/);
+    });
+
+    it("createAudioNode has no poster field — Audio never had one", () => {
+      expect(createAudioNode().poster).toBeUndefined();
+    });
+
+    it("createAudioNode leaves flowLayout/spacing unset, matching every other leaf primitive", () => {
+      const node = createAudioNode();
+      expect(node.flowLayout).toBeUndefined();
+      expect(node.spacing).toBeUndefined();
+    });
+
+    it("createAudioNode produces a unique id per call", () => {
+      expect(createAudioNode().id).not.toBe(createAudioNode().id);
+    });
+
+    it("is registered as an InsertableElementType, resolving to createAudioNode via FACTORIES_BY_TYPE", () => {
+      expect(isInsertableElementType("audio")).toBe(true);
+    });
+
+    it("getDefaultFreeElementSize(\"audio\") returns the measured real Chromium intrinsic size (300×54), not an arbitrary guess", () => {
+      expect(getDefaultFreeElementSize("audio")).toEqual({ width: 300, height: 54 });
+    });
+  });
+
   describe("SVG Foundation (Checkpoint 1.15.5)", () => {
     it("createSvgNode produces a genuine, leaf <svg> with the default starter Rectangle and a visible accent fill", () => {
       const node = createSvgNode();
@@ -856,10 +894,11 @@ describe("element factories", () => {
     });
 
     it("rejects unknown strings", () => {
-      // "audio" is deliberately still unrecognized (Checkpoint 1.15's own
-      // Non-Goals) — "video" was this test's original placeholder but is
-      // now a real InsertableElementType (Checkpoint 1.15).
-      expect(isInsertableElementType("audio")).toBe(false);
+      // "progress" is deliberately still unrecognized (Checkpoint
+      // 1.15.6.12.3's own Non-Goals, deferred to 1.15.6.12.4) — "audio"
+      // was this test's original placeholder but is now a real
+      // InsertableElementType (Checkpoint 1.15.6.12.3).
+      expect(isInsertableElementType("progress")).toBe(false);
       expect(isInsertableElementType("")).toBe(false);
     });
   });

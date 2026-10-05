@@ -116,7 +116,7 @@ export interface EditorElementNode {
   flexChild?: FlexChildSettings;
   /** This node's own grid-item placement. Only meaningful while its parent's flowLayout.display is "grid". */
   gridChild?: GridChildSettings;
-  /** The media source URL (Checkpoint 3.5.1, widened to video in Checkpoint 1.15) — only meaningful for a media-capable tag (img, video). Unset renders an empty placeholder rather than a broken/missing image. Iframe deliberately reuses this exact same field for its own `src` (Checkpoint 1.15) — same "source of the embedded content" concern, no `iframeSrc` duplicate. */
+  /** The media source URL (Checkpoint 3.5.1, widened to video in Checkpoint 1.15, widened to audio in Checkpoint 1.15.6.12.3) — only meaningful for a media-capable tag (img, video, audio). Unset renders an empty placeholder rather than a broken/missing image. Iframe deliberately reuses this exact same field for its own `src` (Checkpoint 1.15) — same "source of the embedded content" concern, no `iframeSrc`/`audioSrc` duplicate. */
   src?: string;
   /**
    * This node's own link destination (Checkpoint 1.4) — only meaningful
@@ -281,46 +281,59 @@ export interface EditorElementNode {
   selected?: boolean;
   /**
    * This node's own `poster` attribute (Checkpoint 1.15) — only
-   * meaningful for `tag: "video"`. A still image URL shown before
-   * playback starts; a dedicated field rather than a second child image
-   * node, matching the native `<video poster="...">` attribute exactly —
-   * see this checkpoint's report on why a synthetic image child was
-   * rejected. Same "store unconditionally, no synthesized default"
+   * meaningful for `tag: "video"` (NOT reused by Audio — Checkpoint
+   * 1.15.6.12.3 deliberately gave Audio no poster-equivalent field; see
+   * InspectorAudioSection's own doc comment). A still image URL shown
+   * before playback starts; a dedicated field rather than a second child
+   * image node, matching the native `<video poster="...">` attribute
+   * exactly — see this checkpoint's report on why a synthetic image child
+   * was rejected. Same "store unconditionally, no synthesized default"
    * convention `src`/`href`/`checked` already use — unset renders no
    * `poster` attribute at all.
    */
   poster?: string;
   /**
-   * This node's own `controls` attribute (Checkpoint 1.15) — only
-   * meaningful for `tag: "video"`. Unlike `checked`/`autoplay`/`muted`/
+   * This node's own `controls` attribute (Checkpoint 1.15, widened to
+   * `tag: "audio"` in Checkpoint 1.15.6.12.3 — the identical field, no
+   * `audioControls` duplicate). Unlike `checked`/`autoplay`/`muted`/
    * `loop` below, unset does NOT mean "attribute absent" here: a freshly
-   * created Video with no controls at all would be unusable/invisible on
-   * the Canvas, so the renderer treats unset as an effective default of
-   * `true` (see getVideoControls in types/video.ts) — the resolver-level
-   * fallback pattern DEFAULT_OBJECT_FIT already established for mediaFit,
-   * not a value written into the document. An explicit `false` genuinely
-   * removes the attribute (a deliberately controls-less video).
+   * created Video or Audio with no controls at all would be unusable/
+   * invisible on the Canvas, so the renderer treats unset as an effective
+   * default of `true` (see getMediaControls in types/video.ts, renamed
+   * from getVideoControls once Audio became a second caller) — the
+   * resolver-level fallback pattern DEFAULT_OBJECT_FIT already established
+   * for mediaFit, not a value written into the document. An explicit
+   * `false` genuinely removes the attribute (a deliberately controls-less
+   * video/audio).
    */
   controls?: boolean;
   /**
-   * This node's own `autoplay` attribute (Checkpoint 1.15) — only
-   * meaningful for `tag: "video"`. Same "store unconditionally, no
+   * This node's own `autoplay` attribute (Checkpoint 1.15, widened to
+   * `tag: "audio"` in Checkpoint 1.15.6.12.3 — the identical field, no
+   * `audioAutoplay` duplicate). Same "store unconditionally, no
    * synthesized default" convention `checked` already uses — unset
    * renders no `autoplay` attribute (the safe, expected default). Never
-   * automatically forces `muted` alongside it — see InspectorVideoSection's
-   * own doc comment for why that coupling was deliberately NOT built.
+   * automatically forces `muted` alongside it — see
+   * InspectorMediaPlaybackFields's own doc comment for why that coupling
+   * was deliberately NOT built. The authored value here is always
+   * preserved as-is; VideoElement/AudioElement additionally gate the
+   * render-time `autoPlay` DOM attribute on Preview mode (Checkpoint
+   * 1.15.6.12.3 — see either component's own doc comment), a rendering
+   * concern that never touches this field.
    */
   autoplay?: boolean;
   /**
-   * This node's own `muted` attribute (Checkpoint 1.15) — only meaningful
-   * for `tag: "video"`. Same convention as `autoplay`/`checked` — unset
-   * renders no `muted` attribute.
+   * This node's own `muted` attribute (Checkpoint 1.15, widened to
+   * `tag: "audio"` in Checkpoint 1.15.6.12.3 — the identical field, no
+   * `audioMuted` duplicate). Same convention as `autoplay`/`checked` —
+   * unset renders no `muted` attribute.
    */
   muted?: boolean;
   /**
-   * This node's own `loop` attribute (Checkpoint 1.15) — only meaningful
-   * for `tag: "video"`. Same convention as `autoplay`/`muted`/`checked` —
-   * unset renders no `loop` attribute.
+   * This node's own `loop` attribute (Checkpoint 1.15, widened to
+   * `tag: "audio"` in Checkpoint 1.15.6.12.3 — the identical field, no
+   * `audioLoop` duplicate). Same convention as `autoplay`/`muted`/
+   * `checked` — unset renders no `loop` attribute.
    */
   loop?: boolean;
   /**

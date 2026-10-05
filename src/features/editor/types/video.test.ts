@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { getVideoControls } from "./video";
+import { getMediaControls } from "./video";
 
-describe("getVideoControls (Checkpoint 1.15)", () => {
-  it("defaults to true when unset — a freshly created Video is still usable on the Canvas", () => {
-    expect(getVideoControls({})).toBe(true);
-    expect(getVideoControls({ controls: undefined })).toBe(true);
+describe("getMediaControls (Checkpoint 1.15, renamed from getVideoControls in 1.15.6.12.3)", () => {
+  it("defaults to true when unset — a freshly created Video/Audio is still usable on the Canvas", () => {
+    expect(getMediaControls({})).toBe(true);
+    expect(getMediaControls({ controls: undefined })).toBe(true);
   });
 
   it("returns the explicit stored value when set", () => {
-    expect(getVideoControls({ controls: true })).toBe(true);
-    expect(getVideoControls({ controls: false })).toBe(false);
+    expect(getMediaControls({ controls: true })).toBe(true);
+    expect(getMediaControls({ controls: false })).toBe(false);
   });
 });

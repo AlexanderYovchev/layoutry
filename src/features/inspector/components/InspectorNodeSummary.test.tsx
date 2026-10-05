@@ -924,6 +924,61 @@ describe("InspectorNodeSummary — Video + Iframe (Checkpoint 1.15)", () => {
   });
 });
 
+describe("InspectorNodeSummary — Audio (Checkpoint 1.15.6.12.3)", () => {
+  it("shows the Audio section only for tag: audio", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "audio-1", tag: "audio" }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.getByRole("switch", { name: "Controls" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Source URL")).toBeInTheDocument();
+  });
+
+  it("omits the Video section for Audio, and the Audio section for Video", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "video-1", tag: "video" }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.queryByText("Audio")).not.toBeInTheDocument();
+  });
+
+  it("omits the Media (Object Fit/Position) section for Audio — Audio has no visual replaced content to fit", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "audio-1", tag: "audio" }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.queryByText("Media", { exact: true })).not.toBeInTheDocument();
+  });
+
+  it("omits Typography and the Content Layout section for Audio — not text-bearing, not a container", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "audio-1", tag: "audio" }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.queryByText("Typography")).not.toBeInTheDocument();
+    expect(screen.queryByText("Content Layout")).not.toBeInTheDocument();
+  });
+
+  it("shows the Size and Background sections for Audio", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "audio-1", tag: "audio" }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.getByLabelText("Width")).toBeInTheDocument();
+    expect(screen.getByText("Background")).toBeInTheDocument();
+  });
+});
+
 describe("InspectorNodeSummary — Identity section (Checkpoint 1.15.1)", () => {
   it("shows the Identity section (ID/Classes) unconditionally, for an ordinary container", () => {
     render(

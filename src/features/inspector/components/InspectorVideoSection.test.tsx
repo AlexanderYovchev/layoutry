@@ -28,7 +28,7 @@ describe("InspectorVideoSection (Checkpoint 1.15)", () => {
 
   it("shows the autoplay browser-behavior hint", () => {
     render(<InspectorVideoSection node={baseNode} />);
-    expect(screen.getByText(/only allow autoplay when the video is muted/i)).toBeInTheDocument();
+    expect(screen.getByText(/only allow autoplay when muted/i)).toBeInTheDocument();
   });
 
   it("committing a valid Source URL calls setElementSrc", () => {

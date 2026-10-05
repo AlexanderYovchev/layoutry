@@ -47,17 +47,16 @@ describe("VideoElement (Checkpoint 1.15)", () => {
     expect((document.querySelector("video") as HTMLVideoElement).controls).toBe(false);
   });
 
-  it("maps autoplay/muted/loop to real native boolean properties", () => {
+  it("maps muted/loop to real native boolean properties regardless of mode", () => {
     render(
       <VideoElement
-        node={{ id: "video-1", tag: "video", autoplay: true, muted: true, loop: true }}
+        node={{ id: "video-1", tag: "video", muted: true, loop: true }}
         parentId="page-1"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
     const video = document.querySelector("video") as HTMLVideoElement;
-    expect(video.autoplay).toBe(true);
     expect(video.muted).toBe(true);
     expect(video.loop).toBe(true);
   });
@@ -68,6 +67,45 @@ describe("VideoElement (Checkpoint 1.15)", () => {
     expect(video.autoplay).toBe(false);
     expect(video.muted).toBe(false);
     expect(video.loop).toBe(false);
+  });
+
+  it("Checkpoint 1.15.6.12.3 — an authored autoplay: true never actually autoplays in Design mode, even though the field itself is preserved", () => {
+    render(
+      <VideoElement
+        node={{ id: "video-1", tag: "video", autoplay: true }}
+        parentId="page-1"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+    const video = document.querySelector("video") as HTMLVideoElement;
+    expect(video.autoplay).toBe(false);
+  });
+
+  it("Checkpoint 1.15.6.12.3 — an authored autoplay: true DOES render as native autoplay once in Preview mode", () => {
+    useEditorStore.setState({ editorMode: "preview" });
+    render(
+      <VideoElement
+        node={{ id: "video-1", tag: "video", autoplay: true }}
+        parentId="page-1"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+    const video = document.querySelector("video") as HTMLVideoElement;
+    expect(video.autoplay).toBe(true);
+  });
+
+  it("Checkpoint 1.15.6.12.3 — the MediaInteractionShield is present in Design (unchanged) but absent in Preview (the fix), so native controls become reachable", () => {
+    const { rerender } = render(
+      <VideoElement node={{ id: "video-1", tag: "video" }} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+    expect(document.querySelector("[aria-hidden='true']")).not.toBeNull();
+
+    useEditorStore.setState({ editorMode: "preview" });
+    rerender(<VideoElement node={{ id: "video-1", tag: "video" }} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+    expect(document.querySelector("[aria-hidden='true']")).toBeNull();
+    expect(document.querySelector("video")).not.toBeNull();
   });
 
   it("stamps the node's own id/tag as data attributes on the OUTER wrapper, not the inner <video>", () => {

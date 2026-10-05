@@ -4,6 +4,7 @@ import {
   AlignLeft,
   AppWindow,
   AtSign,
+  AudioLines,
   Bell,
   Blocks,
   Box,
@@ -108,6 +109,7 @@ export type InsertableCardType =
   | "select"
   | "table"
   | "video"
+  | "audio"
   | "iframe"
   | "svg"
   | "dialog"
@@ -489,7 +491,12 @@ function mediaCategory(): ToolbarCategoryContent {
         { name: "Video Background", description: "Looping background video" },
       ]),
       section(id, "audio", "Audio", [
-        { name: "Audio Player", description: "Embedded audio player" },
+        {
+          name: "Audio Player",
+          description: "Audio files or URLs, with playback controls — a genuine audio, not a custom player",
+          elementType: "audio",
+          icon: AudioLines,
+        },
       ]),
       section(id, "vector", "Vector Graphics", [
         {

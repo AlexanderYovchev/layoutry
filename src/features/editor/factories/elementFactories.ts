@@ -100,6 +100,7 @@ export type InsertableElementType =
   | "select"
   | "table"
   | "video"
+  | "audio"
   | "iframe"
   | "svg"
   | "dialog"
@@ -778,7 +779,7 @@ export function createFigureNode(): EditorElementNode {
  * authored data" philosophy Table/Select's own starter content
  * deliberately avoids for genuinely unknowable content. `controls`/
  * `autoplay`/`muted`/`loop`/`poster` are all left unset — `controls`
- * still renders as visually present via getVideoControls's own resolver-
+ * still renders as visually present via getMediaControls's own resolver-
  * level fallback (see EditorElementNode.controls's own doc comment); the
  * other three correctly default to "attribute absent," their real HTML
  * default. No flowLayout/spacing (leaf-like sizing, matching every other
@@ -786,6 +787,25 @@ export function createFigureNode(): EditorElementNode {
  */
 export function createVideoNode(): EditorElementNode {
   return { id: generateNodeId("video"), tag: "video" };
+}
+
+/**
+ * Audio (Checkpoint 1.15.6.12.3) — a genuine `tag: "audio"` leaf, the
+ * exact same shape createVideoNode uses and for the exact same reasons:
+ * no `src` (no safe inline placeholder audio clip exists, and this
+ * checkpoint's brief explicitly rejects injecting a random external
+ * audio URL — MediaGuideOverlay's own empty-state hint, widened this
+ * checkpoint to cover `audio` too, covers the gap instead), and
+ * `controls`/`autoplay`/`muted`/`loop` all left unset for the identical
+ * reason Video's own leave them unset (`controls` resolves to visually
+ * present via getMediaControls's fallback; the other three correctly
+ * default to "attribute absent"). No `poster` field exists to leave unset
+ * here — Audio never had one (see EditorElementNode.poster's own doc
+ * comment). No flowLayout/spacing, matching every other media/leaf
+ * factory in this file.
+ */
+export function createAudioNode(): EditorElementNode {
+  return { id: generateNodeId("audio"), tag: "audio" };
 }
 
 /**
@@ -876,6 +896,7 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   select: createSelectNode,
   table: createTableNode,
   video: createVideoNode,
+  audio: createAudioNode,
   iframe: createIframeNode,
   svg: createSvgNode,
   dialog: createDialogNode,
@@ -973,6 +994,14 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   select: { width: 200, height: 40 },
   table: { width: 480, height: 200 },
   video: { width: 400, height: 225 },
+  /**
+   * Audio (Checkpoint 1.15.6.12.3) — the measured, not assumed, real
+   * Chromium intrinsic size of a bare `<audio controls>` with no explicit
+   * CSS size (verified live this checkpoint): exactly 300×54. Used as-is,
+   * not rounded/padded — a Free-layout Audio insertion lands at its own
+   * native size immediately, comfortably showing every native control.
+   */
+  audio: { width: 300, height: 54 },
   iframe: { width: 400, height: 300 },
   svg: { width: 200, height: 200 },
   dialog: { width: 320, height: 200 },
@@ -1047,6 +1076,7 @@ const INSERTABLE_TYPE_BY_TAG: Record<string, InsertableElementType> = {
   select: "select",
   table: "table",
   video: "video",
+  audio: "audio",
   iframe: "iframe",
   svg: "svg",
   dialog: "dialog",

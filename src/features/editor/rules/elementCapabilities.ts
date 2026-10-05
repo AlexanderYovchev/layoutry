@@ -560,6 +560,32 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
    * live, not assumed (see this checkpoint's own report).
    */
   caption: { supportsDisplay: false, supportsPosition: false },
+
+  /**
+   * Audio (Checkpoint 1.15.6.12.3) — not a container and not in
+   * TEXT_BEARING_TAGS, so supportsBackground would otherwise default
+   * false the same way it does for img/video/iframe. One deliberate
+   * override, found by live Chromium verification rather than assumed:
+   * unlike Video/img, whose own rendered content always fills its entire
+   * box (object-fit guarantees this), a native `<audio controls>` bar
+   * keeps a fixed ~54px intrinsic height no matter how tall its wrapper
+   * is stretched — confirmed by screenshot this checkpoint, the control
+   * bar stays bottom-anchored at its natural height rather than
+   * distorting taller. A wrapper resized beyond that height genuinely
+   * reveals empty space above the bar, where a CSS background is a real,
+   * visible, useful styling want — the exact opposite of Video/img's own
+   * "content already fills the box" exclusion reason. No
+   * supportsIntrinsicAspectRatio/supportsMediaFit override: both stay at
+   * their DEFAULT_CAPABILITIES false — audio has no visual replaced
+   * content for object-fit to apply to and no natural ratio worth
+   * resize-locking (this checkpoint's own report, sections K/L).
+   * resizableX/Y, border/border-radius/box-shadow/filters/display/
+   * position/aspect-ratio-and-sizing all stay at their DEFAULT_CAPABILITIES
+   * true — an ordinary box concern regardless of what's inside it, the
+   * same reasoning Iframe/Svg/Table's own minimal override entries
+   * already rely on.
+   */
+  audio: { supportsBackground: true },
 };
 
 export function getElementCapabilities(tag: string): ElementCapabilities {

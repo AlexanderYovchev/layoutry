@@ -9,10 +9,12 @@ interface MediaGuideOverlayProps {
   canvasRootRef: RefObject<HTMLElement | null>;
 }
 
-const MEDIA_LABELS: Record<string, string> = { video: "Video", iframe: "Embed" };
+const MEDIA_LABELS: Record<string, string> = { video: "Video", iframe: "Embed", audio: "Audio" };
+
+const EMPTY_SOURCE_MEDIA_TAGS: ReadonlySet<string> = new Set(["video", "iframe", "audio"]);
 
 function collectEmptyMediaNodes(node: EditorElementNode, nodes: EditorElementNode[] = []): EditorElementNode[] {
-  if ((node.tag === "video" || node.tag === "iframe") && !node.src) nodes.push(node);
+  if (EMPTY_SOURCE_MEDIA_TAGS.has(node.tag) && !node.src) nodes.push(node);
   for (const child of node.children ?? []) collectEmptyMediaNodes(child, nodes);
   return nodes;
 }

@@ -1,5 +1,6 @@
 ﻿import { afterEach, describe, expect, it } from "vitest";
 import {
+  createAudioNode,
   createCheckboxNode,
   createContainerNode,
   createEmailInputNode,
@@ -2060,6 +2061,74 @@ describe("useEditorStore — Video + Iframe foundation (Checkpoint 1.15)", () =>
     useEditorStore.getState().setElementTitle(duplicate.id, "Renamed");
     const refreshedOriginal = findUnderSection(original.id);
     expect(refreshedOriginal?.title).toBe("Product tour");
+  });
+
+  it("Checkpoint 1.15.6.12.3 — insertElement(createAudioNode()) pushes exactly one history entry", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().insertElement("section-1", createAudioNode());
+    expect(useEditorStore.getState().past.length).toBe(pastLengthBefore + 1);
+    expect(useEditorStore.getState().selection.primaryId).not.toBeNull();
+  });
+
+  it("Checkpoint 1.15.6.12.3 — setElementSrc/setElementControls/setElementAutoplay/setElementMuted/setElementLoop are reused unchanged for Audio — the exact same generic commands Video uses, no audioSrc/audioControls/etc.", () => {
+    useEditorStore.getState().insertElement("section-1", createAudioNode());
+    const audioId = useEditorStore.getState().selection.primaryId!;
+
+    const cases: [() => void, () => unknown][] = [
+      [() => useEditorStore.getState().setElementSrc(audioId, "https://example.com/audio.mp3"), () => findUnderSection(audioId)?.src],
+      [() => useEditorStore.getState().setElementControls(audioId, false), () => findUnderSection(audioId)?.controls],
+      [() => useEditorStore.getState().setElementAutoplay(audioId, true), () => findUnderSection(audioId)?.autoplay],
+      [() => useEditorStore.getState().setElementMuted(audioId, true), () => findUnderSection(audioId)?.muted],
+      [() => useEditorStore.getState().setElementLoop(audioId, true), () => findUnderSection(audioId)?.loop],
+    ];
+
+    for (const [apply, read] of cases) {
+      const pastLengthBefore = useEditorStore.getState().past.length;
+      apply();
+      expect(read()).not.toBeUndefined();
+      expect(useEditorStore.getState().past.length).toBe(pastLengthBefore + 1);
+
+      // no-op: applying the exact same value again pushes nothing
+      apply();
+      expect(useEditorStore.getState().past.length).toBe(pastLengthBefore + 1);
+    }
+  });
+
+  it("Checkpoint 1.15.6.12.3 — Audio rejects insertion into a List, same as Video/Iframe", () => {
+    useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
+    const listId = useEditorStore.getState().selection.primaryId!;
+    const beforeDocument = useEditorStore.getState().document;
+
+    useEditorStore.getState().insertElement(listId, createAudioNode());
+    expect(useEditorStore.getState().document).toBe(beforeDocument);
+  });
+
+  it("Checkpoint 1.15.6.12.3 — duplicates a customized Audio with fresh id, preserving every semantic field and CSS state, with independent post-duplicate editing", () => {
+    useEditorStore.getState().insertElement("section-1", createAudioNode());
+    const audioId = useEditorStore.getState().selection.primaryId!;
+    useEditorStore.getState().setElementSrc(audioId, "https://example.com/audio.mp3");
+    useEditorStore.getState().setElementControls(audioId, false);
+    useEditorStore.getState().setElementAutoplay(audioId, true);
+    useEditorStore.getState().setElementMuted(audioId, true);
+    useEditorStore.getState().setElementLoop(audioId, true);
+
+    useEditorStore.getState().selectElement(audioId);
+    useEditorStore.getState().duplicateSelection();
+
+    const audios = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.filter((c) => c.tag === "audio") ?? [];
+    expect(audios).toHaveLength(2);
+    const [original, duplicate] = audios;
+
+    expect(duplicate.id).not.toBe(original.id);
+    expect(duplicate.src).toBe("https://example.com/audio.mp3");
+    expect(duplicate.controls).toBe(false);
+    expect(duplicate.autoplay).toBe(true);
+    expect(duplicate.muted).toBe(true);
+    expect(duplicate.loop).toBe(true);
+
+    useEditorStore.getState().setElementSrc(duplicate.id, "https://example.com/other.mp3");
+    const refreshedOriginal = findUnderSection(original.id);
+    expect(refreshedOriginal?.src).toBe("https://example.com/audio.mp3");
   });
 
   it("Form > Video and Form > Iframe coexist correctly — both insertable into Form like any other control", () => {

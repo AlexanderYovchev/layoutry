@@ -1,5 +1,6 @@
 import {
   AppWindow,
+  AudioLines,
   Box,
   ChevronDown,
   Circle,
@@ -94,6 +95,7 @@ export const TAG_ICONS: Record<string, LucideIcon> = {
   th: Type,
   td: Type,
   video: Video,
+  audio: AudioLines,
   iframe: AppWindow,
   svg: Spline,
   dialog: PictureInPicture2,

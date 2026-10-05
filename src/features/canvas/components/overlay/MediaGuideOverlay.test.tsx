@@ -75,6 +75,35 @@ describe("MediaGuideOverlay (Checkpoint 1.15)", () => {
     expect(guide).toHaveTextContent("Add a source URL");
   });
 
+  it("Checkpoint 1.15.6.12.3 — shows the 'Audio / Add a source URL' hint for a sourceless Audio", () => {
+    stubLargeRect();
+    setDocument([{ id: "audio-1", tag: "audio" }]);
+
+    render(
+      <Harness>
+        <div data-node-id="audio-1" />
+      </Harness>,
+    );
+
+    const guide = document.querySelector('[data-canvas-overlay="media-guide"]');
+    expect(guide).toBeInTheDocument();
+    expect(guide).toHaveTextContent("Audio");
+    expect(guide).toHaveTextContent("Add a source URL");
+  });
+
+  it("Checkpoint 1.15.6.12.3 — does not show a hint once an Audio has a src", () => {
+    stubLargeRect();
+    setDocument([{ id: "audio-1", tag: "audio", src: "https://example.com/audio.mp3" }]);
+
+    render(
+      <Harness>
+        <div data-node-id="audio-1" />
+      </Harness>,
+    );
+
+    expect(document.querySelector('[data-canvas-overlay="media-guide"]')).not.toBeInTheDocument();
+  });
+
   it("does not show a hint once a Video has a src", () => {
     stubLargeRect();
     setDocument([{ id: "video-1", tag: "video", src: "https://example.com/video.mp4" }]);

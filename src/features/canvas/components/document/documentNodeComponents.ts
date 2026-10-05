@@ -1,3 +1,4 @@
+import { AudioElement } from "@/features/canvas/components/document/elements/AudioElement";
 import { BodyElement } from "@/features/canvas/components/document/elements/BodyElement";
 import { ButtonElement } from "@/features/canvas/components/document/elements/ButtonElement";
 import { CaptionElement } from "@/features/canvas/components/document/elements/CaptionElement";
@@ -71,6 +72,7 @@ export const documentNodeComponents: Record<string, DocumentElementComponent> =
     th: TableCellElement,
     td: TableCellElement,
     video: VideoElement,
+    audio: AudioElement,
     iframe: IframeElement,
     svg: SvgElement,
     dialog: DialogElement,
