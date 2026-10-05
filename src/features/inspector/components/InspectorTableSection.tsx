@@ -5,7 +5,7 @@ import { InspectorNumberFieldRow } from "@/features/inspector/components/Inspect
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
-import { getTableBodyRowCount, getTableColumnCount, getTableFoot, getTableHead } from "@/features/editor/types/table";
+import { getTableBodyRowCount, getTableCaption, getTableColumnCount, getTableFoot, getTableHead } from "@/features/editor/types/table";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
 interface InspectorTableSectionProps {
@@ -27,18 +27,23 @@ interface InspectorTableSectionProps {
  * — the same "count children, don't store a count" architecture List's
  * Items field and Select's Options field already established. One
  * completed edit is one history entry (each command's own action-level
- * no-op guard skips a no-op count/toggle).
+ * no-op guard skips a no-op count/toggle). The Caption toggle (Checkpoint
+ * 1.15.6.12.2 — setTableCaptionEnabled) follows the exact same shape as
+ * Header/Footer Row: no tableCaptionText field anywhere, the authored text
+ * lives entirely on the real `<caption>` child, edited directly on Canvas.
  */
 export function InspectorTableSection({ node }: InspectorTableSectionProps) {
   const setTableColumnCount = useEditorStore((state) => state.setTableColumnCount);
   const setTableBodyRowCount = useEditorStore((state) => state.setTableBodyRowCount);
   const setTableHeaderEnabled = useEditorStore((state) => state.setTableHeaderEnabled);
   const setTableFooterEnabled = useEditorStore((state) => state.setTableFooterEnabled);
+  const setTableCaptionEnabled = useEditorStore((state) => state.setTableCaptionEnabled);
 
   const columnCount = getTableColumnCount(node);
   const bodyRowCount = getTableBodyRowCount(node);
   const hasHeader = getTableHead(node) !== undefined;
   const hasFooter = getTableFoot(node) !== undefined;
+  const hasCaption = getTableCaption(node) !== undefined;
 
   return (
     <InspectorSection label="Table" defaultOpen>
@@ -64,6 +69,13 @@ export function InspectorTableSection({ node }: InspectorTableSectionProps) {
           checked={hasFooter}
           onChange={(checked) => setTableFooterEnabled(node.id, checked)}
           label="Footer Row"
+        />
+      </InspectorPropertyRow>
+      <InspectorPropertyRow label="Caption">
+        <InspectorBooleanToggle
+          checked={hasCaption}
+          onChange={(checked) => setTableCaptionEnabled(node.id, checked)}
+          label="Caption"
         />
       </InspectorPropertyRow>
     </InspectorSection>

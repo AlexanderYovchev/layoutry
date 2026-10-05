@@ -1,9 +1,11 @@
 import { BodyElement } from "@/features/canvas/components/document/elements/BodyElement";
 import { ButtonElement } from "@/features/canvas/components/document/elements/ButtonElement";
+import { CaptionElement } from "@/features/canvas/components/document/elements/CaptionElement";
 import { ContainerElement } from "@/features/canvas/components/document/elements/ContainerElement";
 import { DialogElement } from "@/features/canvas/components/document/elements/DialogElement";
 import { DividerElement } from "@/features/canvas/components/document/elements/DividerElement";
 import { DocumentRootElement } from "@/features/canvas/components/document/elements/DocumentRootElement";
+import { FigcaptionElement } from "@/features/canvas/components/document/elements/FigcaptionElement";
 import { HeadingElement } from "@/features/canvas/components/document/elements/HeadingElement";
 import { IframeElement } from "@/features/canvas/components/document/elements/IframeElement";
 import { ImageElement } from "@/features/canvas/components/document/elements/ImageElement";
@@ -61,6 +63,7 @@ export const documentNodeComponents: Record<string, DocumentElementComponent> =
     select: SelectElement,
     option: OptionElement,
     table: TableElement,
+    caption: CaptionElement,
     thead: TableSectionElement,
     tbody: TableSectionElement,
     tfoot: TableSectionElement,
@@ -74,4 +77,6 @@ export const documentNodeComponents: Record<string, DocumentElementComponent> =
     hr: DividerElement,
     fieldset: ContainerElement,
     legend: LegendElement,
+    figure: ContainerElement,
+    figcaption: FigcaptionElement,
   };

@@ -6,10 +6,13 @@ import {
   createCheckboxNode,
   createContainerNode,
   createDialogNode,
+  createCaptionNode,
   createDividerNode,
   createElementNode,
   createEmailInputNode,
   createFieldsetNode,
+  createFigcaptionNode,
+  createFigureNode,
   createFooterCompositionNode,
   createFooterNode,
   createFormNode,
@@ -553,6 +556,59 @@ describe("element factories", () => {
     });
   });
 
+  describe("Figure, Figcaption & Table Caption Foundation (Checkpoint 1.15.6.12.2)", () => {
+    it("createFigcaptionNode produces a genuine, text-bearing leaf <figcaption>", () => {
+      const node = createFigcaptionNode();
+      expect(node.tag).toBe("figcaption");
+      expect(node.text).toBe("Caption");
+      expect(node.children).toBeUndefined();
+      expect(node.id).toMatch(/^figcaption-/);
+    });
+
+    it("createFigcaptionNode produces a unique id per call", () => {
+      expect(createFigcaptionNode().id).not.toBe(createFigcaptionNode().id);
+    });
+
+    it("createFigureNode produces a genuine, managed-layout <figure> with a starter Image (reusing createImageNode's own placeholder) and a starter Figcaption — not restricted to Image-only content", () => {
+      const node = createFigureNode();
+      const image = createImageNode();
+
+      expect(node.tag).toBe("figure");
+      expect(node.id).toMatch(/^figure-/);
+      expect(node.flowLayout?.display).toBe("flex");
+      expect(node.children).toHaveLength(2);
+      expect(node.children![0].tag).toBe("img");
+      expect(node.children![0].src).toBe(image.src);
+      expect(node.children![1].tag).toBe("figcaption");
+      expect(node.children![1].text).toBe("Caption");
+    });
+
+    it("createFigureNode produces a unique id per call, and each call's Image/Figcaption get their own fresh ids too", () => {
+      const a = createFigureNode();
+      const b = createFigureNode();
+      expect(a.id).not.toBe(b.id);
+      expect(a.children![0].id).not.toBe(b.children![0].id);
+      expect(a.children![1].id).not.toBe(b.children![1].id);
+    });
+
+    it("createCaptionNode produces a genuine, text-bearing leaf <caption>", () => {
+      const node = createCaptionNode();
+      expect(node.tag).toBe("caption");
+      expect(node.text).toBe("Table caption");
+      expect(node.children).toBeUndefined();
+      expect(node.id).toMatch(/^caption-/);
+    });
+
+    it("createCaptionNode produces a unique id per call", () => {
+      expect(createCaptionNode().id).not.toBe(createCaptionNode().id);
+    });
+
+    it("createTableNode does NOT include a Caption by default — Caption is purely additive, opt-in via the Table Inspector toggle", () => {
+      const table = createTableNode();
+      expect(table.children!.some((child) => child.tag === "caption")).toBe(false);
+    });
+  });
+
   describe("Form + Text Input foundation (Checkpoint 1.10)", () => {
     it("createFormNode produces an empty, childable <form> sharing Container's exact structural defaults", () => {
       const node = createFormNode();
@@ -774,6 +830,7 @@ describe("element factories", () => {
         "dialog",
         "divider",
         "fieldset",
+        "figure",
       ]) {
         expect(isInsertableElementType(type)).toBe(true);
       }
@@ -791,6 +848,11 @@ describe("element factories", () => {
 
     it("does NOT recognize 'legend' as a standalone insertable type (Checkpoint 1.15.6.12.1 — Legend is only ever created via createFieldsetNode's own starter, the same 'real factory, no catalog entry' precedent Option/table structural primitives already established, and deliberately avoids toolbar-flooding a single-purpose supporting primitive)", () => {
       expect(isInsertableElementType("legend")).toBe(false);
+    });
+
+    it("does NOT recognize 'figcaption' or 'caption' as standalone insertable types (Checkpoint 1.15.6.12.2 — Figcaption is only ever created via createFigureNode's own starter, Caption only via the Table Inspector's own toggle, the same 'real factory, no catalog entry' precedent Legend/Option already established)", () => {
+      expect(isInsertableElementType("figcaption")).toBe(false);
+      expect(isInsertableElementType("caption")).toBe(false);
     });
 
     it("rejects unknown strings", () => {

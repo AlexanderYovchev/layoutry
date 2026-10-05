@@ -1,4 +1,5 @@
 import {
+  createCaptionNode,
   createTableHeaderCellNode,
   createTableDataCellNode,
   createTableRowNode,
@@ -6,6 +7,20 @@ import {
 } from "@/features/editor/factories/elementFactories";
 import { getTableColumnCount } from "@/features/editor/types/table";
 import type { EditorElementNode } from "@/features/editor/types/document";
+
+/**
+ * Where a freshly-created structural section (a toggled-on `<thead>`, or a
+ * from-scratch `<tbody>`) should land when there's no more specific
+ * sibling to anchor against — Checkpoint 1.15.6.12.2's own "Caption must
+ * remain first" requirement, generalized: a `<caption>`, when present, is
+ * ALWAYS the table's first child (the one native HTML content-model rule
+ * this file enforces), so any section that would otherwise default to
+ * index 0 must land at index 1 instead. Centralized here rather than
+ * duplicated inline in setTableHeaderEnabled/setTableBodyRowCount below.
+ */
+function firstStructuralInsertionIndex(children: readonly EditorElementNode[]): number {
+  return children[0]?.tag === "caption" ? 1 : 0;
+}
 
 /**
  * Table's semantic-level structural commands (Checkpoint 1.14) — the same
@@ -126,7 +141,7 @@ export function setTableBodyRowCount(root: EditorElementNode, tableId: string, c
         Array.from({ length: clampedCount }, () => createTableRowNode("td", columnCount)),
       );
       const headIndex = children.findIndex((child) => child.tag === "thead");
-      const insertAt = headIndex === -1 ? 0 : headIndex + 1;
+      const insertAt = headIndex === -1 ? firstStructuralInsertionIndex(children) : headIndex + 1;
       return { ...root, children: [...children.slice(0, insertAt), newBody, ...children.slice(insertAt)] };
     }
 
@@ -160,12 +175,16 @@ export function setTableBodyRowCount(root: EditorElementNode, tableId: string, c
  * Toggles the table's `<thead>` subtree on/off (Checkpoint 1.14) —
  * enabling creates a fresh `<thead>` with one row of `<th>` cells matching
  * the table's current column count (minimum 1, so an otherwise-empty
- * table still gets a usable header) and inserts it first, matching valid
- * HTML content-model order; disabling removes the entire `<thead>`
- * subtree in one step. Never converts existing header cells into data
- * cells or vice versa — this only ever adds/removes the whole section.
- * No-op-guarded: enabling an already-headered table, or disabling an
- * already-headerless one, returns the same root reference untouched.
+ * table still gets a usable header) and inserts it first among structural
+ * sections — the table's very first position, UNLESS a `<caption>` is
+ * present (Checkpoint 1.15.6.12.2's own firstStructuralInsertionIndex),
+ * in which case it lands right after it, preserving Caption's own
+ * "always the table's first child" HTML content-model rule. Disabling
+ * removes the entire `<thead>` subtree in one step. Never converts
+ * existing header cells into data cells or vice versa — this only ever
+ * adds/removes the whole section. No-op-guarded: enabling an already-
+ * headered table, or disabling an already-headerless one, returns the
+ * same root reference untouched.
  */
 export function setTableHeaderEnabled(root: EditorElementNode, tableId: string, enabled: boolean): EditorElementNode {
   if (root.id === tableId) {
@@ -178,7 +197,8 @@ export function setTableHeaderEnabled(root: EditorElementNode, tableId: string, 
     if (enabled) {
       const columnCount = Math.max(1, getTableColumnCount(root));
       const newHead = createTableSectionNode("thead", [createTableRowNode("th", columnCount)]);
-      return { ...root, children: [newHead, ...children] };
+      const insertAt = firstStructuralInsertionIndex(children);
+      return { ...root, children: [...children.slice(0, insertAt), newHead, ...children.slice(insertAt)] };
     }
 
     return { ...root, children: children.filter((child) => child.tag !== "thead") };
@@ -225,6 +245,47 @@ export function setTableFooterEnabled(root: EditorElementNode, tableId: string, 
   let changed = false;
   const children = root.children.map((child) => {
     const updatedChild = setTableFooterEnabled(child, tableId, enabled);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
+ * Toggles the table's `<caption>` on/off (Checkpoint 1.15.6.12.2) — a new
+ * Table does NOT get one by default (createTableNode is unchanged); this
+ * is the only way one is ever created. Enabling always inserts it at
+ * index 0, unconditionally — a `<caption>` is ALWAYS the table's first
+ * child per the HTML content model, never anchored relative to thead/
+ * tbody/tfoot the way those three are anchored relative to each other.
+ * Disabling simply removes it; every other child (thead/tbody/tfoot and
+ * their own rows/cells) is left completely untouched either way — no
+ * other structural command ever needs to rebuild around a caption's
+ * presence beyond firstStructuralInsertionIndex above. No-op-guarded:
+ * enabling an already-captioned table, or disabling an already-caption-
+ * less one, returns the same root reference untouched (zero history).
+ */
+export function setTableCaptionEnabled(root: EditorElementNode, tableId: string, enabled: boolean): EditorElementNode {
+  if (root.id === tableId) {
+    if (root.tag !== "table") return root;
+
+    const children = root.children ?? [];
+    const hasCaption = children.some((child) => child.tag === "caption");
+    if (enabled === hasCaption) return root;
+
+    if (enabled) {
+      return { ...root, children: [createCaptionNode(), ...children] };
+    }
+
+    return { ...root, children: children.filter((child) => child.tag !== "caption") };
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setTableCaptionEnabled(child, tableId, enabled);
     if (updatedChild !== child) changed = true;
     return updatedChild;
   });

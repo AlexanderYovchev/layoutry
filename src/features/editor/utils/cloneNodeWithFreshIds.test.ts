@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createBasicTabsNode, createDrawerNode, createModalNode } from "@/features/editor/factories/interactionCompositions";
 import { createDismissibleAlertNode, createManualToastNode, createPopoverNode } from "@/features/editor/factories/feedbackCompositions";
-import { createDividerNode, createFieldsetNode } from "@/features/editor/factories/elementFactories";
+import { createDividerNode, createFieldsetNode, createFigureNode, createTableNode } from "@/features/editor/factories/elementFactories";
+import { setTableCaptionEnabled } from "@/features/editor/commands/tableCommands";
 import { cloneNodeWithFreshIds } from "./cloneNodeWithFreshIds";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -162,6 +163,43 @@ describe("cloneNodeWithFreshIds", () => {
     expect(clone.children![0].tag).toBe("legend");
     expect(clone.children![0].text).toBe("Group");
     expect(clone.children![0].id).not.toBe(source.children![0].id);
+  });
+
+  it("Checkpoint 1.15.6.12.2 — clones a real Figure + its starter Image + Figcaption recursively, all three with fresh ids, content preserved", () => {
+    const source = createFigureNode();
+    const clone = cloneNodeWithFreshIds(source);
+
+    expect(clone.id).not.toBe(source.id);
+    expect(clone.tag).toBe("figure");
+    expect(clone.children).toHaveLength(2);
+    const [clonedImage, clonedFigcaption] = clone.children!;
+    const [sourceImage, sourceFigcaption] = source.children!;
+
+    expect(clonedImage.tag).toBe("img");
+    expect(clonedImage.id).not.toBe(sourceImage.id);
+    expect(clonedImage.src).toBe(sourceImage.src);
+
+    expect(clonedFigcaption.tag).toBe("figcaption");
+    expect(clonedFigcaption.id).not.toBe(sourceFigcaption.id);
+    expect(clonedFigcaption.text).toBe(sourceFigcaption.text);
+  });
+
+  it("Checkpoint 1.15.6.12.2 — clones a real Table-with-Caption recursively: fresh ids for the table, caption, and every structural descendant, with caption text/order preserved", () => {
+    const table = createTableNode();
+    const withCaption = setTableCaptionEnabled({ id: "root", tag: "div", children: [table] }, table.id, true).children![0];
+
+    const clone = cloneNodeWithFreshIds(withCaption);
+
+    expect(clone.id).not.toBe(withCaption.id);
+    expect(clone.children!.map((c) => c.tag)).toEqual(withCaption.children!.map((c) => c.tag));
+    expect(clone.children![0].tag).toBe("caption");
+    expect(clone.children![0].id).not.toBe(withCaption.children![0].id);
+    expect(clone.children![0].text).toBe(withCaption.children![0].text);
+
+    const cloneIds = collectIds(clone);
+    const sourceIds = collectIds(withCaption);
+    expect(new Set(cloneIds).size).toBe(cloneIds.length);
+    expect(cloneIds.some((id) => sourceIds.includes(id))).toBe(false);
   });
 
   it("preserves typography (Checkpoint 4.2)", () => {

@@ -251,6 +251,31 @@ describe("ContainerElement", () => {
     expect(notCancelled).toBe(true);
   });
 
+  it("renders a figure-tagged node as a real <figure>, not a div standing in for one (Checkpoint 1.15.6.12.2)", () => {
+    const { container } = render(
+      <ContainerElement node={{ id: "figure-1", tag: "figure", children: [] }} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+
+    const element = container.querySelector('[data-node-id="figure-1"]');
+    expect(element?.tagName).toBe("FIGURE");
+    expect(element).toHaveAttribute("data-node-type", "figure");
+  });
+
+  it("renders ordinary children (img + figcaption) inside a real <figure> — no special-case behavior attached", () => {
+    const { container } = render(
+      <ContainerElement node={{ id: "figure-1", tag: "figure", children: [] }} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block">
+        {/* eslint-disable-next-line @next/next/no-img-element -- a plain DOM assertion fixture, not app image content */}
+        <img alt="" />
+        <figcaption>Caption</figcaption>
+      </ContainerElement>,
+    );
+
+    expect(screen.getByText("Caption")).toBeInTheDocument();
+    const figure = container.querySelector('[data-node-id="figure-1"]') as HTMLElement;
+    const notCancelled = fireEvent.click(figure);
+    expect(notCancelled).toBe(true);
+  });
+
   it("does not attach a click-activation guard to non-label semantic tags", () => {
     const { container } = render(
       <ContainerElement node={{ id: "form-1", tag: "form", children: [] }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,

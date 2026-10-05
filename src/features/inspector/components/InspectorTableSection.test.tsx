@@ -82,4 +82,19 @@ describe("InspectorTableSection (Checkpoint 1.14)", () => {
 
     expect(spy).toHaveBeenCalledWith(table.id, true);
   });
+
+  it("Checkpoint 1.15.6.12.2 — shows Caption as off for the starter table (no caption by default)", () => {
+    render(<InspectorTableSection node={createTableNode()} />);
+    expect(screen.getByRole("switch", { name: "Caption" })).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("Checkpoint 1.15.6.12.2 — clicking the Caption toggle calls setTableCaptionEnabled with the opposite of its current state", () => {
+    const table = createTableNode();
+    const spy = vi.spyOn(useEditorStore.getState(), "setTableCaptionEnabled");
+    render(<InspectorTableSection node={table} />);
+
+    fireEvent.click(screen.getByRole("switch", { name: "Caption" }));
+
+    expect(spy).toHaveBeenCalledWith(table.id, true);
+  });
 });

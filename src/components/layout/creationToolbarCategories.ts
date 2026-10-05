@@ -20,6 +20,7 @@ import {
   ClipboardList,
   Columns2,
   Columns3,
+  Frame,
   Globe,
   Hash,
   Image,
@@ -151,7 +152,8 @@ export type InsertableCardType =
   | "basicTabs"
   | "drawer"
   | "divider"
-  | "fieldset";
+  | "fieldset"
+  | "figure";
 
 export interface CatalogCardPlaceholder {
   id: string;
@@ -229,6 +231,12 @@ function htmlCategory(): ToolbarCategoryContent {
           description: "Horizontal separator line — a genuine hr, not a styled container",
           elementType: "divider",
           icon: Minus,
+        },
+        {
+          name: "Figure",
+          description: "Image with a caption — a genuine figure + figcaption, with ordinary content allowed",
+          elementType: "figure",
+          icon: Frame,
         },
       ]),
       section(id, "typography", "Typography", [

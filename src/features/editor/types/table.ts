@@ -19,6 +19,11 @@ import type { EditorElementNode } from "@/features/editor/types/document";
  * for hand-assembled/future-edited documents, not the expected shape.
  */
 
+/** The table's own `<caption>`, if present (Checkpoint 1.15.6.12.2) — same "first matching child, don't enforce cardinality" reasoning as getTableHead/Body/Foot below; a Table has no Caption by default. */
+export function getTableCaption(node: EditorElementNode): EditorElementNode | undefined {
+  return node.children?.find((child) => child.tag === "caption");
+}
+
 export function getTableHead(node: EditorElementNode): EditorElementNode | undefined {
   return node.children?.find((child) => child.tag === "thead");
 }

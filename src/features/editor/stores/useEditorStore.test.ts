@@ -4,6 +4,7 @@ import {
   createContainerNode,
   createEmailInputNode,
   createFooterNode,
+  createFigcaptionNode,
   createFormNode,
   createHeadingNode,
   createInputNode,
@@ -133,6 +134,19 @@ describe("useEditorStore", () => {
 
     // A Legend aimed at an ordinary Section — invalid outside a fieldset.
     useEditorStore.getState().insertElement("section-1", createLegendNode());
+
+    expect(useEditorStore.getState().document).toBe(before);
+    expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);
+    expect(useEditorStore.getState().selection.primaryId).toBe("heading-1");
+  });
+
+  it("an insertion rejected by Figcaption's own constrained nesting does not alter the document, push history, or change selection (Checkpoint 1.15.6.12.2 — the same CONSTRAINED_CHILD_EXTRA_PARENTS shape Legend's own rejection above already proves)", () => {
+    const before = useEditorStore.getState().document;
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().selectElement("heading-1");
+
+    // A Figcaption aimed at an ordinary Section — invalid outside a figure.
+    useEditorStore.getState().insertElement("section-1", createFigcaptionNode());
 
     expect(useEditorStore.getState().document).toBe(before);
     expect(useEditorStore.getState().past).toHaveLength(pastLengthBefore);

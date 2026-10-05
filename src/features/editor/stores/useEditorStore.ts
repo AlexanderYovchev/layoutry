@@ -38,6 +38,7 @@ import {
 } from "@/features/editor/commands/interactionCommands";
 import {
   setTableBodyRowCount as setTableBodyRowCountCommand,
+  setTableCaptionEnabled as setTableCaptionEnabledCommand,
   setTableColumnCount as setTableColumnCountCommand,
   setTableFooterEnabled as setTableFooterEnabledCommand,
   setTableHeaderEnabled as setTableHeaderEnabledCommand,
@@ -458,6 +459,8 @@ interface EditorState {
   setTableHeaderEnabled: (tableId: string, enabled: boolean) => void;
   /** One-shot table Footer Row toggle (Checkpoint 1.14) — creates/removes the entire `<tfoot>` subtree in one step. */
   setTableFooterEnabled: (tableId: string, enabled: boolean) => void;
+  /** One-shot table Caption toggle (Checkpoint 1.15.6.12.2) — creates/removes the entire `<caption>` in one step, always as the table's first child. A new Table has no Caption by default; this is the only way one is created. */
+  setTableCaptionEnabled: (tableId: string, enabled: boolean) => void;
 
   /** One-shot media/embed source URL edit (Checkpoint 1.15 — Video's and Iframe's own Source URL field). Same action-level no-op guard as every other one-shot field command. */
   setElementSrc: (nodeId: string, src: string | undefined) => void;
@@ -1266,6 +1269,13 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setTableFooterEnabled: (tableId, enabled) =>
     set((state) => {
       const document = setTableFooterEnabledCommand(state.document, tableId, enabled);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setTableCaptionEnabled: (tableId, enabled) =>
+    set((state) => {
+      const document = setTableCaptionEnabledCommand(state.document, tableId, enabled);
       if (document === state.document) return {};
       return { ...pushHistory(state), document };
     }),

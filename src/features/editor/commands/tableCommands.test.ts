@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   setTableBodyRowCount,
+  setTableCaptionEnabled,
   setTableColumnCount,
   setTableFooterEnabled,
   setTableHeaderEnabled,
 } from "./tableCommands";
 import { createTableNode } from "@/features/editor/factories/elementFactories";
-import { getTableBody, getTableFoot, getTableHead } from "@/features/editor/types/table";
+import { getTableBody, getTableCaption, getTableFoot, getTableHead } from "@/features/editor/types/table";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
 /** Wraps a bare table node in a page root — every command here is written to walk from the document root, matching every other document command's own contract. */
@@ -75,6 +76,19 @@ describe("setTableColumnCount (Checkpoint 1.14)", () => {
     const table = root.children![0];
     const next = setTableColumnCount(root, table.id, -3);
     expect(next.children![0].children![0].children![0].children).toEqual([]);
+  });
+
+  it("Checkpoint 1.15.6.12.2 — a Caption survives a column-count change untouched (id/text/position all stable)", () => {
+    const table = createTableNode();
+    const withCaption = setTableCaptionEnabled(wrap(table), table.id, true).children![0];
+    const originalCaption = getTableCaption(withCaption)!;
+
+    const next = setTableColumnCount(wrap(withCaption), withCaption.id, 5);
+    const nextTable = next.children![0];
+
+    expect(nextTable.children![0]).toBe(originalCaption);
+    expect(getTableCaption(nextTable)!.id).toBe(originalCaption.id);
+    expect(getTableCaption(nextTable)!.text).toBe(originalCaption.text);
   });
 
   it("normalizes irregular rows independently, each to the same target count", () => {
@@ -165,6 +179,31 @@ describe("setTableBodyRowCount (Checkpoint 1.14)", () => {
     const root = wrap(table);
     expect(setTableBodyRowCount(root, "table-1", 0)).toBe(root);
   });
+
+  it("Checkpoint 1.15.6.12.2 — a Caption survives a body-row-count change untouched and remains first", () => {
+    const table = createTableNode();
+    const withCaption = setTableCaptionEnabled(wrap(table), table.id, true).children![0];
+    const originalCaption = getTableCaption(withCaption)!;
+
+    const next = setTableBodyRowCount(wrap(withCaption), withCaption.id, 4);
+    const nextTable = next.children![0];
+
+    expect(nextTable.children![0].tag).toBe("caption");
+    expect(nextTable.children![0]).toBe(originalCaption);
+    expect(getTableBody(nextTable)!.children).toHaveLength(4);
+  });
+
+  it("Checkpoint 1.15.6.12.2 — creating a fresh tbody from scratch on a captioned, headerless table inserts it right after the Caption, never before", () => {
+    const table: EditorElementNode = {
+      id: "table-1",
+      tag: "table",
+      children: [{ id: "caption-1", tag: "caption", text: "My caption" }],
+    };
+    const root = wrap(table);
+    const next = setTableBodyRowCount(root, "table-1", 2);
+    const nextTable = next.children![0];
+    expect(nextTable.children!.map((c) => c.tag)).toEqual(["caption", "tbody"]);
+  });
 });
 
 describe("setTableHeaderEnabled (Checkpoint 1.14)", () => {
@@ -224,6 +263,30 @@ describe("setTableHeaderEnabled (Checkpoint 1.14)", () => {
     const next = setTableHeaderEnabled(root, "table-1", true);
     expect(getTableHead(next.children![0])!.children![0].children).toHaveLength(1);
   });
+
+  it("Checkpoint 1.15.6.12.2 — enabling Header on a captioned table inserts thead right AFTER the Caption, never before it (Caption stays the table's first child)", () => {
+    const table = createTableNode();
+    const withCaption = setTableCaptionEnabled(wrap(table), table.id, true).children![0];
+    const withoutHeader = setTableHeaderEnabled(wrap(withCaption), withCaption.id, false).children![0];
+
+    const next = setTableHeaderEnabled(wrap(withoutHeader), withoutHeader.id, true);
+    const nextTable = next.children![0];
+
+    expect(nextTable.children!.map((c) => c.tag)).toEqual(["caption", "thead", "tbody"]);
+  });
+
+  it("Checkpoint 1.15.6.12.2 — a Caption survives a Header toggle (either direction) untouched and remains first", () => {
+    const table = createTableNode();
+    const withCaption = setTableCaptionEnabled(wrap(table), table.id, true).children![0];
+    const originalCaption = getTableCaption(withCaption)!;
+
+    const headerOff = setTableHeaderEnabled(wrap(withCaption), withCaption.id, false).children![0];
+    expect(getTableCaption(headerOff)).toBe(originalCaption);
+
+    const headerOn = setTableHeaderEnabled(wrap(headerOff), headerOff.id, true).children![0];
+    expect(getTableCaption(headerOn)).toBe(originalCaption);
+    expect(headerOn.children![0].tag).toBe("caption");
+  });
 });
 
 describe("setTableFooterEnabled (Checkpoint 1.14)", () => {
@@ -259,5 +322,67 @@ describe("setTableFooterEnabled (Checkpoint 1.14)", () => {
     const root = wrap(createTableNode());
     const table = root.children![0];
     expect(setTableFooterEnabled(root, table.id, false)).toBe(root);
+  });
+
+  it("Checkpoint 1.15.6.12.2 — a Caption survives a Footer toggle untouched and remains first (Footer always appends last regardless of Caption)", () => {
+    const table = createTableNode();
+    const withCaption = setTableCaptionEnabled(wrap(table), table.id, true).children![0];
+    const originalCaption = getTableCaption(withCaption)!;
+
+    const next = setTableFooterEnabled(wrap(withCaption), withCaption.id, true);
+    const nextTable = next.children![0];
+
+    expect(nextTable.children!.map((c) => c.tag)).toEqual(["caption", "thead", "tbody", "tfoot"]);
+    expect(getTableCaption(nextTable)).toBe(originalCaption);
+  });
+});
+
+describe("setTableCaptionEnabled (Checkpoint 1.15.6.12.2)", () => {
+  it("creates a fresh caption, inserted as the table's very first child, unconditionally", () => {
+    const root = wrap(createTableNode());
+    const table = root.children![0];
+    const next = setTableCaptionEnabled(root, table.id, true);
+    const nextTable = next.children![0];
+
+    expect(nextTable.children![0].tag).toBe("caption");
+    expect(nextTable.children![0].text).toBe("Table caption");
+    expect(nextTable.children!.slice(1).map((c) => c.tag)).toEqual(table.children!.map((c) => c.tag));
+  });
+
+  it("removes the entire caption when disabled, leaving every other child untouched", () => {
+    const root = wrap(createTableNode());
+    const table = root.children![0];
+    const withCaption = setTableCaptionEnabled(root, table.id, true);
+    const originalHead = getTableHead(withCaption.children![0]);
+    const originalBody = getTableBody(withCaption.children![0]);
+
+    const next = setTableCaptionEnabled(withCaption, table.id, false);
+    const nextTable = next.children![0];
+
+    expect(getTableCaption(nextTable)).toBeUndefined();
+    expect(getTableHead(nextTable)).toBe(originalHead);
+    expect(getTableBody(nextTable)).toBe(originalBody);
+  });
+
+  it("is a no-op (same reference, zero history) when enabling an already-captioned table", () => {
+    const root = wrap(createTableNode());
+    const table = root.children![0];
+    const withCaption = setTableCaptionEnabled(root, table.id, true);
+    expect(setTableCaptionEnabled(withCaption, table.id, true)).toBe(withCaption);
+  });
+
+  it("is a no-op (same reference, zero history) when disabling an already-captionless table", () => {
+    const root = wrap(createTableNode());
+    const table = root.children![0];
+    expect(setTableCaptionEnabled(root, table.id, false)).toBe(root);
+  });
+
+  it("does not create a tableCaptionText field on Table — the authored text lives entirely on the real caption child", () => {
+    const root = wrap(createTableNode());
+    const table = root.children![0];
+    const next = setTableCaptionEnabled(root, table.id, true);
+    const nextTable = next.children![0] as unknown as Record<string, unknown>;
+    expect(nextTable.tableCaptionText).toBeUndefined();
+    expect(nextTable.captionText).toBeUndefined();
   });
 });

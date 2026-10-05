@@ -402,3 +402,101 @@ describe("Fieldset/Legend containment (Checkpoint 1.15.6.12.1)", () => {
     expect(canParentAcceptChild("dialog", "div")).toBe(true);
   });
 });
+
+describe("Figure/Figcaption containment (Checkpoint 1.15.6.12.2)", () => {
+  it("Figure is a genuine, UNCONSTRAINED container — same as div/section/fieldset, not a closed allowlist accepting only figcaption", () => {
+    expect(canContainChildren("figure")).toBe(true);
+  });
+
+  it("Figure accepts any ordinary insertable child — img, svg, video, or anything else, not just Image", () => {
+    for (const childTag of ["div", "h1", "p", "button", "img", "svg", "video", "a"]) {
+      expect(canParentAcceptChild("figure", childTag), childTag).toBe(true);
+    }
+  });
+
+  it("Figure ALSO accepts figcaption — the one exception CONSTRAINED_CHILD_EXTRA_PARENTS exists for", () => {
+    expect(canParentAcceptChild("figure", "figcaption")).toBe(true);
+  });
+
+  it("Figure still rejects every other constrained-child tag meaningful only under its own one allowed parent", () => {
+    expect(canParentAcceptChild("figure", "li")).toBe(false);
+    expect(canParentAcceptChild("figure", "option")).toBe(false);
+    expect(canParentAcceptChild("figure", "legend")).toBe(false);
+    expect(canParentAcceptChild("figure", "caption")).toBe(false);
+  });
+
+  it("figcaption is rejected under every ordinary open container — div/section/form/label/dialog/fieldset and the semantic sectioning family", () => {
+    for (const parentTag of ["div", "section", "form", "label", "dialog", "fieldset", "header", "nav", "main", "article", "aside", "footer"]) {
+      expect(canParentAcceptChild(parentTag, "figcaption"), parentTag).toBe(false);
+    }
+  });
+
+  it("figcaption is rejected under every constrained-parent allowlist too — UL/OL, Select, Table's structural primitives", () => {
+    expect(canParentAcceptChild("ul", "figcaption")).toBe(false);
+    expect(canParentAcceptChild("ol", "figcaption")).toBe(false);
+    expect(canParentAcceptChild("select", "figcaption")).toBe(false);
+    expect(canParentAcceptChild("table", "figcaption")).toBe(false);
+  });
+
+  it("Figure itself is insertable anywhere an ordinary structural container is allowed", () => {
+    for (const parentTag of ["div", "section", "form", "label", "fieldset", "header", "nav", "main", "article", "aside", "footer"]) {
+      expect(canParentAcceptChild(parentTag, "figure"), parentTag).toBe(true);
+    }
+  });
+
+  it("Figure is rejected inside every constrained-parent allowlist — UL/OL, Select, and Table's structural primitives", () => {
+    expect(canParentAcceptChild("ul", "figure")).toBe(false);
+    expect(canParentAcceptChild("ol", "figure")).toBe(false);
+    expect(canParentAcceptChild("select", "figure")).toBe(false);
+    expect(canParentAcceptChild("table", "figure")).toBe(false);
+  });
+
+  it("does not weaken any prior allowlist — Fieldset/Legend, UL/OL's li-only, and Select's option-only containment remain intact", () => {
+    expect(canParentAcceptChild("fieldset", "legend")).toBe(true);
+    expect(canParentAcceptChild("ul", "li")).toBe(true);
+    expect(canParentAcceptChild("select", "option")).toBe(true);
+  });
+});
+
+describe("Table/Caption containment (Checkpoint 1.15.6.12.2)", () => {
+  it("Table's own closed allowlist now includes caption, alongside thead/tbody/tfoot — the Select/Option shape, not Fieldset/Legend's", () => {
+    expect(canParentAcceptChild("table", "caption")).toBe(true);
+    expect(canParentAcceptChild("table", "thead")).toBe(true);
+    expect(canParentAcceptChild("table", "tbody")).toBe(true);
+    expect(canParentAcceptChild("table", "tfoot")).toBe(true);
+  });
+
+  it("Table still rejects a direct tr/th/td and every other constrained-child tag meaningful only elsewhere", () => {
+    expect(canParentAcceptChild("table", "tr")).toBe(false);
+    expect(canParentAcceptChild("table", "th")).toBe(false);
+    expect(canParentAcceptChild("table", "td")).toBe(false);
+    expect(canParentAcceptChild("table", "li")).toBe(false);
+    expect(canParentAcceptChild("table", "legend")).toBe(false);
+    expect(canParentAcceptChild("table", "figcaption")).toBe(false);
+  });
+
+  it("caption is rejected under every ordinary open container — div/section/form/fieldset/figure and the semantic sectioning family", () => {
+    for (const parentTag of ["div", "section", "form", "label", "dialog", "fieldset", "figure", "header", "nav", "main", "article", "aside", "footer"]) {
+      expect(canParentAcceptChild(parentTag, "caption"), parentTag).toBe(false);
+    }
+  });
+
+  it("caption is rejected under every OTHER constrained-parent allowlist too — UL/OL, Select, and Table's own structural sections (not Table itself)", () => {
+    expect(canParentAcceptChild("ul", "caption")).toBe(false);
+    expect(canParentAcceptChild("ol", "caption")).toBe(false);
+    expect(canParentAcceptChild("select", "caption")).toBe(false);
+    expect(canParentAcceptChild("thead", "caption")).toBe(false);
+    expect(canParentAcceptChild("tbody", "caption")).toBe(false);
+    expect(canParentAcceptChild("tfoot", "caption")).toBe(false);
+    expect(canParentAcceptChild("tr", "caption")).toBe(false);
+  });
+
+  it("does not weaken Table's own existing structural constraints — thead/tbody/tfoot -> tr -> th/td remain intact", () => {
+    expect(canParentAcceptChild("thead", "tr")).toBe(true);
+    expect(canParentAcceptChild("tbody", "tr")).toBe(true);
+    expect(canParentAcceptChild("tfoot", "tr")).toBe(true);
+    expect(canParentAcceptChild("tr", "th")).toBe(true);
+    expect(canParentAcceptChild("tr", "td")).toBe(true);
+    expect(canParentAcceptChild("table", "tr")).toBe(false);
+  });
+});

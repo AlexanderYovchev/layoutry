@@ -21,8 +21,8 @@ import { getLayoutMode } from "@/features/editor/types/layout";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
 
-const SEMANTIC_TAGS = new Set(["section", "ul", "ol", "header", "nav", "main", "article", "aside", "footer", "form", "label", "fieldset"]);
-type SemanticTag = "section" | "ul" | "ol" | "header" | "nav" | "main" | "article" | "aside" | "footer" | "form" | "label" | "fieldset";
+const SEMANTIC_TAGS = new Set(["section", "ul", "ol", "header", "nav", "main", "article", "aside", "footer", "form", "label", "fieldset", "figure"]);
+type SemanticTag = "section" | "ul" | "ol" | "header" | "nav" | "main" | "article" | "aside" | "footer" | "form" | "label" | "fieldset" | "figure";
 
 /**
  * A real `<form>` submits (navigating/reloading the page) on Enter-in-a-
@@ -119,27 +119,28 @@ export function ContainerElement({
   // Container (div), Section (section), Unordered/Ordered List (ul/ol),
   // the semantic sectioning family (header/nav/main/article/aside/
   // footer — Checkpoint 1.8), Form (form — Checkpoint 1.10), Label
-  // (label — Checkpoint 1.11), and Fieldset (fieldset — Checkpoint
-  // 1.15.6.12.1) are all the tags registered to this component (see
-  // documentNodeComponents.ts) — every one of them shares the exact same
-  // structural-container style/behavior below (the same Block-display
-  // starter defaults; see createUnorderedListNode/createHeaderNode/
-  // createFormNode/createLabelNode/createFieldsetNode/etc.) and differs
+  // (label — Checkpoint 1.11), Fieldset (fieldset — Checkpoint
+  // 1.15.6.12.1), and Figure (figure — Checkpoint 1.15.6.12.2) are all the
+  // tags registered to this component (see documentNodeComponents.ts) —
+  // every one of them shares the exact same structural-container style/
+  // behavior below (the same Block-display starter defaults; see
+  // createUnorderedListNode/createHeaderNode/createFormNode/
+  // createLabelNode/createFieldsetNode/createFigureNode/etc.) and differs
   // only in semantic DOM identity, so the real element tag is chosen from
   // the document node rather than hardcoded, keeping generated markup a
   // genuine <header>/<nav>/<main>/<article>/<aside>/<footer>/<ul>/<ol>/
-  // <section>/<form>/<label>/<fieldset> instead of a <div> standing in for
-  // one. Fieldset needs no onSubmit/onClick special-case the way Form/
-  // Label do. Verified directly against Tailwind's own preflight.css (not
-  // assumed): the universal `*, ::before, ::after, ::backdrop,
-  // ::file-selector-button { margin: 0; padding: 0; border: 0 solid; }`
-  // reset already zeroes a bare <fieldset>'s native margin/padding/border
-  // exactly like every other element (no fieldset-specific Preflight rule
-  // exists, unlike <hr>'s own — see DividerElement's doc comment), so this
-  // component's own usesLegacyBorderChrome/usesLegacyPadding defaults
-  // already give Fieldset the exact same sensible starting appearance
-  // every other container gets, with no native grouping-box styling left
-  // to fight.
+  // <section>/<form>/<label>/<fieldset>/<figure> instead of a <div>
+  // standing in for one. Fieldset/Figure need no onSubmit/onClick special-
+  // case the way Form/Label do. Verified directly against Tailwind's own
+  // preflight.css (not assumed): the universal `*, ::before, ::after,
+  // ::backdrop, ::file-selector-button { margin: 0; padding: 0; border: 0
+  // solid; }` reset already zeroes a bare <fieldset>/<figure>'s native
+  // margin/padding/border exactly like every other element (no fieldset-
+  // or figure-specific Preflight rule exists, unlike <hr>'s own — see
+  // DividerElement's doc comment), so this component's own
+  // usesLegacyBorderChrome/usesLegacyPadding defaults already give both
+  // the exact same sensible starting appearance every other container
+  // gets, with no native styling left to fight.
   const Tag = SEMANTIC_TAGS.has(node.tag) ? (node.tag as SemanticTag) : "div";
 
   return (

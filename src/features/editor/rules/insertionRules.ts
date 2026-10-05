@@ -72,6 +72,14 @@ const CONTAINER_TAGS: ReadonlySet<string> = new Set([
   // below, not a new entry here or in ALLOWED_CHILD_TAGS (an allowlist
   // there would wrongly turn Fieldset into a closed container).
   "fieldset",
+  // "figure" (Checkpoint 1.15.6.12.2) — ordinary and UNCONSTRAINED like
+  // div/section/dialog/fieldset: it accepts any ordinary insertable child
+  // (img, svg, video, or anything else), not just Image. Its one extra
+  // rule — accepting "figcaption" too — is expressed via
+  // CONSTRAINED_CHILD_EXTRA_PARENTS below, the same Fieldset/Legend shape,
+  // not a new entry here (which would wrongly turn it into a closed
+  // container).
+  "figure",
 ]);
 
 export function canContainChildren(tag: string): boolean {
@@ -110,7 +118,14 @@ const ALLOWED_CHILD_TAGS: Readonly<Record<string, ReadonlySet<string>>> = {
   // this checkpoint's brief itself calls out, and the one shape
   // getTableHead/getTableBody/getTableFoot (types/table.ts) and every
   // Table Inspector command are actually built around.
-  table: new Set(["thead", "tbody", "tfoot"]),
+  // Checkpoint 1.15.6.12.2 — "caption" joins Table's own existing closed
+  // allowlist directly (unlike Figcaption's Fieldset relationship):
+  // Table already had a strict ALLOWED_CHILD_TAGS entry before this
+  // checkpoint, so this is the Select/Option shape (extend the existing
+  // allowlist, add the tag to CONSTRAINED_CHILD_TAGS below), not the
+  // Fieldset/Legend shape — no CONSTRAINED_CHILD_EXTRA_PARENTS entry
+  // needed for "caption" at all.
+  table: new Set(["caption", "thead", "tbody", "tfoot"]),
   thead: new Set(["tr"]),
   tbody: new Set(["tr"]),
   tfoot: new Set(["tr"]),
@@ -139,6 +154,18 @@ const CONSTRAINED_CHILD_TAGS: ReadonlySet<string> = new Set([
   // container that must keep accepting ordinary children too — see
   // CONSTRAINED_CHILD_EXTRA_PARENTS below for how that's expressed.
   "legend",
+  // "figcaption" (Checkpoint 1.15.6.12.2) — meaningful only inside
+  // "figure", the exact same shape "legend" has for "fieldset" — its one
+  // valid parent is itself an OPEN container, so see
+  // CONSTRAINED_CHILD_EXTRA_PARENTS below.
+  "figcaption",
+  // "caption" (Checkpoint 1.15.6.12.2) — meaningful only inside "table",
+  // but unlike figcaption/legend this is the Select/Option shape: "table"
+  // already has its own closed ALLOWED_CHILD_TAGS entry above (which now
+  // includes "caption" directly), so this membership alone is already
+  // sufficient to reject "caption" under every other parent — no
+  // CONSTRAINED_CHILD_EXTRA_PARENTS entry needed.
+  "caption",
 ]);
 
 /**
@@ -161,6 +188,7 @@ const CONSTRAINED_CHILD_TAGS: ReadonlySet<string> = new Set([
  */
 const CONSTRAINED_CHILD_EXTRA_PARENTS: Readonly<Record<string, ReadonlySet<string>>> = {
   legend: new Set(["fieldset"]),
+  figcaption: new Set(["figure"]),
 };
 
 export function canParentAcceptChild(parentTag: string, childTag: string): boolean {

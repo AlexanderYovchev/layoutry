@@ -581,6 +581,51 @@ describe("elementCapabilities", () => {
     });
   });
 
+  describe("Figure, Figcaption & Table Caption Foundation (Checkpoint 1.15.6.12.2)", () => {
+    it("figure is childable (via CONTAINER_TAGS) and gets the same implicit supportsBackground/supportsChildLayout grants every other structural container gets — zero CAPABILITY_OVERRIDES entry needed", () => {
+      const figure = getElementCapabilities("figure");
+      expect(figure.canContainChildren).toBe(true);
+      expect(figure.supportsTypography).toBe(false);
+      expect(figure.supportsBackground).toBe(true);
+      expect(figure.supportsChildLayout).toBe(true);
+    });
+
+    it("figure was deliberately NOT added to the Shape (clip-path) allowlist — matches Fieldset's own precedent, not automatically widened", () => {
+      expect(getElementCapabilities("figure").supportsShape).toBe(false);
+    });
+
+    it("figcaption is text-bearing (via TEXT_BEARING_TAGS), gaining supportsTypography/supportsBackground purely from that membership — zero CAPABILITY_OVERRIDES entry needed", () => {
+      const figcaption = getElementCapabilities("figcaption");
+      expect(figcaption.canContainChildren).toBe(false);
+      expect(figcaption.supportsTypography).toBe(true);
+      expect(figcaption.supportsBackground).toBe(true);
+    });
+
+    it("caption is text-bearing (via TEXT_BEARING_TAGS) — typography/background granted generically, same as th/td/legend", () => {
+      const caption = getElementCapabilities("caption");
+      expect(caption.canContainChildren).toBe(false);
+      expect(caption.supportsTypography).toBe(true);
+      expect(caption.supportsBackground).toBe(true);
+    });
+
+    it("caption opts OUT of Display/Position — the same 'would silently pull it out of native table layout' reason Th/Td's own overrides already document", () => {
+      const caption = getElementCapabilities("caption");
+      expect(caption.supportsDisplay).toBe(false);
+      expect(caption.supportsPosition).toBe(false);
+    });
+
+    it("caption still gets border/border-radius/box-shadow/filters/sizing and, unlike Th/Td, remains independently resizable — it doesn't share width with a sibling column", () => {
+      const caption = getElementCapabilities("caption");
+      expect(caption.supportsBorder).toBe(true);
+      expect(caption.supportsBorderRadius).toBe(true);
+      expect(caption.supportsBoxShadow).toBe(true);
+      expect(caption.supportsFilters).toBe(true);
+      expect(caption.supportsAspectRatio).toBe(true);
+      expect(caption.resizableX).toBe(true);
+      expect(caption.resizableY).toBe(true);
+    });
+  });
+
   it("gives an entirely unknown tag the same sensible defaults as any other element", () => {
     const caps = getElementCapabilities("some-future-tag");
 

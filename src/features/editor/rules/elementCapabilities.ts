@@ -171,7 +171,7 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
  * insertionRules.ts's CONTAINER_TAGS already uses), so typography support
  * is already correct the moment a factory for one of them is added.
  */
-const TEXT_BEARING_TAGS: ReadonlySet<string> = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "button", "a", "li", "blockquote", "th", "td", "legend"]);
+const TEXT_BEARING_TAGS: ReadonlySet<string> = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "button", "a", "li", "blockquote", "th", "td", "legend", "figcaption", "caption"]);
 
 /**
  * Tags eligible for Advanced Container Shapes (Checkpoint 1.15.4) —
@@ -537,6 +537,29 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
    * root, so this tag needs neither.
    */
   dialog: { supportsChildLayout: false, supportsDisplay: false },
+
+  /**
+   * Caption (Checkpoint 1.15.6.12.2) — a text-bearing leaf (see
+   * TEXT_BEARING_TAGS above), so typography/background are already
+   * granted generically with no override needed for either, the same
+   * derivation Legend/Th/Td already use. Two explicit overrides, both for
+   * the exact same "would silently pull it out of native table layout"
+   * reason Th/Td's own supportsDisplay/supportsPosition overrides already
+   * document: a `<caption>`'s native `display: table-caption` has no
+   * equivalent in this app's Display control's own value set (block/
+   * inline/inline-block/none), and an explicit absolute/fixed Position
+   * computes `display: block` per the CSS spec either way — both would
+   * silently move the caption out of its native position relative to the
+   * table. Border/border-radius/box-shadow/filters/sizing (the Size
+   * section) all stay at their DEFAULT_CAPABILITIES true — an ordinary,
+   * common caption-styling want that doesn't touch its native placement.
+   * Unlike Th/Td, resizableX/Y are deliberately left at their
+   * DEFAULT_CAPABILITIES true: a caption doesn't share its width with any
+   * sibling column the way a cell does, so a Canvas drag-resize has no
+   * equivalent "can't move the rest of the column" problem — verified
+   * live, not assumed (see this checkpoint's own report).
+   */
+  caption: { supportsDisplay: false, supportsPosition: false },
 };
 
 export function getElementCapabilities(tag: string): ElementCapabilities {

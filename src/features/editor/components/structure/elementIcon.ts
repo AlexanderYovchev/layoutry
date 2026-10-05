@@ -6,6 +6,7 @@ import {
   ClipboardList,
   Component,
   FileText,
+  Frame,
   Image,
   Layout,
   LayoutPanelTop,
@@ -102,4 +103,9 @@ export const TAG_ICONS: Record<string, LucideIcon> = {
   hr: Minus,
   fieldset: SquareDashed,
   legend: Type,
+  // Figure/Figcaption/Table Caption (Checkpoint 1.15.6.12.2). Figcaption
+  // and Caption both share Type — the same convention as above.
+  figure: Frame,
+  figcaption: Type,
+  caption: Type,
 };

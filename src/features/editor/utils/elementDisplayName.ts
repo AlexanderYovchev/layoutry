@@ -88,6 +88,9 @@ const TAG_DISPLAY_NAMES: Record<string, string> = {
   hr: "Divider",
   fieldset: "Fieldset",
   legend: "Legend",
+  figure: "Figure",
+  figcaption: "Figcaption",
+  caption: "Table Caption",
 };
 
 /**

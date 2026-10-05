@@ -51,6 +51,7 @@ import { generateNodeId } from "@/features/editor/utils/generateNodeId";
 import { DEFAULT_SVG_FILL } from "@/features/editor/types/svg";
 import { DEFAULT_LINK_HREF } from "@/features/editor/types/link";
 import type { EditorElementNode } from "@/features/editor/types/document";
+import type { FlexContainerSettings } from "@/features/editor/types/flowLayout";
 import type { ElementSpacing } from "@/features/editor/types/spacing";
 
 /** Checkpoint 3.5's stated default for a newly created container: Block display, 16px padding on every side, zero margin. */
@@ -143,7 +144,8 @@ export type InsertableElementType =
   | "basicTabs"
   | "drawer"
   | "divider"
-  | "fieldset";
+  | "fieldset"
+  | "figure";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -647,6 +649,20 @@ export function createTableSectionNode(tag: "thead" | "tbody" | "tfoot", rows: E
 }
 
 /**
+ * Caption (Checkpoint 1.15.6.12.2) — a genuine `<caption>` text-bearing
+ * leaf. NOT registered in InsertableElementType/FACTORIES_BY_TYPE below:
+ * only ever meaningful as Table's own first child, created exclusively
+ * through the Table Inspector's Caption toggle (setTableCaptionEnabled,
+ * tableCommands.ts) — the same "real factory, no standalone toolbar
+ * entry" shape createLegendNode/createFigcaptionNode already established.
+ * A new Table does NOT get one by default (createTableNode below is
+ * unchanged) — Caption is purely additive, opt-in per table.
+ */
+export function createCaptionNode(): EditorElementNode {
+  return { id: generateNodeId("caption"), tag: "caption", text: "Table caption" };
+}
+
+/**
  * A newly inserted Table ships with a complete, immediately useful
  * starter structure (Checkpoint 1.14) — 3 columns, one header row, two
  * body rows — the same "immediately understandable and usable, not an
@@ -706,6 +722,49 @@ const DEFAULT_IMAGE_SRC =
 
 export function createImageNode(): EditorElementNode {
   return { id: generateNodeId("img"), tag: "img", src: DEFAULT_IMAGE_SRC };
+}
+
+/**
+ * Figcaption (Checkpoint 1.15.6.12.2) — a genuine `<figcaption>`
+ * text-bearing leaf, the same shape createLegendNode already uses. NOT
+ * registered in InsertableElementType/FACTORIES_BY_TYPE below: only ever
+ * meaningful as Figure's own child (see canParentAcceptChild's own
+ * CONSTRAINED_CHILD_EXTRA_PARENTS), the same "real factory, no standalone
+ * toolbar entry" shape createLegendNode/createTableHeaderCellNode already
+ * established.
+ */
+export function createFigcaptionNode(): EditorElementNode {
+  return { id: generateNodeId("figcaption"), tag: "figcaption", text: "Caption" };
+}
+
+const FIGURE_FLEX: FlexContainerSettings = {
+  direction: "column",
+  wrap: "nowrap",
+  justifyContent: "start",
+  alignItems: "stretch",
+  rowGap: 8,
+  columnGap: 8,
+};
+
+/**
+ * Figure (Checkpoint 1.15.6.12.2) — a genuine `<figure>`, open and
+ * UNCONSTRAINED like div/section/fieldset (see insertionRules.ts's own
+ * CONTAINER_TAGS entry): this starter composition is one reasonable
+ * default, not a restriction — Figure itself happily accepts svg/video/
+ * any other ordinary content instead of Image, authored later by hand.
+ * The starter Image reuses createImageNode() directly (same placeholder
+ * src, same everything) rather than duplicating its defaults — after
+ * insertion it is an entirely ordinary Image node, ordinary Figcaption
+ * node, indistinguishable from either having been added by hand.
+ */
+export function createFigureNode(): EditorElementNode {
+  return {
+    id: generateNodeId("figure"),
+    tag: "figure",
+    flowLayout: { display: "flex", flex: FIGURE_FLEX },
+    spacing: { margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } },
+    children: [createImageNode(), createFigcaptionNode()],
+  };
 }
 
 /**
@@ -788,6 +847,7 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   heading: createHeadingNode,
   paragraph: createParagraphNode,
   divider: createDividerNode,
+  figure: createFigureNode,
   button: createButtonNode,
   image: createImageNode,
   link: createLinkNode,
@@ -957,6 +1017,7 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   basicTabs: { width: 360, height: 220 },
   drawer: { width: 320, height: 160 },
   fieldset: { width: 280, height: 120 },
+  figure: { width: 280, height: 220 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };
