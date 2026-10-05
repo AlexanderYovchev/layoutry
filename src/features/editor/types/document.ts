@@ -337,6 +337,36 @@ export interface EditorElementNode {
    */
   loop?: boolean;
   /**
+   * This node's own `value` for `tag: "progress"` (Checkpoint 1.15.6.12.4)
+   * — NOT reused from `value` above (that field is a plain `string`, this
+   * is a `number`; widening `value` to `string | number` would have been a
+   * worse, more ambiguous shared field than one dedicated one, the same
+   * "one field per distinct semantic concern" reasoning `svgFill`/
+   * `svgStroke` already establish rather than overloading `background`).
+   * `undefined` is NOT "attribute absent meaning zero" — it is the real,
+   * distinct native indeterminate state (no `value` attribute at all; see
+   * getProgressValue/isProgressIndeterminate in types/progress.ts). There
+   * is deliberately no separate `progressIndeterminate` boolean — absence
+   * of this field IS that state, the single source of truth. A defined
+   * value is clamped to `[0, effective progressMax]` by
+   * setElementProgressValue/setElementProgressMax at write time, so the
+   * document itself never drifts out of the range it visually renders.
+   */
+  progressValue?: number;
+  /**
+   * This node's own `max` for `tag: "progress"` (Checkpoint 1.15.6.12.4).
+   * Unset resolves to DEFAULT_PROGRESS_MAX (100) via getProgressMax's own
+   * resolver-level fallback — not native HTML's own obscure default of 1
+   * (verified live in real Chromium), since this app's factory always
+   * stamps a concrete starter value; the stored field itself carries no
+   * synthesized default, same convention `controls` uses. Native Max must
+   * be greater than zero — setElementProgressMax enforces this at write
+   * time (clamped to a minimum of 1) rather than relying on browser
+   * coercion, which only affects the rendered IDL property, never the
+   * document's own stored value.
+   */
+  progressMax?: number;
+  /**
    * This node's own `title` attribute (Checkpoint 1.15) — only meaningful
    * for `tag: "iframe"`, where it is the accessible name a screen reader
    * announces for the embedded content. Deliberately a dedicated field,

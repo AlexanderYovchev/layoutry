@@ -77,15 +77,14 @@ describe("resolveDragEndInsertion", () => {
   });
 
   it("returns null for an unrecognized element type", () => {
-    // "progress" is deliberately still unrecognized (Checkpoint
-    // 1.15.6.12.3's own Non-Goals, deferred to 1.15.6.12.4) — "audio" was
-    // this test's previous placeholder but is now a real
-    // InsertableElementType, so it no longer proves the "unrecognized"
-    // branch.
+    // "meter" is deliberately still unrecognized (Checkpoint 1.15.6.12.4's
+    // own Non-Goals) — "progress" was this test's previous placeholder but
+    // is now a real InsertableElementType, so it no longer proves the
+    // "unrecognized" branch.
     const result = resolveDragEndInsertion(
       {
         active: {
-          data: { current: { elementType: "progress" } },
+          data: { current: { elementType: "meter" } },
           rect: { current: { translated: null } },
         },
         over: null,

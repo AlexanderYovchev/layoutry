@@ -16,6 +16,7 @@ import { LinkElement } from "@/features/canvas/components/document/elements/Link
 import { ListItemElement } from "@/features/canvas/components/document/elements/ListItemElement";
 import { OptionElement } from "@/features/canvas/components/document/elements/OptionElement";
 import { ParagraphElement } from "@/features/canvas/components/document/elements/ParagraphElement";
+import { ProgressElement } from "@/features/canvas/components/document/elements/ProgressElement";
 import { SelectElement } from "@/features/canvas/components/document/elements/SelectElement";
 import { SvgElement } from "@/features/canvas/components/document/elements/SvgElement";
 import { TableCellElement } from "@/features/canvas/components/document/elements/TableCellElement";
@@ -81,4 +82,5 @@ export const documentNodeComponents: Record<string, DocumentElementComponent> =
     legend: LegendElement,
     figure: ContainerElement,
     figcaption: FigcaptionElement,
+    progress: ProgressElement,
   };

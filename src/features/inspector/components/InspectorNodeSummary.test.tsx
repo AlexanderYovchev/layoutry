@@ -979,6 +979,62 @@ describe("InspectorNodeSummary — Audio (Checkpoint 1.15.6.12.3)", () => {
   });
 });
 
+describe("InspectorNodeSummary — Progress (Checkpoint 1.15.6.12.4)", () => {
+  it("shows the Progress section only for tag: progress", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "progress-1", tag: "progress", progressValue: 50, progressMax: 100 }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.getByRole("switch", { name: "Indeterminate" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Value")).toBeInTheDocument();
+    expect(screen.getByLabelText("Max")).toBeInTheDocument();
+  });
+
+  it("omits the Progress section for an unrelated tag", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "div-1", tag: "div" }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.queryByText("Progress")).not.toBeInTheDocument();
+  });
+
+  it("omits the Media (Object Fit/Position) and Background sections for Progress — no media-fit content, no visible background", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "progress-1", tag: "progress", progressValue: 50, progressMax: 100 }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.queryByText("Media", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("Background")).not.toBeInTheDocument();
+  });
+
+  it("omits Typography and the Content Layout section for Progress — not text-bearing, not a container", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "progress-1", tag: "progress", progressValue: 50, progressMax: 100 }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.queryByText("Typography")).not.toBeInTheDocument();
+    expect(screen.queryByText("Content Layout")).not.toBeInTheDocument();
+  });
+
+  it("shows the Size section for Progress", () => {
+    render(
+      <InspectorNodeSummary
+        node={{ id: "progress-1", tag: "progress", progressValue: 50, progressMax: 100 }}
+        parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block"
+      />,
+    );
+    expect(screen.getByLabelText("Width")).toBeInTheDocument();
+  });
+});
+
 describe("InspectorNodeSummary — Identity section (Checkpoint 1.15.1)", () => {
   it("shows the Identity section (ID/Classes) unconditionally, for an ordinary container", () => {
     render(

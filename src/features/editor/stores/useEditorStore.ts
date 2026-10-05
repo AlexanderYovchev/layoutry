@@ -43,6 +43,11 @@ import {
   setTableFooterEnabled as setTableFooterEnabledCommand,
   setTableHeaderEnabled as setTableHeaderEnabledCommand,
 } from "@/features/editor/commands/tableCommands";
+import {
+  setElementProgressIndeterminate as setElementProgressIndeterminateCommand,
+  setElementProgressMax as setElementProgressMaxCommand,
+  setElementProgressValue as setElementProgressValueCommand,
+} from "@/features/editor/commands/progressCommands";
 import type { InputType } from "@/features/editor/types/input";
 import {
   applyFreeContainerChildGeometries,
@@ -461,6 +466,13 @@ interface EditorState {
   setTableFooterEnabled: (tableId: string, enabled: boolean) => void;
   /** One-shot table Caption toggle (Checkpoint 1.15.6.12.2) — creates/removes the entire `<caption>` in one step, always as the table's first child. A new Table has no Caption by default; this is the only way one is created. */
   setTableCaptionEnabled: (tableId: string, enabled: boolean) => void;
+
+  /** One-shot Progress Value edit (Checkpoint 1.15.6.12.4) — `undefined` enters indeterminate state directly; a defined value is clamped to `[0, effective Max]`. */
+  setElementProgressValue: (nodeId: string, value: number | undefined) => void;
+  /** One-shot Progress Max edit (Checkpoint 1.15.6.12.4) — clamped to a minimum of 1; atomically re-clamps a determinate Value that would otherwise exceed the new Max, in the same history step. */
+  setElementProgressMax: (nodeId: string, max: number) => void;
+  /** The Inspector's own Indeterminate toggle (Checkpoint 1.15.6.12.4) — ON clears Value entirely, OFF restores `effective Max / 2`. */
+  setElementProgressIndeterminate: (nodeId: string, indeterminate: boolean) => void;
 
   /** One-shot media/embed source URL edit (Checkpoint 1.15 — Video's and Iframe's own Source URL field). Same action-level no-op guard as every other one-shot field command. */
   setElementSrc: (nodeId: string, src: string | undefined) => void;
@@ -1276,6 +1288,27 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setTableCaptionEnabled: (tableId, enabled) =>
     set((state) => {
       const document = setTableCaptionEnabledCommand(state.document, tableId, enabled);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setElementProgressValue: (nodeId, value) =>
+    set((state) => {
+      const document = setElementProgressValueCommand(state.document, nodeId, value);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setElementProgressMax: (nodeId, max) =>
+    set((state) => {
+      const document = setElementProgressMaxCommand(state.document, nodeId, max);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
+  setElementProgressIndeterminate: (nodeId, indeterminate) =>
+    set((state) => {
+      const document = setElementProgressIndeterminateCommand(state.document, nodeId, indeterminate);
       if (document === state.document) return {};
       return { ...pushHistory(state), document };
     }),

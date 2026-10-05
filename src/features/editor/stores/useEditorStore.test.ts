@@ -13,6 +13,7 @@ import {
   createLegendNode,
   createLinkNode,
   createListItemNode,
+  createProgressNode,
   createRadioNode,
   createIframeNode,
   createSelectNode,
@@ -2129,6 +2130,108 @@ describe("useEditorStore — Video + Iframe foundation (Checkpoint 1.15)", () =>
     useEditorStore.getState().setElementSrc(duplicate.id, "https://example.com/other.mp3");
     const refreshedOriginal = findUnderSection(original.id);
     expect(refreshedOriginal?.src).toBe("https://example.com/audio.mp3");
+  });
+
+  it("Checkpoint 1.15.6.12.4 — insertElement(createProgressNode()) pushes exactly one history entry", () => {
+    const pastLengthBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().insertElement("section-1", createProgressNode());
+    expect(useEditorStore.getState().past.length).toBe(pastLengthBefore + 1);
+    expect(useEditorStore.getState().selection.primaryId).not.toBeNull();
+  });
+
+  it("Checkpoint 1.15.6.12.4 — setElementProgressValue/setElementProgressMax/setElementProgressIndeterminate each push exactly one history entry, no entry on no-op, and undo restores the previous value", () => {
+    useEditorStore.getState().insertElement("section-1", createProgressNode());
+    const progressId = useEditorStore.getState().selection.primaryId!;
+
+    const valueBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setElementProgressValue(progressId, 75);
+    expect(findUnderSection(progressId)?.progressValue).toBe(75);
+    expect(useEditorStore.getState().past.length).toBe(valueBefore + 1);
+    useEditorStore.getState().setElementProgressValue(progressId, 75); // no-op
+    expect(useEditorStore.getState().past.length).toBe(valueBefore + 1);
+    useEditorStore.getState().undo();
+    expect(findUnderSection(progressId)?.progressValue).toBe(50);
+    useEditorStore.getState().redo();
+
+    const maxBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setElementProgressMax(progressId, 200);
+    expect(findUnderSection(progressId)?.progressMax).toBe(200);
+    expect(useEditorStore.getState().past.length).toBe(maxBefore + 1);
+    useEditorStore.getState().setElementProgressMax(progressId, 200); // no-op
+    expect(useEditorStore.getState().past.length).toBe(maxBefore + 1);
+    useEditorStore.getState().undo();
+    expect(findUnderSection(progressId)?.progressMax).toBe(100);
+    useEditorStore.getState().redo();
+
+    const indeterminateBefore = useEditorStore.getState().past.length;
+    useEditorStore.getState().setElementProgressIndeterminate(progressId, true);
+    expect(findUnderSection(progressId)?.progressValue).toBeUndefined();
+    expect(useEditorStore.getState().past.length).toBe(indeterminateBefore + 1);
+    useEditorStore.getState().setElementProgressIndeterminate(progressId, true); // no-op
+    expect(useEditorStore.getState().past.length).toBe(indeterminateBefore + 1);
+    useEditorStore.getState().undo();
+    expect(findUnderSection(progressId)?.progressValue).toBe(75);
+  });
+
+  it("Checkpoint 1.15.6.12.4 — shrinking Max below the current Value is ONE atomic history step, restored atomically on undo", () => {
+    useEditorStore.getState().insertElement("section-1", createProgressNode()); // 50/100
+    const progressId = useEditorStore.getState().selection.primaryId!;
+    useEditorStore.getState().setElementProgressValue(progressId, 80);
+
+    const before = useEditorStore.getState().past.length;
+    useEditorStore.getState().setElementProgressMax(progressId, 50);
+    expect(findUnderSection(progressId)?.progressMax).toBe(50);
+    expect(findUnderSection(progressId)?.progressValue).toBe(50);
+    expect(useEditorStore.getState().past.length).toBe(before + 1);
+
+    useEditorStore.getState().undo();
+    expect(findUnderSection(progressId)?.progressMax).toBe(100);
+    expect(findUnderSection(progressId)?.progressValue).toBe(80);
+  });
+
+  it("Checkpoint 1.15.6.12.4 — Progress rejects insertion into a List, same as Video/Iframe/Audio", () => {
+    useEditorStore.getState().insertElement("section-1", createUnorderedListNode());
+    const listId = useEditorStore.getState().selection.primaryId!;
+    const beforeDocument = useEditorStore.getState().document;
+
+    useEditorStore.getState().insertElement(listId, createProgressNode());
+    expect(useEditorStore.getState().document).toBe(beforeDocument);
+  });
+
+  it("Checkpoint 1.15.6.12.4 — duplicates a customized determinate Progress with fresh id, preserving Value/Max and CSS state, with independent post-duplicate editing", () => {
+    useEditorStore.getState().insertElement("section-1", createProgressNode());
+    const progressId = useEditorStore.getState().selection.primaryId!;
+    useEditorStore.getState().setElementProgressValue(progressId, 75);
+    useEditorStore.getState().setElementProgressMax(progressId, 150);
+
+    useEditorStore.getState().selectElement(progressId);
+    useEditorStore.getState().duplicateSelection();
+
+    const progresses = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.filter((c) => c.tag === "progress") ?? [];
+    expect(progresses).toHaveLength(2);
+    const [original, duplicate] = progresses;
+
+    expect(duplicate.id).not.toBe(original.id);
+    expect(duplicate.progressValue).toBe(75);
+    expect(duplicate.progressMax).toBe(150);
+
+    useEditorStore.getState().setElementProgressValue(duplicate.id, 10);
+    const refreshedOriginal = findUnderSection(original.id);
+    expect(refreshedOriginal?.progressValue).toBe(75);
+  });
+
+  it("Checkpoint 1.15.6.12.4 — duplicates an indeterminate Progress with fresh id, preserving the indeterminate state", () => {
+    useEditorStore.getState().insertElement("section-1", createProgressNode());
+    const progressId = useEditorStore.getState().selection.primaryId!;
+    useEditorStore.getState().setElementProgressIndeterminate(progressId, true);
+
+    useEditorStore.getState().selectElement(progressId);
+    useEditorStore.getState().duplicateSelection();
+
+    const progresses = useEditorStore.getState().document.children?.find((c) => c.id === "section-1")?.children?.filter((c) => c.tag === "progress") ?? [];
+    expect(progresses).toHaveLength(2);
+    const [, duplicate] = progresses;
+    expect(duplicate.progressValue).toBeUndefined();
   });
 
   it("Form > Video and Form > Iframe coexist correctly — both insertable into Form like any other control", () => {

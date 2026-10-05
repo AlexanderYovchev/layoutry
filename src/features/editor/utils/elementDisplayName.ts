@@ -66,6 +66,7 @@ const TAG_DISPLAY_NAMES: Record<string, string> = {
   td: "Data Cell",
   video: "Video",
   audio: "Audio",
+  progress: "Progress",
   // "Embed" (Checkpoint 1.15), not "Iframe" — the same beginner-friendly,
   // purpose-named-over-raw-tag-name convention this table already uses
   // throughout (div -> "Container", li -> "List Item", table's own

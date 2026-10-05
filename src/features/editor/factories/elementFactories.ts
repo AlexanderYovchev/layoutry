@@ -146,7 +146,8 @@ export type InsertableElementType =
   | "drawer"
   | "divider"
   | "fieldset"
-  | "figure";
+  | "figure"
+  | "progress";
 
 export function createContainerNode(): EditorElementNode {
   return {
@@ -809,6 +810,26 @@ export function createAudioNode(): EditorElementNode {
 }
 
 /**
+ * Progress (Checkpoint 1.15.6.12.4) — a genuine `tag: "progress"` leaf.
+ * Unlike Video/Audio/Iframe's own deliberately-empty starters, Progress
+ * ships with concrete starter `progressValue`/`progressMax` (50/100) —
+ * there is no equivalent "no fake authored data" concern here: a Value/
+ * Max pair is this element's own genuine semantic content, the same way
+ * Image's DEFAULT_IMAGE_SRC or Link's DEFAULT_LINK_HREF stamp a real,
+ * immediately-useful starter rather than leaving a brand-new element
+ * blank and confusing (50% is a visibly mid-progress, recognizable
+ * starting point — neither empty-looking at 0% nor misleadingly-complete
+ * at 100%). No `dimensions` stamped: real Chromium's own native intrinsic
+ * size (160×16, measured live this checkpoint) is already a useful,
+ * legible default, the same restraint Divider's own factory already
+ * shows by not stamping a width/height either. No flowLayout/spacing,
+ * matching every other leaf primitive in this file.
+ */
+export function createProgressNode(): EditorElementNode {
+  return { id: generateNodeId("progress"), tag: "progress", progressValue: 50, progressMax: 100 };
+}
+
+/**
  * Iframe (Checkpoint 1.15) — a genuine `tag: "iframe"` leaf. Ships with a
  * real, neutral, immediately-accessible starter `title` ("Embedded
  * content") rather than leaving it unset — the same reasoning
@@ -897,6 +918,7 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   table: createTableNode,
   video: createVideoNode,
   audio: createAudioNode,
+  progress: createProgressNode,
   iframe: createIframeNode,
   svg: createSvgNode,
   dialog: createDialogNode,
@@ -1047,6 +1069,12 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   drawer: { width: 320, height: 160 },
   fieldset: { width: 280, height: 120 },
   figure: { width: 280, height: 220 },
+  /**
+   * Progress (Checkpoint 1.15.6.12.4) — the measured, not assumed, real
+   * Chromium intrinsic size of a bare `<progress>` with no explicit CSS
+   * size (verified live this checkpoint): exactly 160×16.
+   */
+  progress: { width: 160, height: 16 },
 };
 
 const DEFAULT_FREE_SIZE_FALLBACK = { width: 160, height: 120 };
@@ -1077,6 +1105,7 @@ const INSERTABLE_TYPE_BY_TAG: Record<string, InsertableElementType> = {
   table: "table",
   video: "video",
   audio: "audio",
+  progress: "progress",
   iframe: "iframe",
   svg: "svg",
   dialog: "dialog",

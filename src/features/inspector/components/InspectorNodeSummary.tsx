@@ -22,6 +22,7 @@ import { InspectorListSection } from "@/features/inspector/components/InspectorL
 import { InspectorMediaSection } from "@/features/inspector/components/InspectorMediaSection";
 import { InspectorOptionSection } from "@/features/inspector/components/InspectorOptionSection";
 import { InspectorPositionSection } from "@/features/inspector/components/InspectorPositionSection";
+import { InspectorProgressSection } from "@/features/inspector/components/InspectorProgressSection";
 import { InspectorProtectedStyleGroup } from "@/features/inspector/components/InspectorProtectedStyleGroup";
 import { InspectorProtectionSection } from "@/features/inspector/components/InspectorProtectionSection";
 import { InspectorSelectOptionsSection } from "@/features/inspector/components/InspectorSelectOptionsSection";
@@ -152,6 +153,7 @@ export function InspectorNodeSummary({
       {node.tag === "img" && <InspectorImageSection node={node} />}
       {node.tag === "video" && <InspectorVideoSection node={node} />}
       {node.tag === "audio" && <InspectorAudioSection node={node} />}
+      {node.tag === "progress" && <InspectorProgressSection node={node} />}
       {node.tag === "iframe" && <InspectorIframeSection node={node} />}
       {getElementCapabilities(node.tag).supportsSvgSettings && !isEditingThisSvg && (
         <InspectorSvgSection node={node} protection={protection} />

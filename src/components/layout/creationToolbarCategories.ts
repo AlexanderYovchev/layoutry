@@ -22,6 +22,7 @@ import {
   Columns2,
   Columns3,
   Frame,
+  Gauge,
   Globe,
   Hash,
   Image,
@@ -110,6 +111,7 @@ export type InsertableCardType =
   | "table"
   | "video"
   | "audio"
+  | "progress"
   | "iframe"
   | "svg"
   | "dialog"
@@ -239,6 +241,12 @@ function htmlCategory(): ToolbarCategoryContent {
           description: "Image with a caption — a genuine figure + figcaption, with ordinary content allowed",
           elementType: "figure",
           icon: Frame,
+        },
+        {
+          name: "Progress",
+          description: "Task completion bar — a genuine progress element, determinate or indeterminate",
+          elementType: "progress",
+          icon: Gauge,
         },
       ]),
       section(id, "typography", "Typography", [

@@ -503,6 +503,49 @@ describe("elementCapabilities", () => {
     });
   });
 
+  describe("Progress (Checkpoint 1.15.6.12.4)", () => {
+    it("Progress is a leaf (not a container) and not text-bearing", () => {
+      const progress = getElementCapabilities("progress");
+      expect(progress.canContainChildren).toBe(false);
+      expect(progress.supportsTypography).toBe(false);
+    });
+
+    it("Progress needs ZERO CAPABILITY_OVERRIDES entries — every DEFAULT_CAPABILITIES default is already correct, verified live (border/border-radius/box-shadow/opacity all visibly take effect; background does not, matching the default-false already in place for a non-container/non-text-bearing tag)", () => {
+      const progress = getElementCapabilities("progress");
+      const defaultLeaf = getElementCapabilities("some-made-up-unregistered-tag");
+      // Every flag matches an ordinary unlisted leaf tag's own defaults exactly.
+      expect(progress).toEqual({ ...defaultLeaf, canContainChildren: false });
+    });
+
+    it("Progress gets NO supportsIntrinsicAspectRatio/supportsMediaFit — not a fittable replaced element the way img/video are", () => {
+      const progress = getElementCapabilities("progress");
+      expect(progress.supportsIntrinsicAspectRatio).toBe(false);
+      expect(progress.supportsMediaFit).toBe(false);
+    });
+
+    it("Progress gets NO supportsBackground — confirmed live: the native track/fill pseudo-elements fully occlude an authored background", () => {
+      expect(getElementCapabilities("progress").supportsBackground).toBe(false);
+    });
+
+    it("Progress gets every ordinary box-model capability from DEFAULT_CAPABILITIES — resize/sizing/border/border-radius/box-shadow/filters/display/position, all verified live", () => {
+      const progress = getElementCapabilities("progress");
+      expect(progress.resizableX).toBe(true);
+      expect(progress.resizableY).toBe(true);
+      expect(progress.supportsAspectRatio).toBe(true);
+      expect(progress.supportsPosition).toBe(true);
+      expect(progress.supportsBorder).toBe(true);
+      expect(progress.supportsBorderRadius).toBe(true);
+      expect(progress.supportsBoxShadow).toBe(true);
+      expect(progress.supportsFilters).toBe(true);
+      expect(progress.supportsDisplay).toBe(true);
+      expect(progress.selectable).toBe(true);
+    });
+
+    it("Progress does not expose the child-Layout section — a leaf (canContainChildren already gates it, no override needed)", () => {
+      expect(getElementCapabilities("progress").canContainChildren).toBe(false);
+    });
+  });
+
   describe("SVG Foundation (Checkpoint 1.15.5)", () => {
     it("SVG is a leaf, not text-bearing, and does not opt into a child-Layout section", () => {
       const svg = getElementCapabilities("svg");

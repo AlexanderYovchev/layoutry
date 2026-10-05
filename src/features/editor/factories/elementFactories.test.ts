@@ -33,6 +33,7 @@ import {
   createOrderedListNode,
   createParagraphNode,
   createPasswordInputNode,
+  createProgressNode,
   createRadioNode,
   createSearchInputNode,
   createSectionNode,
@@ -502,6 +503,37 @@ describe("element factories", () => {
     });
   });
 
+  describe("Progress Foundation (Checkpoint 1.15.6.12.4)", () => {
+    it("createProgressNode produces a genuine, leaf <progress> with a determinate starter value/max", () => {
+      const node = createProgressNode();
+      expect(node.tag).toBe("progress");
+      expect(node.progressValue).toBe(50);
+      expect(node.progressMax).toBe(100);
+      expect(node.children).toBeUndefined();
+      expect(node.text).toBeUndefined();
+      expect(node.id).toMatch(/^progress-/);
+    });
+
+    it("createProgressNode leaves dimensions/flowLayout/spacing unset — the real Chromium intrinsic size is already useful", () => {
+      const node = createProgressNode();
+      expect(node.dimensions).toBeUndefined();
+      expect(node.flowLayout).toBeUndefined();
+      expect(node.spacing).toBeUndefined();
+    });
+
+    it("createProgressNode produces a unique id per call", () => {
+      expect(createProgressNode().id).not.toBe(createProgressNode().id);
+    });
+
+    it("is registered as an InsertableElementType, resolving to createProgressNode via FACTORIES_BY_TYPE", () => {
+      expect(isInsertableElementType("progress")).toBe(true);
+    });
+
+    it("getDefaultFreeElementSize(\"progress\") returns the measured real Chromium intrinsic size (160×16), not an arbitrary guess", () => {
+      expect(getDefaultFreeElementSize("progress")).toEqual({ width: 160, height: 16 });
+    });
+  });
+
   describe("SVG Foundation (Checkpoint 1.15.5)", () => {
     it("createSvgNode produces a genuine, leaf <svg> with the default starter Rectangle and a visible accent fill", () => {
       const node = createSvgNode();
@@ -894,11 +926,11 @@ describe("element factories", () => {
     });
 
     it("rejects unknown strings", () => {
-      // "progress" is deliberately still unrecognized (Checkpoint
-      // 1.15.6.12.3's own Non-Goals, deferred to 1.15.6.12.4) — "audio"
-      // was this test's original placeholder but is now a real
-      // InsertableElementType (Checkpoint 1.15.6.12.3).
-      expect(isInsertableElementType("progress")).toBe(false);
+      // "meter" is deliberately still unrecognized (Checkpoint
+      // 1.15.6.12.4's own Non-Goals) — "progress" was this test's
+      // previous placeholder but is now a real InsertableElementType
+      // (Checkpoint 1.15.6.12.4).
+      expect(isInsertableElementType("meter")).toBe(false);
       expect(isInsertableElementType("")).toBe(false);
     });
   });

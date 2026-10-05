@@ -8,6 +8,7 @@ import {
   Component,
   FileText,
   Frame,
+  Gauge,
   Image,
   Layout,
   LayoutPanelTop,
@@ -110,4 +111,6 @@ export const TAG_ICONS: Record<string, LucideIcon> = {
   figure: Frame,
   figcaption: Type,
   caption: Type,
+  // Progress (Checkpoint 1.15.6.12.4).
+  progress: Gauge,
 };
