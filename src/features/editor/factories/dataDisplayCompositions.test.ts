@@ -4,6 +4,7 @@ import {
   createAvatarWithTextNode,
   createBadgeNode,
   createMetadataRowNode,
+  createProgressBarNode,
   createStatCardNode,
 } from "./dataDisplayCompositions";
 
@@ -227,6 +228,76 @@ describe("Metadata Row (Checkpoint 1.15.6.6, Part I)", () => {
   });
 });
 
+describe("Progress Bar (Checkpoint 1.15.6.13.1)", () => {
+  it("is div (Flex Column, gap 8) > [div (Flex Row, space-between) > p \"Progress\"], progress", () => {
+    const node = createProgressBarNode();
+    expect(node.tag).toBe("div");
+    expect(node.flowLayout?.display).toBe("flex");
+    expect(node.flowLayout?.flex?.direction).toBe("column");
+    expect(node.flowLayout?.flex?.rowGap).toBe(8);
+    expect(node.flowLayout?.flex?.alignItems).toBe("stretch");
+    expect(node.children).toHaveLength(2);
+
+    const [headerRow, progress] = node.children!;
+    expect(headerRow.tag).toBe("div");
+    expect(headerRow.flowLayout?.flex?.justifyContent).toBe("space-between");
+    expect(headerRow.children).toHaveLength(1);
+    expect(headerRow.children![0].tag).toBe("p");
+    expect(headerRow.children![0].text).toBe("Progress");
+
+    expect(progress.tag).toBe("progress");
+  });
+
+  it("the Progress child matches createProgressNode's own exact starter semantics (50/100)", () => {
+    const node = createProgressBarNode();
+    const progress = node.children![1];
+    expect(progress.progressValue).toBe(50);
+    expect(progress.progressMax).toBe(100);
+  });
+
+  it("never authors percentage/numeric text anywhere in the composition", () => {
+    const node = createProgressBarNode();
+    function collectTexts(n: AnyNode & { text?: string }): string[] {
+      return [...(n.text ? [n.text] : []), ...((n.children as (AnyNode & { text?: string })[] | undefined) ?? []).flatMap(collectTexts)];
+    }
+    const texts = collectTexts(node as unknown as AnyNode & { text?: string });
+    expect(texts).toEqual(["Progress"]);
+    for (const text of texts) {
+      expect(text).not.toMatch(/%/);
+      expect(text).not.toMatch(/\d/);
+    }
+  });
+
+  it("no card surface — explicit zero spacing/border/borderRadius on root and header row, not merely omitted", () => {
+    const node = createProgressBarNode() as unknown as Record<string, unknown>;
+    expect(node.spacing).toEqual({ margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } });
+    expect(node.background).toBeUndefined();
+
+    const headerRow = (node.children as Record<string, unknown>[])[0];
+    expect(headerRow.spacing).toEqual({ margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } });
+  });
+
+  it("stores no proprietary progress-bar field anywhere on any node", () => {
+    const node = createProgressBarNode() as unknown as Record<string, unknown>;
+    function collectNodes(n: AnyNode & Record<string, unknown>): (AnyNode & Record<string, unknown>)[] {
+      return [n, ...((n.children as (AnyNode & Record<string, unknown>)[] | undefined) ?? []).flatMap(collectNodes)];
+    }
+    for (const n of collectNodes(node as unknown as AnyNode & Record<string, unknown>)) {
+      expect(n.progressBarValue).toBeUndefined();
+      expect(n.progressBarLabel).toBeUndefined();
+      expect(n.componentType).toBeUndefined();
+    }
+    expect(node.tag).not.toBe("progress-bar");
+  });
+
+  it("every node gets its own fresh id, and two separate compositions never share one", () => {
+    const idsA = collectIds(createProgressBarNode());
+    expect(new Set(idsA).size).toBe(idsA.length);
+    const idsB = collectIds(createProgressBarNode());
+    expect(idsA.some((id) => idsB.includes(id))).toBe(false);
+  });
+});
+
 describe("Every Data Display composition (Checkpoint 1.15.6.6, general)", () => {
   const factories = [
     ["Badge", createBadgeNode],
@@ -234,6 +305,7 @@ describe("Every Data Display composition (Checkpoint 1.15.6.6, general)", () => 
     ["Avatar with Text", createAvatarWithTextNode],
     ["Stat Card", createStatCardNode],
     ["Metadata Row", createMetadataRowNode],
+    ["Progress Bar", createProgressBarNode],
   ] as const;
 
   it.each(factories)("%s never uses Free/absolute positioning anywhere in the composition", (_label, factory) => {
@@ -249,7 +321,7 @@ describe("Every Data Display composition (Checkpoint 1.15.6.6, general)", () => 
   it.each(factories)("%s only ever uses genuine existing HTML primitives", (_label, factory) => {
     const tags = new Set(collectTags(factory() as unknown as AnyNode));
     for (const tag of tags) {
-      expect(["div", "img", "p"]).toContain(tag);
+      expect(["div", "img", "p", "progress"]).toContain(tag);
     }
   });
 

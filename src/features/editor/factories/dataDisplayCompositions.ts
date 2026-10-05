@@ -285,3 +285,115 @@ export function createMetadataRowNode(): EditorElementNode {
     ],
   };
 }
+
+// ---------------------------------------------------------------------------
+// Progress Bar (Checkpoint 1.15.6.13.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * div (Flex Column, gap 8) > div (Flex Row, justify space-between) > p
+ * "Progress", progress (Checkpoint 1.15.6.13.1 — closure audit's one
+ * approved Data Display addition, now that a genuine `<progress>`
+ * primitive exists). Ordinary composition of existing primitives only —
+ * no `tag: "progress-bar"`, no `componentType`, no `progressBarValue`/
+ * `progressBarLabel` field of any kind.
+ *
+ * The inner `<progress>` node intentionally mirrors createProgressNode's
+ * own exact starter shape (`{ progressValue: 50, progressMax: 100 }`)
+ * rather than importing that function — the SAME "inline the primitive's
+ * own shape directly" convention every other composition in this file
+ * already follows for Image (Avatar/Image Card both construct their own
+ * `img` node inline rather than importing createImageNode from
+ * elementFactories.ts). This isn't a style preference: elementFactories.ts
+ * itself imports createBadgeNode/createAvatarNode/etc. FROM this file, so
+ * importing createProgressNode back from elementFactories.ts here would
+ * create a real circular module dependency — avoided by matching the
+ * established pattern instead.
+ *
+ * NO percentage text anywhere (the audit's own explicit Part F/Part D
+ * decision) — this codebase has no data-binding/computed-text mechanism
+ * of any kind (grepped: every Inspector field reads live document state
+ * directly, nothing derives text from another field), so a static "50%"
+ * would silently go stale the instant a user changes Progress Value in
+ * the Inspector, actively misleading whoever reads the Canvas afterward.
+ * The header row stays a single-child Flex Row (space-between) anyway,
+ * matching Metadata Row's own exact structural shape and leaving it
+ * naturally ready for a user to drop in their own second element (a
+ * percentage, an icon, anything) — never populated with fake content
+ * merely to justify the layout choice.
+ *
+ * Root uses `flexColumn(8)` — its own default fourth parameter,
+ * `alignItems: "stretch"` (unchanged from every other composition that
+ * calls it without a third argument, e.g. Stat Card), which is what
+ * actually governs the Progress child's own width: verified live in real
+ * Chromium this checkpoint (not assumed) — within an ordinary un-stretched
+ * Block-flow parent, the root content-hugs to its own widest child (the
+ * Progress primitive's own ~160px native size), and `align-items: stretch`
+ * then widens the header row to match that same 160px exactly (confirmed
+ * live: header row measured 160px, not its own ~90px natural text width) —
+ * so the header row and Progress end up visually flush with ZERO explicit
+ * width authored on either, no `dimensions` override, nothing beyond the
+ * exact same `flexColumn` call every other Data Display composition
+ * already uses. (A genuinely wider ambient parent — e.g. an existing Flex
+ * container the user already set to stretch — would of course widen the
+ * whole composition too, exactly like any other ordinary Flex child; that
+ * is correct, expected behavior, not special-cased here.)
+ *
+ * No card surface — explicit, not merely omitted (Checkpoint 1.15.6.13.1's
+ * own live finding): leaving `spacing`/`border`/`borderRadius` genuinely
+ * UNSET on a bare `div` does NOT mean "no styling" in this app —
+ * ContainerElement's own `usesLegacyPadding`/`usesLegacyBorderChrome`/
+ * `usesLegacyRadiusChrome` fallbacks (its own doc comment: "pure editor
+ * chrome so an empty container still reads as a box in the builder")
+ * apply a real, rendered `rounded-lg border border-zinc-100 p-8` whenever
+ * those three fields are absent — confirmed live via `outerHTML` dump this
+ * checkpoint, not assumed, after a first draft's bare-div root and header
+ * row both rendered an unwanted 32px-padded, faintly-bordered, rounded
+ * box neither composition intended. Both the root and the header row
+ * below now author explicit, genuinely-zero values for all three fields
+ * (ZERO_EDGES spacing, `style: "none"` on every border side, 0px on every
+ * radius corner) — real document data, not a new field/mechanism, that
+ * simply and correctly opts both nodes out of that fallback, matching the
+ * "no card surface... no large padding" requirement precisely rather than
+ * accidentally inheriting an unrelated editor-chrome default.
+ */
+const NO_BORDER: BorderSettings = {
+  top: { style: "none" },
+  right: { style: "none" },
+  bottom: { style: "none" },
+  left: { style: "none" },
+};
+const NO_RADIUS: BorderRadiusSettings = {
+  topLeft: { value: 0, unit: "px" },
+  topRight: { value: 0, unit: "px" },
+  bottomRight: { value: 0, unit: "px" },
+  bottomLeft: { value: 0, unit: "px" },
+};
+const NO_SPACING: ElementSpacing = { margin: ZERO_EDGES, padding: ZERO_EDGES };
+
+export function createProgressBarNode(): EditorElementNode {
+  const headerRow: EditorElementNode = {
+    id: generateNodeId("div"),
+    tag: "div",
+    flowLayout: { display: "flex", flex: flexRow(12, "space-between", "center") },
+    spacing: NO_SPACING,
+    border: NO_BORDER,
+    borderRadius: NO_RADIUS,
+    children: [paragraph("Progress", METADATA_KEY_TYPOGRAPHY)],
+  };
+  const progress: EditorElementNode = {
+    id: generateNodeId("progress"),
+    tag: "progress",
+    progressValue: 50,
+    progressMax: 100,
+  };
+  return {
+    id: generateNodeId("div"),
+    tag: "div",
+    flowLayout: { display: "flex", flex: flexColumn(8) },
+    spacing: NO_SPACING,
+    border: NO_BORDER,
+    borderRadius: NO_RADIUS,
+    children: [headerRow, progress],
+  };
+}

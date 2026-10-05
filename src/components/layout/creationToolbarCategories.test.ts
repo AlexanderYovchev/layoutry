@@ -73,4 +73,31 @@ describe("creationToolbarCategories — one primary home per element (Checkpoint
     const mediaNames = enabledCardNames("Media");
     expect(mediaNames).toEqual(["Image", "Video", "Audio Player", "SVG", "Embed"]);
   });
+
+  it("Checkpoint 1.15.6.13.1 — Components -> Data Display contains exactly 6 enabled compositions, Progress Bar now joining the existing five", () => {
+    const dataDisplayNames = findCategory("Components")
+      .sections.find((section) => section.label === "Data Display")!
+      .cards.filter((card) => !card.disabled)
+      .map((card) => card.name);
+    expect(dataDisplayNames).toEqual(["Badge", "Avatar", "Avatar with Text", "Stat Card", "Metadata Row", "Progress Bar"]);
+  });
+
+  it("Checkpoint 1.15.6.13.1 — the raw Progress primitive (HTML -> Content) and the Progress Bar composition (Components -> Data Display) are two separate, non-duplicate cards", () => {
+    const htmlNames = enabledCardNames("HTML");
+    const dataDisplayNames = findCategory("Components")
+      .sections.find((section) => section.label === "Data Display")!
+      .cards.filter((card) => !card.disabled)
+      .map((card) => card.name);
+    expect(htmlNames).toContain("Progress");
+    expect(htmlNames).not.toContain("Progress Bar");
+    expect(dataDisplayNames).toContain("Progress Bar");
+    expect(dataDisplayNames).not.toContain("Progress");
+  });
+
+  it("Checkpoint 1.15.6.13.1 — total enabled Components compositions is exactly 41 (the prior closure audit's manual tally of 39 undercounted Feedback & Overlays by one — it actually has 9 cards, not 8 — so the real pre-checkpoint baseline was 40; Progress Bar brings it to 41)", () => {
+    const enabledComponentsCount = findCategory("Components")
+      .sections.flatMap((section) => section.cards)
+      .filter((card) => !card.disabled).length;
+    expect(enabledComponentsCount).toBe(41);
+  });
 });

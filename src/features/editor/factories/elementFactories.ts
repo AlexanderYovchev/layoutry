@@ -35,6 +35,7 @@ import {
   createAvatarWithTextNode,
   createBadgeNode,
   createMetadataRowNode,
+  createProgressBarNode,
   createStatCardNode,
 } from "@/features/editor/factories/dataDisplayCompositions";
 import { createBasicTabsNode, createCollapsibleNode, createDrawerNode, createModalNode } from "@/features/editor/factories/interactionCompositions";
@@ -133,6 +134,7 @@ export type InsertableElementType =
   | "avatarWithText"
   | "statCard"
   | "metadataRow"
+  | "progressBar"
   | "collapsible"
   | "modal"
   | "infoAlert"
@@ -951,6 +953,7 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   avatarWithText: createAvatarWithTextNode,
   statCard: createStatCardNode,
   metadataRow: createMetadataRowNode,
+  progressBar: createProgressBarNode,
   collapsible: createCollapsibleNode,
   modal: createModalNode,
   infoAlert: createInfoAlertNode,
@@ -1056,6 +1059,7 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
   avatarWithText: { width: 220, height: 56 },
   statCard: { width: 220, height: 130 },
   metadataRow: { width: 260, height: 32 },
+  progressBar: { width: 160, height: 50 },
   collapsible: { width: 260, height: 100 },
   modal: { width: 320, height: 160 },
   infoAlert: { width: 320, height: 100 },

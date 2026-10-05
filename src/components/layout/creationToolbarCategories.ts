@@ -144,6 +144,7 @@ export type InsertableCardType =
   | "avatarWithText"
   | "statCard"
   | "metadataRow"
+  | "progressBar"
   | "collapsible"
   | "modal"
   | "infoAlert"
@@ -442,6 +443,12 @@ function componentsCategory(): ToolbarCategoryContent {
         { name: "Avatar with Text", description: "Avatar beside a name and subtitle", elementType: "avatarWithText", icon: UserRound },
         { name: "Stat Card", description: "Label, value, and supporting text", elementType: "statCard", icon: TrendingUp },
         { name: "Metadata Row", description: "Key and value spread across a row", elementType: "metadataRow", icon: Rows3 },
+        {
+          name: "Progress Bar",
+          description: "Label above a genuine progress element — a ready-made composition, not a new primitive",
+          elementType: "progressBar",
+          icon: Gauge,
+        },
       ]),
     ],
   };

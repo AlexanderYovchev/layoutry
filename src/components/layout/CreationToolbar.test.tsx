@@ -199,7 +199,9 @@ describe("CreationToolbar", () => {
     // "Manual Toast" and enabled — no auto-dismiss exists, so the honest
     // name change stuck). "Panel" remains a disabled placeholder within
     // Cards & Containers itself (audited in 1.15.6.6 and deliberately left
-    // disabled — see that checkpoint's report).
+    // disabled — see that checkpoint's report). "Progress Bar" (Checkpoint
+    // 1.15.6.13.1) is Data Display's own sixth addition, the sole approved
+    // item from the 1.15.6.13 Components Library closure audit.
     const enabledCardNames = [
       "Primary Button",
       "Secondary Button",
@@ -230,6 +232,7 @@ describe("CreationToolbar", () => {
       "Avatar with Text",
       "Stat Card",
       "Metadata Row",
+      "Progress Bar",
       "Collapsible",
       "Modal",
       "Info Alert",
