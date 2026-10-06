@@ -127,6 +127,41 @@ export function createBadgeNode(): EditorElementNode {
 const AVATAR_RADIUS: BorderRadiusSettings | undefined = applyBorderRadiusPreset("circle");
 
 /**
+ * The same generic placeholder photo createImageNode's own
+ * DEFAULT_IMAGE_SRC already is (Checkpoint 1.15.6.13.2) — copied here by
+ * value, not imported, since elementFactories.ts already imports FROM
+ * this file (createBadgeNode/createAvatarNode/etc.), so importing the
+ * other direction would create a real circular module dependency, the
+ * exact same constraint Progress Bar's own doc comment already documents
+ * for the same reason. An inline SVG with explicit width/height, not a
+ * real asset (this app has no image upload/picker) — see
+ * DEFAULT_IMAGE_SRC's own doc comment for why a non-square intrinsic
+ * ratio is what actually makes object-fit meaningful.
+ *
+ * Added this checkpoint after a live investigation found every image-
+ * embedding factory in this file (and, separately but out of this
+ * checkpoint's own narrow scope, cardCompositions.ts's Image Card/
+ * Horizontal Card/Profile Card) left `src` entirely unset, unlike
+ * createImageNode's own established precedent — ImageElement's own
+ * `node.src ? <img> : <ImageIcon>` ternary was working exactly as
+ * documented the whole time; a freshly-inserted Avatar genuinely
+ * rendered as an icon-only placeholder, never a real `<img>`, until a
+ * user manually typed a Source URL. No insertion/selection/toolbar/
+ * renderer bug existed anywhere — confirmed live via the Inspector's own
+ * correct "Image / img / Node ID ..." selection state and the document
+ * model's own correct tag/structure at every step.
+ */
+const DATA_DISPLAY_IMAGE_PLACEHOLDER_SRC =
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">' +
+      '<rect width="400" height="300" fill="#e4e4e7"/>' +
+      '<path d="M0 230 L110 130 L190 190 L270 100 L400 230 V300 H0 Z" fill="#a1a1aa"/>' +
+      '<circle cx="320" cy="70" r="28" fill="#a1a1aa"/>' +
+      "</svg>",
+  );
+
+/**
  * A single Image node (Part D, section 17) — audited and confirmed a
  * Container wrapper adds no real value here (section 16): Avatar is
  * entirely an ordinary Image configured visually (1:1 aspect ratio,
@@ -137,12 +172,17 @@ const AVATAR_RADIUS: BorderRadiusSettings | undefined = applyBorderRadiusPreset(
  * `avatarSize`/`avatarShape` field (section 18) — shape is ordinary Border
  * Radius (section 19), fit is the existing `mediaFit.objectFit` field
  * (section 20). Per section 47, the composition root IS the Image itself,
- * so insertion selects the Image directly.
+ * so insertion selects the Image directly. `src` stamped with the same
+ * placeholder createImageNode uses (Checkpoint 1.15.6.13.2 — see that
+ * constant's own doc comment) so a freshly-inserted Avatar is genuinely
+ * visible immediately, matching raw Image's own established behavior,
+ * rather than an icon-only placeholder until a Source URL is typed.
  */
 export function createAvatarNode(): EditorElementNode {
   return {
     id: generateNodeId("img"),
     tag: "img",
+    src: DATA_DISPLAY_IMAGE_PLACEHOLDER_SRC,
     aspectRatio: { mode: "ratio", width: 1, height: 1 },
     mediaFit: { objectFit: "cover" },
     borderRadius: AVATAR_RADIUS,
@@ -176,12 +216,16 @@ const IDENTITY_SUBTITLE_TYPOGRAPHY: TypographySettings = { fontSize: { value: 13
  * (section 25) — "Alex Morgan"/"Product Designer" are plain authored text
  * on ordinary Paragraph nodes, and the Image's own ordinary `src` is the
  * only image-identifying field, matching Profile Card's own precedent
- * (1.15.6.4).
+ * (1.15.6.4). `src` stamped with the same placeholder createAvatarNode's
+ * own does (Checkpoint 1.15.6.13.2 — this node had the identical gap:
+ * this very comment already claimed `src` was "the only image-identifying
+ * field" in use, but no code here had ever actually stamped one).
  */
 export function createAvatarWithTextNode(): EditorElementNode {
   const avatar: EditorElementNode = {
     id: generateNodeId("img"),
     tag: "img",
+    src: DATA_DISPLAY_IMAGE_PLACEHOLDER_SRC,
     aspectRatio: { mode: "ratio", width: 1, height: 1 },
     mediaFit: { objectFit: "cover" },
     borderRadius: AVATAR_RADIUS,

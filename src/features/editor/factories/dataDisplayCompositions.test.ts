@@ -96,6 +96,12 @@ describe("Avatar (Checkpoint 1.15.6.6, Part D)", () => {
     expect(node.avatarShape).toBeUndefined();
   });
 
+  it("Checkpoint 1.15.6.13.2 — stamps a concrete starter src, matching createImageNode's own established precedent, so a freshly-inserted Avatar is genuinely visible rather than ImageElement's icon-only placeholder", () => {
+    const node = createAvatarNode();
+    expect(node.src).toBeDefined();
+    expect(node.src).toMatch(/^data:image\/svg\+xml/);
+  });
+
   it("every node gets its own fresh id, and two separate compositions never share one", () => {
     const idsA = collectIds(createAvatarNode() as unknown as AnyNode);
     expect(new Set(idsA).size).toBe(idsA.length);
@@ -124,6 +130,12 @@ describe("Avatar with Text (Checkpoint 1.15.6.6, Part E)", () => {
     const [avatar, textGroup] = createAvatarWithTextNode().children!;
     expect(avatar.flexChild).toEqual({ grow: 0, shrink: 0, basis: 44, alignSelf: "center" });
     expect(textGroup.flexChild).toEqual({ grow: 1, shrink: 1, basis: "auto", alignSelf: "stretch" });
+  });
+
+  it("Checkpoint 1.15.6.13.2 — the avatar Image stamps a concrete starter src, matching createAvatarNode's own fix for the identical gap", () => {
+    const [avatar] = createAvatarWithTextNode().children!;
+    expect(avatar.src).toBeDefined();
+    expect(avatar.src).toMatch(/^data:image\/svg\+xml/);
   });
 
   it("stores no user/profile data model anywhere on any node", () => {
