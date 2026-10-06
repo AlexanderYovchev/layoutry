@@ -15,6 +15,7 @@ import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolveMediaFitStyle } from "@/features/canvas/utils/resolveMediaFitStyle";
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
+import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
 import { getMediaControls } from "@/features/editor/types/video";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
@@ -95,6 +96,7 @@ export function VideoElement({ node, parentId, parentLayoutMode, parentFlowDispl
         ...resolveBorderRadiusStyle(node),
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
+        ...resolveTransitionStyle(node, isPreview),
         ...resolveDisplayStyle(node),
       }}
       {...listeners}

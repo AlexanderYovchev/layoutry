@@ -22,6 +22,7 @@ import type { SvgPrimitiveKind, SvgViewBox } from "@/features/editor/types/svg";
 import type { SvgScene } from "@/features/editor/types/svgScene";
 import type { InteractionBinding } from "@/features/editor/types/interactions";
 import type { InitialPreviewVisibility } from "@/features/editor/types/previewVisibility";
+import type { TransitionSettings } from "@/features/editor/types/transition";
 
 export interface ElementDimensions {
   /**
@@ -546,4 +547,22 @@ export interface EditorElementNode {
    * value every pre-1.15.6.8.1 node has) means "visible."
    */
   initialPreviewVisibility?: InitialPreviewVisibility;
+  /**
+   * This node's own CSS Transition (Checkpoint 1.15.6.14.1) — only
+   * meaningful for a transition-capable tag (see
+   * getElementCapabilities().supportsTransition). Like Display/Position/
+   * AspectRatio, has no synthesized default — absent means "no authored
+   * transition at all," the state every pre-existing node already has;
+   * never stamped by any factory. Unlike those three, this field's own
+   * four sub-fields are only ever meaningful together — see
+   * types/transition.ts's own top comment for why there is no per-field
+   * "collapse to undefined once empty" case the way Filters/Display have.
+   * Rendered via resolveTransitionStyle, which ALSO reads the current
+   * Design/Preview mode (not just this field) — Design must never run an
+   * authored transition (this checkpoint's own mandatory Design Safety
+   * Invariant), so the real `transition-*` CSS longhands only ever reach
+   * the rendered element while Preview is active, even though this field
+   * itself is stored and preserved identically in both modes.
+   */
+  transition?: TransitionSettings;
 }

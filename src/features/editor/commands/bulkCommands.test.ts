@@ -19,9 +19,12 @@ import {
   setElementsSvgKind,
   setElementsSvgStroke,
   setElementsSvgStrokeWidth,
+  setElementsTransition,
+  setElementsTransitionField,
   setElementsTypographyField,
   updateNodesByIds,
 } from "./bulkCommands";
+import { DEFAULT_TRANSITION_SETTINGS } from "@/features/editor/types/transition";
 
 function tree(): EditorElementNode {
   return {
@@ -349,5 +352,45 @@ describe("setElementsAspectRatio / setElementsDimensions", () => {
     const p1 = result.children?.[0].children?.find((c) => c.id === "p-1");
     expect(p1?.dimensions?.preferredWidth).toBeGreaterThanOrEqual(4);
     expect(p1?.dimensions?.preferredHeight).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe("setElementsTransitionField / setElementsTransition", () => {
+  it("setElementsTransitionField defaults a node with no transition yet before merging the field", () => {
+    const result = setElementsTransitionField(tree(), new Set(["p-1"]), "durationMs", 1000);
+    const p1 = result.children?.[0].children?.find((c) => c.id === "p-1");
+    expect(p1?.transition).toEqual({ ...DEFAULT_TRANSITION_SETTINGS, durationMs: 1000 });
+  });
+
+  it("setElementsTransitionField merges a field into an existing transition without touching the others", () => {
+    const document: EditorElementNode = { id: "p-1", tag: "p", transition: { property: "box-shadow", durationMs: 500, timingFunction: "linear", delayMs: 50 } };
+    const result = setElementsTransitionField(document, new Set(["p-1"]), "timingFunction", "ease-out");
+    expect(result.transition).toEqual({ property: "box-shadow", durationMs: 500, timingFunction: "ease-out", delayMs: 50 });
+  });
+
+  it("setElementsTransitionField is a no-op (same reference) when every targeted node already has that field's value", () => {
+    const document: EditorElementNode = { id: "p-1", tag: "p", transition: DEFAULT_TRANSITION_SETTINGS };
+    const result = setElementsTransitionField(document, new Set(["p-1"]), "durationMs", DEFAULT_TRANSITION_SETTINGS.durationMs);
+    expect(result).toBe(document);
+  });
+
+  it("setElementsTransition overwrites/clears the whole value per node", () => {
+    const result = setElementsTransition(tree(), new Set(["p-1", "p-2"]), DEFAULT_TRANSITION_SETTINGS);
+    const section = result.children?.[0];
+    expect(section?.children?.find((c) => c.id === "p-1")?.transition).toEqual(DEFAULT_TRANSITION_SETTINGS);
+    expect(section?.children?.find((c) => c.id === "p-2")?.transition).toEqual(DEFAULT_TRANSITION_SETTINGS);
+    expect(section?.children?.find((c) => c.id === "p-3")?.transition).toBeUndefined();
+  });
+
+  it("setElementsTransition clears every targeted node's transition when given undefined", () => {
+    const document: EditorElementNode = { id: "p-1", tag: "p", transition: DEFAULT_TRANSITION_SETTINGS };
+    const result = setElementsTransition(document, new Set(["p-1"]), undefined);
+    expect(result.transition).toBeUndefined();
+  });
+
+  it("setElementsTransition is a no-op (same reference) when clearing an already-absent transition", () => {
+    const document: EditorElementNode = { id: "p-1", tag: "p" };
+    const result = setElementsTransition(document, new Set(["p-1"]), undefined);
+    expect(result).toBe(document);
   });
 });

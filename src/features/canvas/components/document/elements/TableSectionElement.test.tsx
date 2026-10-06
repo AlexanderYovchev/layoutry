@@ -61,4 +61,16 @@ describe("TableSectionElement (Checkpoint 1.14)", () => {
     const el = document.querySelector("[data-node-id='tbody-1']");
     expect(el?.hasAttribute("contenteditable")).toBe(false);
   });
+
+  it("never applies CSS Transition — thead/tbody/tfoot/tr are native-table-row-group geometry, not a styling capability (Checkpoint 1.15.6.14.1)", () => {
+    const transition = { property: "opacity" as const, durationMs: 200, timingFunction: "ease" as const, delayMs: 0 };
+    useEditorStore.setState({ editorMode: "preview" });
+    render(
+      <table>
+        <TableSectionElement node={{ id: "tbody-1", tag: "tbody", transition, children: [] }} parentId="table-1" parentLayoutMode="flow" parentFlowDisplay="block" />
+      </table>,
+    );
+    const el = document.querySelector("[data-node-id='tbody-1']") as HTMLElement;
+    expect(el.style.transitionProperty).toBe("");
+  });
 });

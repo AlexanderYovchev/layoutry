@@ -305,3 +305,22 @@ describe("SvgElement — Scene rendering & Drawing Mode (Checkpoint 1.15.6)", ()
     expect(container.querySelectorAll("rect")).toHaveLength(1);
   });
 });
+
+describe("SvgElement — CSS Transition Foundation (Checkpoint 1.15.6.14.1)", () => {
+  const initialState = useEditorStore.getState();
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("applies the authored transition to the outer <svg> box only in Preview, never in Design", () => {
+    const transition = { property: "opacity" as const, durationMs: 200, timingFunction: "ease" as const, delayMs: 0 };
+    const { container } = render(<SvgElement node={{ id: "svg-1", tag: "svg", transition }} {...baseProps} />);
+    const designElement = container.querySelector('[data-node-id="svg-1"]') as HTMLElement;
+    expect(designElement.style.transitionProperty).toBe("");
+
+    useEditorStore.setState({ editorMode: "preview" });
+    const { container: previewContainer } = render(<SvgElement node={{ id: "svg-1", tag: "svg", transition }} {...baseProps} />);
+    const previewElement = previewContainer.querySelector('[data-node-id="svg-1"]') as HTMLElement;
+    expect(previewElement.style.transitionProperty).toBe("opacity");
+  });
+});

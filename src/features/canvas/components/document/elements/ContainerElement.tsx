@@ -16,7 +16,9 @@ import { resolveFlowLayoutStyle } from "@/features/canvas/utils/resolveFlowLayou
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
 import { resolveShapeStyle } from "@/features/canvas/utils/resolveShapeStyle";
 import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
+import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
 import { cn, mergeRefs } from "@/lib/utils";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { getLayoutMode } from "@/features/editor/types/layout";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
@@ -68,6 +70,7 @@ export function ContainerElement({
 }: DocumentElementProps) {
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
+  const isPreview = useEditorStore((state) => state.editorMode === "preview");
 
   const isFreeChild = parentLayoutMode === "free";
   const ownLayoutMode = getLayoutMode(node);
@@ -184,6 +187,7 @@ export function ContainerElement({
         ...resolveBorderRadiusStyle(node),
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
+        ...resolveTransitionStyle(node, isPreview),
         ...resolveDisplayStyle(node),
         ...resolveShapeStyle(node),
       }}

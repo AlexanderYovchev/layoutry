@@ -22,6 +22,7 @@ import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlex
 import { resolveDialogAccessibleDescription, resolveDialogAccessibleName } from "@/features/canvas/utils/resolveDialogAccessibleName";
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
 import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
+import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
@@ -348,6 +349,7 @@ export function DialogElement({ node, parentId, parentLayoutMode, parentFlowDisp
         ...resolveBorderRadiusStyle(node),
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
+        ...resolveTransitionStyle(node, isPreview),
       }}
       {...listeners}
     >

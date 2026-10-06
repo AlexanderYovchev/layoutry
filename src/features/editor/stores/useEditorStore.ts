@@ -94,6 +94,7 @@ import {
 import { resolveSvgObjectCreationStyle } from "@/features/editor/utils/svgObjectDefaults";
 import { setBoxShadowSettings as setBoxShadowSettingsCommand } from "@/features/editor/commands/boxShadowCommands";
 import { setFilterSettings as setFilterSettingsCommand } from "@/features/editor/commands/filterCommands";
+import { setElementTransition as setElementTransitionCommand } from "@/features/editor/commands/transitionCommands";
 import { setDisplaySettings as setDisplaySettingsCommand } from "@/features/editor/commands/displayCommands";
 import { setPositionSettings as setPositionSettingsCommand } from "@/features/editor/commands/positionCommands";
 import { setAspectRatio as setAspectRatioCommand } from "@/features/editor/commands/aspectRatioCommands";
@@ -111,6 +112,8 @@ import {
   setElementsMediaFitField as setElementsMediaFitFieldCommand,
   setElementsPositionField as setElementsPositionFieldCommand,
   setElementsShape as setElementsShapeCommand,
+  setElementsTransition as setElementsTransitionCommand,
+  setElementsTransitionField as setElementsTransitionFieldCommand,
   setElementsSizeConstraintField as setElementsSizeConstraintFieldCommand,
   setElementsSpacingAllSides as setElementsSpacingAllSidesCommand,
   setElementsSvgFill as setElementsSvgFillCommand,
@@ -165,6 +168,7 @@ import { isValidSvgPath, isValidSvgPolygon } from "@/features/editor/utils/svgOb
 import type { SvgObjectBounds } from "@/features/editor/utils/svgObjectGeometry";
 import type { BoxShadowSettings } from "@/features/editor/types/boxShadow";
 import type { FilterSettings } from "@/features/editor/types/filters";
+import type { TransitionSettings } from "@/features/editor/types/transition";
 import type { DisplaySettings } from "@/features/editor/types/display";
 import type { PositionSettings } from "@/features/editor/types/position";
 import type { AspectRatioValue } from "@/features/editor/types/aspectRatio";
@@ -387,6 +391,8 @@ interface EditorState {
   setElementFilters: (nodeId: string, filters: FilterSettings | undefined) => void;
   /** Live (no-history) counterpart of setElementFilters — Checkpoint 1.15.6.1.1's Opacity slider wraps a whole drag in beginTransaction()/commitTransaction() and calls this on every tick in between, matching setElementBoxShadowLive's exact shape. */
   setElementFiltersLive: (nodeId: string, filters: FilterSettings | undefined) => void;
+  /** This node's own CSS Transition (Checkpoint 1.15.6.14.1) — see resolveTransitionStyle. `undefined` clears it entirely. No Live/transaction variant: this checkpoint deliberately ships ordinary numeric Inspector fields, not sliders (see setElementTransition's own doc comment). */
+  setElementTransition: (nodeId: string, transition: TransitionSettings | undefined) => void;
   /** This node's own display/visibility/overflow/interaction settings (Checkpoint 4.8) — see resolveDisplayStyle. `undefined` clears it entirely. No continuous-drag variant: every field here is a discrete enum commit, like Filters, not a draggable gesture. */
   setElementDisplay: (nodeId: string, display: DisplaySettings | undefined) => void;
   /** This node's own CSS `position` (Checkpoint 5.1) — see resolvePositionStyle. `undefined` clears it entirely. No continuous-drag variant: a single enum commit, like Display. */
@@ -541,6 +547,9 @@ interface EditorState {
   setElementsSvgStrokeWidth: (ids: readonly string[], strokeWidth: number) => void;
   setElementsDisplayField: <K extends keyof DisplaySettings>(ids: readonly string[], field: K, value: DisplaySettings[K]) => void;
   setElementsFilterField: <K extends keyof FilterSettings>(ids: readonly string[], field: K, value: FilterSettings[K]) => void;
+  setElementsTransitionField: <K extends keyof TransitionSettings>(ids: readonly string[], field: K, value: TransitionSettings[K]) => void;
+  /** Bulk whole-value Transition overwrite/clear (Checkpoint 1.15.6.14.1) — one atomic, one-history-entry commit; see setElementsTransition's own doc comment. */
+  setElementsTransition: (ids: readonly string[], transition: TransitionSettings | undefined) => void;
   setElementsPositionField: <K extends keyof PositionSettings>(ids: readonly string[], field: K, value: PositionSettings[K]) => void;
   setElementsMediaFitField: <K extends keyof MediaFitSettings>(ids: readonly string[], field: K, value: MediaFitSettings[K]) => void;
   setElementsSizeConstraintField: <K extends keyof SizeConstraints>(ids: readonly string[], field: K, value: SizeConstraints[K]) => void;
@@ -1157,6 +1166,9 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setElementFilters: (nodeId, filters) =>
     set((state) => guardedStyleMutation(state, nodeId, (document) => setFilterSettingsCommand(document, nodeId, filters))),
 
+  setElementTransition: (nodeId, transition) =>
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setElementTransitionCommand(document, nodeId, transition))),
+
   setElementFiltersLive: (nodeId, filters) =>
     set((state) => {
       const protection = getStyleProtection(state.document, nodeId);
@@ -1736,6 +1748,16 @@ export const useEditorStore = create<EditorState>()((set) => ({
     set((state) =>
       guardedBulkStyleMutation(state, ids, (document) => setElementsDisplayFieldCommand(document, new Set(ids), field, value)),
     ),
+  setElementsTransitionField: (ids, field, value) =>
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) => setElementsTransitionFieldCommand(document, new Set(ids), field, value)),
+    ),
+
+  setElementsTransition: (ids, transition) =>
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) => setElementsTransitionCommand(document, new Set(ids), transition)),
+    ),
+
   setElementsFilterField: (ids, field, value) =>
     set((state) =>
       guardedBulkStyleMutation(state, ids, (document) => setElementsFilterFieldCommand(document, new Set(ids), field, value)),

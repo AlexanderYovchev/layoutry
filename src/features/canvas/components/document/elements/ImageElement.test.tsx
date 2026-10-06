@@ -1,5 +1,6 @@
 import { render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { ImageElement } from "./ImageElement";
 
 describe("ImageElement", () => {
@@ -250,5 +251,30 @@ describe("ImageElement", () => {
     // The wrapper div (editor-only geometry box, data-node-id owner) never receives it.
     expect(wrapper).not.toHaveAttribute("id");
     expect(wrapper.className).not.toContain("my-custom-class");
+  });
+});
+
+describe("ImageElement — CSS Transition Foundation (Checkpoint 1.15.6.14.1)", () => {
+  const initialState = useEditorStore.getState();
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("places the authored transition on the outer wrapper, never the inner <img>, and only renders it in Preview", () => {
+    const transition = { property: "opacity" as const, durationMs: 200, timingFunction: "ease" as const, delayMs: 0 };
+    useEditorStore.setState({ editorMode: "preview" });
+    const { container } = render(
+      <ImageElement
+        node={{ id: "image-1", tag: "img", src: "data:image/svg+xml;utf8,<svg/>", transition }}
+        parentId="section-1"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+
+    const img = container.querySelector("img") as HTMLImageElement;
+    const wrapper = img.parentElement as HTMLElement;
+    expect(wrapper.style.transitionProperty).toBe("opacity");
+    expect(img.style.transitionProperty).toBe("");
   });
 });

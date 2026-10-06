@@ -16,8 +16,10 @@ import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle
 import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
+import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
 import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
 import { getSelectedOptionValue } from "@/features/editor/types/select";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -69,6 +71,7 @@ export function SelectElement({ node, parentId, parentLayoutMode, parentFlowDisp
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const selectRef = useRef<HTMLSelectElement | null>(null);
+  const isPreview = useEditorStore((state) => state.editorMode === "preview");
 
   const selectedValue = getSelectedOptionValue(node);
 
@@ -124,6 +127,7 @@ export function SelectElement({ node, parentId, parentLayoutMode, parentFlowDisp
         ...resolveBorderRadiusStyle(node),
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
+        ...resolveTransitionStyle(node, isPreview),
         ...resolveDisplayStyle(node),
       }}
       {...listeners}

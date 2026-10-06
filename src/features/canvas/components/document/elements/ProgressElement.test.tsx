@@ -1,5 +1,6 @@
 import { render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { ProgressElement } from "./ProgressElement";
 
 describe("ProgressElement (Checkpoint 1.15.6.12.4)", () => {
@@ -116,5 +117,28 @@ describe("ProgressElement (Checkpoint 1.15.6.12.4)", () => {
     );
     const progress = document.querySelector("progress") as HTMLProgressElement;
     expect(progress.style.opacity).toBe("0.5");
+  });
+});
+
+describe("ProgressElement — CSS Transition Foundation (Checkpoint 1.15.6.14.1)", () => {
+  const initialState = useEditorStore.getState();
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("supports an ordinary CSS transition on the element itself, Preview-only, completely unrelated to progressValue", () => {
+    const transition = { property: "opacity" as const, durationMs: 200, timingFunction: "ease" as const, delayMs: 0 };
+    useEditorStore.setState({ editorMode: "preview" });
+    render(
+      <ProgressElement
+        node={{ id: "progress-1", tag: "progress", progressValue: 50, progressMax: 100, transition }}
+        parentId="page-1"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+    const progress = document.querySelector("progress") as HTMLProgressElement;
+    expect(progress.style.transitionProperty).toBe("opacity");
+    expect(progress.value).toBe(50);
   });
 });

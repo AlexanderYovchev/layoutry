@@ -17,8 +17,10 @@ import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle
 import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
+import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
 import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
 import { getInputType, isToggleInputType, sanitizeTelValue } from "@/features/editor/types/input";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -80,6 +82,7 @@ export function InputElement({ node, parentId, parentLayoutMode, parentFlowDispl
     sanitizeValue: inputType === "tel" ? sanitizeTelValue : undefined,
   });
   const checkedResyncRef = useRef<HTMLInputElement | null>(null);
+  const isPreview = useEditorStore((state) => state.editorMode === "preview");
 
   useEffect(() => {
     if (!isToggle) return;
@@ -132,6 +135,7 @@ export function InputElement({ node, parentId, parentLayoutMode, parentFlowDispl
         ...resolveBorderRadiusStyle(node),
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
+        ...resolveTransitionStyle(node, isPreview),
         ...resolveDisplayStyle(node),
       }}
       {...(!isToggle && editable.isEditing ? undefined : listeners)}

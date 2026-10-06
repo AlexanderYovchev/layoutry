@@ -15,7 +15,9 @@ import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle
 import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
+import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
 import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -45,6 +47,7 @@ export function TextareaElement({ node, parentId, parentLayoutMode, parentFlowDi
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const editable = useNativeFormValueEditing(node, { commitOnEnter: false });
+  const isPreview = useEditorStore((state) => state.editorMode === "preview");
 
   const usesLegacyRadiusChrome = !node.borderRadius;
   const usesLegacyBorderChrome = !node.border;
@@ -88,6 +91,7 @@ export function TextareaElement({ node, parentId, parentLayoutMode, parentFlowDi
         ...resolveBorderRadiusStyle(node),
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
+        ...resolveTransitionStyle(node, isPreview),
         ...resolveDisplayStyle(node),
       }}
       {...(editable.isEditing ? undefined : listeners)}

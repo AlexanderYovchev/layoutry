@@ -15,6 +15,8 @@ import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolveMediaFitStyle } from "@/features/canvas/utils/resolveMediaFitStyle";
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
+import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -36,6 +38,7 @@ import type { DocumentElementProps } from "@/features/canvas/types/documentRende
 export function ImageElement({ node, parentId, parentLayoutMode, parentFlowDisplay }: DocumentElementProps) {
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
+  const isPreview = useEditorStore((state) => state.editorMode === "preview");
 
   // The dashed placeholder border predates real border data (Checkpoint
   // 4.4) — pure editor chrome marking this as an editable image box, even
@@ -95,6 +98,7 @@ export function ImageElement({ node, parentId, parentLayoutMode, parentFlowDispl
         ...resolveBorderRadiusStyle(node),
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
+        ...resolveTransitionStyle(node, isPreview),
         ...resolveDisplayStyle(node),
       }}
       {...listeners}

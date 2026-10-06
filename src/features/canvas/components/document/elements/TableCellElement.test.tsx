@@ -90,4 +90,19 @@ describe("TableCellElement (Checkpoint 1.14)", () => {
     expect(cell).toHaveAttribute("data-node-id", "th-1");
     expect(cell).toHaveAttribute("data-node-type", "th");
   });
+
+  it("supports CSS Transition — Preview-only, same as any other ordinary box (Checkpoint 1.15.6.14.1)", () => {
+    const transition = { property: "opacity" as const, durationMs: 200, timingFunction: "ease" as const, delayMs: 0 };
+    useEditorStore.setState({ editorMode: "preview" });
+    render(
+      <table>
+        <tbody>
+          <tr>
+            <TableCellElement node={{ id: "th-1", tag: "th", text: "Alpha", transition }} parentId="tr-1" parentLayoutMode="flow" parentFlowDisplay="block" />
+          </tr>
+        </tbody>
+      </table>,
+    );
+    expect(screen.getByText("Alpha")).toHaveStyle({ transitionProperty: "opacity" });
+  });
 });

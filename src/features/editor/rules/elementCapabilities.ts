@@ -123,6 +123,22 @@ export interface ElementCapabilities {
    * before; only the tags explicitly overridden below opt out.
    */
   supportsChildLayout: boolean;
+  /**
+   * Whether CSS Transition is meaningful on this tag (Checkpoint
+   * 1.15.6.14.1) — same "applies to a box regardless of what's inside it"
+   * reasoning supportsBorder/supportsBoxShadow/supportsFilters/
+   * supportsDisplay already use, so it shares their exact default-true
+   * rule, with ADDITIONAL opt-outs beyond page/body: `option` (no
+   * rendered box outside an open native dropdown — nothing to transition,
+   * the same reasoning that tag's own supportsDisplay/supportsPosition/
+   * etc. already false there), and `thead`/`tbody`/`tfoot`/`tr` (native-
+   * table-computed row-group geometry — the same "this tag's own box
+   * isn't a user-authored concern" reasoning its supportsDisplay override
+   * already documents). `th`/`td`/`caption`/`table`/`dialog`/`svg` all
+   * keep this at its default true — none of them have the "no real box"
+   * or "native-row-computed" problem the four opted-out tags have.
+   */
+  supportsTransition: boolean;
 }
 
 /**
@@ -161,6 +177,7 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
   supportsFormControl: false,
   supportsSvgSettings: false,
   supportsChildLayout: true,
+  supportsTransition: true,
 };
 
 /**
@@ -207,8 +224,8 @@ const SHAPE_CAPABLE_TAGS: ReadonlySet<string> = new Set([
  * traits that vary per tag.
  */
 const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
-  page: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false, supportsPosition: false, supportsAspectRatio: false },
-  body: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false, supportsPosition: false, supportsAspectRatio: false },
+  page: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false, supportsPosition: false, supportsAspectRatio: false, supportsTransition: false },
+  body: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false, supportsPosition: false, supportsAspectRatio: false, supportsTransition: false },
 
   img: { supportsIntrinsicAspectRatio: true, supportsMediaFit: true },
   /**
@@ -330,6 +347,13 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
     supportsDisplay: false,
     supportsPosition: false,
     supportsAspectRatio: false,
+    /**
+     * CSS Transition (Checkpoint 1.15.6.14.1) — false for the exact same
+     * reason every other "applies to a box" capability is already false
+     * here: an <option> has no rendered box outside an open native
+     * <select> dropdown, so there is nothing for a transition to animate.
+     */
+    supportsTransition: false,
   },
 
   /**
@@ -380,6 +404,10 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
     supportsFilters: false,
     supportsTypography: true,
     supportsChildLayout: false,
+    // CSS Transition (Checkpoint 1.15.6.14.1) — false for the same
+    // native-table-computed-geometry reason supportsDisplay/
+    // supportsPosition/supportsAspectRatio are already false here.
+    supportsTransition: false,
   },
   tbody: {
     resizableX: false,
@@ -392,6 +420,7 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
     supportsFilters: false,
     supportsTypography: true,
     supportsChildLayout: false,
+    supportsTransition: false,
   },
   tfoot: {
     resizableX: false,
@@ -404,6 +433,7 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
     supportsFilters: false,
     supportsTypography: true,
     supportsChildLayout: false,
+    supportsTransition: false,
   },
 
   /**
@@ -429,6 +459,7 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
     supportsFilters: false,
     supportsTypography: true,
     supportsChildLayout: false,
+    supportsTransition: false,
   },
 
   /**

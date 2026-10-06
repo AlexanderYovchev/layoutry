@@ -15,8 +15,10 @@ import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle
 import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
+import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
 import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
 import { isHeadingTag } from "@/features/editor/types/heading";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -25,6 +27,7 @@ export function HeadingElement({ node, parentId, parentLayoutMode, parentFlowDis
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const editable = useEditableText(node);
+  const isPreview = useEditorStore((state) => state.editorMode === "preview");
   // elementPositionStyle's clipOverflowY sets the `overflow` shorthand —
   // harmless on its own, but co-existing in the same style object as this
   // checkpoint's explicit overflow/overflowX/overflowY fields (Checkpoint
@@ -73,6 +76,7 @@ export function HeadingElement({ node, parentId, parentLayoutMode, parentFlowDis
         ...resolveBorderRadiusStyle(node),
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
+        ...resolveTransitionStyle(node, isPreview),
         ...resolveDisplayStyle(node),
       }}
       {...(editable.isEditing ? undefined : listeners)}

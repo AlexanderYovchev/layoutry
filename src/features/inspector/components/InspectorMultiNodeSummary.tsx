@@ -9,6 +9,7 @@ import { InspectorBulkSizeSection } from "@/features/inspector/components/Inspec
 import { InspectorBulkShapeSection } from "@/features/inspector/components/InspectorBulkShapeSection";
 import { InspectorBulkSpacingSection } from "@/features/inspector/components/InspectorBulkSpacingSection";
 import { InspectorBulkSvgSection } from "@/features/inspector/components/InspectorBulkSvgSection";
+import { InspectorBulkTransitionSection } from "@/features/inspector/components/InspectorBulkTransitionSection";
 import { InspectorBulkTypographySection } from "@/features/inspector/components/InspectorBulkTypographySection";
 import { InspectorProtectedStyleGroup } from "@/features/inspector/components/InspectorProtectedStyleGroup";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
@@ -88,6 +89,7 @@ export function InspectorMultiNodeSummary({ nodes }: InspectorMultiNodeSummaryPr
     capabilities.supportsDisplay && <InspectorBulkDisplaySection key="display" nodes={nodes} />,
     capabilities.supportsPosition && <InspectorBulkPositionSection key="position" nodes={nodes} />,
     capabilities.supportsFilters && <InspectorBulkFiltersSection key="filters" nodes={nodes} />,
+    capabilities.supportsTransition && <InspectorBulkTransitionSection key="transition" nodes={nodes} />,
   ].filter(Boolean);
 
   // SVG (Checkpoint 1.15.5) is rendered as its own standalone section,

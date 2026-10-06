@@ -24,6 +24,7 @@ import type { EdgeValues } from "@/features/editor/types/spacing";
 import { getShapePreset, type ShapePreset } from "@/features/editor/types/shape";
 import type { SvgPrimitiveKind } from "@/features/editor/types/svg";
 import { getTypographySettings, withTypographyField, type CssLengthValue, type TypographySettings } from "@/features/editor/types/typography";
+import { DEFAULT_TRANSITION_SETTINGS, getTransitionSettings, transitionSettingsEqual, withTransitionField, type TransitionSettings } from "@/features/editor/types/transition";
 import type { AspectRatioValue } from "@/features/editor/types/aspectRatio";
 import { findParentId } from "@/features/editor/utils/findNodeById";
 
@@ -327,6 +328,54 @@ export function setElementsFilterField<K extends keyof FilterSettings>(
     const current = getFilterSettings(node);
     if (looseFieldEqual(current[field], value)) return node;
     return { ...node, filters: withFilterField(current, field, value) };
+  });
+}
+
+/**
+ * Sets one Transition field across every targeted node (Checkpoint
+ * 1.15.6.14.1) — a node with no authored transition yet is defaulted to
+ * DEFAULT_TRANSITION_SETTINGS first (the same "default-if-absent, then
+ * merge" shape a bulk field edit needs whenever the underlying struct
+ * isn't independently-optional-per-field — see types/transition.ts's own
+ * top comment for why TransitionSettings has no partial/empty state), so
+ * bulk-editing e.g. Duration while some selected nodes have no transition
+ * at all still produces one coherent, fully-populated transition on every
+ * targeted node. No-op per node when its current value for this one
+ * field already equals `value`, the same looseFieldEqual convention every
+ * other bulk field command in this file uses. Never reached for "clear
+ * the whole transition" — that is setElementsTransition's job (`value:
+ * undefined`), since a per-field command has no way to express "undefined
+ * the whole object" through a single field's value type.
+ */
+export function setElementsTransitionField<K extends keyof TransitionSettings>(
+  root: EditorElementNode,
+  ids: ReadonlySet<string>,
+  field: K,
+  value: TransitionSettings[K],
+): EditorElementNode {
+  return updateNodesByIds(root, ids, (node) => {
+    const current = getTransitionSettings(node) ?? DEFAULT_TRANSITION_SETTINGS;
+    if (looseFieldEqual(current[field], value)) return node;
+    return { ...node, transition: withTransitionField(current, field, value) };
+  });
+}
+
+/**
+ * Full-value overwrite/clear across every targeted node (Checkpoint
+ * 1.15.6.14.1) — the bulk counterpart to setElementTransition, same shape
+ * as setElementsAspectRatio: TransitionSettings is only ever meaningful as
+ * a complete object, never a per-field partial, so there is nothing to
+ * merge here. Used by the Inspector's Property control's "None" option
+ * (clearing every targeted node's transition in one atomic bulk commit).
+ */
+export function setElementsTransition(
+  root: EditorElementNode,
+  ids: ReadonlySet<string>,
+  transition: TransitionSettings | undefined,
+): EditorElementNode {
+  return updateNodesByIds(root, ids, (node) => {
+    if (transitionSettingsEqual(node.transition, transition)) return node;
+    return { ...node, transition };
   });
 }
 

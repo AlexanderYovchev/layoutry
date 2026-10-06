@@ -508,7 +508,11 @@ describe("InspectorNodeSummary — Box Shadow section (Checkpoint 4.6)", () => {
       />,
     );
 
-    expect(screen.getByText("Box Shadow")).toBeInTheDocument();
+    // Scoped to the section header specifically (role + aria-expanded) —
+    // Checkpoint 1.15.6.14.1's own Transition section also has a "Box
+    // Shadow" option in its Property selector, which would otherwise be a
+    // second, ambiguous match for a plain text query.
+    expect(screen.getByRole("button", { name: "Box Shadow", expanded: true })).toBeInTheDocument();
   });
 
   it("shows the Box Shadow section for a media tag, unlike Background", () => {
@@ -519,7 +523,7 @@ describe("InspectorNodeSummary — Box Shadow section (Checkpoint 4.6)", () => {
       />,
     );
 
-    expect(screen.getByText("Box Shadow")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Box Shadow", expanded: true })).toBeInTheDocument();
   });
 
   it("omits the Box Shadow section for the non-selectable document root", () => {

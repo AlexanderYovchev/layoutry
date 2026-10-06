@@ -20,6 +20,7 @@ import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
 import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
+import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import {
   SVG_CIRCLE_GEOMETRY,
@@ -95,6 +96,7 @@ export function SvgElement({ node, parentId, parentLayoutMode, parentFlowDisplay
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
 
+  const isPreview = useEditorStore((state) => state.editorMode === "preview");
   const svgEditingNodeId = useEditorStore((state) => state.svgEditingNodeId);
   const activeSvgTool = useEditorStore((state) => state.activeSvgTool);
   const selectedSvgObjectIds = useEditorStore((state) => state.selectedSvgObjectIds);
@@ -203,6 +205,7 @@ export function SvgElement({ node, parentId, parentLayoutMode, parentFlowDisplay
         ...resolveBorderRadiusStyle(node),
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
+        ...resolveTransitionStyle(node, isPreview),
         ...resolveDisplayStyle(node),
         userSelect: "none",
       }}

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { ContainerElement } from "./ContainerElement";
 
 describe("ContainerElement", () => {
@@ -365,5 +366,34 @@ describe("ContainerElement — Advanced Container Shapes (Checkpoint 1.15.4)", (
     expect(element.style.clipPath).toBe("circle(50% at 50% 50%)");
     expect(element.style.backgroundColor).toBe("rgb(255, 0, 0)");
     expect(element.style.borderTopLeftRadius).toBe("12px");
+  });
+});
+
+describe("ContainerElement — CSS Transition Foundation (Checkpoint 1.15.6.14.1)", () => {
+  const initialState = useEditorStore.getState();
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  const transition = { property: "opacity" as const, durationMs: 200, timingFunction: "ease" as const, delayMs: 0 };
+
+  it("never emits transition CSS in Design, even with an authored transition", () => {
+    const { container } = render(
+      <ContainerElement node={{ id: "container-1", tag: "div", transition }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+    const element = container.querySelector('[data-node-id="container-1"]') as HTMLElement;
+    expect(element.style.transitionProperty).toBe("");
+  });
+
+  it("emits the authored transition CSS longhands in Preview", () => {
+    useEditorStore.setState({ editorMode: "preview" });
+    const { container } = render(
+      <ContainerElement node={{ id: "container-1", tag: "div", transition }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+    const element = container.querySelector('[data-node-id="container-1"]') as HTMLElement;
+    expect(element.style.transitionProperty).toBe("opacity");
+    expect(element.style.transitionDuration).toBe("200ms");
+    expect(element.style.transitionTimingFunction).toBe("ease");
+    expect(element.style.transitionDelay).toBe("0ms");
   });
 });
