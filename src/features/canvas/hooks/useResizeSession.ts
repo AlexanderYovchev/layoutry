@@ -15,6 +15,7 @@ import { resolveResizeBounds } from "@/features/canvas/utils/resolveResizeBounds
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { describeStyleLockNotice, getStyleProtection } from "@/features/editor/rules/styleProtection";
 import { getResizeConstraintsForTag, type ElementResizeConstraints } from "@/features/editor/types/layout";
+import { TRANSFORM_ANCESTOR_BLOCKED_NOTICE, getTransformBlockingAncestor } from "@/features/editor/rules/transformGeometrySafety";
 import {
   RESIZE_HANDLE_CURSORS,
   type ResizeBounds,
@@ -169,6 +170,18 @@ export function useResizeSession(
         const protection = getStyleProtection(store.document, nodeId);
         if (protection.protected) {
           store.showEditorNotice(describeStyleLockNotice([protection], false));
+          return;
+        }
+
+        // Checkpoint 1.15.6.14.3 geometry-safety restriction (approved
+        // Policy D) — a rotated/scaled ancestor breaks this session's own
+        // 1:1 viewport-to-local pixel assumption (see
+        // transformGeometrySafety.ts's own doc comment); blocking the
+        // gesture here, before pointer capture/history begins, is the
+        // approved mitigation rather than building a pointer-conversion
+        // engine. A translate-only ancestor never blocks.
+        if (getTransformBlockingAncestor(store.document, nodeId)) {
+          store.showEditorNotice(TRANSFORM_ANCESTOR_BLOCKED_NOTICE);
           return;
         }
 

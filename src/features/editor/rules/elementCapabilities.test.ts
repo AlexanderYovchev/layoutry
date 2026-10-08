@@ -750,6 +750,48 @@ describe("elementCapabilities", () => {
     });
   });
 
+  describe("CSS Transform Foundation (Checkpoint 1.15.6.14.3)", () => {
+    it("defaults to true for an ordinary box tag", () => {
+      expect(getElementCapabilities("div").supportsTransform).toBe(true);
+      expect(getElementCapabilities("p").supportsTransform).toBe(true);
+    });
+
+    it("is false for page/body — same as supportsTransition", () => {
+      expect(getElementCapabilities("page").supportsTransform).toBe(false);
+      expect(getElementCapabilities("body").supportsTransform).toBe(false);
+    });
+
+    it("is false for option — no rendered box outside an open native dropdown", () => {
+      expect(getElementCapabilities("option").supportsTransform).toBe(false);
+    });
+
+    it("is false for thead/tbody/tfoot/tr — native-table-computed row-group geometry", () => {
+      for (const tag of ["thead", "tbody", "tfoot", "tr"]) {
+        expect(getElementCapabilities(tag).supportsTransform, tag).toBe(false);
+      }
+    });
+
+    it("stays true for th/td/caption/table/img/video/audio/svg/dialog/progress", () => {
+      for (const tag of ["th", "td", "caption", "table", "img", "video", "audio", "svg", "dialog", "progress"]) {
+        expect(getElementCapabilities(tag).supportsTransform, tag).toBe(true);
+      }
+    });
+
+    it("intersects to false for a mixed selection where any tag disallows it", () => {
+      expect(intersectElementCapabilities(["div", "option"]).supportsTransform).toBe(false);
+    });
+
+    it("intersects to true when every selected tag allows it", () => {
+      expect(intersectElementCapabilities(["div", "p", "img"]).supportsTransform).toBe(true);
+    });
+
+    it("supportsTransform and supportsTransition are independent flags (both happen to share the same current true/false set, but neither derives from the other)", () => {
+      for (const tag of ["div", "page", "body", "option", "thead", "tbody", "tfoot", "tr", "th", "td", "table", "svg", "dialog"]) {
+        expect(getElementCapabilities(tag).supportsTransform, tag).toBe(getElementCapabilities(tag).supportsTransition);
+      }
+    });
+  });
+
   it("gives an entirely unknown tag the same sensible defaults as any other element", () => {
     const caps = getElementCapabilities("some-future-tag");
 

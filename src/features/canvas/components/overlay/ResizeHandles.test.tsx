@@ -241,6 +241,156 @@ describe("ResizeHandles boundary clamping (wired end-to-end through the DOM)", (
   });
 });
 
+describe("ResizeHandles — Transform geometry safety (Checkpoint 1.15.6.14.3)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    useEditorStore.setState(initialState, true);
+  });
+
+  function stubRect(el: Element, box: { left: number; top: number; right: number; bottom: number }) {
+    vi.spyOn(el, "getBoundingClientRect").mockReturnValue({
+      ...box,
+      width: box.right - box.left,
+      height: box.bottom - box.top,
+      x: box.left,
+      y: box.top,
+      toJSON: () => box,
+    });
+  }
+
+  function seedAncestorWithTransform(transform: Record<string, number> | undefined) {
+    useEditorStore.setState((state) => ({
+      document: {
+        ...state.document,
+        children: [{ id: "ancestor-1", tag: "div", transform, children: [{ id: "section-1", tag: "div" }] }],
+      },
+    }));
+  }
+
+  function BoundedHarnessWithAncestorTransform() {
+    const canvasRootRef = useRef<HTMLDivElement>(null);
+    return (
+      <div ref={canvasRootRef} data-testid="canvas-root">
+        <div data-node-id="ancestor-1">
+          <div data-node-id="section-1" />
+        </div>
+        <ResizeHandles nodeId="section-1" rect={rect} offsetX={0} offsetY={0} canvasRootRef={canvasRootRef} />
+      </div>
+    );
+  }
+
+  it("startWidth/startHeight read from the live element's offsetWidth/offsetHeight, not rect — immune to the node's own Transform", () => {
+    seedAncestorWithTransform(undefined);
+    const { container } = render(<BoundedHarnessWithAncestorTransform />);
+    const canvasRoot = container.querySelector('[data-testid="canvas-root"]') as HTMLElement;
+    const pageRoot = container.querySelector('[data-node-id="ancestor-1"]') as HTMLElement;
+    const target = container.querySelector('[data-node-id="section-1"]') as HTMLElement;
+    stubRect(canvasRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+    stubRect(pageRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+    // Deliberately stub offsetWidth/Height to a value that DIFFERS from
+    // rect.width/height (200/100) — simulating the untransformed structural
+    // size while `rect` reflects a painted (e.g. scaled) box. If the fix
+    // still used rect.width as startWidth, growing by +60 would land on
+    // 260, not 360.
+    Object.defineProperty(target, "offsetWidth", { value: 300, configurable: true });
+    Object.defineProperty(target, "offsetHeight", { value: 100, configurable: true });
+
+    const handle = container.querySelector('[data-resize-handle="e"]') as Element;
+    fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 560, clientY: 300, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 560, clientY: 300, pointerId: 1 });
+
+    const section = useEditorStore.getState().document.children?.[0]?.children?.find((c) => c.id === "section-1");
+    expect(section?.dimensions?.preferredWidth).toBe(360);
+  });
+
+  it("a translate-only ancestor does not block the resize", () => {
+    seedAncestorWithTransform({ translateX: 50 });
+    const { container } = render(<BoundedHarnessWithAncestorTransform />);
+    const canvasRoot = container.querySelector('[data-testid="canvas-root"]') as HTMLElement;
+    const pageRoot = container.querySelector('[data-node-id="ancestor-1"]') as HTMLElement;
+    const target = container.querySelector('[data-node-id="section-1"]') as HTMLElement;
+    stubRect(canvasRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+    stubRect(pageRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+    Object.defineProperty(target, "offsetWidth", { value: 200, configurable: true });
+    Object.defineProperty(target, "offsetHeight", { value: 100, configurable: true });
+
+    const handle = container.querySelector('[data-resize-handle="e"]') as Element;
+    fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 560, clientY: 300, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 560, clientY: 300, pointerId: 1 });
+
+    const section = useEditorStore.getState().document.children?.[0]?.children?.find((c) => c.id === "section-1");
+    expect(section?.dimensions?.preferredWidth).toBe(260);
+  });
+
+  it("a rotated ancestor blocks the resize and shows the exact editor notice", () => {
+    seedAncestorWithTransform({ rotateDeg: 20 });
+    const { container } = render(<BoundedHarnessWithAncestorTransform />);
+    const canvasRoot = container.querySelector('[data-testid="canvas-root"]') as HTMLElement;
+    const pageRoot = container.querySelector('[data-node-id="ancestor-1"]') as HTMLElement;
+    stubRect(canvasRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+    stubRect(pageRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+
+    const handle = container.querySelector('[data-resize-handle="e"]') as Element;
+    fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 560, clientY: 300, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 560, clientY: 300, pointerId: 1 });
+
+    const section = useEditorStore.getState().document.children?.[0]?.children?.find((c) => c.id === "section-1");
+    expect(section?.dimensions).toBeUndefined();
+    expect(useEditorStore.getState().editorNotice?.message).toBe(
+      "This element is inside a rotated or scaled container. Reset the ancestor's transform to move or resize it.",
+    );
+  });
+
+  it("a scaled ancestor blocks the resize", () => {
+    seedAncestorWithTransform({ scale: 1.5 });
+    const { container } = render(<BoundedHarnessWithAncestorTransform />);
+    const canvasRoot = container.querySelector('[data-testid="canvas-root"]') as HTMLElement;
+    const pageRoot = container.querySelector('[data-node-id="ancestor-1"]') as HTMLElement;
+    stubRect(canvasRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+    stubRect(pageRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+
+    const handle = container.querySelector('[data-resize-handle="e"]') as Element;
+    fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 560, clientY: 300, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 560, clientY: 300, pointerId: 1 });
+
+    const section = useEditorStore.getState().document.children?.[0]?.children?.find((c) => c.id === "section-1");
+    expect(section?.dimensions).toBeUndefined();
+  });
+
+  it("resetting the blocking ancestor's transform immediately unblocks the resize", () => {
+    seedAncestorWithTransform(undefined);
+    const { container } = render(<BoundedHarnessWithAncestorTransform />);
+    const canvasRoot = container.querySelector('[data-testid="canvas-root"]') as HTMLElement;
+    const pageRoot = container.querySelector('[data-node-id="ancestor-1"]') as HTMLElement;
+    const target = container.querySelector('[data-node-id="section-1"]') as HTMLElement;
+    stubRect(canvasRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+    stubRect(pageRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+    Object.defineProperty(target, "offsetWidth", { value: 200, configurable: true });
+    Object.defineProperty(target, "offsetHeight", { value: 100, configurable: true });
+
+    const handle = container.querySelector('[data-resize-handle="e"]') as Element;
+    fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 560, clientY: 300, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 560, clientY: 300, pointerId: 1 });
+
+    const section = useEditorStore.getState().document.children?.[0]?.children?.find((c) => c.id === "section-1");
+    expect(section?.dimensions?.preferredWidth).toBe(260);
+  });
+});
+
 describe("ResizeHandles — Free container child scaling (Checkpoint 3.4.4)", () => {
   beforeEach(() => {
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -272,6 +422,17 @@ describe("ResizeHandles — Free container child scaling (Checkpoint 3.4.4)", ()
     Object.defineProperty(el, "clientHeight", { value: height, configurable: true });
   }
 
+  // jsdom never computes real layout, so offsetWidth/offsetHeight are not
+  // automatically derived from a stubbed getBoundingClientRect the way a
+  // real browser's would be — Checkpoint 1.15.6.14.3's own startWidth/
+  // startHeight fix now reads these directly (see measureOffsetBoxSize),
+  // so every resize-start-size test harness must stub them to match its
+  // intended rendered size, same as it already does for rect/clientSize.
+  function stubOffsetSize(el: Element, width: number, height: number) {
+    Object.defineProperty(el, "offsetWidth", { value: width, configurable: true });
+    Object.defineProperty(el, "offsetHeight", { value: height, configurable: true });
+  }
+
   function FreeContainerHarness() {
     const canvasRootRef = useRef<HTMLDivElement>(null);
     return (
@@ -300,6 +461,7 @@ describe("ResizeHandles — Free container child scaling (Checkpoint 3.4.4)", ()
     stubRect(canvasRoot, { left: 0, top: 0, right: 900, bottom: 600 });
     stubRect(pageRoot, { left: 0, top: 0, right: 900, bottom: 600 });
     stubClientSize(sectionEl, 200, 100); // matches rect (200x100) — no border/padding inset
+    stubOffsetSize(sectionEl, 200, 100);
 
     const handle = container.querySelector('[data-resize-handle="e"]') as Element;
     fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
@@ -333,6 +495,7 @@ describe("ResizeHandles — Free container child scaling (Checkpoint 3.4.4)", ()
     stubRect(canvasRoot, { left: 0, top: 0, right: 900, bottom: 600 });
     stubRect(pageRoot, { left: 0, top: 0, right: 900, bottom: 600 });
     stubClientSize(sectionEl, 200, 100);
+    stubOffsetSize(sectionEl, 200, 100);
 
     const handle = container.querySelector('[data-resize-handle="e"]') as Element;
     fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
@@ -358,6 +521,7 @@ describe("ResizeHandles — Free container child scaling (Checkpoint 3.4.4)", ()
     stubRect(canvasRoot, { left: 0, top: 0, right: 900, bottom: 600 });
     stubRect(pageRoot, { left: 0, top: 0, right: 900, bottom: 600 });
     stubClientSize(sectionEl, 200, 100);
+    stubOffsetSize(sectionEl, 200, 100);
 
     const handle = container.querySelector('[data-resize-handle="e"]') as Element;
     fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
@@ -379,8 +543,10 @@ describe("ResizeHandles — Free container child scaling (Checkpoint 3.4.4)", ()
     const { container } = render(<FreeContainerHarness />);
     const canvasRoot = container.querySelector('[data-testid="canvas-root"]') as HTMLElement;
     const pageRoot = container.querySelector('[data-node-id="page-root"]') as HTMLElement;
+    const sectionEl = container.querySelector('[data-node-id="section-1"]') as HTMLElement;
     stubRect(canvasRoot, { left: 0, top: 0, right: 900, bottom: 600 });
     stubRect(pageRoot, { left: 0, top: 0, right: 900, bottom: 600 });
+    stubOffsetSize(sectionEl, 200, 100);
 
     const handle = container.querySelector('[data-resize-handle="e"]') as Element;
     fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });

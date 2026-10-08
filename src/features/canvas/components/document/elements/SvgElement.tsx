@@ -21,6 +21,7 @@ import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlex
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
 import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
 import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
+import { resolveTransformStyle } from "@/features/canvas/utils/resolveTransformStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import {
   SVG_CIRCLE_GEOMETRY,
@@ -206,6 +207,7 @@ export function SvgElement({ node, parentId, parentLayoutMode, parentFlowDisplay
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
         ...resolveTransitionStyle(node, isPreview),
+        ...resolveTransformStyle(node),
         ...resolveDisplayStyle(node),
         userSelect: "none",
       }}

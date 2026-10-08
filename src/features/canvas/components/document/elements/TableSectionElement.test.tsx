@@ -73,4 +73,14 @@ describe("TableSectionElement (Checkpoint 1.14)", () => {
     const el = document.querySelector("[data-node-id='tbody-1']") as HTMLElement;
     expect(el.style.transitionProperty).toBe("");
   });
+
+  it("never applies CSS Transform — same native-table-row-group reasoning as Transition above (Checkpoint 1.15.6.14.3)", () => {
+    render(
+      <table>
+        <TableSectionElement node={{ id: "tbody-1", tag: "tbody", transform: { rotateDeg: 15 }, children: [] }} parentId="table-1" parentLayoutMode="flow" parentFlowDisplay="block" />
+      </table>,
+    );
+    const el = document.querySelector("[data-node-id='tbody-1']") as HTMLElement;
+    expect(el.style.transform).toBe("");
+  });
 });

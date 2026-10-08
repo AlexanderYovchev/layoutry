@@ -14,6 +14,7 @@ import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlex
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
 import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
 import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
+import { resolveTransformStyle } from "@/features/canvas/utils/resolveTransformStyle";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
@@ -80,6 +81,7 @@ export function DividerElement({ node, parentId, parentLayoutMode, parentFlowDis
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
         ...resolveTransitionStyle(node, isPreview),
+        ...resolveTransformStyle(node),
         ...resolveDisplayStyle(node),
       }}
       {...listeners}

@@ -222,3 +222,118 @@ describe("useFreeChildMoveSession", () => {
     expect(useEditorStore.getState().activeSnapGuides).toBeNull();
   });
 });
+
+describe("Checkpoint 1.15.6.14.3 — Transform geometry safety", () => {
+  beforeEach(() => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    useEditorStore.setState(initialState, true);
+  });
+
+  function seedContainerWithTransform(transform: Record<string, number> | undefined) {
+    useEditorStore.setState((state) => ({
+      document: {
+        ...state.document,
+        children: [
+          {
+            id: "free-container-1",
+            tag: "div",
+            layoutMode: "free",
+            transform,
+            children: [{ id: "free-a", tag: "div", freeLayout: { x: 200, y: 200, width: 30, height: 30 } }],
+          },
+        ],
+      },
+    }));
+  }
+
+  function setupDom(nodeId = "free-a") {
+    const { container } = render(<Harness nodeId={nodeId} />);
+    const containerEl = container.querySelector('[data-node-id="free-container-1"]') as HTMLElement;
+    const target = container.querySelector(`[data-node-id="${nodeId}"]`) as HTMLElement;
+    stubRect(containerEl, { left: 0, top: 0, right: 500, bottom: 400 });
+    stubClientSize(containerEl, 500, 400);
+    return { container, containerEl, target };
+  }
+
+  it("startX/startY read from node.freeLayout, not getBoundingClientRect — immune to the moving node's own authored Transform", () => {
+    seedContainerWithTransform(undefined);
+    const { target } = setupDom();
+    // Deliberately stub the rect to report a position that DIFFERS from
+    // freeLayout.x/y (simulating a painted position shifted by the node's
+    // own authored Transform) — if the hook still read its start position
+    // from this rect, the resulting delta would be wrong.
+    stubRect(target, { left: 999, top: 999, right: 1029, bottom: 1029 });
+
+    fireEvent.pointerDown(target, { clientX: 215, clientY: 215, pointerId: 1 });
+    fireEvent.pointerMove(target, { clientX: 145, clientY: 145, pointerId: 1 });
+    fireEvent.pointerUp(target, { clientX: 145, clientY: 145, pointerId: 1 });
+
+    const node = findNodeById(useEditorStore.getState().document, "free-a");
+    // Pointer delta (-70,-70) applied to the TRUE freeLayout start (200,200).
+    expect(node?.freeLayout).toEqual({ x: 130, y: 130, width: 30, height: 30 });
+  });
+
+  it("a translate-only container parent does not block the child's move", () => {
+    seedContainerWithTransform({ translateX: 50 });
+    const { target } = setupDom();
+    stubRect(target, { left: 200, top: 200, right: 230, bottom: 230 });
+
+    fireEvent.pointerDown(target, { clientX: 215, clientY: 215, pointerId: 1 });
+    fireEvent.pointerMove(target, { clientX: 145, clientY: 145, pointerId: 1 });
+    fireEvent.pointerUp(target, { clientX: 145, clientY: 145, pointerId: 1 });
+
+    const node = findNodeById(useEditorStore.getState().document, "free-a");
+    expect(node?.freeLayout).toEqual({ x: 130, y: 130, width: 30, height: 30 });
+  });
+
+  it("a rotated container parent blocks the child's move and shows the exact editor notice", () => {
+    seedContainerWithTransform({ rotateDeg: 20 });
+    const { target } = setupDom();
+    stubRect(target, { left: 200, top: 200, right: 230, bottom: 230 });
+
+    fireEvent.pointerDown(target, { clientX: 215, clientY: 215, pointerId: 1 });
+    fireEvent.pointerMove(target, { clientX: 145, clientY: 145, pointerId: 1 });
+    fireEvent.pointerUp(target, { clientX: 145, clientY: 145, pointerId: 1 });
+
+    const node = findNodeById(useEditorStore.getState().document, "free-a");
+    expect(node?.freeLayout).toEqual({ x: 200, y: 200, width: 30, height: 30 });
+    expect(useEditorStore.getState().editorNotice?.message).toBe(
+      "This element is inside a rotated or scaled container. Reset the ancestor's transform to move or resize it.",
+    );
+  });
+
+  it("a scaled container parent blocks the child's move", () => {
+    seedContainerWithTransform({ scale: 1.5 });
+    const { target } = setupDom();
+    stubRect(target, { left: 200, top: 200, right: 230, bottom: 230 });
+
+    fireEvent.pointerDown(target, { clientX: 215, clientY: 215, pointerId: 1 });
+    fireEvent.pointerMove(target, { clientX: 145, clientY: 145, pointerId: 1 });
+    fireEvent.pointerUp(target, { clientX: 145, clientY: 145, pointerId: 1 });
+
+    const node = findNodeById(useEditorStore.getState().document, "free-a");
+    expect(node?.freeLayout).toEqual({ x: 200, y: 200, width: 30, height: 30 });
+  });
+
+  it("resetting the blocking ancestor's transform immediately unblocks the child's move", () => {
+    seedContainerWithTransform(undefined);
+    const { target } = setupDom();
+    stubRect(target, { left: 200, top: 200, right: 230, bottom: 230 });
+
+    fireEvent.pointerDown(target, { clientX: 215, clientY: 215, pointerId: 1 });
+    fireEvent.pointerMove(target, { clientX: 145, clientY: 145, pointerId: 1 });
+    fireEvent.pointerUp(target, { clientX: 145, clientY: 145, pointerId: 1 });
+
+    const node = findNodeById(useEditorStore.getState().document, "free-a");
+    expect(node?.freeLayout).toEqual({ x: 130, y: 130, width: 30, height: 30 });
+  });
+});

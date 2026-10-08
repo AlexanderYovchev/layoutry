@@ -105,4 +105,17 @@ describe("TableCellElement (Checkpoint 1.14)", () => {
     );
     expect(screen.getByText("Alpha")).toHaveStyle({ transitionProperty: "opacity" });
   });
+
+  it("supports CSS Transform — identically in Design, same as any other ordinary box (Checkpoint 1.15.6.14.3)", () => {
+    render(
+      <table>
+        <tbody>
+          <tr>
+            <TableCellElement node={{ id: "th-1", tag: "th", text: "Alpha", transform: { rotateDeg: 15 } }} parentId="tr-1" parentLayoutMode="flow" parentFlowDisplay="block" />
+          </tr>
+        </tbody>
+      </table>,
+    );
+    expect(screen.getByText("Alpha")).toHaveStyle({ transform: "rotate(15deg)" });
+  });
 });

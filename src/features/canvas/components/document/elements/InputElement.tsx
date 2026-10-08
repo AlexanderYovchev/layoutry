@@ -18,6 +18,7 @@ import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
 import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
+import { resolveTransformStyle } from "@/features/canvas/utils/resolveTransformStyle";
 import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
 import { getInputType, isToggleInputType, sanitizeTelValue } from "@/features/editor/types/input";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
@@ -136,6 +137,7 @@ export function InputElement({ node, parentId, parentLayoutMode, parentFlowDispl
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
         ...resolveTransitionStyle(node, isPreview),
+        ...resolveTransformStyle(node),
         ...resolveDisplayStyle(node),
       }}
       {...(!isToggle && editable.isEditing ? undefined : listeners)}

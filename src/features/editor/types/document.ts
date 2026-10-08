@@ -23,6 +23,7 @@ import type { SvgScene } from "@/features/editor/types/svgScene";
 import type { InteractionBinding } from "@/features/editor/types/interactions";
 import type { InitialPreviewVisibility } from "@/features/editor/types/previewVisibility";
 import type { TransitionSettings } from "@/features/editor/types/transition";
+import type { TransformSettings } from "@/features/editor/types/transform";
 
 export interface ElementDimensions {
   /**
@@ -565,4 +566,22 @@ export interface EditorElementNode {
    * itself is stored and preserved identically in both modes.
    */
   transition?: TransitionSettings;
+  /**
+   * This node's own authored CSS Transform (Checkpoint 1.15.6.14.3) —
+   * only meaningful for a transform-capable tag (see
+   * getElementCapabilities().supportsTransform). Like Transition, has no
+   * synthesized default — absent means "no authored Transform at all,"
+   * never stamped by any factory. Unlike Transition, each field
+   * (translateX/translateY/rotateDeg/scale) is independently optional and
+   * identity-normalizes back to field-absence — see types/transform.ts's
+   * own top comment for the full reasoning. Rendered via
+   * resolveTransformStyle, which is NOT isPreview-gated the way
+   * resolveTransitionStyle is: Transform is static authored CSS, visible
+   * identically in Design and Preview (the approved Policy D from
+   * Checkpoint 1.15.6.14.2.1's feasibility audit) — see that resolver's
+   * own doc comment, and src/features/editor/rules/transformGeometrySafety.ts
+   * for the narrow geometry-safety restriction this required instead of a
+   * blanket Design suppression.
+   */
+  transform?: TransformSettings;
 }

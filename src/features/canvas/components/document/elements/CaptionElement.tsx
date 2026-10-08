@@ -13,6 +13,7 @@ import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowS
 import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
 import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
+import { resolveTransformStyle } from "@/features/canvas/utils/resolveTransformStyle";
 import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
@@ -62,6 +63,7 @@ export function CaptionElement({ node, parentId, parentLayoutMode }: DocumentEle
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
         ...resolveTransitionStyle(node, isPreview),
+        ...resolveTransformStyle(node),
       }}
       {...(editable.isEditing ? undefined : listeners)}
     >

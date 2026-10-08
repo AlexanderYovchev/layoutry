@@ -21,6 +21,8 @@ import {
   setElementsSvgStrokeWidth,
   setElementsTransition,
   setElementsTransitionField,
+  setElementsTransform,
+  setElementsTransformField,
   setElementsTypographyField,
   updateNodesByIds,
 } from "./bulkCommands";
@@ -391,6 +393,53 @@ describe("setElementsTransitionField / setElementsTransition", () => {
   it("setElementsTransition is a no-op (same reference) when clearing an already-absent transition", () => {
     const document: EditorElementNode = { id: "p-1", tag: "p" };
     const result = setElementsTransition(document, new Set(["p-1"]), undefined);
+    expect(result).toBe(document);
+  });
+});
+
+describe("setElementsTransformField / setElementsTransform", () => {
+  it("setElementsTransformField merges a field into an empty default (no DEFAULT_TRANSFORM_SETTINGS stamping needed — every field is independently optional)", () => {
+    const result = setElementsTransformField(tree(), new Set(["p-1"]), "rotateDeg", 15);
+    const p1 = result.children?.[0].children?.find((c) => c.id === "p-1");
+    expect(p1?.transform).toEqual({ rotateDeg: 15 });
+  });
+
+  it("setElementsTransformField merges a field into an existing Transform without touching the others", () => {
+    const document: EditorElementNode = { id: "p-1", tag: "p", transform: { translateX: 20, scale: 1.2 } };
+    const result = setElementsTransformField(document, new Set(["p-1"]), "rotateDeg", 15);
+    expect(result.transform).toEqual({ translateX: 20, scale: 1.2, rotateDeg: 15 });
+  });
+
+  it("setElementsTransformField identity-normalizes — setting the last meaningful field back to identity clears the whole object", () => {
+    const document: EditorElementNode = { id: "p-1", tag: "p", transform: { rotateDeg: 15 } };
+    const result = setElementsTransformField(document, new Set(["p-1"]), "rotateDeg", 0);
+    expect(result.transform).toBeUndefined();
+  });
+
+  it("setElementsTransformField is a no-op (same reference) when every targeted node already has that field's value", () => {
+    const document: EditorElementNode = { id: "p-1", tag: "p", transform: { scale: 1.5 } };
+    const result = setElementsTransformField(document, new Set(["p-1"]), "scale", 1.5);
+    expect(result).toBe(document);
+  });
+
+  it("setElementsTransform overwrites/clears the whole value per node", () => {
+    const transform = { rotateDeg: 15 };
+    const result = setElementsTransform(tree(), new Set(["p-1", "p-2"]), transform);
+    const section = result.children?.[0];
+    expect(section?.children?.find((c) => c.id === "p-1")?.transform).toEqual(transform);
+    expect(section?.children?.find((c) => c.id === "p-2")?.transform).toEqual(transform);
+    expect(section?.children?.find((c) => c.id === "p-3")?.transform).toBeUndefined();
+  });
+
+  it("setElementsTransform clears every targeted node's Transform when given undefined", () => {
+    const document: EditorElementNode = { id: "p-1", tag: "p", transform: { rotateDeg: 15 } };
+    const result = setElementsTransform(document, new Set(["p-1"]), undefined);
+    expect(result.transform).toBeUndefined();
+  });
+
+  it("setElementsTransform is a no-op (same reference) when clearing an already-absent Transform", () => {
+    const document: EditorElementNode = { id: "p-1", tag: "p" };
+    const result = setElementsTransform(document, new Set(["p-1"]), undefined);
     expect(result).toBe(document);
   });
 });

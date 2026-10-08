@@ -19,6 +19,7 @@ import { getEffectiveAspectRatioLocked } from "@/features/editor/rules/elementCa
 import { describeStyleLockNotice, getStyleProtection } from "@/features/editor/rules/styleProtection";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
 import { getResizeConstraintsForTag, type ElementResizeConstraints } from "@/features/editor/types/layout";
+import { TRANSFORM_ANCESTOR_BLOCKED_NOTICE, getTransformBlockingAncestor } from "@/features/editor/rules/transformGeometrySafety";
 import { RESIZE_HANDLE_CURSORS, type ResizeDirection } from "@/features/editor/types/resize";
 
 export interface FreeChildResizeHandleStart {
@@ -138,6 +139,13 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
         const protection = getStyleProtection(store.document, nodeId);
         if (protection.protected) {
           store.showEditorNotice(describeStyleLockNotice([protection], false));
+          return;
+        }
+
+        // Checkpoint 1.15.6.14.3 geometry-safety restriction — see
+        // useResizeSession's identical check for the full reasoning.
+        if (getTransformBlockingAncestor(store.document, nodeId)) {
+          store.showEditorNotice(TRANSFORM_ANCESTOR_BLOCKED_NOTICE);
           return;
         }
 

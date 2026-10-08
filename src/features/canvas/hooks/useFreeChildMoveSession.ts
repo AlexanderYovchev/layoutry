@@ -16,6 +16,7 @@ import { measureFreeContainerBounds } from "@/features/canvas/utils/measureFreeC
 import { resolveFreeMoveSnap, SNAP_THRESHOLD_PX, type FreeMoveSnapBox } from "@/features/canvas/utils/resolveFreeMoveSnap";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { describeStyleLockNotice, getStyleProtection } from "@/features/editor/rules/styleProtection";
+import { TRANSFORM_ANCESTOR_BLOCKED_NOTICE, getTransformBlockingAncestor } from "@/features/editor/rules/transformGeometrySafety";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
 import type { ActiveSnapGuides } from "@/features/editor/types/snap";
 
@@ -127,6 +128,17 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
         return;
       }
 
+      // Checkpoint 1.15.6.14.3 geometry-safety restriction — see
+      // useResizeSession's identical check (transformGeometrySafety.ts)
+      // for the full reasoning. Deliberately also returns BEFORE
+      // stopPropagation/pointer capture, same as the protection check
+      // above, so a plain click (selection) on a blocked descendant still
+      // works exactly as it would on any other node.
+      if (getTransformBlockingAncestor(store.document, nodeId)) {
+        store.showEditorNotice(TRANSFORM_ANCESTOR_BLOCKED_NOTICE);
+        return;
+      }
+
       event.stopPropagation();
       event.currentTarget.setPointerCapture(event.pointerId);
       useEditorStore.getState().beginResizeTransaction();
@@ -137,10 +149,21 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
       const parentBounds = containerEl ? measureFreeContainerBounds(containerEl) : { width: Infinity, height: Infinity };
       const containerId = containerEl?.getAttribute("data-node-id") ?? null;
 
-      const rect = targetEl?.getBoundingClientRect();
-      const containerRect = containerEl?.getBoundingClientRect();
-      const startX = rect && containerRect ? rect.left - containerRect.left : 0;
-      const startY = rect && containerRect ? rect.top - containerRect.top : 0;
+      // Checkpoint 1.15.6.14.3 geometry fix (approved by the 1.15.6.14.2.1
+      // feasibility audit, Part M/U) — the drag-start structural position
+      // AND size now read directly from the document model
+      // (node.freeLayout), never a getBoundingClientRect() measurement:
+      // fully immune to any Transform anywhere in the ancestor chain (not
+      // just this node's own), matching the exact precedent
+      // FreeChildResizeHandles already established for the materially
+      // identical Free-resize case. This was an undocumented
+      // inconsistency against that precedent, not a necessity — see this
+      // checkpoint's own report.
+      const movingNode = findNodeById(store.document, nodeId);
+      const startX = movingNode?.freeLayout?.x ?? 0;
+      const startY = movingNode?.freeLayout?.y ?? 0;
+      const width = movingNode?.freeLayout?.width ?? 0;
+      const height = movingNode?.freeLayout?.height ?? 0;
 
       // Snap's own sibling targets (Checkpoint 1.15.6.1.1) — read once
       // from the DOCUMENT (not re-measured via the DOM) since every
@@ -151,7 +174,7 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
       // per-frame DOM queries). The moving node itself is excluded by
       // construction (filtered out by id, never by position — see
       // resolveFreeMoveSnap's own "moving-element exclusion" comment).
-      const containerNode = containerId ? findNodeById(useEditorStore.getState().document, containerId) : undefined;
+      const containerNode = containerId ? findNodeById(store.document, containerId) : undefined;
       const siblings: FreeMoveSnapBox[] = (containerNode?.children ?? [])
         .filter((child) => child.id !== nodeId && child.freeLayout)
         .map((child) => ({ x: child.freeLayout!.x, y: child.freeLayout!.y, width: child.freeLayout!.width, height: child.freeLayout!.height }));
@@ -159,8 +182,8 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
       startRef.current = {
         startX,
         startY,
-        width: rect?.width ?? 0,
-        height: rect?.height ?? 0,
+        width,
+        height,
         startPointerX: event.clientX,
         startPointerY: event.clientY,
         parentBounds,

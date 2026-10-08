@@ -185,6 +185,103 @@ describe("useFreeChildResizeSession", () => {
   });
 });
 
+describe("useFreeChildResizeSession — Transform geometry safety (Checkpoint 1.15.6.14.3)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    useEditorStore.setState(initialState, true);
+  });
+
+  function seedContainerWithTransform(transform: Record<string, number> | undefined) {
+    useEditorStore.setState((state) => ({
+      document: {
+        ...state.document,
+        children: [
+          {
+            id: "free-container-1",
+            tag: "div",
+            layoutMode: "free",
+            transform,
+            children: [{ id: "free-image-1", tag: "img", freeLayout: { x: 16, y: 16, width: 100, height: 80 } }],
+          },
+        ],
+      },
+    }));
+  }
+
+  function setupDom() {
+    const { container } = render(<Harness direction="e" />);
+    const containerEl = container.querySelector('[data-node-id="free-container-1"]') as HTMLElement;
+    const target = container.querySelector('[data-node-id="free-image-1"]') as HTMLElement;
+    stubRect(containerEl, { left: 0, top: 0, right: 400, bottom: 300 });
+    stubClientSize(containerEl, 400, 300);
+    return { container, containerEl, target };
+  }
+
+  it("a translate-only container parent does not block the child's resize", () => {
+    seedContainerWithTransform({ translateX: 50 });
+    const { target } = setupDom();
+    const handle = target.parentElement!.querySelector('[data-testid="handle"]') as HTMLElement;
+
+    fireEvent.pointerDown(handle, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 230, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 230, clientY: 200, pointerId: 1 });
+
+    const image = useEditorStore.getState().document.children?.[0]?.children?.find((c) => c.id === "free-image-1");
+    expect(image?.freeLayout).toEqual({ x: 16, y: 16, width: 130, height: 80 });
+  });
+
+  it("a rotated container parent blocks the child's resize and shows the exact editor notice", () => {
+    seedContainerWithTransform({ rotateDeg: 20 });
+    const { target } = setupDom();
+    const handle = target.parentElement!.querySelector('[data-testid="handle"]') as HTMLElement;
+
+    fireEvent.pointerDown(handle, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 230, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 230, clientY: 200, pointerId: 1 });
+
+    const image = useEditorStore.getState().document.children?.[0]?.children?.find((c) => c.id === "free-image-1");
+    expect(image?.freeLayout).toEqual({ x: 16, y: 16, width: 100, height: 80 });
+    expect(useEditorStore.getState().editorNotice?.message).toBe(
+      "This element is inside a rotated or scaled container. Reset the ancestor's transform to move or resize it.",
+    );
+  });
+
+  it("a scaled container parent blocks the child's resize", () => {
+    seedContainerWithTransform({ scale: 1.5 });
+    const { target } = setupDom();
+    const handle = target.parentElement!.querySelector('[data-testid="handle"]') as HTMLElement;
+
+    fireEvent.pointerDown(handle, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 230, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 230, clientY: 200, pointerId: 1 });
+
+    const image = useEditorStore.getState().document.children?.[0]?.children?.find((c) => c.id === "free-image-1");
+    expect(image?.freeLayout).toEqual({ x: 16, y: 16, width: 100, height: 80 });
+  });
+
+  it("resetting the blocking ancestor's transform immediately unblocks the child's resize", () => {
+    seedContainerWithTransform(undefined);
+    const { target } = setupDom();
+    const handle = target.parentElement!.querySelector('[data-testid="handle"]') as HTMLElement;
+
+    fireEvent.pointerDown(handle, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 230, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 230, clientY: 200, pointerId: 1 });
+
+    const image = useEditorStore.getState().document.children?.[0]?.children?.find((c) => c.id === "free-image-1");
+    expect(image?.freeLayout).toEqual({ x: 16, y: 16, width: 130, height: 80 });
+  });
+});
+
 describe("useFreeChildResizeSession — nested Free container scaling (Checkpoint 3.4.4)", () => {
   beforeEach(() => {
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {

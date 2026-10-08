@@ -139,6 +139,20 @@ export interface ElementCapabilities {
    * or "native-row-computed" problem the four opted-out tags have.
    */
   supportsTransition: boolean;
+  /**
+   * Whether CSS Transform is meaningful on this tag (Checkpoint
+   * 1.15.6.14.3) — deliberately NOT copied from supportsTransition
+   * (evaluated independently per the 1.15.6.14.2 audit's own Part 31
+   * instruction), but arrives at the identical true/false set: the same
+   * "applies to a box regardless of what's inside it" reasoning, with the
+   * same opt-outs (page/body — no box at all; option — no rendered box
+   * outside an open native dropdown; thead/tbody/tfoot/tr —
+   * native-table-computed row-group geometry a Transform would fight the
+   * same way supportsDisplay already avoids). No function-specific
+   * capability (supportsRotate/supportsScale) exists — see this
+   * checkpoint's own report for why one flag is sufficient.
+   */
+  supportsTransform: boolean;
 }
 
 /**
@@ -178,6 +192,7 @@ const DEFAULT_CAPABILITIES: ElementCapabilities = {
   supportsSvgSettings: false,
   supportsChildLayout: true,
   supportsTransition: true,
+  supportsTransform: true,
 };
 
 /**
@@ -224,8 +239,8 @@ const SHAPE_CAPABLE_TAGS: ReadonlySet<string> = new Set([
  * traits that vary per tag.
  */
 const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
-  page: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false, supportsPosition: false, supportsAspectRatio: false, supportsTransition: false },
-  body: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false, supportsPosition: false, supportsAspectRatio: false, supportsTransition: false },
+  page: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false, supportsPosition: false, supportsAspectRatio: false, supportsTransition: false, supportsTransform: false },
+  body: { selectable: false, resizableX: false, resizableY: false, supportsBorder: false, supportsBorderRadius: false, supportsBoxShadow: false, supportsFilters: false, supportsDisplay: false, supportsPosition: false, supportsAspectRatio: false, supportsTransition: false, supportsTransform: false },
 
   img: { supportsIntrinsicAspectRatio: true, supportsMediaFit: true },
   /**
@@ -354,6 +369,8 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
      * <select> dropdown, so there is nothing for a transition to animate.
      */
     supportsTransition: false,
+    // CSS Transform (Checkpoint 1.15.6.14.3) — false for the same no-rendered-box reason as supportsTransition above.
+    supportsTransform: false,
   },
 
   /**
@@ -408,6 +425,7 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
     // native-table-computed-geometry reason supportsDisplay/
     // supportsPosition/supportsAspectRatio are already false here.
     supportsTransition: false,
+    supportsTransform: false,
   },
   tbody: {
     resizableX: false,
@@ -421,6 +439,7 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
     supportsTypography: true,
     supportsChildLayout: false,
     supportsTransition: false,
+    supportsTransform: false,
   },
   tfoot: {
     resizableX: false,
@@ -434,6 +453,7 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
     supportsTypography: true,
     supportsChildLayout: false,
     supportsTransition: false,
+    supportsTransform: false,
   },
 
   /**
@@ -460,6 +480,7 @@ const CAPABILITY_OVERRIDES: Record<string, Partial<ElementCapabilities>> = {
     supportsTypography: true,
     supportsChildLayout: false,
     supportsTransition: false,
+    supportsTransform: false,
   },
 
   /**

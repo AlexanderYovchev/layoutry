@@ -95,6 +95,7 @@ import { resolveSvgObjectCreationStyle } from "@/features/editor/utils/svgObject
 import { setBoxShadowSettings as setBoxShadowSettingsCommand } from "@/features/editor/commands/boxShadowCommands";
 import { setFilterSettings as setFilterSettingsCommand } from "@/features/editor/commands/filterCommands";
 import { setElementTransition as setElementTransitionCommand } from "@/features/editor/commands/transitionCommands";
+import { setElementTransform as setElementTransformCommand } from "@/features/editor/commands/transformCommands";
 import { setDisplaySettings as setDisplaySettingsCommand } from "@/features/editor/commands/displayCommands";
 import { setPositionSettings as setPositionSettingsCommand } from "@/features/editor/commands/positionCommands";
 import { setAspectRatio as setAspectRatioCommand } from "@/features/editor/commands/aspectRatioCommands";
@@ -114,6 +115,8 @@ import {
   setElementsShape as setElementsShapeCommand,
   setElementsTransition as setElementsTransitionCommand,
   setElementsTransitionField as setElementsTransitionFieldCommand,
+  setElementsTransform as setElementsTransformCommand,
+  setElementsTransformField as setElementsTransformFieldCommand,
   setElementsSizeConstraintField as setElementsSizeConstraintFieldCommand,
   setElementsSpacingAllSides as setElementsSpacingAllSidesCommand,
   setElementsSvgFill as setElementsSvgFillCommand,
@@ -169,6 +172,7 @@ import type { SvgObjectBounds } from "@/features/editor/utils/svgObjectGeometry"
 import type { BoxShadowSettings } from "@/features/editor/types/boxShadow";
 import type { FilterSettings } from "@/features/editor/types/filters";
 import type { TransitionSettings } from "@/features/editor/types/transition";
+import type { TransformSettings } from "@/features/editor/types/transform";
 import type { DisplaySettings } from "@/features/editor/types/display";
 import type { PositionSettings } from "@/features/editor/types/position";
 import type { AspectRatioValue } from "@/features/editor/types/aspectRatio";
@@ -393,6 +397,8 @@ interface EditorState {
   setElementFiltersLive: (nodeId: string, filters: FilterSettings | undefined) => void;
   /** This node's own CSS Transition (Checkpoint 1.15.6.14.1) — see resolveTransitionStyle. `undefined` clears it entirely. No Live/transaction variant: this checkpoint deliberately ships ordinary numeric Inspector fields, not sliders (see setElementTransition's own doc comment). */
   setElementTransition: (nodeId: string, transition: TransitionSettings | undefined) => void;
+  /** This node's own CSS Transform (Checkpoint 1.15.6.14.3) — see resolveTransformStyle. `undefined` clears it entirely. No Live/transaction variant: ordinary numeric Inspector fields, not sliders, same as setElementTransition's own reasoning. */
+  setElementTransform: (nodeId: string, transform: TransformSettings | undefined) => void;
   /** This node's own display/visibility/overflow/interaction settings (Checkpoint 4.8) — see resolveDisplayStyle. `undefined` clears it entirely. No continuous-drag variant: every field here is a discrete enum commit, like Filters, not a draggable gesture. */
   setElementDisplay: (nodeId: string, display: DisplaySettings | undefined) => void;
   /** This node's own CSS `position` (Checkpoint 5.1) — see resolvePositionStyle. `undefined` clears it entirely. No continuous-drag variant: a single enum commit, like Display. */
@@ -550,6 +556,9 @@ interface EditorState {
   setElementsTransitionField: <K extends keyof TransitionSettings>(ids: readonly string[], field: K, value: TransitionSettings[K]) => void;
   /** Bulk whole-value Transition overwrite/clear (Checkpoint 1.15.6.14.1) — one atomic, one-history-entry commit; see setElementsTransition's own doc comment. */
   setElementsTransition: (ids: readonly string[], transition: TransitionSettings | undefined) => void;
+  setElementsTransformField: <K extends keyof TransformSettings>(ids: readonly string[], field: K, value: TransformSettings[K]) => void;
+  /** Bulk whole-value Transform overwrite/clear (Checkpoint 1.15.6.14.3) — one atomic, one-history-entry commit; see setElementsTransform's own doc comment. */
+  setElementsTransform: (ids: readonly string[], transform: TransformSettings | undefined) => void;
   setElementsPositionField: <K extends keyof PositionSettings>(ids: readonly string[], field: K, value: PositionSettings[K]) => void;
   setElementsMediaFitField: <K extends keyof MediaFitSettings>(ids: readonly string[], field: K, value: MediaFitSettings[K]) => void;
   setElementsSizeConstraintField: <K extends keyof SizeConstraints>(ids: readonly string[], field: K, value: SizeConstraints[K]) => void;
@@ -1169,6 +1178,9 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setElementTransition: (nodeId, transition) =>
     set((state) => guardedStyleMutation(state, nodeId, (document) => setElementTransitionCommand(document, nodeId, transition))),
 
+  setElementTransform: (nodeId, transform) =>
+    set((state) => guardedStyleMutation(state, nodeId, (document) => setElementTransformCommand(document, nodeId, transform))),
+
   setElementFiltersLive: (nodeId, filters) =>
     set((state) => {
       const protection = getStyleProtection(state.document, nodeId);
@@ -1756,6 +1768,16 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setElementsTransition: (ids, transition) =>
     set((state) =>
       guardedBulkStyleMutation(state, ids, (document) => setElementsTransitionCommand(document, new Set(ids), transition)),
+    ),
+
+  setElementsTransformField: (ids, field, value) =>
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) => setElementsTransformFieldCommand(document, new Set(ids), field, value)),
+    ),
+
+  setElementsTransform: (ids, transform) =>
+    set((state) =>
+      guardedBulkStyleMutation(state, ids, (document) => setElementsTransformCommand(document, new Set(ids), transform)),
     ),
 
   setElementsFilterField: (ids, field, value) =>

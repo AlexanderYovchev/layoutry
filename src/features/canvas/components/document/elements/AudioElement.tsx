@@ -15,6 +15,7 @@ import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
 import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
 import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
 import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
+import { resolveTransformStyle } from "@/features/canvas/utils/resolveTransformStyle";
 import { getMediaControls } from "@/features/editor/types/video";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
@@ -96,6 +97,7 @@ export function AudioElement({ node, parentId, parentLayoutMode, parentFlowDispl
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
         ...resolveTransitionStyle(node, isPreview),
+        ...resolveTransformStyle(node),
         ...resolveDisplayStyle(node),
       }}
       {...listeners}

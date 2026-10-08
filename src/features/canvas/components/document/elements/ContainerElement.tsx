@@ -17,6 +17,7 @@ import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionSty
 import { resolveShapeStyle } from "@/features/canvas/utils/resolveShapeStyle";
 import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
 import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
+import { resolveTransformStyle } from "@/features/canvas/utils/resolveTransformStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { getLayoutMode } from "@/features/editor/types/layout";
@@ -188,6 +189,7 @@ export function ContainerElement({
         ...resolveBoxShadowStyle(node),
         ...resolveFilterStyle(node),
         ...resolveTransitionStyle(node, isPreview),
+        ...resolveTransformStyle(node),
         ...resolveDisplayStyle(node),
         ...resolveShapeStyle(node),
       }}

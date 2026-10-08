@@ -324,3 +324,11 @@ describe("SvgElement — CSS Transition Foundation (Checkpoint 1.15.6.14.1)", ()
     expect(previewElement.style.transitionProperty).toBe("opacity");
   });
 });
+
+describe("SvgElement — CSS Transform Foundation (Checkpoint 1.15.6.14.3)", () => {
+  it("applies the authored Transform to the outer <svg> box identically in Design and Preview", () => {
+    const { container } = render(<SvgElement node={{ id: "svg-1", tag: "svg", transform: { rotateDeg: 15 } }} {...baseProps} />);
+    const designElement = container.querySelector('[data-node-id="svg-1"]') as HTMLElement;
+    expect(designElement.style.transform).toBe("rotate(15deg)");
+  });
+});

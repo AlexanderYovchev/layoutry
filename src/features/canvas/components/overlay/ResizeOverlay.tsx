@@ -54,6 +54,8 @@ export function ResizeOverlay({ node, rect, canvasRootRef, parentLayoutMode = "f
         rect={rect}
         offsetX={node.dimensions?.offsetX ?? 0}
         offsetY={node.dimensions?.offsetY ?? 0}
+        translateX={node.transform?.translateX}
+        translateY={node.transform?.translateY}
         canvasRootRef={canvasRootRef}
       />
     </div>

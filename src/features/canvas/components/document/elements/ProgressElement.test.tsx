@@ -142,3 +142,19 @@ describe("ProgressElement — CSS Transition Foundation (Checkpoint 1.15.6.14.1)
     expect(progress.value).toBe(50);
   });
 });
+
+describe("ProgressElement — CSS Transform Foundation (Checkpoint 1.15.6.14.3)", () => {
+  it("supports an ordinary CSS Transform on the element itself, completely unrelated to progressValue", () => {
+    render(
+      <ProgressElement
+        node={{ id: "progress-1", tag: "progress", progressValue: 50, progressMax: 100, transform: { scale: 1.2 } }}
+        parentId="page-1"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+    const progress = document.querySelector("progress") as HTMLProgressElement;
+    expect(progress.style.transform).toBe("scale(1.2)");
+    expect(progress.value).toBe(50);
+  });
+});

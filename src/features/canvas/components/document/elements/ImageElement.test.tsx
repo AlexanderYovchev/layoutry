@@ -278,3 +278,26 @@ describe("ImageElement — CSS Transition Foundation (Checkpoint 1.15.6.14.1)", 
     expect(img.style.transitionProperty).toBe("");
   });
 });
+
+describe("ImageElement — CSS Transform Foundation (Checkpoint 1.15.6.14.3)", () => {
+  const initialState = useEditorStore.getState();
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("places the authored Transform on the outer wrapper, never the inner <img>", () => {
+    const { container } = render(
+      <ImageElement
+        node={{ id: "image-1", tag: "img", src: "data:image/svg+xml;utf8,<svg/>", transform: { rotateDeg: 15 } }}
+        parentId="section-1"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+
+    const img = container.querySelector("img") as HTMLImageElement;
+    const wrapper = img.parentElement as HTMLElement;
+    expect(wrapper.style.transform).toBe("rotate(15deg)");
+    expect(img.style.transform).toBe("");
+  });
+});

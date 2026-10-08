@@ -35,6 +35,7 @@ import { InspectorSvgSection } from "@/features/inspector/components/InspectorSv
 import { InspectorTableSection } from "@/features/inspector/components/InspectorTableSection";
 import { InspectorTableSelectionSection } from "@/features/inspector/components/InspectorTableSelectionSection";
 import { InspectorTransitionSection } from "@/features/inspector/components/InspectorTransitionSection";
+import { InspectorTransformSection } from "@/features/inspector/components/InspectorTransformSection";
 import { InspectorTypographySection } from "@/features/inspector/components/InspectorTypographySection";
 import { InspectorVectorObjectSection } from "@/features/inspector/components/InspectorVectorObjectSection";
 import { InspectorVideoSection } from "@/features/inspector/components/InspectorVideoSection";
@@ -191,6 +192,7 @@ export function InspectorNodeSummary({
           {getElementCapabilities(node.tag).supportsBoxShadow && <InspectorBoxShadowSection node={node} />}
           {getElementCapabilities(node.tag).supportsFilters && <InspectorFiltersSection node={node} />}
           {getElementCapabilities(node.tag).supportsTransition && <InspectorTransitionSection node={node} />}
+          {getElementCapabilities(node.tag).supportsTransform && <InspectorTransformSection node={node} />}
           {getElementCapabilities(node.tag).supportsDisplay && <InspectorDisplaySection node={node} />}
           {getElementCapabilities(node.tag).supportsPosition && !isFreeChild && !isFreeContainer && (
             <InspectorPositionSection node={node} />

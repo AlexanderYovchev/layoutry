@@ -25,6 +25,7 @@ import { getShapePreset, type ShapePreset } from "@/features/editor/types/shape"
 import type { SvgPrimitiveKind } from "@/features/editor/types/svg";
 import { getTypographySettings, withTypographyField, type CssLengthValue, type TypographySettings } from "@/features/editor/types/typography";
 import { DEFAULT_TRANSITION_SETTINGS, getTransitionSettings, transitionSettingsEqual, withTransitionField, type TransitionSettings } from "@/features/editor/types/transition";
+import { getTransformSettings, transformSettingsEqual, withTransformField, type TransformSettings } from "@/features/editor/types/transform";
 import type { AspectRatioValue } from "@/features/editor/types/aspectRatio";
 import { findParentId } from "@/features/editor/utils/findNodeById";
 
@@ -376,6 +377,50 @@ export function setElementsTransition(
   return updateNodesByIds(root, ids, (node) => {
     if (transitionSettingsEqual(node.transition, transition)) return node;
     return { ...node, transition };
+  });
+}
+
+/**
+ * Sets one Transform field across every targeted node (Checkpoint
+ * 1.15.6.14.3) — unlike setElementsTransitionField, a node with no
+ * authored Transform yet defaults to `{}` (not a DEFAULT_TRANSFORM_
+ * SETTINGS constant — none exists), since every TransformSettings field
+ * is independently optional and identity-normalizes on its own (see
+ * types/transform.ts's own top comment) — merging one field into `{}`
+ * and normalizing is already exactly correct, with no need to stamp the
+ * other three fields to any starter value. No-op per node via
+ * transformSettingsEqual (identity-normalization-aware), the same
+ * convention every other bulk field command in this file uses.
+ */
+export function setElementsTransformField<K extends keyof TransformSettings>(
+  root: EditorElementNode,
+  ids: ReadonlySet<string>,
+  field: K,
+  value: TransformSettings[K],
+): EditorElementNode {
+  return updateNodesByIds(root, ids, (node) => {
+    const current = getTransformSettings(node);
+    const next = withTransformField(current, field, value);
+    if (transformSettingsEqual(node.transform, next)) return node;
+    return { ...node, transform: next };
+  });
+}
+
+/**
+ * Full-value overwrite/clear across every targeted node (Checkpoint
+ * 1.15.6.14.3) — the bulk counterpart to setElementTransform, used by the
+ * Inspector's bulk Reset Transform action (clearing every targeted
+ * node's Transform in one atomic bulk commit, never a group transform —
+ * see this checkpoint's own report, Part J).
+ */
+export function setElementsTransform(
+  root: EditorElementNode,
+  ids: ReadonlySet<string>,
+  transform: TransformSettings | undefined,
+): EditorElementNode {
+  return updateNodesByIds(root, ids, (node) => {
+    if (transformSettingsEqual(node.transform, transform)) return node;
+    return { ...node, transform };
   });
 }
 

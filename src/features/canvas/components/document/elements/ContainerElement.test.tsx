@@ -397,3 +397,45 @@ describe("ContainerElement — CSS Transition Foundation (Checkpoint 1.15.6.14.1
     expect(element.style.transitionDelay).toBe("0ms");
   });
 });
+
+describe("ContainerElement — CSS Transform Foundation (Checkpoint 1.15.6.14.3)", () => {
+  const initialState = useEditorStore.getState();
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("emits the authored transform CSS identically in Design (no isPreview gating, unlike Transition)", () => {
+    const { container } = render(
+      <ContainerElement
+        node={{ id: "container-1", tag: "div", transform: { translateX: 20, rotateDeg: 15, scale: 1.2 } }}
+        parentId="page-root"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+    const element = container.querySelector('[data-node-id="container-1"]') as HTMLElement;
+    expect(element.style.transform).toBe("translate(20px, 0px) rotate(15deg) scale(1.2)");
+  });
+
+  it("emits the identical transform CSS in Preview too", () => {
+    useEditorStore.setState({ editorMode: "preview" });
+    const { container } = render(
+      <ContainerElement
+        node={{ id: "container-1", tag: "div", transform: { rotateDeg: 15 } }}
+        parentId="page-root"
+        parentLayoutMode="flow"
+        parentFlowDisplay="block"
+      />,
+    );
+    const element = container.querySelector('[data-node-id="container-1"]') as HTMLElement;
+    expect(element.style.transform).toBe("rotate(15deg)");
+  });
+
+  it("emits no transform CSS for a node with no authored Transform", () => {
+    const { container } = render(
+      <ContainerElement node={{ id: "container-1", tag: "div" }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
+    );
+    const element = container.querySelector('[data-node-id="container-1"]') as HTMLElement;
+    expect(element.style.transform).toBe("");
+  });
+});
