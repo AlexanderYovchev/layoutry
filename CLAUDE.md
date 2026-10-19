@@ -115,6 +115,8 @@ panels, status bar, and responsive shell structure.
 - shared UI must not import product features.
 - lib must not import product features.
 - One feature must not directly mutate another feature's internal state.
+- `desktop/` (Electron main process) and `src/` must not import each
+  other — see [ADR-0002](docs/decisions/ADR-0002-electron-desktop-shell.md).
 
 Full detail, including rationale: [docs/architecture/dependency-rules.md](docs/architecture/dependency-rules.md).
 
@@ -155,6 +157,7 @@ Full detail: [docs/architecture/editor-domain-model.md](docs/architecture/editor
 | Saved successful Claude prompts         | `docs/prompts/`                                  |
 | Application UI design references        | `docs/ui/`                                       |
 | Static assets served as-is              | `public/`                                        |
+| Electron desktop shell (main process)   | `desktop/` (see ADR-0002)                        |
 | Generated files                         | Never committed — see Git Safety Rules           |
 
 Do not create a feature subfolder, `index.ts`, or documentation folder

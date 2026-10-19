@@ -32,3 +32,5 @@ Each ADR is a numbered Markdown file, `ADR-NNNN-short-title.md`, containing:
 
 - [ADR-0001](./ADR-0001-feature-based-architecture.md) — Feature-based
   architecture — Accepted
+- [ADR-0002](./ADR-0002-electron-desktop-shell.md) — Electron desktop
+  shell — Accepted

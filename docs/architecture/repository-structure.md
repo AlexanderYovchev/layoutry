@@ -10,6 +10,7 @@ is the application root — there is no nested app directory.
 layoutry/
 ├── .claude/
 │   └── settings.local.json      # local, gitignored, machine-specific
+├── desktop/                     # Electron desktop shell, main process only (ADR-0002)
 ├── docs/                        # documentation (see below)
 ├── e2e/                         # Playwright end-to-end specs
 ├── public/                      # static assets served as-is (created when first asset is added)
