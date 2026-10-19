@@ -3,15 +3,15 @@
 // number when clamping the side panels so the Workspace never has to go
 // below this floor.
 //
-// font-sans + the zinc text colors deliberately pin what the canvas
-// document inherits to exactly what it inherited before the editor
-// chrome got its own typeface/text tokens (font-ui, text-fg-primary on
-// <body>) — user-authored content must never pick up editor theming.
+// The user document's own inherited baseline (font, text color,
+// background, color-scheme) is set by the page sheet itself — the
+// [data-document-surface] boundary in DocumentCanvas.tsx — so it holds
+// regardless of what this editor-chrome region inherits.
 export function Workspace({ children }: { children: React.ReactNode }) {
   return (
     <main
       aria-label="Workspace"
-      className="rounded-surface border-line bg-surface-workspace shadow-panel mx-2 flex min-w-101 flex-1 items-start justify-center overflow-y-auto border px-6 py-10 font-sans text-zinc-950 sm:px-10 md:py-14 dark:text-zinc-50"
+      className="rounded-surface border-line bg-surface-workspace shadow-panel mx-2 flex min-w-101 flex-1 items-start justify-center overflow-y-auto border px-6 py-10 sm:px-10 md:py-14"
     >
       {children}
     </main>

@@ -6,17 +6,38 @@
  * These describe Layoutry's own editor chrome only — never a user's
  * canvas document. Every raw token is `--ly-` prefixed so it cannot
  * collide with a custom property a user-authored document might define,
- * and the Workspace region (components/layout/Workspace.tsx) pins the
- * font/color its canvas content inherits, so changing these never
- * restyles user content.
+ * and the user-document surface (the page sheet in
+ * features/canvas/components/DocumentCanvas.tsx) sets its own font,
+ * color, background and color-scheme, so changing these never restyles
+ * user content.
  *
  * Theme resolution: light values live on :root; dark values apply when
  * the OS prefers dark, unless a future manual selector sets
  * data-theme="light" on <html>. data-theme="dark" forces dark regardless
  * of the OS. No selector exists yet — nothing sets data-theme today.
  * (Components still using Tailwind's `dark:` variant follow the OS only;
- * a manual selector will also need a `@custom-variant dark` update.)
+ * a manual selector will also need to extend the `@custom-variant dark`
+ * below.)
  */
+
+/*
+ * Canvas theme isolation (UI-1.4.1). Tailwind's built-in `dark:` variant
+ * is a bare `@media (prefers-color-scheme: dark)` wrapper, so every
+ * `dark:` utility — including the element renderers' own default-style
+ * variants — used to restyle the user's page whenever the OS was dark.
+ * This redefinition keeps the same media query but excludes the
+ * user-document surface (`[data-document-surface]`) and every
+ * descendant of it, so `dark:` remains an editor-chrome-only concept.
+ * `:where()` adds zero specificity, so every chrome `dark:` utility keeps
+ * exactly the specificity (and cascade behavior) it had before.
+ */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:not(:where([data-document-surface], [data-document-surface] *)) {
+      @slot;
+    }
+  }
+}
 :root {
   /* Surfaces */
   --ly-app-bg: #f3f6fc;
