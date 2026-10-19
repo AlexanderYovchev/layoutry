@@ -39,29 +39,34 @@ export function ResourceSidebar({
     resourcePanelSections[0];
 
   return (
+    // `width` includes the 8px outer gutter (pl-2), so the shell's width
+    // budget (computeAppliedPanelWidths) is unchanged by the card layout.
     <aside
       aria-label="Resource panel"
       style={{ width }}
-      className="relative flex shrink-0 border-r border-zinc-200 dark:border-zinc-800"
+      className="relative flex shrink-0 pl-2"
     >
-      <ResourceNavigationRail
-        activeSectionId={activeSectionId}
-        onSelect={setActiveSectionId}
-      />
-
-      <div className="min-w-0 flex-1 overflow-hidden">
-        <ResourceContextPanel
-          section={activeSection}
-          structureContent={structureContent}
+      <div className="rounded-surface border-line bg-surface-panel shadow-panel flex min-w-0 flex-1 overflow-hidden border">
+        <ResourceNavigationRail
+          activeSectionId={activeSectionId}
+          onSelect={setActiveSectionId}
         />
+
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <ResourceContextPanel
+            section={activeSection}
+            structureContent={structureContent}
+          />
+        </div>
       </div>
 
+      {/* Centered on the 8px gutter between this card and the Workspace (10px hit target, 1px line). */}
       <ResizeHandle
         aria-label="Resize Resource Panel"
         valueNow={width}
         valueMin={minWidth}
         valueMax={maxWidth}
-        className="right-0"
+        className="-right-2.25"
         isDragging={isDragging}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

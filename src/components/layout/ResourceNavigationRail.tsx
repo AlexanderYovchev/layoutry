@@ -46,7 +46,7 @@ export function ResourceNavigationRail({
       role="tablist"
       aria-orientation="vertical"
       aria-label="Resource categories"
-      className="flex w-14 shrink-0 flex-col items-center gap-1 border-r border-zinc-200 py-2 dark:border-zinc-800"
+      className="border-line-subtle bg-surface-panel-secondary flex w-14 shrink-0 flex-col items-center gap-1 border-r py-2"
     >
       {resourcePanelSections.map((section, index) => {
         const isActive = section.id === activeSectionId;

@@ -1,7 +1,11 @@
 A feature where the user can make their own customized font and save it for later and multiple use. It must be like a separate window from one of the navbar dropdown menus called Customize text or something like that.
 
-Having a guide X,Y lines on the cursor showing the snap point of one object to other if they are on same level, to make it easier for the user to adjust his components. This should be available only on Free adjustment in the container!
-
 Add Pagination as a component
+
+
+Fixes:
+Video must accept all forms of url videos (youtube,twitch,tiktok etc.) not only mp4 url's.
+
+In the preview mode all of the components that has animation in them such as videos,progress bars, custom animations etc. should let the user test them how they look.
 
 

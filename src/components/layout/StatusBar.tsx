@@ -2,7 +2,7 @@ export function StatusBar() {
   return (
     <footer
       aria-label="Status bar"
-      className="flex h-7 shrink-0 items-center justify-between border-t border-zinc-200 px-3 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400"
+      className="border-line bg-surface-statusbar text-fg-secondary flex h-7 shrink-0 items-center justify-between border-t px-3 text-xs"
     >
       <div className="flex items-center gap-3">
         <span>Ready</span>

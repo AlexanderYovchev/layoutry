@@ -1,22 +1,223 @@
 @import "tailwindcss";
 
+/*
+ * Layoutry application-UI design tokens ("Bright Studio").
+ *
+ * These describe Layoutry's own editor chrome only — never a user's
+ * canvas document. Every raw token is `--ly-` prefixed so it cannot
+ * collide with a custom property a user-authored document might define,
+ * and the Workspace region (components/layout/Workspace.tsx) pins the
+ * font/color its canvas content inherits, so changing these never
+ * restyles user content.
+ *
+ * Theme resolution: light values live on :root; dark values apply when
+ * the OS prefers dark, unless a future manual selector sets
+ * data-theme="light" on <html>. data-theme="dark" forces dark regardless
+ * of the OS. No selector exists yet — nothing sets data-theme today.
+ * (Components still using Tailwind's `dark:` variant follow the OS only;
+ * a manual selector will also need a `@custom-variant dark` update.)
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Surfaces */
+  --ly-app-bg: #f3f6fc;
+  --ly-header-bg: #fbfcff;
+  --ly-toolbar-bg: #f7f9fe;
+  --ly-panel-bg: #ffffff;
+  --ly-panel-bg-secondary: #f8faff;
+  --ly-workspace-bg: #eaf0fa;
+  --ly-inspector-bg: #fafbff;
+  --ly-statusbar-bg: #f7f9fe;
+
+  /* Text */
+  --ly-text-primary: #0f172a;
+  --ly-text-secondary: #52627d;
+  --ly-text-muted: #94a3b8;
+
+  /* Borders */
+  --ly-border-default: #dfe6f2;
+  --ly-border-subtle: #e9eef7;
+  --ly-border-strong: #c7d2e5;
+
+  /* Accents and states */
+  --ly-accent-primary: #315eff;
+  --ly-accent-violet: #713cff;
+  --ly-accent-gradient: linear-gradient(110deg, #315eff 0%, #713cff 100%);
+  --ly-hover-bg: #edf2ff;
+  --ly-selection-bg: #e8eeff;
+  --ly-success: #10b981;
+
+  /* Creation-toolbar category accents (foreground + tinted background) */
+  --ly-category-html: #2563eb;
+  --ly-category-html-bg: #eaf1ff;
+  --ly-category-layout: #059669;
+  --ly-category-layout-bg: #e6f7f0;
+  --ly-category-components: #7c3aed;
+  --ly-category-components-bg: #f1ebff;
+  --ly-category-media: #0d9488;
+  --ly-category-media-bg: #e5f6f4;
+  --ly-category-forms: #c026d3;
+  --ly-category-forms-bg: #fbeafc;
+  --ly-category-styles: #4f46e5;
+  --ly-category-styles-bg: #eef0fb;
+
+  /* Elevation */
+  --ly-shadow-panel:
+    0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.03);
+  --ly-shadow-elevated:
+    0 10px 28px -8px rgb(15 23 42 / 0.16), 0 2px 6px rgb(15 23 42 / 0.06);
+
+  /* Motion */
+  --ly-motion-fast: 120ms;
+  --ly-motion-standard: 180ms;
+  --ly-motion-slow: 240ms;
 }
 
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ly-app-bg: #0b0d12;
+    --ly-header-bg: #0f1117;
+    --ly-toolbar-bg: #0f1117;
+    --ly-panel-bg: #12151c;
+    --ly-panel-bg-secondary: #161a22;
+    --ly-workspace-bg: #181c25;
+    --ly-inspector-bg: #12151c;
+    --ly-statusbar-bg: #0f1117;
+    --ly-text-primary: #f1f5f9;
+    --ly-text-secondary: #a3aec2;
+    --ly-text-muted: #64748b;
+    --ly-border-default: #262b36;
+    --ly-border-subtle: #1e222b;
+    --ly-border-strong: #3a4150;
+    --ly-accent-primary: #5b7cff;
+    --ly-accent-violet: #8b6bff;
+    --ly-accent-gradient: linear-gradient(110deg, #4a6dff 0%, #8059ff 100%);
+    --ly-hover-bg: #1b2030;
+    --ly-selection-bg: #1f2945;
+    --ly-success: #34d399;
+    --ly-category-html: #7aa2ff;
+    --ly-category-html-bg: #172138;
+    --ly-category-layout: #34d399;
+    --ly-category-layout-bg: #12261f;
+    --ly-category-components: #a78bfa;
+    --ly-category-components-bg: #211a38;
+    --ly-category-media: #2dd4bf;
+    --ly-category-media-bg: #11272a;
+    --ly-category-forms: #e879f9;
+    --ly-category-forms-bg: #2a1630;
+    --ly-category-styles: #818cf8;
+    --ly-category-styles-bg: #1b1d36;
+    --ly-shadow-panel: 0 1px 2px rgb(0 0 0 / 0.4);
+    --ly-shadow-elevated:
+      0 12px 32px -8px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.4);
+  }
+}
+
+/* Same dark values as above — the explicit-override path for a future manual theme selector. */
+:root[data-theme="dark"] {
+  --ly-app-bg: #0b0d12;
+  --ly-header-bg: #0f1117;
+  --ly-toolbar-bg: #0f1117;
+  --ly-panel-bg: #12151c;
+  --ly-panel-bg-secondary: #161a22;
+  --ly-workspace-bg: #181c25;
+  --ly-inspector-bg: #12151c;
+  --ly-statusbar-bg: #0f1117;
+  --ly-text-primary: #f1f5f9;
+  --ly-text-secondary: #a3aec2;
+  --ly-text-muted: #64748b;
+  --ly-border-default: #262b36;
+  --ly-border-subtle: #1e222b;
+  --ly-border-strong: #3a4150;
+  --ly-accent-primary: #5b7cff;
+  --ly-accent-violet: #8b6bff;
+  --ly-accent-gradient: linear-gradient(110deg, #4a6dff 0%, #8059ff 100%);
+  --ly-hover-bg: #1b2030;
+  --ly-selection-bg: #1f2945;
+  --ly-success: #34d399;
+  --ly-category-html: #7aa2ff;
+  --ly-category-html-bg: #172138;
+  --ly-category-layout: #34d399;
+  --ly-category-layout-bg: #12261f;
+  --ly-category-components: #a78bfa;
+  --ly-category-components-bg: #211a38;
+  --ly-category-media: #2dd4bf;
+  --ly-category-media-bg: #11272a;
+  --ly-category-forms: #e879f9;
+  --ly-category-forms-bg: #2a1630;
+  --ly-category-styles: #818cf8;
+  --ly-category-styles-bg: #1b1d36;
+  --ly-shadow-panel: 0 1px 2px rgb(0 0 0 / 0.4);
+  --ly-shadow-elevated:
+    0 12px 32px -8px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.4);
+}
+
+/*
+ * Tailwind utility mapping for the tokens above (bg-surface-panel,
+ * text-fg-secondary, border-line, rounded-surface, shadow-panel,
+ * font-ui, ease-studio, ...). `inline` makes each utility reference the
+ * --ly- variable directly, so the light/dark switch above is the only
+ * place theme values change.
+ */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-surface-app: var(--ly-app-bg);
+  --color-surface-header: var(--ly-header-bg);
+  --color-surface-toolbar: var(--ly-toolbar-bg);
+  --color-surface-panel: var(--ly-panel-bg);
+  --color-surface-panel-secondary: var(--ly-panel-bg-secondary);
+  --color-surface-workspace: var(--ly-workspace-bg);
+  --color-surface-inspector: var(--ly-inspector-bg);
+  --color-surface-statusbar: var(--ly-statusbar-bg);
+  --color-surface-hover: var(--ly-hover-bg);
+  --color-surface-selected: var(--ly-selection-bg);
+
+  --color-fg-primary: var(--ly-text-primary);
+  --color-fg-secondary: var(--ly-text-secondary);
+  --color-fg-muted: var(--ly-text-muted);
+
+  --color-line: var(--ly-border-default);
+  --color-line-subtle: var(--ly-border-subtle);
+  --color-line-strong: var(--ly-border-strong);
+
+  --color-accent: var(--ly-accent-primary);
+  --color-accent-violet: var(--ly-accent-violet);
+  --color-success: var(--ly-success);
+
+  --color-category-html: var(--ly-category-html);
+  --color-category-html-bg: var(--ly-category-html-bg);
+  --color-category-layout: var(--ly-category-layout);
+  --color-category-layout-bg: var(--ly-category-layout-bg);
+  --color-category-components: var(--ly-category-components);
+  --color-category-components-bg: var(--ly-category-components-bg);
+  --color-category-media: var(--ly-category-media);
+  --color-category-media-bg: var(--ly-category-media-bg);
+  --color-category-forms: var(--ly-category-forms);
+  --color-category-forms-bg: var(--ly-category-forms-bg);
+  --color-category-styles: var(--ly-category-styles);
+  --color-category-styles-bg: var(--ly-category-styles-bg);
+
+  --radius-control-sm: 6px;
+  --radius-control: 8px;
+  --radius-card: 10px;
+  --radius-surface: 12px;
+
+  --shadow-panel: var(--ly-shadow-panel);
+  --shadow-elevated: var(--ly-shadow-elevated);
+
+  --ease-studio: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Editor-chrome typeface. Deliberately NOT --font-sans: the canvas
+   * document keeps inheriting Tailwind's default sans stack. */
+  --font-ui:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+
   --animate-fade-in: fade-in 180ms ease-out;
   --animate-fade-in-up: fade-in-up 220ms ease-out;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Accent gradient as a utility (Tailwind's bg-* color namespace can't hold a gradient). */
+@utility bg-accent-gradient {
+  background-image: var(--ly-accent-gradient);
 }
 
 @keyframes fade-in {

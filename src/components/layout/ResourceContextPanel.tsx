@@ -13,8 +13,8 @@ export function ResourceContextPanel({
 }: ResourceContextPanelProps) {
   return (
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-      <div className="shrink-0 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
-        <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+      <div className="border-line-subtle shrink-0 border-b px-3 py-2">
+        <h2 className="text-fg-primary text-sm font-semibold">
           {section.label}
         </h2>
       </div>

@@ -47,9 +47,9 @@ export function AppHeader({ viewState, onToggleView, editMenuCommands, previewCo
     <>
       <header
         aria-label="Application menu bar"
-        className="flex h-11 shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-3 dark:border-zinc-800 dark:bg-black"
+        className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-surface-header px-3"
       >
-        <h1 className="shrink-0 text-sm font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+        <h1 className="shrink-0 text-sm font-semibold tracking-tight text-fg-primary">
           Layoutry
         </h1>
 

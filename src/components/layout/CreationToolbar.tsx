@@ -69,7 +69,7 @@ export function CreationToolbar({ onActivateCard }: CreationToolbarProps) {
       ref={containerRef}
       role="toolbar"
       aria-label="Creation toolbar"
-      className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-zinc-200 bg-white px-3 dark:border-zinc-800 dark:bg-black"
+      className="border-line bg-surface-toolbar flex h-12 shrink-0 items-center justify-between gap-4 border-b px-3"
     >
       <div className="flex items-center gap-1">
         {creationToolbarCategories.map((category) => (

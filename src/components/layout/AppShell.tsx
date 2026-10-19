@@ -38,7 +38,7 @@ const INSPECTOR_DEFAULT_WIDTH = 300;
 const INSPECTOR_MIN_WIDTH = 260;
 const INSPECTOR_MAX_WIDTH = 520;
 
-// Matches Workspace's own min-w-105 (420px) floor — the width below which
+// Matches Workspace's own 420px floor (min-w-101 + its 2 × 8px gutters) — the width below which
 // the canvas stops feeling like a recognizable page (see Workspace.tsx).
 const MIN_WORKSPACE_WIDTH = 420;
 
@@ -99,7 +99,7 @@ export function AppShell({
   });
 
   return (
-    <div className="flex h-dvh w-full flex-col overflow-hidden bg-white dark:bg-black">
+    <div className="flex h-dvh w-full flex-col overflow-hidden bg-surface-app">
       <AppHeader
         viewState={viewState}
         onToggleView={handleToggleView}
@@ -107,7 +107,7 @@ export function AppShell({
         previewControl={previewControl}
       />
       <CreationToolbar onActivateCard={onActivateCatalogCard} />
-      <div className="flex min-h-0 flex-1 overflow-x-auto">
+      <div className="flex min-h-0 flex-1 overflow-x-auto py-2">
         {viewState.resourcePanelVisible && (
           <ResourceSidebar
             structureContent={structureContent}
