@@ -208,11 +208,11 @@ export function MenuDropdown({
       aria-hidden={!isOpen}
       onKeyDown={handleKeyDown}
       className={cn(
-        "absolute z-50 w-64 rounded-md border border-zinc-200 bg-white py-1 shadow-md transition-[opacity,transform] duration-200 ease-out dark:border-zinc-800 dark:bg-zinc-950",
-        visible ? "translate-y-0 opacity-100" : "-translate-y-1 opacity-0",
-        variant === "top" && "mt-1",
+        "rounded-card border-line bg-surface-panel shadow-elevated ease-studio absolute z-50 w-64 border p-1 transition-[opacity,transform] duration-200",
+        visible ? "translate-y-0 opacity-100" : "-translate-y-1.5 opacity-0",
+        variant === "top" && "mt-1.5",
         variant === "top" && (align === "left" ? "left-0" : "right-0"),
-        variant === "submenu" && "top-0 left-full ml-1",
+        variant === "submenu" && "-top-1 left-full ml-1.5",
       )}
     >
       {items.map((item, index) => (

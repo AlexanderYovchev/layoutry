@@ -15,9 +15,22 @@ import type {
 // stays mounted exactly as long as its exit fade plays.
 const CATALOG_PANEL_EXIT_DURATION_MS = 200;
 
+/** Literal Tailwind class strings for one category's accent treatment (see CreationToolbar's categoryAppearance). */
+export interface ToolbarCategoryAccent {
+  /** Icon color. */
+  icon: string;
+  /** Resting tint plus hover treatment. */
+  rest: string;
+  /** Open/expanded state: a stronger tint and a category-colored border. */
+  open: string;
+  /** Icon tile inside the catalog dropdown's cards. */
+  iconBox: string;
+}
+
 interface ToolbarCategoryTriggerProps {
   category: ToolbarCategoryContent;
   icon: LucideIcon;
+  accent: ToolbarCategoryAccent;
   isOpen: boolean;
   /** Whether this trigger is the toolbar's single roving tab stop (WAI-ARIA toolbar pattern). */
   isCurrent: boolean;
@@ -33,6 +46,7 @@ interface ToolbarCategoryTriggerProps {
 export function ToolbarCategoryTrigger({
   category,
   icon: Icon,
+  accent,
   isOpen,
   isCurrent,
   registerTriggerRef,
@@ -132,17 +146,24 @@ export function ToolbarCategoryTrigger({
         onFocus={onFocusTrigger}
         onKeyDown={handleTriggerKeyDown}
         className={cn(
-          "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 active:bg-zinc-200 dark:active:bg-zinc-800",
-          isOpen
-            ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100"
-            : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900",
+          // The 1px border exists in every state (transparent at rest),
+          // so opening never changes the trigger's size and the toolbar
+          // never shifts.
+          "rounded-control text-fg-primary ease-studio focus-visible:outline-accent flex h-9 items-center gap-2 border border-transparent px-3 text-sm font-medium transition-[background-color,border-color,box-shadow] duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 active:brightness-95 max-lg:gap-1.5 max-lg:px-2",
+          isOpen ? cn(accent.open, "shadow-panel") : accent.rest,
         )}
       >
-        <Icon aria-hidden="true" className="size-4" />
+        <Icon
+          aria-hidden="true"
+          className={cn("size-4 shrink-0", accent.icon)}
+        />
         {category.label}
         <ChevronDown
           aria-hidden="true"
-          className="size-3.5 text-zinc-400 dark:text-zinc-600"
+          className={cn(
+            "ease-studio size-3.5 shrink-0 transition-transform duration-150",
+            isOpen ? cn("rotate-180", accent.icon) : "text-fg-muted",
+          )}
         />
       </button>
 
@@ -151,10 +172,10 @@ export function ToolbarCategoryTrigger({
           inert={!isOpen}
           aria-hidden={!isOpen}
           className={cn(
-            "absolute z-50 mt-1 flex max-h-[70vh] w-72 flex-col rounded-md border border-zinc-200 bg-white shadow-md transition-[opacity,transform] duration-200 ease-out dark:border-zinc-800 dark:bg-zinc-950",
+            "rounded-card border-line bg-surface-panel shadow-elevated ease-studio absolute z-50 mt-2 flex max-h-[70vh] w-72 flex-col overflow-hidden border transition-[opacity,transform] duration-200",
             isVisible
               ? "translate-y-0 opacity-100"
-              : "-translate-y-1 opacity-0",
+              : "-translate-y-1.5 opacity-0",
           )}
         >
           <CatalogSearchField categoryLabel={category.label} />
@@ -173,7 +194,7 @@ export function ToolbarCategoryTrigger({
             aria-label={`${category.label} elements`}
             tabIndex={0}
             onKeyDown={handlePanelKeyDown}
-            className="min-h-0 flex-1 overflow-y-auto py-1"
+            className="focus-visible:outline-accent min-h-0 flex-1 overflow-y-auto p-1.5 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2"
           >
             {category.sections.map((section) => (
               <div
@@ -183,7 +204,7 @@ export function ToolbarCategoryTrigger({
               >
                 <p
                   id={`${section.id}-label`}
-                  className="px-3 pt-2 pb-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400"
+                  className="text-fg-secondary px-2 pt-2.5 pb-1 text-[11px] font-semibold tracking-wider uppercase"
                 >
                   {section.label}
                 </p>
@@ -191,6 +212,7 @@ export function ToolbarCategoryTrigger({
                   <CatalogCard
                     key={card.id}
                     card={card}
+                    iconClassName={accent.iconBox}
                     onActivate={(activatedCard) => {
                       onActivateCard?.(activatedCard);
                       onClose(true);

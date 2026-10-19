@@ -9,6 +9,8 @@ interface CatalogCardProps {
   registerRef?: (el: HTMLButtonElement | null) => void;
   /** Click-to-insert — the keyboard-accessible path; native <button> already fires this on Enter/Space. */
   onActivate?: (card: CatalogCardPlaceholder) => void;
+  /** Border/background/text classes for the icon tile, e.g. a toolbar category's accent tint. Defaults to a neutral tile. */
+  iconClassName?: string;
 }
 
 /**
@@ -28,7 +30,12 @@ interface CatalogCardProps {
  * The hover/active scale uses `transform`, which never affects layout,
  * so neighboring cards never shift.
  */
-export function CatalogCard({ card, registerRef, onActivate }: CatalogCardProps) {
+export function CatalogCard({
+  card,
+  registerRef,
+  onActivate,
+  iconClassName = "border-line bg-surface-panel-secondary text-fg-secondary",
+}: CatalogCardProps) {
   const { setNodeRef, listeners, isDragging } = useDraggable({
     id: card.id,
     data: { kind: "insert", elementType: card.elementType, label: card.name },
@@ -49,11 +56,11 @@ export function CatalogCard({ card, registerRef, onActivate }: CatalogCardProps)
       tabIndex={card.disabled ? -1 : 0}
       onClick={() => onActivate?.(card)}
       className={cn(
-        "flex w-full items-start gap-2 rounded-lg border border-transparent px-3 py-2 text-left transition-[transform,background-color,border-color] duration-100 ease-out",
-        "enabled:cursor-pointer enabled:hover:scale-[1.02] enabled:hover:border-zinc-300 enabled:hover:bg-zinc-100 dark:enabled:hover:border-zinc-700 dark:enabled:hover:bg-zinc-900",
-        "enabled:focus-visible:scale-[1.02] enabled:focus-visible:border-zinc-300 enabled:focus-visible:bg-zinc-100 dark:enabled:focus-visible:border-zinc-700 dark:enabled:focus-visible:bg-zinc-900",
-        "enabled:active:scale-100 enabled:active:bg-zinc-200 dark:enabled:active:bg-zinc-800",
-        "focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed",
+        "flex w-full items-center gap-2.5 rounded-control border border-transparent px-2 py-1.5 text-left transition-[transform,background-color,border-color,box-shadow] duration-150 ease-studio",
+        "enabled:cursor-pointer enabled:hover:scale-[1.02] enabled:hover:border-line enabled:hover:bg-surface-hover enabled:hover:shadow-panel",
+        "enabled:focus-visible:scale-[1.02] enabled:focus-visible:border-line enabled:focus-visible:bg-surface-hover",
+        "enabled:active:scale-100 enabled:active:bg-surface-selected",
+        "focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-55",
         isDragging && "opacity-40",
       )}
       {...listeners}
@@ -61,21 +68,24 @@ export function CatalogCard({ card, registerRef, onActivate }: CatalogCardProps)
       {card.icon ? (
         <span
           aria-hidden="true"
-          className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+          className={cn(
+            "flex size-8 shrink-0 items-center justify-center rounded-control border",
+            iconClassName,
+          )}
         >
           <card.icon className="size-4" />
         </span>
       ) : (
         <span
           aria-hidden="true"
-          className="mt-0.5 size-8 shrink-0 rounded-md border border-dashed border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
+          className="size-8 shrink-0 rounded-control border border-dashed border-line bg-surface-panel-secondary"
         />
       )}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-zinc-600 dark:text-zinc-400">
+        <span className="block truncate text-sm font-medium text-fg-primary">
           {card.name}
         </span>
-        <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">
+        <span className="block truncate text-xs text-fg-secondary">
           {card.description}
         </span>
       </span>

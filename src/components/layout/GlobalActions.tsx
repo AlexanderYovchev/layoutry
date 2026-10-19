@@ -41,13 +41,14 @@ export function GlobalActions({ historyControl, previewControl }: GlobalActionsP
 
   return (
     <div className="flex shrink-0 items-center gap-1">
+      {/* Undo/Redo: a quiet icon group, visually separated from the primary Preview action. */}
       <Tooltip label="Undo">
         <button
           type="button"
           disabled={!historyControl.canUndo}
           onClick={historyControl.onUndo}
           aria-label="Undo"
-          className="flex size-8 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-900 dark:disabled:text-zinc-700"
+          className="flex size-9 items-center justify-center rounded-control text-fg-secondary transition-colors duration-150 ease-studio hover:bg-surface-hover hover:text-fg-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:bg-surface-selected disabled:cursor-not-allowed disabled:text-fg-muted disabled:opacity-60 disabled:hover:bg-transparent"
         >
           <Undo2 aria-hidden="true" className="size-4" />
         </button>
@@ -59,23 +60,32 @@ export function GlobalActions({ historyControl, previewControl }: GlobalActionsP
           disabled={!historyControl.canRedo}
           onClick={historyControl.onRedo}
           aria-label="Redo"
-          className="flex size-8 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-900 dark:disabled:text-zinc-700"
+          className="flex size-9 items-center justify-center rounded-control text-fg-secondary transition-colors duration-150 ease-studio hover:bg-surface-hover hover:text-fg-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:bg-surface-selected disabled:cursor-not-allowed disabled:text-fg-muted disabled:opacity-60 disabled:hover:bg-transparent"
         >
           <Redo2 aria-hidden="true" className="size-4" />
         </button>
       </Tooltip>
 
-      <Tooltip label={isPreview ? "Exit Preview and return to Design" : "Preview authored click interactions"}>
+      <span aria-hidden="true" className="mx-1.5 h-5 w-px bg-line" />
+
+      <Tooltip
+        align="end"
+        label={isPreview ? "Exit Preview and return to Design" : "Preview authored click interactions"}
+      >
         <button
           type="button"
           onClick={previewControl.onToggle}
           aria-pressed={isPreview}
           aria-label={isPreview ? "Exit Preview" : "Enter Preview"}
           className={cn(
-            "ml-1 flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500",
+            // Design mode: Preview is the header's primary action (accent
+            // gradient). Preview mode: the pressed "Exit Preview" state
+            // switches to an accent-outlined surface so the two states
+            // never look alike.
+            "flex h-9 items-center gap-1.5 rounded-control border px-3.5 text-sm font-semibold transition-[background-color,border-color,box-shadow,filter] duration-150 ease-studio focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
             isPreview
-              ? "border-blue-600 bg-blue-600 text-white hover:bg-blue-700"
-              : "border-zinc-200 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900",
+              ? "border-accent bg-surface-selected text-fg-primary hover:bg-surface-hover"
+              : "bg-accent-gradient border-transparent text-white shadow-panel hover:shadow-elevated hover:brightness-110 active:brightness-95",
           )}
         >
           {isPreview ? (
@@ -87,12 +97,12 @@ export function GlobalActions({ historyControl, previewControl }: GlobalActionsP
         </button>
       </Tooltip>
 
-      <Tooltip label="Account isn't available yet">
+      <Tooltip align="end" label="Account isn't available yet">
         <button
           type="button"
           disabled
           aria-label="Account (not available yet)"
-          className="ml-1 flex size-8 items-center justify-center rounded-full border border-zinc-200 text-zinc-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed dark:border-zinc-800 dark:text-zinc-700"
+          className="ml-1.5 flex size-9 items-center justify-center rounded-full border border-line bg-surface-panel-secondary text-fg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed"
         >
           <UserRound aria-hidden="true" className="size-4" />
         </button>

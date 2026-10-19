@@ -1,21 +1,16 @@
 export function ProjectIdentity() {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden px-3 text-sm">
-      <span className="min-w-0 truncate font-medium text-zinc-700 dark:text-zinc-300">
+      <span className="text-fg-primary min-w-0 truncate font-medium">
         Untitled Project
       </span>
-      <span
-        aria-hidden="true"
-        className="shrink-0 text-zinc-300 dark:text-zinc-700"
-      >
+      <span aria-hidden="true" className="text-fg-muted shrink-0">
         /
       </span>
-      <span className="min-w-0 truncate text-zinc-500 dark:text-zinc-400">
-        Home
-      </span>
+      <span className="text-fg-secondary min-w-0 truncate">Home</span>
       <span
         title="Saving isn't implemented yet"
-        className="ml-1 shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400"
+        className="border-line bg-surface-panel-secondary text-fg-secondary ml-1 shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium"
       >
         Draft
       </span>

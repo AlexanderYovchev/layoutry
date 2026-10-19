@@ -27,10 +27,7 @@ export function MenuItemRow({
 }: MenuItemRowProps) {
   if (item.type === "separator") {
     return (
-      <div
-        role="separator"
-        className="my-1 border-t border-zinc-200 dark:border-zinc-800"
-      />
+      <div role="separator" className="border-line-subtle mx-1 my-1 border-t" />
     );
   }
 
@@ -55,16 +52,16 @@ export function MenuItemRow({
           onActivate();
         }}
         className={cn(
-          "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors duration-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500",
+          "rounded-control-sm focus-visible:outline-accent flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm transition-colors duration-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2",
           disabled
-            ? "cursor-not-allowed text-zinc-300 dark:text-zinc-700"
-            : "text-zinc-700 active:bg-zinc-200 dark:text-zinc-300 dark:active:bg-zinc-800",
-          isActive && !disabled && "bg-zinc-100 dark:bg-zinc-900",
+            ? "text-fg-muted cursor-not-allowed"
+            : "text-fg-primary active:bg-surface-selected",
+          isActive && !disabled && "bg-surface-hover",
         )}
       >
         <span className="flex w-3.5 shrink-0 items-center justify-center">
           {isCheckbox && item.checked && (
-            <Check aria-hidden="true" className="size-3.5" />
+            <Check aria-hidden="true" className="text-accent size-3.5" />
           )}
         </span>
         <span className="flex-1 truncate">{item.label}</span>
@@ -79,7 +76,7 @@ export function MenuItemRow({
         {item.type === "command" && item.shortcut && (
           <span
             aria-hidden="true"
-            className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400"
+            className="text-fg-secondary shrink-0 text-xs"
           >
             {item.shortcut}
           </span>
@@ -87,7 +84,7 @@ export function MenuItemRow({
         {isSubmenu && (
           <ChevronRight
             aria-hidden="true"
-            className="size-3.5 shrink-0 text-zinc-400 dark:text-zinc-600"
+            className="text-fg-muted size-3.5 shrink-0"
           />
         )}
       </button>

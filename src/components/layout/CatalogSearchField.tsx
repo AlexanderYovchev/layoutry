@@ -12,14 +12,14 @@ interface CatalogSearchFieldProps {
  */
 export function CatalogSearchField({ categoryLabel }: CatalogSearchFieldProps) {
   return (
-    <label className="flex shrink-0 items-center gap-1.5 border-b border-zinc-200 px-3 py-2 text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
-      <Search aria-hidden="true" className="size-3.5" />
+    <label className="rounded-control border-line bg-surface-panel-secondary text-fg-muted m-1.5 mb-0 flex h-8 shrink-0 items-center gap-2 border px-2.5">
+      <Search aria-hidden="true" className="size-3.5 shrink-0" />
       <span className="sr-only">Search {categoryLabel}</span>
       <input
         type="search"
         disabled
         placeholder={`Search ${categoryLabel.toLowerCase()}`}
-        className="w-full bg-transparent text-sm text-zinc-600 placeholder:text-zinc-400 focus:outline-none disabled:cursor-not-allowed dark:text-zinc-300 dark:placeholder:text-zinc-500"
+        className="text-fg-primary placeholder:text-fg-muted w-full min-w-0 bg-transparent text-sm focus:outline-none disabled:cursor-not-allowed"
       />
     </label>
   );

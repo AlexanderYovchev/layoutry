@@ -63,10 +63,10 @@ describe("CatalogCard", () => {
     const card = screen.getByRole("menuitem", { name: /Button/ });
     expect(card.className).toContain("enabled:cursor-pointer");
     expect(card.className).toContain("enabled:hover:scale-[1.02]");
-    expect(card.className).toContain("enabled:hover:bg-zinc-100");
-    expect(card.className).toContain("enabled:hover:border-zinc-300");
+    expect(card.className).toContain("enabled:hover:bg-surface-hover");
+    expect(card.className).toContain("enabled:hover:border-line");
     expect(card.className).toContain("enabled:focus-visible:scale-[1.02]");
-    expect(card.className).toContain("enabled:focus-visible:bg-zinc-100");
+    expect(card.className).toContain("enabled:focus-visible:bg-surface-hover");
     expect(card.className).toContain("enabled:active:scale-100");
   });
 

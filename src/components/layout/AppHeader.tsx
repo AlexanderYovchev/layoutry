@@ -9,6 +9,7 @@ import {
   type HelpDialogId,
   type ViewState,
 } from "@/components/layout/applicationMenus";
+import { LayoutryLogoMark } from "@/components/layout/LayoutryLogoMark";
 import { ProjectIdentity } from "@/components/layout/ProjectIdentity";
 import { GlobalActions, type HistoryControl, type PreviewControl } from "@/components/layout/GlobalActions";
 import { HelpDialogs } from "@/components/layout/HelpDialogs";
@@ -47,9 +48,10 @@ export function AppHeader({ viewState, onToggleView, editMenuCommands, previewCo
     <>
       <header
         aria-label="Application menu bar"
-        className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-surface-header px-3"
+        className="flex h-13 shrink-0 items-center gap-4 border-b border-line bg-surface-header px-4 max-lg:gap-2 max-lg:px-3"
       >
-        <h1 className="shrink-0 text-sm font-semibold tracking-tight text-fg-primary">
+        <h1 className="flex shrink-0 items-center gap-2 text-xl font-bold tracking-tight text-fg-primary">
+          <LayoutryLogoMark className="size-6.5 shrink-0" />
           Layoutry
         </h1>
 

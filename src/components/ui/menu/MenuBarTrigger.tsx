@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMenuBarContext } from "@/components/ui/menu/MenuBarRoot";
 import { MenuDropdown } from "@/components/ui/menu/MenuDropdown";
@@ -107,13 +108,21 @@ export function MenuBarTrigger({
         onFocus={() => setCurrentTriggerId(id)}
         onKeyDown={handleKeyDown}
         className={cn(
-          "rounded-md px-2.5 py-1.5 text-sm text-zinc-600 transition-colors duration-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 active:bg-zinc-200 dark:text-zinc-400 dark:active:bg-zinc-800",
+          "rounded-control ease-studio focus-visible:outline-accent active:bg-surface-selected flex h-8 items-center gap-1 px-2.5 text-sm font-medium transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2",
           isOpen
-            ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100"
-            : "hover:bg-zinc-100 dark:hover:bg-zinc-900",
+            ? "bg-surface-selected text-fg-primary"
+            : "text-fg-secondary hover:bg-surface-hover hover:text-fg-primary",
         )}
       >
         {label}
+        <ChevronDown
+          aria-hidden="true"
+          className={cn(
+            // Decorative only; dropped below lg so the header fits the 900px minimum shell width.
+            "text-fg-muted ease-studio size-3.5 transition-transform duration-150 max-lg:hidden",
+            isOpen && "rotate-180",
+          )}
+        />
       </button>
       {shouldRender && (
         <MenuDropdown

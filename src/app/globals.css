@@ -90,7 +90,7 @@
     --ly-border-strong: #3a4150;
     --ly-accent-primary: #5b7cff;
     --ly-accent-violet: #8b6bff;
-    --ly-accent-gradient: linear-gradient(110deg, #4a6dff 0%, #8059ff 100%);
+    --ly-accent-gradient: linear-gradient(110deg, #315eff 0%, #713cff 100%);
     --ly-hover-bg: #1b2030;
     --ly-selection-bg: #1f2945;
     --ly-success: #34d399;
@@ -130,7 +130,7 @@
   --ly-border-strong: #3a4150;
   --ly-accent-primary: #5b7cff;
   --ly-accent-violet: #8b6bff;
-  --ly-accent-gradient: linear-gradient(110deg, #4a6dff 0%, #8059ff 100%);
+  --ly-accent-gradient: linear-gradient(110deg, #315eff 0%, #713cff 100%);
   --ly-hover-bg: #1b2030;
   --ly-selection-bg: #1f2945;
   --ly-success: #34d399;
