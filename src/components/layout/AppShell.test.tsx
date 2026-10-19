@@ -181,3 +181,191 @@ describe("AppShell", () => {
     expect(inspectorPanel.style.width).toBe("500px");
   });
 });
+
+// UI-1.6 — collapsed is a third panel state, distinct from hidden.
+describe("AppShell panel collapse", () => {
+  beforeEach(() => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    setViewportWidth(1440);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setViewportWidth(originalInnerWidth);
+    window.localStorage.removeItem("layoutry:resource-panel-width");
+    window.localStorage.removeItem("layoutry:inspector-panel-width");
+  });
+
+  const resourcePanel = () =>
+    screen.getByRole("complementary", { name: "Resource panel" });
+  const inspectorPanel = () =>
+    screen.getByRole("complementary", { name: "Inspector panel" });
+
+  it("collapses the Resource panel to its rail and restores its expanded width", async () => {
+    const user = userEvent.setup();
+    renderShell();
+    expect(resourcePanel().style.width).toBe("280px");
+
+    const collapse = screen.getByRole("button", {
+      name: "Collapse Resource panel",
+    });
+    expect(collapse).toHaveAttribute("aria-expanded", "true");
+    await user.click(collapse);
+
+    expect(resourcePanel().style.width).toBe("66px");
+    // The rail stays: navigation remains discoverable while collapsed.
+    expect(
+      screen.getByRole("tablist", { name: "Resource categories" }),
+    ).toBeInTheDocument();
+    const expand = screen.getByRole("button", {
+      name: "Expand Resource panel",
+    });
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+    // Content is kept mounted but hidden.
+    expect(
+      document.getElementById(expand.getAttribute("aria-controls") ?? ""),
+    ).toHaveClass("hidden");
+
+    await user.click(expand);
+    expect(resourcePanel().style.width).toBe("280px");
+  });
+
+  it("collapses the Inspector to a labeled rail while keeping its content mounted", async () => {
+    const user = userEvent.setup();
+    renderShell();
+
+    await user.click(
+      screen.getByRole("button", { name: "Collapse Inspector panel" }),
+    );
+
+    expect(inspectorPanel().style.width).toBe("56px");
+    expect(screen.getByText("inspector content")).toBeInTheDocument();
+    const expand = screen.getByRole("button", {
+      name: "Expand Inspector panel",
+    });
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+    // Focus follows the user to the replacement toggle.
+    expect(expand).toHaveFocus();
+
+    await user.click(expand);
+    expect(inspectorPanel().style.width).toBe("300px");
+    expect(
+      screen.getByRole("button", { name: "Collapse Inspector panel" }),
+    ).toHaveFocus();
+  });
+
+  it("collapses both panels at once and gives the reclaimed width to the workspace", async () => {
+    const user = userEvent.setup();
+    renderShell();
+
+    await user.click(
+      screen.getByRole("button", { name: "Collapse Resource panel" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Collapse Inspector panel" }),
+    );
+
+    expect(resourcePanel().style.width).toBe("66px");
+    expect(inspectorPanel().style.width).toBe("56px");
+  });
+
+  it("removes resize handles while collapsed and brings them back on expand", async () => {
+    const user = userEvent.setup();
+    renderShell();
+
+    await user.click(
+      screen.getByRole("button", { name: "Collapse Resource panel" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Collapse Inspector panel" }),
+    );
+    expect(
+      screen.queryByRole("separator", { name: "Resize Resource Panel" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("separator", { name: "Resize Inspector Panel" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "Expand Resource panel" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Expand Inspector panel" }),
+    );
+    expect(
+      screen.getByRole("separator", { name: "Resize Resource Panel" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("separator", { name: "Resize Inspector Panel" }),
+    ).toBeInTheDocument();
+  });
+
+  it("never rewrites the stored width preference when collapsing", async () => {
+    window.localStorage.setItem("layoutry:inspector-panel-width", "360");
+    const user = userEvent.setup();
+    renderShell();
+    expect(inspectorPanel().style.width).toBe("360px");
+
+    await user.click(
+      screen.getByRole("button", { name: "Collapse Inspector panel" }),
+    );
+    expect(window.localStorage.getItem("layoutry:inspector-panel-width")).toBe(
+      "360",
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Expand Inspector panel" }),
+    );
+    expect(inspectorPanel().style.width).toBe("360px");
+  });
+
+  it("keeps hidden (View menu) and collapsed distinct: re-showing restores the collapsed rail", async () => {
+    const user = userEvent.setup();
+    renderShell();
+
+    await user.click(
+      screen.getByRole("button", { name: "Collapse Resource panel" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "View" }));
+    await user.click(
+      screen.getByRole("menuitemcheckbox", { name: "Resource Panel" }),
+    );
+    expect(
+      screen.queryByRole("complementary", { name: "Resource panel" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("menuitem", { name: "View" }));
+    await user.click(
+      screen.getByRole("menuitemcheckbox", { name: "Resource Panel" }),
+    );
+    expect(resourcePanel().style.width).toBe("66px");
+    expect(
+      screen.getByRole("button", { name: "Expand Resource panel" }),
+    ).toBeInTheDocument();
+  });
+
+  it("preserves the active Resource section, and a rail tab expands the panel in one action", async () => {
+    const user = userEvent.setup();
+    renderShell();
+
+    await user.click(screen.getByRole("tab", { name: "Assets" }));
+    await user.click(
+      screen.getByRole("button", { name: "Collapse Resource panel" }),
+    );
+    expect(screen.getByRole("tab", { name: "Assets" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    await user.click(screen.getByRole("tab", { name: "Templates" }));
+    expect(resourcePanel().style.width).toBe("280px");
+    expect(screen.getByRole("tab", { name: "Templates" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+});

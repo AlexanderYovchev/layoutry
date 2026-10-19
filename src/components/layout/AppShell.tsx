@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { CreationToolbar } from "@/components/layout/CreationToolbar";
 import type { PreviewControl } from "@/components/layout/GlobalActions";
@@ -30,6 +30,35 @@ const initialViewState: ViewState = {
   statusBarVisible: true,
 };
 
+/**
+ * Collapse is a third panel state, distinct from ViewState's hidden
+ * (UI-1.6): a collapsed panel stays mounted as a narrow rail (its own
+ * state preserved, one action to restore), while a hidden panel is
+ * unmounted by the View menu. Hidden wins: re-showing a panel restores
+ * whichever collapse state it had. Session-only, like ViewState; the
+ * expanded width preference (localStorage) is never touched by it.
+ */
+interface PanelCollapseState {
+  resource: boolean;
+  inspector: boolean;
+}
+
+const initialCollapseState: PanelCollapseState = {
+  resource: false,
+  inspector: false,
+};
+
+// Collapsed rail widths, gutters included (same convention as the
+// expanded widths): Resource = 8px gutter + 2px card border + 56px icon
+// rail; Inspector = 8px gutter + 48px card.
+const RESOURCE_PANEL_COLLAPSED_WIDTH = 66;
+const INSPECTOR_COLLAPSED_WIDTH = 56;
+
+// Covers the 240ms --ly-motion-slow width transition plus a frame of
+// slack; the transition class is only applied during this window so
+// drag-resizing and viewport clamping never animate.
+const PANEL_TOGGLE_ANIMATION_MS = 300;
+
 const RESOURCE_PANEL_DEFAULT_WIDTH = 280;
 const RESOURCE_PANEL_MIN_WIDTH = 220;
 const RESOURCE_PANEL_MAX_WIDTH = 520;
@@ -58,6 +87,19 @@ export function AppShell({
   previewControl,
 }: AppShellProps) {
   const [viewState, setViewState] = useState<ViewState>(initialViewState);
+  const [collapseState, setCollapseState] =
+    useState<PanelCollapseState>(initialCollapseState);
+  const [isPanelToggleAnimating, setIsPanelToggleAnimating] = useState(false);
+  const animationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  useEffect(
+    () => () => {
+      if (animationTimeoutRef.current) clearTimeout(animationTimeoutRef.current);
+    },
+    [],
+  );
   const viewportWidth = useViewportWidth();
 
   const resourcePanel = useResizablePanelWidth({
@@ -80,21 +122,49 @@ export function AppShell({
     setViewState((current) => ({ ...current, [region]: !current[region] }));
   }
 
+  function handleToggleCollapsed(panel: keyof PanelCollapseState) {
+    setCollapseState((current) => ({ ...current, [panel]: !current[panel] }));
+    setIsPanelToggleAnimating(true);
+    if (animationTimeoutRef.current) clearTimeout(animationTimeoutRef.current);
+    animationTimeoutRef.current = setTimeout(
+      () => setIsPanelToggleAnimating(false),
+      PANEL_TOGGLE_ANIMATION_MS,
+    );
+  }
+
   if (viewportWidth < MIN_SUPPORTED_VIEWPORT_WIDTH) {
     return <UnsupportedViewportNotice />;
   }
 
-  // Hidden panels contribute nothing to the shared width budget.
+  // Hidden panels contribute nothing to the shared width budget; a
+  // collapsed panel contributes exactly its fixed rail width (as both its
+  // width and its minimum, so it is never squeezed). Both rail widths are
+  // below the expanded minimums, so MIN_SUPPORTED_VIEWPORT_WIDTH — computed
+  // from the expanded minimums — still covers every combination.
+  const resourceCollapsed = collapseState.resource;
+  const inspectorCollapsed = collapseState.inspector;
   const { resourceWidth, inspectorWidth } = computeAppliedPanelWidths({
     viewportWidth,
-    resourceWidth: viewState.resourcePanelVisible ? resourcePanel.width : 0,
-    resourceMinWidth: viewState.resourcePanelVisible
-      ? RESOURCE_PANEL_MIN_WIDTH
-      : 0,
-    inspectorWidth: viewState.inspectorPanelVisible ? inspectorPanel.width : 0,
-    inspectorMinWidth: viewState.inspectorPanelVisible
-      ? INSPECTOR_MIN_WIDTH
-      : 0,
+    resourceWidth: !viewState.resourcePanelVisible
+      ? 0
+      : resourceCollapsed
+        ? RESOURCE_PANEL_COLLAPSED_WIDTH
+        : resourcePanel.width,
+    resourceMinWidth: !viewState.resourcePanelVisible
+      ? 0
+      : resourceCollapsed
+        ? RESOURCE_PANEL_COLLAPSED_WIDTH
+        : RESOURCE_PANEL_MIN_WIDTH,
+    inspectorWidth: !viewState.inspectorPanelVisible
+      ? 0
+      : inspectorCollapsed
+        ? INSPECTOR_COLLAPSED_WIDTH
+        : inspectorPanel.width,
+    inspectorMinWidth: !viewState.inspectorPanelVisible
+      ? 0
+      : inspectorCollapsed
+        ? INSPECTOR_COLLAPSED_WIDTH
+        : INSPECTOR_MIN_WIDTH,
     minWorkspaceWidth: MIN_WORKSPACE_WIDTH,
   });
 
@@ -121,6 +191,9 @@ export function AppShell({
             }
             onPointerMove={resourcePanel.handlePointerMove}
             onPointerUp={resourcePanel.handlePointerUp}
+            collapsed={resourceCollapsed}
+            onToggleCollapsed={() => handleToggleCollapsed("resource")}
+            animateWidth={isPanelToggleAnimating && !resourcePanel.isDragging}
           />
         )}
         <Workspace>{workspaceContent}</Workspace>
@@ -135,6 +208,9 @@ export function AppShell({
             }
             onPointerMove={inspectorPanel.handlePointerMove}
             onPointerUp={inspectorPanel.handlePointerUp}
+            collapsed={inspectorCollapsed}
+            onToggleCollapsed={() => handleToggleCollapsed("inspector")}
+            animateWidth={isPanelToggleAnimating && !inspectorPanel.isDragging}
           >
             {inspectorContent}
           </InspectorPanel>
