@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { gotoApp, waitForHydration } from "./support/gotoApp";
 
 /**
  * UI-1.6 — collapsing the side panels in a real browser: the workspace
@@ -15,20 +16,6 @@ const workspaceWidth = (page: Page) =>
     .getByRole("main", { name: "Workspace" })
     .evaluate((el) => Math.round(el.getBoundingClientRect().width));
 
-// Clicking before React hydrates hits inert server-rendered HTML (seen on a
-// cold dev-server compile), so wait until React has attached its props to
-// the collapse toggle before interacting.
-const waitForHydration = (page: Page) =>
-  page.waitForFunction(() => {
-    const toggle = document.querySelector(
-      '[aria-label="Collapse Resource panel"]',
-    );
-    return (
-      !!toggle &&
-      Object.keys(toggle).some((key) => key.startsWith("__reactProps"))
-    );
-  });
-
 const horizontalOverflow = (page: Page) =>
   page.evaluate(
     () =>
@@ -40,8 +27,7 @@ test("collapsing both side panels gives the workspace their width and restores c
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto("/");
-  await waitForHydration(page);
+  await gotoApp(page);
   const workspaceBefore = await workspaceWidth(page);
 
   await page.getByRole("button", { name: "Collapse Resource panel" }).click();
@@ -65,8 +51,7 @@ test("a resized panel width survives a collapse and a reload", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/");
-  await waitForHydration(page);
+  await gotoApp(page);
 
   const handle = page.getByRole("separator", {
     name: "Resize Inspector Panel",

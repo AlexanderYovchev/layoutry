@@ -202,18 +202,18 @@ export function InspectorSizeSection({ node, isFreeChild }: InspectorSizeSection
         </InspectorPropertyRow>
       </div>
       {widthConstrained && (
-        <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
+        <p className="text-[11px] text-fg-secondary">
           Width renders at {Math.round(renderedSize!.width)}px — constrained by its parent.
         </p>
       )}
       {heightConstrained && (
-        <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
+        <p className="text-[11px] text-fg-secondary">
           Height renders at {Math.round(renderedSize!.height)}px — constrained by its parent.
         </p>
       )}
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide dark:text-zinc-500">Constraints</span>
+        <span className="text-[11px] font-medium uppercase tracking-wide text-fg-secondary">Constraints</span>
         <div className="grid grid-cols-2 gap-2">
           <InspectorPropertyRow
             label="Min W"

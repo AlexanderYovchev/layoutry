@@ -27,7 +27,7 @@ export function InspectorBulkShapeSection({ nodes }: InspectorBulkShapeSectionPr
         state={shape.kind === "mixed" ? "mixed" : hasShape ? "set" : "unset"}
         onSelect={(next) => setElementsShape(ids, next)}
       />
-      <p className="px-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">
+      <p className="px-0.5 text-[11px] text-fg-secondary">
         Shapes use CSS clip-path and may clip child content outside the visible area.
       </p>
     </InspectorSection>

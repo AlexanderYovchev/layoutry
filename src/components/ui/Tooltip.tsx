@@ -11,9 +11,21 @@ interface TooltipProps {
    * otherwise push the tooltip past it.
    */
   align?: "start" | "end";
+  /**
+   * Which side of the trigger the tooltip opens on. "bottom" (default)
+   * keeps every existing tooltip unchanged; "top" is for triggers near
+   * the bottom of the viewport (e.g. the Resource rail's bottom toggle),
+   * where a downward tooltip would cover the status bar.
+   */
+  placement?: "bottom" | "top";
 }
 
-export function Tooltip({ label, children, align = "start" }: TooltipProps) {
+export function Tooltip({
+  label,
+  children,
+  align = "start",
+  placement = "bottom",
+}: TooltipProps) {
   return (
     <span className="group relative inline-flex">
       {children}
@@ -38,8 +50,9 @@ export function Tooltip({ label, children, align = "start" }: TooltipProps) {
         // left edge would still overflow the panel's own scrollable
         // container on its left side and get clipped there.
         className={cn(
-          "pointer-events-none absolute top-full z-50 mt-1.5 w-max max-w-48 rounded-md bg-zinc-900 px-2 py-1 text-xs text-white opacity-0 shadow-sm transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 dark:bg-zinc-100 dark:text-zinc-900",
+          "rounded-control-sm bg-fg-primary text-surface-panel shadow-elevated ease-studio pointer-events-none absolute z-50 w-max max-w-48 px-2 py-1 text-xs opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100",
           align === "start" ? "left-0" : "right-0",
+          placement === "bottom" ? "top-full mt-1.5" : "bottom-full mb-1.5",
         )}
       >
         {label}

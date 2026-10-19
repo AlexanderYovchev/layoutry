@@ -280,7 +280,7 @@ export function InspectorBackgroundImageControls({ node }: InspectorBackgroundIm
       </InspectorPropertyRow>
 
       {!hasImage && (
-        <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
+        <p className="text-[11px] text-fg-secondary">
           Set an image above to enable size, position, repeat, and attachment.
         </p>
       )}

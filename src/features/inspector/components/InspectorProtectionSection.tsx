@@ -31,7 +31,7 @@ export function InspectorProtectionSection({ node }: InspectorProtectionSectionP
           label="Lock child styles"
         />
       </InspectorPropertyRow>
-      <p className="px-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">
+      <p className="px-0.5 text-[11px] text-fg-secondary">
         Prevents CSS changes to descendants while keeping their content editable.
       </p>
     </InspectorSection>

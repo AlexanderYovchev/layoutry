@@ -5,6 +5,11 @@ import { cn } from "@/lib/utils";
 import { InspectorPropertyStateDot } from "@/features/inspector/components/InspectorPropertyStateDot";
 import type { BackgroundPosition } from "@/features/editor/types/background";
 import type { PropertyState } from "@/features/inspector/types/propertyState";
+import {
+  inspectorChoiceCellClassName,
+  inspectorChoiceGridClassName,
+  inspectorChoiceMarkClassName,
+} from "@/features/inspector/components/inspectorChoiceGridClassNames";
 
 interface InspectorBackgroundPositionGridProps {
   value: BackgroundPosition | undefined;
@@ -67,7 +72,7 @@ export function InspectorBackgroundPositionGrid({ value, onSelect, disabled = fa
 
   return (
     <div className="flex items-center justify-between gap-2 text-xs">
-      <div className="flex min-w-0 items-center gap-1 text-zinc-500 dark:text-zinc-400">
+      <div className="flex min-w-0 items-center gap-1 text-fg-secondary">
         <span className="truncate">Position</span>
         {state && <InspectorPropertyStateDot state={state} />}
       </div>
@@ -75,7 +80,7 @@ export function InspectorBackgroundPositionGrid({ value, onSelect, disabled = fa
         <div
           role="group"
           aria-label="Position"
-          className="grid grid-cols-3 gap-1 rounded-md border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-800 dark:bg-zinc-900"
+          className={cn("grid grid-cols-3 gap-1", inspectorChoiceGridClassName)}
         >
           {GRID.map((position, index) => {
             const isActive = position === value;
@@ -93,17 +98,15 @@ export function InspectorBackgroundPositionGrid({ value, onSelect, disabled = fa
                 onClick={() => onSelect(position)}
                 onKeyDown={(event) => handleKeyDown(event, index)}
                 className={cn(
-                  "flex size-5 items-center justify-center rounded-sm transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:pointer-events-none disabled:opacity-40",
-                  isActive
-                    ? "bg-zinc-300 dark:bg-zinc-700"
-                    : "bg-zinc-200/60 hover:bg-zinc-200 dark:bg-zinc-800/60 dark:hover:bg-zinc-800",
+                  "flex size-5 items-center justify-center rounded-sm transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40",
+                  inspectorChoiceCellClassName(isActive),
                 )}
               >
                 <span
                   aria-hidden="true"
                   className={cn(
                     "size-1.5 rounded-full",
-                    isActive ? "bg-zinc-700 dark:bg-zinc-200" : "bg-zinc-400 dark:bg-zinc-600",
+                    inspectorChoiceMarkClassName(isActive),
                   )}
                 />
               </button>

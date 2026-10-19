@@ -216,7 +216,7 @@ export function AppShell({
           </InspectorPanel>
         )}
       </div>
-      {viewState.statusBarVisible && <StatusBar />}
+      {viewState.statusBarVisible && <StatusBar mode={previewControl.mode} />}
     </div>
   );
 }

@@ -346,7 +346,7 @@ export function InspectorBoxShadowSection({ node }: InspectorBoxShadowSectionPro
                 <button
                   type="button"
                   onClick={handleResetSelectedLayer}
-                  className="text-[11px] text-zinc-400 hover:text-zinc-600 hover:underline dark:text-zinc-500 dark:hover:text-zinc-300"
+                  className="text-[11px] hover:text-zinc-600 hover:underline dark:hover:text-zinc-300 text-fg-secondary"
                 >
                   Reset Selected Layer
                 </button>
@@ -356,12 +356,12 @@ export function InspectorBoxShadowSection({ node }: InspectorBoxShadowSectionPro
         </div>
       )}
 
-      <div className="flex flex-col gap-1.5 border-t border-zinc-200 pt-2 text-xs dark:border-zinc-800">
+      <div className="flex flex-col gap-1.5 border-t border-line-subtle pt-2.5 text-xs">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-zinc-500 dark:text-zinc-400">Presets</span>
+          <span className="text-fg-secondary">Presets</span>
           <InspectorResetButton onReset={handleResetShadow} disabled={layers.length === 0} label="Reset shadow" />
         </div>
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1.5">
           {SHADOW_PRESETS.map(({ preset, label }) => (
             <button
               key={preset}
@@ -369,7 +369,7 @@ export function InspectorBoxShadowSection({ node }: InspectorBoxShadowSectionPro
               onClick={() => handlePresetSelect(preset)}
               aria-label={`${label} shadow preset`}
               title={`${label} shadow preset`}
-              className="flex h-6 items-center justify-center rounded-md border border-transparent px-2 text-zinc-500 transition-colors duration-150 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 dark:text-zinc-400 dark:hover:bg-zinc-800/50"
+              className="flex h-7 items-center justify-center rounded-full border border-line bg-surface-panel px-2.5 font-medium text-fg-secondary transition-colors duration-150 ease-studio hover:border-line-strong hover:bg-surface-hover hover:text-fg-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent active:bg-surface-selected"
             >
               {label}
             </button>

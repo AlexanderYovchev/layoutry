@@ -27,7 +27,7 @@ export function HelpDialogs({ openDialogId, onClose }: HelpDialogsProps) {
             something.
           </li>
         </ul>
-        <p className="mt-3 text-zinc-500 dark:text-zinc-400">
+        <p className="text-fg-secondary mt-3">
           Layoutry is still in active development — most menu commands are
           placeholders until their underlying systems are built.
         </p>
@@ -55,7 +55,7 @@ export function HelpDialogs({ openDialogId, onClose }: HelpDialogsProps) {
               className="flex items-center justify-between gap-4"
             >
               <dt>{label}</dt>
-              <dd className="rounded border border-zinc-200 px-1.5 py-0.5 text-xs dark:border-zinc-800">
+              <dd className="rounded-control-sm border-line bg-surface-panel-secondary text-fg-primary border px-1.5 py-0.5 font-mono text-xs">
                 {keys}
               </dd>
             </div>
@@ -68,9 +68,9 @@ export function HelpDialogs({ openDialogId, onClose }: HelpDialogsProps) {
         onClose={onClose}
         title="About Layoutry"
       >
-        <p className="font-medium text-zinc-700 dark:text-zinc-300">Layoutry</p>
+        <p className="text-fg-primary font-medium">Layoutry</p>
         <p>Build layouts visually. Own the code.</p>
-        <p className="mt-3 text-zinc-500 dark:text-zinc-400">
+        <p className="text-fg-secondary mt-3">
           Version 0.1.0 — development preview.
         </p>
       </Dialog>

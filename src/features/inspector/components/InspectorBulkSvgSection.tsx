@@ -103,7 +103,7 @@ export function InspectorBulkSvgSection({ nodes, protections }: InspectorBulkSvg
         </div>
       </InspectorProtectedStyleGroup>
 
-      <p className="px-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">
+      <p className="px-0.5 text-[11px] text-fg-secondary">
         Primitive stays editable even when child styles are locked; Fill, Stroke, and Stroke Width respect Parent Style Protection.
       </p>
     </InspectorSection>

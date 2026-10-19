@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { gotoApp } from "./support/gotoApp";
 
 /**
  * Regression coverage for UI-1.4.1 — the editor's light/dark theme must
@@ -39,7 +40,7 @@ test("switching the editor between light and dark never restyles the user's page
   page,
 }) => {
   await page.emulateMedia({ colorScheme: "light" });
-  await page.goto("/");
+  await gotoApp(page);
 
   // A representative mix: text, a button, and native form controls.
   const library = page.getByRole("complementary", { name: "Resource panel" });

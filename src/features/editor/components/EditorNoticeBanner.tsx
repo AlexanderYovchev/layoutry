@@ -43,7 +43,7 @@ export function EditorNoticeBanner() {
       <div
         role="status"
         aria-live="polite"
-        className="pointer-events-auto flex max-w-md items-start gap-2 rounded-lg border border-zinc-200 bg-white px-3.5 py-2.5 text-sm text-zinc-700 shadow-lg dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200"
+        className="rounded-card border-line bg-surface-panel text-fg-primary shadow-elevated pointer-events-auto flex max-w-md items-start gap-2 border px-3.5 py-2.5 text-sm"
       >
         <AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber-500" />
         <p className="flex-1">{notice.message}</p>

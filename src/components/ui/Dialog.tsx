@@ -56,9 +56,9 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
           dialogRef.current?.close();
         }
       }}
-      className="w-full max-w-md rounded-md border border-zinc-200 bg-white p-0 text-zinc-950 shadow-lg backdrop:bg-black/40 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
+      className="rounded-surface border-line bg-surface-panel text-fg-primary shadow-elevated w-full max-w-md border p-0 backdrop:bg-slate-950/40"
     >
-      <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+      <div className="border-line-subtle flex items-center justify-between border-b px-4 py-3">
         <h2 id={headingId} className="text-sm font-semibold">
           {title}
         </h2>
@@ -66,14 +66,12 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
           type="button"
           aria-label="Close"
           onClick={() => dialogRef.current?.close()}
-          className="flex size-6 items-center justify-center rounded-md text-zinc-500 transition-colors duration-100 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 active:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:active:bg-zinc-800"
+          className="rounded-control-sm ease-studio text-fg-secondary hover:bg-surface-hover hover:text-fg-primary focus-visible:outline-accent active:bg-surface-selected flex size-7 items-center justify-center transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
         >
           <X aria-hidden="true" className="size-4" />
         </button>
       </div>
-      <div className="px-4 py-4 text-sm text-zinc-600 dark:text-zinc-400">
-        {children}
-      </div>
+      <div className="text-fg-secondary px-4 py-4 text-sm">{children}</div>
     </dialog>
   );
 }

@@ -108,7 +108,10 @@ export function ResourceNavigationRail({
 
       {/* Outside the tablist (a tablist may only contain tabs). */}
       <div className="mt-auto pt-2">
-        <Tooltip label={collapsed ? "Expand panel" : "Collapse panel"}>
+        <Tooltip
+          placement="top"
+          label={collapsed ? "Expand panel" : "Collapse panel"}
+        >
           <button
             type="button"
             onClick={onToggleCollapsed}

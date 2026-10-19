@@ -171,7 +171,7 @@ export function InspectorVectorObjectSection({ svgNode, objectIds, protection }:
 
   return (
     <InspectorSection label="Vector Objects" defaultOpen>
-      <p className="px-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">{objects.length} objects selected</p>
+      <p className="px-0.5 text-[11px] text-fg-secondary">{objects.length} objects selected</p>
       <InspectorProtectedStyleGroup protected={protection.protected}>
         <div className="flex flex-col gap-2">
           <InspectorPropertyRow label="Fill" state={fill.kind === "mixed" ? "mixed" : fill.value ? "set" : "unset"}>

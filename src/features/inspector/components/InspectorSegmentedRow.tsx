@@ -46,6 +46,11 @@ export function InspectorSegmentedRow({
   reset,
 }: InspectorSegmentedRowProps) {
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  // Five or more text options (Position, Overflow, Cursor, Aspect ratio)
+  // never fit beside their label at Inspector widths, and right-aligned
+  // wrapping left ragged rows. Those stack: label above, then a full-width
+  // track whose options share the width evenly and wrap cleanly.
+  const stacked = !optionIcons && options.length >= 5;
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
     if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
@@ -56,7 +61,14 @@ export function InspectorSegmentedRow({
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs">
+    <div
+      className={cn(
+        "flex flex-wrap gap-x-2 text-xs",
+        stacked
+          ? "flex-col items-stretch gap-y-1.5"
+          : "items-center justify-between gap-y-1",
+      )}
+    >
       {help || state ? (
         // Only introduces the extra wrapper when help/state is actually
         // present — several existing tests locate a segmented row's button
@@ -90,7 +102,10 @@ export function InspectorSegmentedRow({
       <div
         role={onSelect ? "group" : undefined}
         aria-label={onSelect ? label : undefined}
-        className="flex flex-wrap justify-end gap-0.5 rounded-control border border-line bg-surface-panel-secondary p-0.5"
+        className={cn(
+          "rounded-control border-line bg-surface-panel-secondary flex flex-wrap gap-0.5 border p-0.5",
+          stacked ? "w-full" : "justify-end",
+        )}
       >
         {options.map((option, index) => {
           const isActive = option === activeOption;
@@ -98,6 +113,7 @@ export function InspectorSegmentedRow({
           const className = cn(
             "flex h-6 items-center justify-center rounded-control-sm border",
             icon ? "w-6 shrink-0" : "px-2",
+            stacked && "flex-1 whitespace-nowrap",
             // Active: raised white option with an accent ring. Text stays
             // fg-primary for contrast; only icons take the accent color.
             isActive

@@ -47,7 +47,7 @@ export function InspectorMediaPlaybackFields({ node }: InspectorMediaPlaybackFie
           label="Autoplay"
         />
       </InspectorPropertyRow>
-      <p className="px-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">
+      <p className="px-0.5 text-[11px] text-fg-secondary">
         Most browsers only allow autoplay when muted.
       </p>
       <InspectorPropertyRow label="Muted">

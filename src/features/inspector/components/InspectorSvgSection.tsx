@@ -156,7 +156,7 @@ export function InspectorSvgSection({ node, protection }: InspectorSvgSectionPro
         </div>
       </InspectorPropertyRow>
 
-      <p className="px-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">
+      <p className="px-0.5 text-[11px] text-fg-secondary">
         Primitive and ViewBox are vector content, so they stay editable even when child styles are locked.
       </p>
     </InspectorSection>

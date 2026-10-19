@@ -64,7 +64,7 @@ export function InspectorSvgDrawingModeSection() {
         activeOption={TOOL_VALUE_TO_LABEL[activeSvgTool]}
         onSelect={(option) => setActiveSvgTool(TOOL_LABEL_TO_VALUE[option])}
       />
-      <p className="px-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">
+      <p className="px-0.5 text-[11px] text-fg-secondary">
         Editing inside this SVG. Draw a shape, or switch to Select to move, resize, and style existing ones.
       </p>
     </InspectorSection>

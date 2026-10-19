@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
+import { gotoApp } from "./support/gotoApp";
 
 test("home page renders the application shell regions", async ({ page }) => {
-  await page.goto("/");
+  await gotoApp(page);
 
   const banner = page.getByRole("banner", { name: "Application menu bar" });
   await expect(banner).toBeVisible();

@@ -147,7 +147,7 @@ export function EditorApp() {
       <EditorNoticeBanner />
       <DragOverlay>
         {activeDrag && (
-          <div className="pointer-events-none flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
+          <div className="rounded-control border-accent/40 bg-surface-panel text-fg-primary shadow-elevated pointer-events-none flex items-center gap-2 border px-3 py-2 text-sm font-medium">
             {activeDrag.label}
           </div>
         )}

@@ -211,7 +211,7 @@ export function InspectorGradientSection({ node }: InspectorGradientSectionProps
         {previewCss ? (
           <span aria-hidden="true" className="absolute inset-0" style={{ backgroundImage: previewCss }} />
         ) : (
-          <span className="absolute inset-0 flex items-center justify-center text-[11px] text-zinc-400 dark:text-zinc-500">
+          <span className="absolute inset-0 flex items-center justify-center text-[11px] text-fg-secondary">
             No gradient
           </span>
         )}

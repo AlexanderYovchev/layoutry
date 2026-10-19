@@ -143,9 +143,9 @@ export function InspectorFontFamilyField({ ariaLabel, value, onCommit, disabled 
           aria-label={ariaLabel}
           className="absolute z-50 mt-1 max-h-56 w-56 overflow-y-auto rounded-md border border-zinc-200 bg-white py-1 shadow-md dark:border-zinc-800 dark:bg-zinc-950"
         >
-          {flatOptions.length === 0 && <p className="px-2 py-1 text-xs text-zinc-400 dark:text-zinc-500">No matching fonts</p>}
+          {flatOptions.length === 0 && <p className="px-2 py-1 text-xs text-fg-secondary">No matching fonts</p>}
           {recentOptions.length > 0 && (
-            <p className="px-2 pt-1 pb-0.5 text-[11px] font-semibold tracking-wide text-zinc-400 uppercase dark:text-zinc-500">
+            <p className="px-2 pt-1 pb-0.5 text-[11px] font-semibold tracking-wide uppercase text-fg-secondary">
               Recently used
             </p>
           )}
@@ -155,7 +155,7 @@ export function InspectorFontFamilyField({ ariaLabel, value, onCommit, disabled 
             if (options.length === 0) return null;
             return (
               <div key={category}>
-                <p className="px-2 pt-1.5 pb-0.5 text-[11px] font-semibold tracking-wide text-zinc-400 uppercase dark:text-zinc-500">
+                <p className="px-2 pt-1.5 pb-0.5 text-[11px] font-semibold tracking-wide uppercase text-fg-secondary">
                   {CATEGORY_LABELS[category]}
                 </p>
                 {options.map((option) => renderOption(option, flatIndex++))}

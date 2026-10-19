@@ -63,7 +63,7 @@ function OffsetField({ label, value, onCommit, onUnitChange, onReset }: OffsetFi
   const isSet = value !== undefined;
   return (
     <div className="flex flex-col items-center gap-1">
-      <span className="text-[10px] font-medium tracking-wide text-zinc-400 uppercase dark:text-zinc-500">{label}</span>
+      <span className="text-[10px] font-medium tracking-wide uppercase text-fg-secondary">{label}</span>
       <div className="flex items-center gap-1">
         <InspectorNumericValueControl
           ariaLabel={label}
@@ -317,7 +317,7 @@ function StackingSubsection({ node, position, onCommit }: StackingSubsectionProp
 
   return (
     <div className="border-t border-zinc-200 pt-2 dark:border-zinc-800">
-      <span className="text-[10px] font-medium tracking-wide text-zinc-400 uppercase dark:text-zinc-500">Stacking</span>
+      <span className="text-[10px] font-medium tracking-wide uppercase text-fg-secondary">Stacking</span>
       <InspectorPropertyRow
         label="Z-index"
         help={ZINDEX_HELP}

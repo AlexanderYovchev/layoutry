@@ -39,7 +39,7 @@ export function InspectorShapeSection({ node }: InspectorShapeSectionProps) {
           />
         }
       />
-      <p className="px-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">
+      <p className="px-0.5 text-[11px] text-fg-secondary">
         Shapes use CSS clip-path and may clip child content outside the visible area.
       </p>
     </InspectorSection>

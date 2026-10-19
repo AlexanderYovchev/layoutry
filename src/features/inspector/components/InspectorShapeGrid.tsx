@@ -5,6 +5,11 @@ import { cn } from "@/lib/utils";
 import { InspectorPropertyStateDot } from "@/features/inspector/components/InspectorPropertyStateDot";
 import { SHAPE_PRESETS, type ShapePreset } from "@/features/editor/types/shape";
 import type { PropertyState } from "@/features/inspector/types/propertyState";
+import {
+  inspectorChoiceCellClassName,
+  inspectorChoiceGridClassName,
+  inspectorChoiceMarkClassName,
+} from "@/features/inspector/components/inspectorChoiceGridClassNames";
 
 interface InspectorShapeGridProps {
   /** The preset to highlight as active, or undefined for a mixed multi-selection (no single preset highlighted). */
@@ -59,7 +64,7 @@ export function InspectorShapeGrid({ activePreset, onSelect, disabled = false, s
   return (
     <div className="flex flex-col gap-1.5 text-xs">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-1 text-zinc-500 dark:text-zinc-400">
+        <div className="flex min-w-0 items-center gap-1 text-fg-secondary">
           <span className="truncate">Shape</span>
           {state && <InspectorPropertyStateDot state={state} />}
         </div>
@@ -68,7 +73,7 @@ export function InspectorShapeGrid({ activePreset, onSelect, disabled = false, s
       <div
         role="group"
         aria-label="Shape"
-        className="grid grid-cols-4 gap-1 rounded-md border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-800 dark:bg-zinc-900"
+        className={cn("grid grid-cols-4 gap-1", inspectorChoiceGridClassName)}
       >
         {SHAPE_PRESETS.map((preset, index) => {
           const isActive = preset.id === activePreset;
@@ -86,16 +91,14 @@ export function InspectorShapeGrid({ activePreset, onSelect, disabled = false, s
               onClick={() => onSelect(preset.id)}
               onKeyDown={(event) => handleKeyDown(event, index)}
               className={cn(
-                "flex h-9 items-center justify-center rounded-sm transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:pointer-events-none disabled:opacity-40",
-                isActive
-                  ? "bg-zinc-300 dark:bg-zinc-700"
-                  : "bg-zinc-200/60 hover:bg-zinc-200 dark:bg-zinc-800/60 dark:hover:bg-zinc-800",
+                "flex h-9 items-center justify-center rounded-sm transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40",
+                inspectorChoiceCellClassName(isActive),
               )}
             >
               <span
                 aria-hidden="true"
                 style={preset.clipPath ? { clipPath: preset.clipPath } : undefined}
-                className={cn("size-4 shrink-0", isActive ? "bg-zinc-700 dark:bg-zinc-200" : "bg-zinc-400 dark:bg-zinc-600")}
+                className={cn("size-4 shrink-0", inspectorChoiceMarkClassName(isActive))}
               />
             </button>
           );

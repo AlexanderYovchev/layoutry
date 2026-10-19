@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { gotoApp } from "./support/gotoApp";
 
 /**
  * Permanent regression coverage for Checkpoint 1.15.6.2.1 — a real bug
@@ -19,7 +20,7 @@ import { expect, test } from "@playwright/test";
  * sequence exercise the same fix.
  */
 test("editing one Canvas text element and then another immediately afterward both commit correctly", async ({ page }) => {
-  await page.goto("/");
+  await gotoApp(page);
   // Canvas queries are scoped to the Workspace: since UI-1.3 the Resource
   // panel library also shows tiles named like canvas content (e.g. "Menu").
   const canvas = page.getByRole("main", { name: "Workspace" });

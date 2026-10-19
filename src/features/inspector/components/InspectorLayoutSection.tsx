@@ -135,7 +135,7 @@ export function InspectorLayoutSection({ node }: InspectorLayoutSectionProps) {
             onSelect={handleDisplaySelect}
           />
           {display === "block" && (
-            <p className="px-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">
+            <p className="px-0.5 text-[11px] text-fg-secondary">
               Block keeps children stacked in reading order. Switch Display to Flex for horizontal
               layout and alignment/distribution controls.
             </p>

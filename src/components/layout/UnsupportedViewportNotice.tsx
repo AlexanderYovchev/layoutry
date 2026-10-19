@@ -6,15 +6,12 @@ export function UnsupportedViewportNotice() {
     // while shown, so it's the page's own landmark and top-level heading —
     // never rendered at the same time as AppShell's normal h1 wordmark.
     <main className="bg-surface-app flex h-dvh w-full flex-col items-center justify-center gap-3 px-6 text-center">
-      <MonitorSmartphone
-        aria-hidden="true"
-        className="size-8 text-zinc-300 dark:text-zinc-600"
-      />
+      <MonitorSmartphone aria-hidden="true" className="text-fg-muted size-8" />
       {/* display:contents keeps this purely a semantic grouping — it
           doesn't participate in the flex layout above, so the icon/
           heading/paragraph gap is unaffected. */}
       <div role="status" className="contents">
-        <h1 className="text-base font-medium text-zinc-700 dark:text-zinc-300">
+        <h1 className="text-fg-primary text-base font-medium">
           Layoutry currently works best on a larger screen.
         </h1>
         <p className="text-fg-secondary max-w-sm text-sm">

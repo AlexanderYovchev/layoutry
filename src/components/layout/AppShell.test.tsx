@@ -369,3 +369,28 @@ describe("AppShell panel collapse", () => {
     );
   });
 });
+
+// UI-1.7 — the status bar shows only true information.
+describe("AppShell status bar", () => {
+  afterEach(() => setViewportWidth(originalInnerWidth));
+
+  it("reports the real editor mode and no fake save/zoom/selection values", () => {
+    setViewportWidth(1440);
+    const { rerender } = renderShell();
+    const statusBar = screen.getByRole("contentinfo", { name: "Status bar" });
+
+    expect(statusBar).toHaveTextContent("Design mode");
+    expect(statusBar).toHaveTextContent("Saving isn't available yet");
+    expect(statusBar).not.toHaveTextContent(/Saved|Zoom|selected/);
+
+    rerender(
+      <AppShell
+        workspaceContent={<div>workspace content</div>}
+        inspectorContent={<div>inspector content</div>}
+        editMenuCommands={noopEditMenuCommands}
+        previewControl={{ mode: "preview", onToggle: () => {} }}
+      />,
+    );
+    expect(statusBar).toHaveTextContent("Preview mode");
+  });
+});

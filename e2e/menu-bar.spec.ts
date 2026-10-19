@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { gotoApp } from "./support/gotoApp";
 
 test.describe("application menu bar", () => {
   test("opens a top-level menu, navigates it with the keyboard, and closes with Escape", async ({
     page,
   }) => {
-    await page.goto("/");
+    await gotoApp(page);
 
     const fileTrigger = page.getByRole("menuitem", { name: "File" });
     await fileTrigger.click();
@@ -28,7 +29,7 @@ test.describe("application menu bar", () => {
   test("switches menus on hover once one is open, and closes on outside click", async ({
     page,
   }) => {
-    await page.goto("/");
+    await gotoApp(page);
 
     await page.getByRole("menuitem", { name: "File" }).click();
     await expect(
@@ -46,7 +47,7 @@ test.describe("application menu bar", () => {
   });
 
   test("does not activate disabled commands", async ({ page }) => {
-    await page.goto("/");
+    await gotoApp(page);
 
     await page.getByRole("menuitem", { name: "File" }).click();
     const saveItem = page.getByRole("menuitem", { name: "Save", exact: true });
@@ -59,7 +60,7 @@ test.describe("application menu bar", () => {
   test("toggles the Resource Panel from the View menu and can restore it", async ({
     page,
   }) => {
-    await page.goto("/");
+    await gotoApp(page);
 
     const resourcePanel = page.getByRole("complementary", {
       name: "Resource panel",
@@ -86,7 +87,7 @@ test.describe("application menu bar", () => {
   test("opens the About dialog from the Help menu and closes it with Escape", async ({
     page,
   }) => {
-    await page.goto("/");
+    await gotoApp(page);
 
     await page.getByRole("menuitem", { name: "Help" }).click();
     await page.getByRole("menuitem", { name: "About Layoutry" }).click();
@@ -102,7 +103,7 @@ test.describe("application menu bar", () => {
     page,
   }) => {
     await page.setViewportSize({ width: 1024, height: 720 });
-    await page.goto("/");
+    await gotoApp(page);
 
     await page.getByRole("menuitem", { name: "Project" }).click();
     await expect(page.getByRole("menu")).toBeVisible();
