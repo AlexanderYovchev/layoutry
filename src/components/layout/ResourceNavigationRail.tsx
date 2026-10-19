@@ -66,16 +66,16 @@ export function ResourceNavigationRail({
               onClick={() => onSelect(section.id)}
               onKeyDown={(event) => handleKeyDown(event, index)}
               className={cn(
-                "relative flex size-10 items-center justify-center rounded-md transition-colors duration-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 active:bg-zinc-200 dark:active:bg-zinc-800",
+                "rounded-control ease-studio focus-visible:outline-accent active:bg-surface-selected relative flex size-10 items-center justify-center transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2",
                 isActive
-                  ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100"
-                  : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-300",
+                  ? "bg-surface-selected text-accent"
+                  : "text-fg-secondary hover:bg-surface-hover hover:text-fg-primary",
               )}
             >
               {isActive && (
                 <span
                   aria-hidden="true"
-                  className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-zinc-900 dark:bg-zinc-100"
+                  className="bg-accent absolute inset-y-2 -left-2 w-0.75 rounded-r-full"
                 />
               )}
               <section.icon aria-hidden="true" className="size-5" />

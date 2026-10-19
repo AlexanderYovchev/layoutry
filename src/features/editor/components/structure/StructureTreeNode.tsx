@@ -15,9 +15,9 @@ import type { EditorElementNode } from "@/features/editor/types/document";
 
 // Bounded lookup so indentation stays on the canonical Tailwind spacing
 // scale instead of an inline style; six levels comfortably covers a
-// realistic page outline.
+// realistic page outline. Every level steps by exactly 16px.
 const indentClassesByDepth = [
-  "pl-1.5",
+  "pl-1",
   "pl-5",
   "pl-9",
   "pl-13",
@@ -25,8 +25,23 @@ const indentClassesByDepth = [
   "pl-21",
 ] as const;
 
+// Vertical guide line for an open node's children, centered under that
+// node's 20px chevron (its indent + 10px) — the same bounded depth scale.
+const guideClassesByDepth = [
+  "before:left-3.5",
+  "before:left-7.5",
+  "before:left-11.5",
+  "before:left-15.5",
+  "before:left-19.5",
+  "before:left-23.5",
+] as const;
+
 function indentClassName(depth: number) {
   return indentClassesByDepth[Math.min(depth, indentClassesByDepth.length - 1)];
+}
+
+function guideClassName(depth: number) {
+  return guideClassesByDepth[Math.min(depth, guideClassesByDepth.length - 1)];
 }
 
 interface StructureTreeNodeProps {
@@ -115,13 +130,13 @@ export function StructureTreeNode({
         onFocus={() => onFocusRow(node.id)}
         onKeyDown={handleRowKeyDown}
         className={cn(
-          "flex items-center gap-1.5 rounded-md py-1.5 pr-2 text-sm transition-colors duration-100 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 active:bg-zinc-200 dark:active:bg-zinc-800",
+          "relative flex h-8 cursor-default items-center gap-1.5 rounded-control pr-2 text-[13px] transition-colors duration-150 ease-studio focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent active:bg-surface-selected",
           indentClassName(depth),
           isPrimary
-            ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100"
+            ? "bg-surface-selected text-fg-primary"
             : isSelected
-              ? "bg-blue-50 text-zinc-900 dark:bg-blue-950 dark:text-zinc-100"
-              : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900",
+              ? "bg-surface-hover text-fg-primary"
+              : "text-fg-secondary hover:bg-surface-hover hover:text-fg-primary",
         )}
       >
         {hasChildren ? (
@@ -129,7 +144,7 @@ export function StructureTreeNode({
             type="button"
             onClick={handleToggleClick}
             aria-label={`${isOpen ? "Collapse" : "Expand"} ${displayName}`}
-            className="flex size-5 shrink-0 items-center justify-center rounded-md text-zinc-500 transition-colors duration-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
+            className="flex size-5 shrink-0 items-center justify-center rounded-control-sm text-fg-muted transition-colors duration-150 hover:bg-surface-selected hover:text-fg-primary"
           >
             <ChevronRight
               aria-hidden="true"
@@ -140,12 +155,16 @@ export function StructureTreeNode({
             />
           </button>
         ) : (
-          <span aria-hidden="true" className="size-4 shrink-0" />
+          // Same 20px as the chevron button, so leaf and branch labels align.
+          <span aria-hidden="true" className="size-5 shrink-0" />
         )}
 
         <Icon
           aria-hidden="true"
-          className="size-3.5 shrink-0 text-zinc-400 dark:text-zinc-500"
+          className={cn(
+            "size-3.5 shrink-0",
+            isSelected ? "text-accent" : "text-fg-muted",
+          )}
         />
 
         <span className="min-w-0 flex-1 truncate">{displayName}</span>
@@ -164,7 +183,7 @@ export function StructureTreeNode({
         {shouldShowTagBadge(node) && (
           <span
             aria-hidden="true"
-            className="shrink-0 font-mono text-xs text-zinc-500 dark:text-zinc-400"
+            className="shrink-0 rounded-control-sm bg-surface-panel-secondary px-1 font-mono text-[11px] text-fg-secondary"
           >
             {node.tag}
           </span>
@@ -179,7 +198,14 @@ export function StructureTreeNode({
           )}
         >
           <div className="min-h-0 overflow-hidden">
-            <div role="group" inert={!isOpen}>
+            <div
+              role="group"
+              inert={!isOpen}
+              className={cn(
+                "relative before:absolute before:inset-y-0.5 before:w-px before:bg-line",
+                guideClassName(depth),
+              )}
+            >
               {children.map((child) => (
                 <StructureTreeNode
                   key={child.id}

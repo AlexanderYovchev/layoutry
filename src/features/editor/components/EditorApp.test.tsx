@@ -6,7 +6,12 @@ import { EditorApp } from "./EditorApp";
 
 const initialState = useEditorStore.getState();
 
-describe("EditorApp", () => {
+// Whole-app integration tests. Since UI-1.3 the Resource panel's default
+// Elements tab mounts the full insertable library (~100 drag-enabled
+// tiles), which adds roughly 150-400ms per test under jsdom. Extends the
+// same 15s allowance three tests below already needed for full-suite
+// parallel-load contention to every test in this file.
+describe("EditorApp", { timeout: 15000 }, () => {
   afterEach(() => {
     useEditorStore.setState(initialState, true);
   });

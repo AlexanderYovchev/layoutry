@@ -4,6 +4,7 @@ import { useState, type PointerEvent, type ReactNode } from "react";
 import { ResizeHandle } from "@/components/ui/resizable/ResizeHandle";
 import { ResourceContextPanel } from "@/components/layout/ResourceContextPanel";
 import { ResourceNavigationRail } from "@/components/layout/ResourceNavigationRail";
+import type { CatalogCardPlaceholder } from "@/components/layout/creationToolbarCategories";
 import {
   resourcePanelSections,
   type ResourceSectionId,
@@ -11,6 +12,8 @@ import {
 
 interface ResourceSidebarProps {
   structureContent?: ReactNode;
+  /** Click-to-insert for the Elements/Components library tiles — the same handler the creation toolbar uses. */
+  onActivateCard?: (card: CatalogCardPlaceholder) => void;
   width: number;
   minWidth: number;
   maxWidth: number;
@@ -22,6 +25,7 @@ interface ResourceSidebarProps {
 
 export function ResourceSidebar({
   structureContent,
+  onActivateCard,
   width,
   minWidth,
   maxWidth,
@@ -56,6 +60,7 @@ export function ResourceSidebar({
           <ResourceContextPanel
             section={activeSection}
             structureContent={structureContent}
+            onActivateCard={onActivateCard}
           />
         </div>
       </div>

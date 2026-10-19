@@ -111,6 +111,7 @@ export function AppShell({
         {viewState.resourcePanelVisible && (
           <ResourceSidebar
             structureContent={structureContent}
+            onActivateCard={onActivateCatalogCard}
             width={resourceWidth}
             minWidth={RESOURCE_PANEL_MIN_WIDTH}
             maxWidth={RESOURCE_PANEL_MAX_WIDTH}

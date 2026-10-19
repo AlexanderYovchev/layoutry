@@ -20,32 +20,35 @@ import { expect, test } from "@playwright/test";
  */
 test("editing one Canvas text element and then another immediately afterward both commit correctly", async ({ page }) => {
   await page.goto("/");
+  // Canvas queries are scoped to the Workspace: since UI-1.3 the Resource
+  // panel library also shows tiles named like canvas content (e.g. "Menu").
+  const canvas = page.getByRole("main", { name: "Workspace" });
   await page.getByRole("button", { name: "Components" }).click();
   await page.getByRole("menuitem", { name: /^Dropdown Button/ }).click();
 
   // First edit: the trigger Button.
-  await page.getByRole("button", { name: "Menu" }).dblclick();
+  await canvas.getByRole("button", { name: "Menu" }).dblclick();
   await page.keyboard.press("Control+a");
   await page.keyboard.type("Options");
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("button", { name: "Options" })).toBeVisible();
+  await expect(canvas.getByRole("button", { name: "Options" })).toBeVisible();
 
   // Second edit, immediately after: a sibling Link. Before the fix, focus
   // and contenteditable="true" were both correct here, but native Ctrl+A
   // selected the whole page instead of just this Link, and typing did
   // nothing to it.
-  const link1 = page.locator('[data-node-type="a"]').first();
+  const link1 = canvas.locator('[data-node-type="a"]').first();
   await link1.dblclick();
   await page.keyboard.press("Control+a");
   await page.keyboard.type("Home");
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("link", { name: "Home" })).toBeVisible();
+  await expect(canvas.getByRole("link", { name: "Home" })).toBeVisible();
 
   // Third edit, chained again, to guard against any two-in-a-row-only fix.
-  const link2 = page.getByRole("link", { name: "Item 2" });
+  const link2 = canvas.getByRole("link", { name: "Item 2" });
   await link2.dblclick();
   await page.keyboard.press("Control+a");
   await page.keyboard.type("About");
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("link", { name: "About" })).toBeVisible();
+  await expect(canvas.getByRole("link", { name: "About" })).toBeVisible();
 });

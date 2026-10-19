@@ -28,13 +28,13 @@ export const resourcePanelSections: ResourcePanelSection[] = [
     id: "elements",
     label: "Elements",
     icon: Shapes,
-    description: "This area will contain the complete HTML element library.",
+    description: "Click or drag an element onto the canvas.",
   },
   {
     id: "components",
     label: "Components",
     icon: Blocks,
-    description: "This area will contain reusable UI components.",
+    description: "Click or drag a ready-made component onto the canvas.",
   },
   {
     id: "templates",

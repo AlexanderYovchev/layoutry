@@ -44,11 +44,11 @@ describe("ResourceSidebar", () => {
       "aria-selected",
       "true",
     );
+    // Elements is a real library now (UI-1.3), not a placeholder.
     expect(
-      screen.getByText(
-        "This area will contain the complete HTML element library.",
-      ),
+      screen.getByRole("searchbox", { name: "Search elements" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Heading" })).toBeInTheDocument();
   });
 
   it("switches the context panel content when a different navigation item is clicked", async () => {
@@ -69,10 +69,9 @@ describe("ResourceSidebar", () => {
       screen.getByText("This area will contain uploaded assets."),
     ).toBeInTheDocument();
     expect(
-      screen.queryByText(
-        "This area will contain the complete HTML element library.",
-      ),
+      screen.queryByRole("searchbox", { name: "Search elements" }),
     ).not.toBeInTheDocument();
+    expect(screen.getByText("Not available yet")).toBeInTheDocument();
   });
 
   it("moves focus between navigation items with the arrow keys", async () => {

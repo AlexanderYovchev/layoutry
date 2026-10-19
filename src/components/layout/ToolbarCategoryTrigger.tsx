@@ -5,6 +5,7 @@ import { ChevronDown, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CatalogCard } from "@/components/layout/CatalogCard";
 import { CatalogSearchField } from "@/components/layout/CatalogSearchField";
+import type { ToolbarCategoryAccent } from "@/components/layout/creationToolbarCategoryAppearance";
 import { useDismissableTransition } from "@/components/ui/motion/useDismissableTransition";
 import type {
   CatalogCardPlaceholder,
@@ -14,18 +15,6 @@ import type {
 // Matches the duration-200 transition on the catalog panel itself, so it
 // stays mounted exactly as long as its exit fade plays.
 const CATALOG_PANEL_EXIT_DURATION_MS = 200;
-
-/** Literal Tailwind class strings for one category's accent treatment (see CreationToolbar's categoryAppearance). */
-export interface ToolbarCategoryAccent {
-  /** Icon color. */
-  icon: string;
-  /** Resting tint plus hover treatment. */
-  rest: string;
-  /** Open/expanded state: a stronger tint and a category-colored border. */
-  open: string;
-  /** Icon tile inside the catalog dropdown's cards. */
-  iconBox: string;
-}
 
 interface ToolbarCategoryTriggerProps {
   category: ToolbarCategoryContent;

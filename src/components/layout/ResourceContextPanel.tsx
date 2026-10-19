@@ -1,33 +1,63 @@
 import type { ReactNode } from "react";
+import { ResourceCatalogPanel } from "@/components/layout/ResourceCatalogPanel";
 import { ResourcePlaceholderMessage } from "@/components/layout/ResourcePlaceholderMessage";
+import type { CatalogCardPlaceholder } from "@/components/layout/creationToolbarCategories";
 import type { ResourcePanelSection } from "@/components/layout/resourcePanelSections";
 
 interface ResourceContextPanelProps {
   section: ResourcePanelSection;
   structureContent?: ReactNode;
+  onActivateCard?: (card: CatalogCardPlaceholder) => void;
 }
 
 export function ResourceContextPanel({
   section,
   structureContent,
+  onActivateCard,
 }: ResourceContextPanelProps) {
+  const catalogId =
+    section.id === "elements" || section.id === "components"
+      ? section.id
+      : null;
+
   return (
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-      <div className="border-line-subtle shrink-0 border-b px-3 py-2">
+      <div className="border-line-subtle shrink-0 border-b px-3 py-2.5">
         <h2 className="text-fg-primary text-sm font-semibold">
           {section.label}
         </h2>
+        {catalogId && (
+          <p className="text-fg-secondary mt-0.5 text-xs">
+            {section.description}
+          </p>
+        )}
       </div>
       <div
         role="tabpanel"
         id={`resource-panel-${section.id}`}
         aria-labelledby={`resource-tab-${section.id}`}
-        className="min-h-0 flex-1 overflow-y-auto p-3"
+        className="flex min-h-0 flex-1 flex-col"
       >
-        {section.id === "structure" ? (
-          structureContent
+        {catalogId ? (
+          // Keyed by section so switching Elements <-> Components starts
+          // with a fresh search and filter rather than carrying one over.
+          <ResourceCatalogPanel
+            key={section.id}
+            catalogId={catalogId}
+            label={section.label}
+            onActivateCard={onActivateCard}
+          />
         ) : (
-          <ResourcePlaceholderMessage description={section.description} />
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            {section.id === "structure" ? (
+              structureContent
+            ) : (
+              <ResourcePlaceholderMessage
+                icon={section.icon}
+                description={section.description}
+              />
+            )}
+          </div>
         )}
       </div>
     </div>

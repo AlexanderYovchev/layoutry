@@ -11,7 +11,7 @@ export function StructurePanel() {
 
   return (
     <div>
-      <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+      <p className="text-fg-secondary mb-3 text-xs">
         View and select elements on the canvas.
       </p>
       {hasElements ? <StructureTree /> : <StructureEmptyState />}
