@@ -14,7 +14,7 @@ export function DocumentCanvas() {
   const document = useEditorStore((state) => state.document);
 
   return (
-    <div className="animate-fade-in-up relative min-h-500 w-full max-w-360 shrink-0 rounded-md border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-black">
+    <div className="animate-fade-in-up border-line shadow-page relative min-h-500 w-full max-w-360 shrink-0 rounded-md border bg-white dark:bg-black">
       <CanvasInteractionBoundary document={document} />
     </div>
   );

@@ -79,9 +79,9 @@ export function ResizeHandleDots({
           key={direction}
           data-resize-handle={direction}
           className={cn(
-            "pointer-events-auto absolute size-2.5 rounded-full border-2 border-blue-500 bg-white shadow-sm transition-transform duration-100 hover:scale-125",
+            "pointer-events-auto absolute size-2.5 rounded-full border-2 border-canvas-selection bg-white shadow-sm transition-transform duration-100 hover:scale-125",
             HANDLE_POSITION_CLASSES[direction],
-            activeDirection === direction && "scale-125 bg-blue-500",
+            activeDirection === direction && "scale-125 bg-canvas-selection",
           )}
           onPointerDown={onPointerDown(direction)}
           onPointerMove={onPointerMove}

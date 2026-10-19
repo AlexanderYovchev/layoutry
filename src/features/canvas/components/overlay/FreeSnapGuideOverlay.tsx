@@ -47,14 +47,14 @@ export function FreeSnapGuideOverlay({ canvasRootRef }: FreeSnapGuideOverlayProp
       {guides.vertical !== undefined && (
         <div
           data-canvas-overlay="snap-guide-vertical"
-          className="absolute w-px bg-blue-500"
+          className="absolute w-px bg-canvas-guide"
           style={{ left: containerRect.left + inset.left + guides.vertical, top: containerRect.top, height: containerRect.height }}
         />
       )}
       {guides.horizontal !== undefined && (
         <div
           data-canvas-overlay="snap-guide-horizontal"
-          className="absolute h-px bg-blue-500"
+          className="absolute h-px bg-canvas-guide"
           style={{ top: containerRect.top + inset.top + guides.horizontal, left: containerRect.left, width: containerRect.width }}
         />
       )}

@@ -16,7 +16,7 @@ export function HoverOverlay({ canvasRootRef, nodeId }: HoverOverlayProps) {
   return (
     <div
       data-canvas-overlay="hover"
-      className="absolute rounded-xs outline-1 -outline-offset-1 outline-blue-300"
+      className="absolute rounded-xs outline-1 -outline-offset-1 outline-canvas-selection-soft"
       style={{ top: rect.top, left: rect.left, width: rect.width, height: rect.height }}
     />
   );

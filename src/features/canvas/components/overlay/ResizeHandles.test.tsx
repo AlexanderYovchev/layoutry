@@ -142,10 +142,10 @@ describe("ResizeHandles", () => {
     const handle = document.querySelector('[data-resize-handle="e"]') as Element;
 
     fireEvent.pointerDown(handle, { clientX: 500, clientY: 300, pointerId: 1 });
-    expect(handle.className).toContain("bg-blue-500");
+    expect(handle.className).toContain("bg-canvas-selection");
 
     fireEvent.pointerUp(handle, { clientX: 500, clientY: 300, pointerId: 1 });
-    expect(handle.className).not.toContain("bg-blue-500");
+    expect(handle.className).not.toContain("bg-canvas-selection");
   });
 
   it("stops a handle click from bubbling to a window click listener (which would otherwise clear selection)", () => {

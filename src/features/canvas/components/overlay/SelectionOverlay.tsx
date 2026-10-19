@@ -37,13 +37,13 @@ export function SelectionOverlay({ canvasRootRef, node, parentLayoutMode = "flow
   return (
     <div
       data-canvas-overlay="selection"
-      className={cn("absolute rounded-xs outline-2 -outline-offset-1", isPrimary ? "outline-blue-500" : "outline-blue-300")}
+      className={cn("absolute rounded-xs outline-2 -outline-offset-1", isPrimary ? "outline-canvas-selection" : "outline-canvas-selection-soft")}
       style={{ top: rect.top, left: rect.left, width: rect.width, height: rect.height }}
     >
       {isPrimary && (
         <span
           className={cn(
-            "absolute left-0 whitespace-nowrap rounded-md bg-blue-500 px-1.5 py-0.5 text-xs font-medium text-white shadow-sm",
+            "absolute left-0 whitespace-nowrap rounded-md bg-canvas-selection px-1.5 py-0.5 text-xs font-medium text-white shadow-sm",
             labelFitsAbove ? "-top-6" : "top-0",
           )}
         >

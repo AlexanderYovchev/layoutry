@@ -29,7 +29,7 @@ export function DropIndicatorOverlay({
     return (
       <div
         data-canvas-overlay="drop-inside"
-        className="absolute rounded-xs bg-blue-50/60 outline-2 -outline-offset-2 outline-dashed outline-blue-400 dark:bg-blue-950/30"
+        className="absolute rounded-xs bg-canvas-selection/8 outline-2 -outline-offset-2 outline-dashed outline-canvas-selection/75"
         style={{ top: rect.top, left: rect.left, width: rect.width, height: rect.height }}
       />
     );
@@ -40,7 +40,7 @@ export function DropIndicatorOverlay({
   return (
     <div
       data-canvas-overlay="drop-line"
-      className="absolute h-0.5 rounded-full bg-blue-500"
+      className="absolute h-0.5 rounded-full bg-canvas-selection"
       style={{ top: lineTop, left: rect.left, width: rect.width }}
     />
   );
