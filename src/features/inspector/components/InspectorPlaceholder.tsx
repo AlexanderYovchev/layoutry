@@ -5,12 +5,12 @@ export function InspectorPlaceholder() {
     <div className="animate-fade-in flex flex-col items-center gap-2 text-center">
       <SlidersHorizontal
         aria-hidden="true"
-        className="size-5 text-zinc-300 dark:text-zinc-600"
+        className="border-line bg-surface-panel-secondary text-fg-secondary size-11 rounded-full border p-3"
       />
-      <h3 className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
+      <h3 className="text-fg-primary text-sm font-medium">
         No element selected
       </h3>
-      <p className="max-w-56 text-sm text-zinc-500 dark:text-zinc-400">
+      <p className="text-fg-secondary max-w-56 text-sm">
         Select an element on the canvas to view and edit its properties here.
       </p>
     </div>

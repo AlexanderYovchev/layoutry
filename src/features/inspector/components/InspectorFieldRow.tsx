@@ -6,8 +6,8 @@ interface InspectorFieldRowProps {
 export function InspectorFieldRow({ label, value }: InspectorFieldRowProps) {
   return (
     <div className="flex items-center justify-between gap-2 text-xs">
-      <span className="text-zinc-500 dark:text-zinc-400">{label}</span>
-      <span className="flex h-6 min-w-16 items-center justify-end truncate rounded-md border border-zinc-200 bg-zinc-50 px-2 text-right text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+      <span className="text-fg-secondary">{label}</span>
+      <span className="rounded-control-sm border-line-subtle bg-surface-panel-secondary text-fg-secondary flex h-7 min-w-16 items-center justify-end truncate border px-2 text-right font-mono text-[11px]">
         {value}
       </span>
     </div>

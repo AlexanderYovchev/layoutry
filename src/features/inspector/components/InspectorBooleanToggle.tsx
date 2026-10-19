@@ -32,15 +32,15 @@ export function InspectorBooleanToggle({ checked, onChange, disabled = false, la
       // standard, clearly-visible treatment for small switch/checkbox-style
       // controls — see the Checkpoint 4.1.5 report's interactive-states audit.
       className={cn(
-        "relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:pointer-events-none disabled:opacity-40",
-        checked ? "bg-blue-500 hover:bg-blue-600" : "bg-zinc-300 hover:bg-zinc-400 dark:bg-zinc-700 dark:hover:bg-zinc-600",
+        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ease-studio focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40",
+        checked ? "bg-accent hover:brightness-110" : "bg-line-strong hover:bg-fg-muted",
       )}
     >
       <span
         aria-hidden="true"
         className={cn(
-          "inline-block size-3 translate-x-0.5 rounded-full bg-white shadow transition-transform duration-150",
-          checked && "translate-x-3.5",
+          "inline-block size-4 translate-x-0.5 rounded-full bg-white shadow-sm transition-transform duration-200 ease-studio",
+          checked && "translate-x-4.5",
         )}
       />
     </button>

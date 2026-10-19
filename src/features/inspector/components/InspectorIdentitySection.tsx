@@ -7,6 +7,7 @@ import { InspectorSection } from "@/features/inspector/components/InspectorSecti
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { cn } from "@/lib/utils";
+import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
 
 interface InspectorIdentitySectionProps {
   /** The selected node — rendered for essentially any real HTML tag (Checkpoint 1.15.1); see this checkpoint's own report, section D, for why no capability flag gates this. */
@@ -104,7 +105,8 @@ function IdentityTextField({ id, label, value, placeholder, onCommit }: Identity
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         className={cn(
-          "h-6 w-full rounded-md border border-zinc-200 bg-zinc-50 px-2 text-xs text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300",
+          inspectorFieldClassName,
+          "w-full px-2",
         )}
       />
     </InspectorPropertyRow>

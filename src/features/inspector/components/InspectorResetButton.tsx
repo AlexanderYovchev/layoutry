@@ -29,7 +29,7 @@ export function InspectorResetButton({ onReset, disabled = false, label = "Reset
       aria-label={label}
       title={label}
       className={cn(
-        "flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-400 transition-colors duration-150 hover:bg-zinc-100 hover:text-zinc-600 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:pointer-events-none disabled:opacity-0 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300",
+        "flex size-6 shrink-0 items-center justify-center rounded-control-sm text-fg-muted transition-colors duration-150 ease-studio hover:bg-surface-hover hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-0",
       )}
     >
       <RotateCcw aria-hidden="true" className="size-3" />

@@ -1,6 +1,8 @@
 "use client";
 
 import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { cn } from "@/lib/utils";
+import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
 
 interface InspectorNumberFieldRowProps {
   label: string;
@@ -108,7 +110,7 @@ export function InspectorNumberFieldRow({ label, value, onCommit }: InspectorNum
         }}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
-        className="h-6 min-w-16 rounded-md border border-zinc-200 bg-zinc-50 px-2 text-right text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+        className={cn(inspectorFieldClassName, "min-w-16 px-2 text-right")}
       />
     </div>
   );

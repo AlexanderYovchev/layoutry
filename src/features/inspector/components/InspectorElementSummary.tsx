@@ -10,18 +10,14 @@ export function InspectorElementSummary({
   tag,
 }: InspectorElementSummaryProps) {
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+    <div className="border-line-subtle bg-surface-panel flex shrink-0 items-center gap-2.5 border-b px-3 py-2.5">
       <Box
         aria-hidden="true"
-        className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500"
+        className="rounded-control bg-surface-selected text-accent size-8 shrink-0 p-2"
       />
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          {name}
-        </p>
-        <p className="truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">
-          {tag}
-        </p>
+        <p className="text-fg-primary truncate text-sm font-semibold">{name}</p>
+        <p className="text-fg-secondary truncate font-mono text-xs">{tag}</p>
       </div>
     </div>
   );

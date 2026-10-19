@@ -299,3 +299,40 @@
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * Inspector palette scope (UI-1.5). The Inspector's ~70 section files
+ * still carry hundreds of Tailwind zinc-* (and a few blue-*) classes from
+ * before the design tokens existed. Rather than rewriting each one, this
+ * remaps those scales *inside the Inspector only* ([data-inspector-palette],
+ * set by InspectorContent) onto the Bright Studio blue-gray palette, so
+ * every remaining zinc class takes the same cool hue as the semantic
+ * tokens in both themes. Tailwind v4 utilities read var(--color-zinc-*),
+ * so the remap applies everywhere in scope with no per-class changes.
+ * New Inspector code should use the semantic tokens (bg-surface-*,
+ * text-fg-*, border-line*, accent) or inspectorFieldClassName directly.
+ *
+ * The scale stays monotonic (50 lightest -> 950 darkest), so light-mode
+ * text (zinc-500/700) and dark-mode surfaces (zinc-800/900) both keep
+ * their roles. Steps 50, 200, 300, 400, 800, 900 and 950 match the
+ * --ly- surface/border/text tokens.
+ */
+[data-inspector-palette] {
+  --color-zinc-50: #f8faff;
+  --color-zinc-100: #eef2f9;
+  --color-zinc-200: #dfe6f2;
+  --color-zinc-300: #c7d2e5;
+  --color-zinc-400: #94a3b8;
+  --color-zinc-500: #64748b;
+  --color-zinc-600: #475569;
+  --color-zinc-700: #3a4150;
+  --color-zinc-800: #262b36;
+  --color-zinc-900: #161a22;
+  --color-zinc-950: #0f1117;
+  --color-blue-50: #eef3ff;
+  --color-blue-300: #8aa2ff;
+  --color-blue-500: var(--ly-accent-primary);
+  --color-blue-600: #2a50e6;
+  --color-blue-800: #213a9e;
+  --color-blue-950: #1f2945;
+}

@@ -9,6 +9,8 @@ import { getInitialPreviewVisibility, type InitialPreviewVisibility } from "@/fe
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import type { EditorElementNode } from "@/features/editor/types/document";
+import { cn } from "@/lib/utils";
+import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
 
 interface InspectorInteractionsSectionProps {
   node: EditorElementNode;
@@ -53,7 +55,7 @@ function InitialStateRow({ node }: { node: EditorElementNode }) {
           const next = event.target.value as InitialPreviewVisibility;
           setInitialPreviewVisibility(node.id, next === "visible" ? undefined : next);
         }}
-        className="h-7 min-w-24 rounded-md border border-zinc-200 bg-zinc-50 px-1.5 text-xs text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200"
+        className={cn(inspectorFieldClassName, "min-w-24 px-1.5")}
       >
         {INITIAL_STATE_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>
@@ -142,7 +144,7 @@ function InteractionRow({
           aria-label="Action"
           value={binding.action}
           onChange={(event) => updateInteraction(node.id, binding.id, { action: event.target.value as InteractionAction })}
-          className="h-7 min-w-24 rounded-md border border-zinc-200 bg-zinc-50 px-1.5 text-xs text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200"
+          className={cn(inspectorFieldClassName, "min-w-24 px-1.5")}
         >
           {ACTION_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
@@ -157,7 +159,7 @@ function InteractionRow({
           aria-label="Target"
           value={targetStillExists ? binding.targetId : ""}
           onChange={(event) => updateInteraction(node.id, binding.id, { targetId: event.target.value })}
-          className="h-7 min-w-32 rounded-md border border-zinc-200 bg-zinc-50 px-1.5 text-xs text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200"
+          className={cn(inspectorFieldClassName, "min-w-32 px-1.5")}
         >
           {!targetStillExists && <option value="">Missing target</option>}
           {candidates.map((candidate) => (

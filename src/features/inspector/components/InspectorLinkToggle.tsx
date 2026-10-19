@@ -21,7 +21,7 @@ export function InspectorLinkToggle({ linked, onToggle, disabled = false }: Insp
       onClick={onToggle}
       disabled={disabled}
       aria-pressed={linked}
-      className="flex h-6 shrink-0 items-center justify-center rounded-md px-1.5 text-[11px] text-zinc-500 transition-colors duration-150 hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800"
+      className="flex h-6 shrink-0 items-center justify-center rounded-control-sm px-1.5 text-[11px] font-medium text-fg-secondary transition-colors duration-150 ease-studio hover:bg-surface-hover hover:text-fg-primary focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40"
     >
       {linked ? "Linked" : "Unlinked"}
     </button>

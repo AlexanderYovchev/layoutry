@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useId, useState, type MouseEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -54,7 +54,7 @@ export function InspectorSection({
   }
 
   return (
-    <div className="border-b border-zinc-200 dark:border-zinc-800">
+    <div className="border-b border-line-subtle">
       {/* h3: nested beneath the Inspector's own h2 title. */}
       <h3 className="flex items-center">
         <button
@@ -65,23 +65,24 @@ export function InspectorSection({
           aria-expanded={isOpen}
           aria-controls={panelId}
           className={cn(
-            "flex flex-1 items-center gap-1.5 px-3 py-2 text-left text-xs font-semibold tracking-wide text-zinc-500 uppercase transition-colors duration-150 hover:bg-zinc-100 hover:text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 active:bg-zinc-200 disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-300 dark:active:bg-zinc-800",
+            "group/section flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left text-[13px] font-semibold text-fg-primary transition-colors duration-150 ease-studio hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent active:bg-surface-selected disabled:pointer-events-none disabled:opacity-50",
           )}
         >
-          <ChevronRight
-            aria-hidden="true"
-            className={cn(
-              "size-3.5 shrink-0 transition-transform duration-150 ease-out",
-              isOpen && "rotate-90",
-            )}
-          />
           {/* Fixed at size-4 regardless of what the caller passes, so every future section (Typography, Border, ...) gets the same identity-icon weight as InspectorElementSummary's icon without each one remembering to size it. */}
           {icon && (
-            <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center [&>svg]:size-4">
+            <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center text-fg-secondary [&>svg]:size-4">
               {icon}
             </span>
           )}
-          <span className="truncate">{label}</span>
+          <span className="min-w-0 flex-1 truncate">{label}</span>
+          {/* Trailing chevron (reference layout): points down when open, right when collapsed. */}
+          <ChevronDown
+            aria-hidden="true"
+            className={cn(
+              "size-4 shrink-0 text-fg-muted transition-[transform,color] duration-200 ease-studio group-hover/section:text-fg-secondary",
+              !isOpen && "-rotate-90",
+            )}
+          />
         </button>
         {actions && (
           <div onClick={stopActionsToggle} className="flex shrink-0 items-center gap-1 pr-2">
@@ -92,7 +93,7 @@ export function InspectorSection({
       {!disabled && (
         <div
           className={cn(
-            "grid transition-[grid-template-rows] duration-150 ease-out",
+            "grid transition-[grid-template-rows] duration-200 ease-studio",
             isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
           )}
         >
@@ -101,7 +102,7 @@ export function InspectorSection({
               id={panelId}
               aria-labelledby={headerId}
               inert={!isOpen}
-              className="flex flex-col gap-2 px-3 pb-3"
+              className="flex flex-col gap-2.5 px-3 pt-0.5 pb-3.5"
             >
               {children}
             </div>

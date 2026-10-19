@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
 import { cn } from "@/lib/utils";
+import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
 
 interface InspectorColorFieldShellProps {
   /** A CSS color string (any valid syntax), or null when unset. */
@@ -183,7 +184,7 @@ export function InspectorColorFieldShell({
             <span
               aria-hidden="true"
               className={cn(
-                "pointer-events-none absolute inset-0 overflow-hidden rounded-full border border-zinc-200 transition-colors duration-150 peer-hover:border-zinc-300 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:-outline-offset-2 peer-focus-visible:outline-blue-500 peer-disabled:opacity-50 dark:border-zinc-800 dark:peer-hover:border-zinc-700",
+                "pointer-events-none absolute inset-0 overflow-hidden rounded-full border border-line shadow-panel transition-colors duration-150 peer-hover:border-line-strong peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-1 peer-focus-visible:outline-accent peer-disabled:opacity-50",
                 !hasValue && "border-dashed",
               )}
             >
@@ -204,7 +205,7 @@ export function InspectorColorFieldShell({
             disabled
             aria-label={`${label} preview${hasValue ? `: ${value}` : ": unset"}`}
             className={cn(
-              "relative size-6 shrink-0 overflow-hidden rounded-full border border-zinc-200 disabled:pointer-events-none dark:border-zinc-800",
+              "relative size-6 shrink-0 overflow-hidden rounded-full border border-line shadow-panel disabled:pointer-events-none",
               !hasValue && "border-dashed",
             )}
           >
@@ -232,12 +233,12 @@ export function InspectorColorFieldShell({
         placeholder="Unset"
         disabled={disabled}
         className={cn(
-          "h-6 min-w-20 flex-1 rounded-md border bg-zinc-50 px-2 text-xs text-zinc-700 disabled:opacity-50 dark:bg-zinc-900 dark:text-zinc-300",
-          error
-            ? "border-red-400 dark:border-red-600"
-            : "border-zinc-200 dark:border-zinc-800",
-          isEditable &&
-            "focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500",
+          inspectorFieldClassName,
+          "min-w-20 flex-1 px-2 font-mono text-[11px]",
+          // The error border must come after the shared field classes so
+          // tailwind-merge keeps it over the default border-line.
+          error && "border-red-400 dark:border-red-600",
+          !isEditable && "hover:border-line",
         )}
       />
       {onReset && <InspectorResetButton onReset={onReset} disabled={!hasValue} label={`Reset ${label.toLowerCase()}`} />}

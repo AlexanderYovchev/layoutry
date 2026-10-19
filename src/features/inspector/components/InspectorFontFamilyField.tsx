@@ -4,6 +4,7 @@ import { useId, useRef, useState, type FocusEvent, type KeyboardEvent } from "re
 import { cn } from "@/lib/utils";
 import { FONT_FAMILY_OPTIONS, findFontFamilyOption, type FontFamilyOption } from "@/features/inspector/utils/fontFamilyCatalog";
 import { useRecentFontsStore } from "@/features/inspector/stores/useRecentFontsStore";
+import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
 
 interface InspectorFontFamilyFieldProps {
   ariaLabel: string;
@@ -133,7 +134,7 @@ export function InspectorFontFamilyField({ ariaLabel, value, onCommit, disabled 
         }}
         onKeyDown={handleKeyDown}
         style={!isOpen && value ? { fontFamily: value } : undefined}
-        className="h-6 w-full min-w-0 rounded-md border border-zinc-200 bg-zinc-50 px-2 text-xs text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+        className={cn(inspectorFieldClassName, "w-full min-w-0 px-2")}
       />
       {isOpen && (
         <div

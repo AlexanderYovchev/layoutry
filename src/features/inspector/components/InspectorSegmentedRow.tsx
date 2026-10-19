@@ -62,19 +62,19 @@ export function InspectorSegmentedRow({
         // present — several existing tests locate a segmented row's button
         // group via `getByText(label).closest("div")`, which depends on the
         // label being a direct child of the outer row otherwise.
-        <div className="flex min-w-0 items-center gap-1 text-zinc-500 dark:text-zinc-400">
+        <div className="flex min-w-0 items-center gap-1 text-fg-secondary">
           <span className="truncate">{label}</span>
           {state && <InspectorPropertyStateDot state={state} />}
           {help && (
             <Tooltip label={help}>
-              <button type="button" aria-label={help} className="text-zinc-400 dark:text-zinc-500">
+              <button type="button" aria-label={help} className="rounded-full text-fg-muted transition-colors duration-150 hover:text-fg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
                 <HelpCircle aria-hidden="true" className="size-3" />
               </button>
             </Tooltip>
           )}
         </div>
       ) : (
-        <span className="text-zinc-500 dark:text-zinc-400">{label}</span>
+        <span className="text-fg-secondary">{label}</span>
       )}
       {/*
        * Individually-chipped options (each its own rounded-md, bordered only
@@ -90,17 +90,19 @@ export function InspectorSegmentedRow({
       <div
         role={onSelect ? "group" : undefined}
         aria-label={onSelect ? label : undefined}
-        className="flex flex-wrap justify-end gap-1"
+        className="flex flex-wrap justify-end gap-0.5 rounded-control border border-line bg-surface-panel-secondary p-0.5"
       >
         {options.map((option, index) => {
           const isActive = option === activeOption;
           const icon = optionIcons?.[option];
           const className = cn(
-            "flex h-6 items-center justify-center rounded-md border",
+            "flex h-6 items-center justify-center rounded-control-sm border",
             icon ? "w-6 shrink-0" : "px-2",
+            // Active: raised white option with an accent ring. Text stays
+            // fg-primary for contrast; only icons take the accent color.
             isActive
-              ? "border-zinc-200 bg-zinc-100 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
-              : "border-transparent text-zinc-500 dark:text-zinc-400",
+              ? "border-accent/40 bg-surface-panel font-medium text-fg-primary shadow-panel [&_svg]:text-accent"
+              : "border-transparent text-fg-secondary",
           );
           // The icon is aria-hidden and the option's own text moves to
           // sr-only rather than disappearing — it still contributes the
@@ -133,7 +135,8 @@ export function InspectorSegmentedRow({
               title={optionTooltips?.[option] ?? (icon ? option : undefined)}
               className={cn(
                 className,
-                "transition-colors duration-150 hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:pointer-events-none disabled:opacity-40 dark:hover:bg-zinc-800/50",
+                "transition-[background-color,color,border-color,box-shadow] duration-150 ease-studio focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40",
+                !isActive && "hover:bg-surface-hover hover:text-fg-primary",
               )}
               aria-pressed={isActive}
               onClick={() => onSelect(option)}

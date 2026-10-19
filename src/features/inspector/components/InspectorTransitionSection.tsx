@@ -20,6 +20,8 @@ import {
   type TransitionTimingFunction,
 } from "@/features/editor/types/transition";
 import type { EditorElementNode } from "@/features/editor/types/document";
+import { cn } from "@/lib/utils";
+import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
 
 interface InspectorTransitionSectionProps {
   node: EditorElementNode;
@@ -113,7 +115,7 @@ export function InspectorTransitionSection({ node }: InspectorTransitionSectionP
               aria-label="Timing"
               value={transition.timingFunction}
               onChange={(event) => handleTimingChange(event.target.value as TransitionTimingFunction)}
-              className="h-7 min-w-24 rounded-md border border-zinc-200 bg-zinc-50 px-1.5 text-xs text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200"
+              className={cn(inspectorFieldClassName, "min-w-24 px-1.5")}
             >
               {TRANSITION_TIMING_FUNCTIONS.map((option) => (
                 <option key={option} value={option}>

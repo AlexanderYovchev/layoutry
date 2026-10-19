@@ -110,7 +110,7 @@ function EdgeGroup({ label, help, values, onCommit, nodeId }: EdgeGroupProps) {
         <div className="flex w-full flex-col gap-1.5">
           {EDGE_SIDES.map((side) => (
             <div key={side} className="flex items-center justify-between gap-2 text-xs">
-              <span className="text-zinc-500 dark:text-zinc-400">{EDGE_SIDE_LABELS[side]}</span>
+              <span className="text-fg-secondary">{EDGE_SIDE_LABELS[side]}</span>
               <InspectorNumericValueControl
                 ariaLabel={EDGE_SIDE_LABELS[side]}
                 value={values[side]}
@@ -128,25 +128,45 @@ function EdgeGroup({ label, help, values, onCommit, nodeId }: EdgeGroupProps) {
   );
 }
 
-/**
- * A simple nested-box illustration of the margin/padding/content
- * relationship — not an interactive graphical editor (explicitly out of
- * scope for this checkpoint), just enough to make the relationship
- * unambiguous alongside the numeric fields below it.
- */
-function BoxModelDiagram() {
+interface BoxLayerProps {
+  label: string;
+  values: EdgeValues;
+  className: string;
+  children: React.ReactNode;
+}
+
+// One ring of the box-model diagram: its four values sit on its four
+// sides, around whatever is nested inside it.
+function BoxLayer({ label, values, className, children }: BoxLayerProps) {
   return (
-    <div
-      aria-hidden="true"
-      className="rounded-md border border-dashed border-zinc-300 p-3 text-center text-[9px] font-medium tracking-wide text-zinc-400 uppercase dark:border-zinc-700 dark:text-zinc-500"
-    >
-      Margin
-      <div className="mt-1 rounded-md border border-zinc-300 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-900">
-        Padding
-        <div className="mt-1 rounded-md bg-white p-2 normal-case text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400">
-          Content
-        </div>
-      </div>
+    <div className={`relative grid grid-cols-[1.75rem_minmax(0,1fr)_1.75rem] grid-rows-[1.25rem_auto_1.25rem] items-center rounded-control text-center tabular-nums ${className}`}>
+      <span className="absolute top-1 left-1.5 text-[9px] font-semibold tracking-wider uppercase opacity-80">{label}</span>
+      <span className="col-start-2 row-start-1">{String(values.top)}</span>
+      <span className="col-start-1 row-start-2">{String(values.left)}</span>
+      <div className="col-start-2 row-start-2 min-w-0">{children}</div>
+      <span className="col-start-3 row-start-2">{String(values.right)}</span>
+      <span className="col-start-2 row-start-3">{String(values.bottom)}</span>
+    </div>
+  );
+}
+
+/**
+ * A compact CSS box-model illustration of this element's current margin
+ * and padding (UI-1.5) — a read-only presentation of the same values the
+ * numeric fields below edit, never a second source of state or an
+ * alternative editing path. aria-hidden: the labeled fields below are
+ * the accessible representation of these values.
+ */
+function BoxModelDiagram({ margin, padding }: { margin: EdgeValues; padding: EdgeValues }) {
+  return (
+    <div aria-hidden="true" className="text-[11px] font-medium text-fg-secondary">
+      <BoxLayer label="Margin" values={margin} className="border border-dashed border-line-strong bg-surface-panel-secondary">
+        <BoxLayer label="Padding" values={padding} className="border border-accent/30 bg-surface-selected text-fg-primary">
+          <div className="mx-auto flex h-6 max-w-24 items-center justify-center rounded-control-sm border border-line bg-surface-panel text-[10px] font-normal text-fg-secondary">
+            Content
+          </div>
+        </BoxLayer>
+      </BoxLayer>
     </div>
   );
 }
@@ -166,7 +186,7 @@ export function InspectorSpacingSection({ node }: InspectorSpacingSectionProps) 
 
   return (
     <InspectorSection label="Spacing" defaultOpen>
-      <BoxModelDiagram />
+      <BoxModelDiagram margin={spacing.margin} padding={spacing.padding} />
       <EdgeGroup
         label="Margin"
         help="The space outside this element, between it and its neighbors."

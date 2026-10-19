@@ -74,19 +74,19 @@ export function InspectorContent({
   // returning to Design shows exactly what was selected before.
   if (isPreview) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div data-inspector-palette="" className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <InspectorHeader statusLabel="Previewing" />
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-3 text-center">
-          <Eye aria-hidden="true" className="size-5 text-zinc-300 dark:text-zinc-600" />
-          <h3 className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Previewing authored behavior</h3>
-          <p className="max-w-56 text-sm text-zinc-500 dark:text-zinc-400">Exit Preview to select and edit elements again.</p>
+          <Eye aria-hidden="true" className="size-11 rounded-full border border-line bg-surface-panel-secondary p-3 text-fg-secondary" />
+          <h3 className="text-sm font-medium text-fg-primary">Previewing authored behavior</h3>
+          <p className="max-w-56 text-sm text-fg-secondary">Exit Preview to select and edit elements again.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div data-inspector-palette="" className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <InspectorHeader statusLabel={statusLabel} />
 
       {isMultiSelection ? (

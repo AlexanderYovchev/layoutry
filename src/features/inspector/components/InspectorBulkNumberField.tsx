@@ -3,6 +3,7 @@
 import { useRef, useState, type KeyboardEvent } from "react";
 import type { SharedValue } from "@/features/inspector/types/sharedValue";
 import { cn } from "@/lib/utils";
+import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
 
 interface InspectorBulkNumberFieldProps {
   ariaLabel: string;
@@ -98,7 +99,8 @@ export function InspectorBulkNumberField({ ariaLabel, shared, onCommit, min, max
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
       className={cn(
-        "h-6 min-w-14 rounded-md border border-zinc-200 bg-zinc-50 px-2 text-right text-xs text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300",
+        inspectorFieldClassName,
+        "min-w-14 px-2 text-right",
         shared.kind === "mixed" && "placeholder:text-zinc-400 placeholder:italic dark:placeholder:text-zinc-500",
       )}
     />

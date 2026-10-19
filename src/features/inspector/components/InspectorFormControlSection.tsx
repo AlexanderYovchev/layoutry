@@ -9,6 +9,7 @@ import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { getInputType, INPUT_TYPES, isToggleInputType, type InputType } from "@/features/editor/types/input";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { cn } from "@/lib/utils";
+import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
 
 const INPUT_TYPE_OPTION_LABELS: Record<InputType, string> = {
   text: "Text",
@@ -52,7 +53,8 @@ function InputTypeField({ value, onChange }: InputTypeFieldProps) {
         value={value}
         onChange={(event) => onChange(event.target.value as InputType)}
         className={cn(
-          "h-6 w-full rounded-md border border-zinc-200 bg-zinc-50 px-1 text-xs text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300",
+          inspectorFieldClassName,
+          "w-full px-1",
         )}
       >
         {INPUT_TYPES.map((type) => (
@@ -153,7 +155,8 @@ function FormControlTextField({ id, label, value, onCommit, onReset, hasExplicit
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         className={cn(
-          "h-6 w-full rounded-md border border-zinc-200 bg-zinc-50 px-2 text-xs text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300",
+          inspectorFieldClassName,
+          "w-full px-2",
         )}
       />
     </InspectorPropertyRow>

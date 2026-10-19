@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn } from "@/lib/utils";
+import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
 
 interface InspectorSliderFieldProps {
   label: string;
@@ -171,7 +172,7 @@ export function InspectorSliderField({ label, value, min, max, step = 1, unit, d
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-2 text-xs">
-        <label htmlFor={sliderId} className="text-zinc-500 dark:text-zinc-400">
+        <label htmlFor={sliderId} className="text-fg-secondary">
           {label}
         </label>
       </div>
@@ -187,7 +188,7 @@ export function InspectorSliderField({ label, value, min, max, step = 1, unit, d
           defaultValue={displayValue}
           onKeyDown={handleSliderKeyDown}
           aria-label={label}
-          className={cn("h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-zinc-200 accent-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-800")}
+          className={cn("h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-line accent-accent disabled:cursor-not-allowed disabled:opacity-50")}
         />
         <input
           id={numberId}
@@ -205,9 +206,9 @@ export function InspectorSliderField({ label, value, min, max, step = 1, unit, d
           }}
           onBlur={commitNumericDraft}
           onKeyDown={handleNumericKeyDown}
-          className="h-6 w-14 shrink-0 rounded-md border border-zinc-200 bg-zinc-50 px-2 text-right text-xs text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+          className={cn(inspectorFieldClassName, "w-14 shrink-0 px-2 text-right")}
         />
-        {unit && <span className="w-5 shrink-0 text-xs text-zinc-400 dark:text-zinc-500">{unit}</span>}
+        {unit && <span className="w-5 shrink-0 text-xs text-fg-secondary">{unit}</span>}
       </div>
     </div>
   );

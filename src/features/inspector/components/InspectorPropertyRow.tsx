@@ -60,17 +60,17 @@ export function InspectorPropertyRow({
   const effectivelyDisabled = disabled || isInactivePropertyState(effectiveState);
 
   const labelRow = (
-    <div className="flex min-w-0 items-center gap-1 text-zinc-500 dark:text-zinc-400">
+    <div className="flex min-w-0 items-center gap-1 text-fg-secondary">
       <label
         htmlFor={labelHtmlFor}
-        className={cn("truncate", effectiveState === "set" && "font-medium text-zinc-700 dark:text-zinc-300")}
+        className={cn("truncate", effectiveState === "set" && "font-medium text-fg-primary")}
       >
         {label}
       </label>
       {effectiveState && <InspectorPropertyStateDot state={effectiveState} />}
       {help && (
         <Tooltip label={help}>
-          <button type="button" aria-label={help} className="text-zinc-400 dark:text-zinc-500">
+          <button type="button" aria-label={help} className="rounded-full text-fg-muted transition-colors duration-150 hover:text-fg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
             <HelpCircle aria-hidden="true" className="size-3" />
           </button>
         </Tooltip>
