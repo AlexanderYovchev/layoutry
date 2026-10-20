@@ -3,20 +3,23 @@
 Layoutry's Windows desktop build wraps the unchanged browser editor in a
 hardened Electron shell. The decision and its alternatives are recorded in
 [ADR-0002](../decisions/ADR-0002-electron-desktop-shell.md). This page
-explains how to build, run and test the shell, and what it guarantees.
+explains how to build, run, package and test the shell, and what it
+guarantees.
 
-**Status:** DESKTOP-0.3. Nothing is packaged for distribution yet (that is
-DESKTOP-0.4), and projects cannot be saved.
+**Status:** DESKTOP-0.4. Layoutry is packaged as a portable Windows x64
+ZIP (unsigned private alpha). Projects cannot be saved.
 
 ## Commands
 
-| Command                   | What it does                                                                                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `npm run dev`             | The browser editor, unchanged by the desktop work.                                                                                                     |
-| `npm run desktop:build`   | Builds the Next.js static export into `out/` (`LAYOUTRY_DESKTOP_BUILD=1`), then compiles `desktop/` into `desktop-dist/`. Both folders are gitignored. |
-| `npm run desktop:compile` | Compiles only the main process (`desktop/` → `desktop-dist/`).                                                                                         |
-| `npm run desktop:start`   | Compiles the main process and launches Electron against the existing `out/`. Run `desktop:build` first.                                                |
-| `npm run desktop:test`    | Runs `desktop:build`, then the real-Electron Playwright suite (`playwright.desktop.config.ts`, `e2e/desktop/`). Exits nonzero on any failure.          |
+| Command                         | What it does                                                                                                                                                           |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                   | The browser editor, unchanged by the desktop work.                                                                                                                     |
+| `npm run desktop:build`         | Builds the Next.js static export into `out/` (`LAYOUTRY_DESKTOP_BUILD=1`), then compiles `desktop/` into `desktop-dist/`. Both folders are gitignored.                 |
+| `npm run desktop:compile`       | Compiles only the main process (`desktop/` → `desktop-dist/`).                                                                                                         |
+| `npm run desktop:start`         | Compiles the main process and launches development Electron against the existing `out/`. Run `desktop:build` first.                                                    |
+| `npm run desktop:test`          | Runs `desktop:build`, then the dev-Electron Playwright suite (`playwright.desktop.config.ts`, `e2e/desktop/`). Exits nonzero on any failure.                           |
+| `npm run desktop:package`       | Runs `desktop:build`, then packages the Windows release into `release/` and verifies it (`desktop/scripts/package-windows.mjs`). Fails on any verification error.      |
+| `npm run desktop:test:packaged` | Runs the packaged-app suite (`playwright.packaged.config.ts`, `e2e/packaged/`) against the real `Layoutry.exe`. Requires `desktop:package` first; it does not rebuild. |
 
 All of them work in PowerShell, CMD and POSIX shells; environment
 variables are set inside Node scripts, never with `VAR=x` syntax.
@@ -25,22 +28,135 @@ Set `LAYOUTRY_DESKTOP_DEVTOOLS=1` before `desktop:start` to allow F12 /
 Ctrl+Shift+I DevTools. DevTools are otherwise disabled entirely.
 
 Some terminals (notably editor-extension hosts) export
-`ELECTRON_RUN_AS_NODE=1`, which turns `electron.exe` into plain Node.js.
-`desktop:start` and the test suite remove it before launching.
+`ELECTRON_RUN_AS_NODE=1`, which turns the development `electron.exe` into
+plain Node.js. `desktop:start` and the test suites remove it. The
+packaged `Layoutry.exe` ignores it (fuse).
 
 ## Runtime architecture
 
 ```text
-electron.exe (main process: desktop-dist/main/main.js)
+Layoutry.exe (main process: desktop-dist/main/main.js inside app.asar)
   ├─ single-instance lock (per user-data directory)
   ├─ app://layoutry/  → read-only handler over out/ (+ CSP header)
   └─ one BrowserWindow: contextIsolation, sandbox, no nodeIntegration,
      no preload, no IPC, no application menu
 ```
 
-Packaged, the app needs only `package.json`, `desktop-dist/` and `out/`.
-No `node_modules` are required at runtime. This is verified by launching
-from a copy containing just those three entries.
+The export root is `app.getAppPath()/out`. In the packaged app that path
+is inside `resources/app.asar`, and Electron's ASAR-aware `fs` and
+`net.fetch(file:)` serve it unchanged. The protocol's
+lexical-traversal and `realpath` containment checks work the same inside
+the archive, so no packaged-specific code path exists.
+
+## Windows packaging
+
+`npm run desktop:package` runs these stages:
+
+1. `desktop:build` creates the static export and compiles the main process.
+2. **Stage** `release/.staging/app/` with only the runtime files: a minimal
+   `package.json` (no dependencies, so no `node_modules` are packed),
+   `desktop-dist/` (`.js` only) and `out/`.
+3. **Icon:** `desktop/packaging/generateIcon.mjs` renders the existing
+   `LayoutryLogoMark` from the built app, with its theme gradient resolved,
+   at 16–256 px into a multi-resolution `.ico`. The source component is
+   untouched; this is a build-time step using Playwright's Chromium.
+4. **electron-builder** (`26.15.3`, target `zip`, `win-x64`) packs
+   `app.asar` from the development Electron runtime in `node_modules`
+   (copied, never modified). It embeds the ASAR integrity hash into the
+   exe, then sets exe metadata and the icon.
+5. The **`afterPack`** step removes Electron's demo `default_app.asar` and
+   flips `PACKAGED_FUSES` with the pinned `@electron/fuses` 2.1.3.
+   electron-builder's own bundled copy does not know Electron 44's newest
+   fuse, so it would be rejected by `strictlyRequireAllFuses`.
+6. **Verify the final artifact**, not the configuration: every fuse bit in
+   the shipped exe, `resources/` containing only `app.asar`, required
+   files present in `app.asar`, forbidden files absent (`node_modules`,
+   `src`, tests, docs, `.map`, `.ts`, `.env`, …) and the README filled in.
+7. Print the artifact paths and sizes.
+
+### Artifacts
+
+All of these are generated and gitignored (`/release/`):
+
+| Path                                     | What                                                                                                     |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `release/Layoutry-<version>-win-x64.zip` | The distributable: the complete app folder at the ZIP root.                                              |
+| `release/win-unpacked/`                  | The same app, unzipped (`Layoutry.exe`, Chromium runtime, `resources/app.asar`, `README.txt`, licences). |
+| `release/builder-debug.yml`              | electron-builder's log of the effective build.                                                           |
+
+The version is `RELEASE.version` in `desktop/packaging/releaseInfo.mjs`
+(currently `0.1.0-alpha.1`). It is separate from the repository's
+`package.json` version, which belongs to the browser app.
+
+### Executable metadata
+
+| Field                         | Value                                                                                                        |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| ProductName / FileDescription | Layoutry                                                                                                     |
+| FileVersion                   | `0.1.0-alpha.1`                                                                                              |
+| CompanyName                   | Layoutry. This is the product name only; otherwise Windows shows the stock Electron binary's "GitHub, Inc.". |
+| LegalCopyright                | empty, because no copyright holder has been stated                                                           |
+| Signature                     | none (`NotSigned`)                                                                                           |
+
+The tester README ships in the ZIP as `README.txt`. Its source is
+`desktop/packaging/README-alpha.txt`, with `{{VERSION}}` filled in at
+packaging time.
+
+### Rebuilding a release
+
+```text
+npm ci                          # network: npm registry, Electron download
+npm run desktop:package         # network: Google Fonts (next/font), electron-builder tools
+npm run desktop:test:packaged   # offline: tests the exe that was just built
+```
+
+`desktop:package` always deletes and recreates `release/`, so every run
+starts clean. Distribute only the ZIP.
+
+### Packaged-app test suite
+
+`e2e/packaged/` drives the real fuse-hardened `Layoutry.exe`. Its
+`globalSetup` extracts the ZIP with Windows' own `Expand-Archive` into
+`%TEMP%\layoutry-zip-test-*\Layoutry Alpha Тест 測試\`, so tests run
+outside the repository, from a path with spaces and non-ASCII
+characters, with a clean profile and `cwd` set to `%TEMP%`.
+
+`EnableNodeCliInspectArguments` is off, so Playwright's `_electron`
+launcher cannot drive the packaged exe. Instead the suite:
+
+- passes the Chromium switch `--remote-debugging-port` and attaches
+  Playwright over CDP to observe the page;
+- uses Win32 calls through PowerShell for OS-level checks:
+  - `EnumWindows` to find windows,
+  - `WM_SYSCOMMAND/SC_CLOSE`, exactly what the X button and Alt+F4 send,
+  - `TDM_CLICK_BUTTON` to answer the native task dialog,
+  - `ShowWindow`, `IsIconic` and `GetForegroundWindow` for window state.
+
+It covers:
+
+- **Artifact:** ZIP layout and completeness, `app.asar` contents, fuse bits
+  on both executables, metadata, icon, signature status.
+- **Smoke:** both `release/win-unpacked/Layoutry.exe` and the extracted
+  ZIP. Offline load, fonts, panels, selection, drag-insert, undo/redo,
+  Design/Preview, reload suppression, no console errors.
+- **Security:** Node isolation (editor and iframe), protocol responses
+  from inside `app.asar`, navigation, popups, permissions, CSP.
+- **Lifecycle:** the real native close dialog (Cancel keeps the
+  document; Discard exits 0 with no leftover processes), and a second
+  launch restoring and focusing a minimized window, including while the
+  dialog is open.
+- **Hardening:** each fuse proved by behaviour:
+  - `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS=--require` and `--inspect` are
+    ignored;
+  - a byte-edited `app.asar` is refused (ASAR integrity);
+  - a loose `resources/app` is never loaded (OnlyLoadAppFromAsar). The
+    stock runtime in the same folder loads it, as a control.
+- **Performance:** startup, memory and interaction baselines.
+
+**Note:** the packaged exe still honours Chromium's
+`--remote-debugging-port` switch. No fuse disables it, and the tests rely
+on it. It is only reachable by someone who can already start programs as
+the user, which is the same trust level as the user.
 
 ## Security protections
 
@@ -52,7 +168,8 @@ from a copy containing just those three entries.
   segment is decoded and checked. Lexical traversal is rejected (400). The
   real path (after following symlinks or junctions) must stay inside
   `out/`, otherwise 404. Directories are never listed. A fixed MIME map
-  and `nosniff` apply to every response.
+  and `nosniff` apply to every response. Files elsewhere in `app.asar`,
+  such as `package.json` and the main process, are not reachable.
 - **Navigation:** the main window can only ever show `app://layoutry/`.
   http(s), `file:`, unknown schemes and form submissions are cancelled.
   Iframes may load http(s) and `about:blank` only.
@@ -77,28 +194,23 @@ from a copy containing just those three entries.
 ## Electron fuses
 
 Fuses are bits inside `electron.exe`. They are flipped once at packaging
-time, not configured at runtime, and the development binary in
-`node_modules` is never modified. The configuration lives in
-`desktop/fuses/layoutryFuses.ts` (uses the official `@electron/fuses`):
+time, not configured at runtime. The configuration lives in
+`desktop/fuses/layoutryFuses.ts`:
 
-| Fuse                                    | Packaged value | Status                                                     |
-| --------------------------------------- | -------------- | ---------------------------------------------------------- |
-| `RunAsNode`                             | off            | Verified on a hardened binary copy; flipped in DESKTOP-0.4 |
-| `EnableNodeOptionsEnvironmentVariable`  | off            | Verified on a hardened binary copy; flipped in DESKTOP-0.4 |
-| `EnableNodeCliInspectArguments`         | off            | Verified on a hardened binary copy; flipped in DESKTOP-0.4 |
-| `GrantFileProtocolExtraPrivileges`      | off            | Verified on a hardened binary copy; flipped in DESKTOP-0.4 |
-| `EnableCookieEncryption`                | on             | Verified on a hardened binary copy; flipped in DESKTOP-0.4 |
-| `WasmTrapHandlers`                      | on (default)   | Verified on a hardened binary copy                         |
-| `LoadBrowserProcessSpecificV8Snapshot`  | off (default)  | Verified on a hardened binary copy                         |
-| `OnlyLoadAppFromAsar`                   | on             | **Deferred**: needs `app.asar` (DESKTOP-0.4)               |
-| `EnableEmbeddedAsarIntegrityValidation` | on             | **Deferred**: needs `app.asar` (DESKTOP-0.4)               |
+| Fuse                                    | Packaged value | Verified on the shipped `Layoutry.exe` by                              |
+| --------------------------------------- | -------------- | ---------------------------------------------------------------------- |
+| `RunAsNode`                             | off            | fuse wire + `ELECTRON_RUN_AS_NODE=1` still starts the app              |
+| `EnableNodeOptionsEnvironmentVariable`  | off            | fuse wire + `NODE_OPTIONS=--require` code never runs                   |
+| `EnableNodeCliInspectArguments`         | off            | fuse wire + `--inspect` opens no debugger                              |
+| `GrantFileProtocolExtraPrivileges`      | off            | fuse wire (the app never uses `file:` pages)                           |
+| `EnableCookieEncryption`                | on             | fuse wire                                                              |
+| `OnlyLoadAppFromAsar`                   | on             | fuse wire + planted `resources/app` never runs (stock-runtime control) |
+| `EnableEmbeddedAsarIntegrityValidation` | on             | fuse wire + byte-edited `app.asar` is refused                          |
+| `WasmTrapHandlers`                      | on (default)   | fuse wire                                                              |
+| `LoadBrowserProcessSpecificV8Snapshot`  | off (default)  | fuse wire                                                              |
 
-`e2e/desktop/fuses.spec.ts` copies `electron.exe` to a temporary folder
-and flips every non-ASAR fuse on the copy. It then proves the hardened
-copy still runs Layoutry over `app://`. Against the stock binary as a
-control, it also proves that `ELECTRON_RUN_AS_NODE`,
-`NODE_OPTIONS=--require …` and `--inspect` no longer work. **Until
-DESKTOP-0.4 packages the app, no shipped binary is hardened.**
+The development binary in `node_modules` is never modified; the suites
+check that it still has its stock fuses.
 
 ## Single instance
 
@@ -107,7 +219,8 @@ The lock is scoped to the user-data directory:
 1. The first launch takes the lock and runs normally.
 2. A second launch with the same profile does not create a window. Before
    it is ready, it signals the first instance and exits with code 0.
-3. The first instance restores its window if minimized and focuses it.
+3. The first instance restores its window if minimized and brings it to
+   the foreground.
 4. The open document is never touched.
 
 This also works while the close warning is open. The tests give each
@@ -117,48 +230,65 @@ launch its own `--user-data-dir`, so they never share a lock.
 
 - The window shows on `ready-to-show`, or on a failed main-frame load, so a
   broken start is never an invisible process holding the lock.
-- Closing asks "Closing Layoutry will discard your current unsaved
-  document. Continue?" **Cancel** is the default. Repeated close requests
-  absorb into one dialog, and a confirmed close exits once, with code 0,
-  leaving no child processes. A Windows session end closes without asking.
+- Closing (X button, Alt+F4, taskbar) asks "Closing Layoutry will discard
+  your current unsaved document. Continue?" **Cancel** is the default.
+  Repeated close requests absorb into one dialog, and a confirmed close
+  exits once, with code 0, leaving no child processes. A Windows session
+  end closes without asking.
 - Reload shortcuts (Ctrl+R, Ctrl+Shift+R, F5, Shift+F5, Ctrl+F5) are
   swallowed. Editor and text-editing shortcuts are untouched.
 
 ## Offline guarantees
 
-| Phase                                                  | Network                                                                                             |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| Development and build (`npm install`, `desktop:build`) | **Required**: npm registry, Electron binary download, and Google Fonts for Inter via `next/font`.   |
-| Packaged app at runtime                                | **Not required.** Every editor asset, including Inter, comes from the bundled export over `app://`. |
-| User-authored remote URLs (images, media, iframes)     | Optional content. It simply fails to load offline; the editor keeps working.                        |
+| Phase                                               | Network                                                                                                        |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Development and build (`npm ci`, `desktop:package`) | **Required**: npm registry, Electron download, Google Fonts for Inter via `next/font`, electron-builder tools. |
+| Packaged app at runtime                             | **Not required.** Every editor asset, including Inter, comes from `app.asar` over `app://`.                    |
+| User-authored remote URLs (images, media, iframes)  | Optional content. It simply fails to load offline; the editor keeps working.                                   |
 
-How the suite proves offline startup: every launch routes all http(s)
+How the suites prove offline startup: every launch routes all http(s)
 traffic to a dead proxy (`--proxy-server=http://127.0.0.1:9`, loopback
-included). A session-level request recorder also cancels and records any
-network request. The page's own resource timing must list only
+included). The dev suite also records and cancels any network request at
+the session level. The packaged suite records every page request during a
+full in-app reload. The page's resource timing must list only
 `app://layoutry/` URLs.
 
 Limitations of this approach:
 
-- The recorder is installed a moment after launch, so the very first
-  requests are covered by the dead proxy and resource timing instead.
-- Chromium-internal traffic outside the web session (for example DNS
-  prefetch) is not observed.
-- Nothing here simulates a machine with no network adapter. Do that
-  manually in DESKTOP-0.5.
+- The checks block or observe requests; they do not take the machine
+  offline.
+- Chromium-internal traffic outside the page (for example DNS prefetch) is
+  not observed.
+- A run on a machine with no network adapter at all remains a manual
+  DESKTOP-0.5 check.
+
+## SmartScreen, antivirus and signing
+
+The alpha is **not code-signed**:
+
+- Windows SmartScreen will typically show "Windows protected your PC" on
+  first launch ("More info" → "Run anyway").
+- Antivirus products may scan or delay an unfamiliar executable.
+- Reputation builds only over time and with signing.
+- Testers should only run builds received directly from the project owner.
+  They should never disable SmartScreen or antivirus.
+
+The tester README says the same.
 
 ## Known alpha limitations
 
-- No project persistence: closing discards the document. Work survives
-  only as long as the window is open.
-- Not packaged yet: no ZIP, installer, signing or auto-update. SmartScreen
-  will warn on unsigned builds.
+- No project persistence: closing, a crash or a Windows restart discards
+  the document.
+- No installer, no auto-update, no signing.
+- The ZIP is ~147 MB; unpacked it is ~370 MB. That is mostly the Chromium
+  runtime: about 236 MB for the exe, plus 48 MB of locales and 20 MB of
+  licences. Trimming locales is possible later and has not been done.
 - High-DPI scaling and multi-monitor placement rely on Electron's
   per-monitor DPI handling. They have not been tested beyond the
-  developer's own display. The window opens on the primary display,
-  sized to fit its work area.
+  developer's own display.
+- Packaged testing so far is on one Windows 10 x64 machine. Clean
+  Windows 10 and 11 machines are DESKTOP-0.5.
 - Renderer crashes are not handled specially yet. The window stays open
   and can be closed.
-- Performance numbers (`e2e/desktop/performance.spec.ts`) are
-  single-machine baselines that include Playwright overhead, not
-  benchmarks.
+- Performance numbers are single-machine baselines that include test
+  overhead, not benchmarks.

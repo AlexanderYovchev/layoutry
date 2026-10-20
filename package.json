@@ -17,7 +17,9 @@
     "desktop:build": "node desktop/scripts/build-frontend.mjs && npm run desktop:compile",
     "desktop:compile": "tsc -p desktop/tsconfig.json",
     "desktop:start": "npm run desktop:compile && node desktop/scripts/start-electron.mjs",
-    "desktop:test": "npm run desktop:build && playwright test -c playwright.desktop.config.ts"
+    "desktop:test": "npm run desktop:build && playwright test -c playwright.desktop.config.ts",
+    "desktop:package": "npm run desktop:build && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON desktop/scripts/package-windows.mjs",
+    "desktop:test:packaged": "playwright test -c playwright.packaged.config.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -45,6 +47,7 @@
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.0.3",
     "electron": "44.9.0",
+    "electron-builder": "26.15.3",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "jsdom": "^29.1.1",

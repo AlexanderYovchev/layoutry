@@ -10,9 +10,9 @@ is the application root — there is no nested app directory.
 layoutry/
 ├── .claude/
 │   └── settings.local.json      # local, gitignored, machine-specific
-├── desktop/                     # Electron desktop shell, main process only (ADR-0002)
+├── desktop/                     # Electron desktop shell + Windows packaging (ADR-0002)
 ├── docs/                        # documentation (see below)
-├── e2e/                         # Playwright end-to-end specs (e2e/desktop/: real-Electron suite)
+├── e2e/                         # Playwright specs (e2e/desktop/: dev Electron, e2e/packaged/: packaged exe)
 ├── public/                      # static assets served as-is (created when first asset is added)
 ├── src/                         # application source (see below)
 ├── test/                        # shared Vitest setup
@@ -25,6 +25,7 @@ layoutry/
 ├── postcss.config.mjs
 ├── playwright.config.ts
 ├── playwright.desktop.config.ts # real-Electron suite (npm run desktop:test)
+├── playwright.packaged.config.ts # packaged Layoutry.exe suite (npm run desktop:test:packaged)
 ├── vitest.config.ts
 ├── .gitignore
 ├── .prettierignore

@@ -16,6 +16,8 @@ dist/
 build/
 out/
 desktop-dist/
+# Windows desktop packages (npm run desktop:package): exe, runtime, ZIP
+/release/
 .next/
 .turbo/
 *.tsbuildinfo
