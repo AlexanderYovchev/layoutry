@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { CONTENT_SECURITY_POLICY } from "../security/contentSecurityPolicy";
 import { resolveAppAssetPath } from "./resolveAppAssetPath";
@@ -35,11 +35,32 @@ export interface AppProtocolHandlerOptions {
   fetchFile: (filePath: string) => Promise<Response>;
 }
 
-async function isFile(filePath: string): Promise<boolean> {
+function isInside(root: string, target: string): boolean {
+  const relative = path.relative(root, target);
+  return (
+    relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative)
+  );
+}
+
+/**
+ * The lexical check in resolveAppAssetPath cannot see links: a symlink or
+ * junction inside the export could still point anywhere on disk. Resolving
+ * both sides to their real paths closes that gap — a regular file whose
+ * real location is inside the real export root, or nothing.
+ */
+async function resolveContainedFile(
+  filePath: string,
+  exportRoot: string,
+): Promise<string | null> {
   try {
-    return (await stat(filePath)).isFile();
+    const [realRoot, realFile] = await Promise.all([
+      realpath(exportRoot),
+      realpath(filePath),
+    ]);
+    if (!isInside(realRoot, realFile)) return null;
+    return (await stat(realFile)).isFile() ? realFile : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -71,18 +92,27 @@ export function createAppProtocolHandler({
     if (resolution.kind === "rejected") {
       return plainResponse(400, "Bad request");
     }
-    if (!(await isFile(resolution.filePath))) {
+    const filePath = await resolveContainedFile(
+      resolution.filePath,
+      exportRoot,
+    );
+    if (filePath === null) {
       return plainResponse(404, "Not found");
     }
 
-    const file = await fetchFile(resolution.filePath);
+    let file: Response;
+    try {
+      file = await fetchFile(filePath);
+    } catch {
+      return plainResponse(404, "Not found");
+    }
     if (!file.ok) {
       return plainResponse(404, "Not found");
     }
     return new Response(request.method === "HEAD" ? null : file.body, {
       status: 200,
       headers: {
-        "Content-Type": contentTypeFor(resolution.filePath),
+        "Content-Type": contentTypeFor(filePath),
         "Content-Security-Policy": CONTENT_SECURITY_POLICY,
         "X-Content-Type-Options": "nosniff",
       },

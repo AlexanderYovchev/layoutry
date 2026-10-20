@@ -12,7 +12,7 @@ layoutry/
 │   └── settings.local.json      # local, gitignored, machine-specific
 ├── desktop/                     # Electron desktop shell, main process only (ADR-0002)
 ├── docs/                        # documentation (see below)
-├── e2e/                         # Playwright end-to-end specs
+├── e2e/                         # Playwright end-to-end specs (e2e/desktop/: real-Electron suite)
 ├── public/                      # static assets served as-is (created when first asset is added)
 ├── src/                         # application source (see below)
 ├── test/                        # shared Vitest setup
@@ -24,6 +24,7 @@ layoutry/
 ├── eslint.config.mjs
 ├── postcss.config.mjs
 ├── playwright.config.ts
+├── playwright.desktop.config.ts # real-Electron suite (npm run desktop:test)
 ├── vitest.config.ts
 ├── .gitignore
 ├── .prettierignore

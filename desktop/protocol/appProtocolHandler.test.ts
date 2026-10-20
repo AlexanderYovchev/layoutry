@@ -1,5 +1,12 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -30,6 +37,20 @@ beforeAll(async () => {
   );
   // A sibling of the export root that must never be reachable.
   await writeFile(path.join(sandbox, "secret.txt"), "secret");
+  // Directory links (junctions on Windows — creatable without elevation):
+  // one escaping the export, one pointing back inside it.
+  await mkdir(path.join(sandbox, "outside"));
+  await writeFile(path.join(sandbox, "outside", "leak.txt"), "leaked");
+  await symlink(
+    path.join(sandbox, "outside"),
+    path.join(exportRoot, "escape"),
+    "junction",
+  );
+  await symlink(
+    path.join(exportRoot, "_next", "static"),
+    path.join(exportRoot, "alias"),
+    "junction",
+  );
 
   handle = createAppProtocolHandler({
     exportRoot,
@@ -87,6 +108,34 @@ describe("createAppProtocolHandler", () => {
     );
     expect(response.status).toBe(400);
     expect(await response.text()).not.toContain("secret");
+  });
+
+  it("never follows a link that leads outside the export", async () => {
+    const response = await handle(
+      new Request("app://layoutry/escape/leak.txt"),
+    );
+    expect(response.status).toBe(404);
+    expect(await response.text()).not.toContain("leaked");
+  });
+
+  it("still serves a link whose real target stays inside the export", async () => {
+    const response = await handle(new Request("app://layoutry/alias/app.js"));
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("console.log(1)");
+  });
+
+  it("returns 400 for malformed percent-encoding", async () => {
+    expect((await handle(new Request("app://layoutry/%E0%A4%A"))).status).toBe(
+      400,
+    );
+  });
+
+  it("returns 404 instead of failing when the file read itself fails", async () => {
+    const failing = createAppProtocolHandler({
+      exportRoot,
+      fetchFile: () => Promise.reject(new Error("read failed")),
+    });
+    expect((await failing(new Request("app://layoutry/"))).status).toBe(404);
   });
 
   it("returns 400 for other hosts", async () => {

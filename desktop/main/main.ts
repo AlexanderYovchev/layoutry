@@ -15,6 +15,12 @@ import { installDesktopShortcuts } from "./desktopShortcuts";
  * Layoutry desktop shell entry point (ADR-0002). Serves the Next.js static
  * export over app://layoutry/ inside one hardened window. No preload, no
  * IPC, no Node.js in any renderer.
+ *
+ * Single instance: a second launch never opens a second editor. It hands
+ * over to the running instance (which restores and focuses its window,
+ * leaving the open document untouched) and exits before `ready`, so it
+ * never registers the protocol or creates a window. The lock is scoped to
+ * the user-data directory.
  */
 
 const DEFAULT_WINDOW_SIZE = { width: 1440, height: 900 };
@@ -24,12 +30,7 @@ const MIN_WINDOW_SIZE = { width: 900, height: 600 };
 const devToolsEnabled = process.env.LAYOUTRY_DESKTOP_DEVTOOLS === "1";
 const exportRoot = path.join(app.getAppPath(), "out");
 
-registerAppSchemePrivileges();
-app.enableSandbox();
-
-app.on("web-contents-created", (_event, contents) => {
-  hardenWebContents(contents);
-});
+let mainWindow: BrowserWindow | null = null;
 
 async function confirmDiscardUnsavedDocument(
   window: BrowserWindow,
@@ -46,6 +47,20 @@ async function confirmDiscardUnsavedDocument(
     noLink: true,
   });
   return response === 1;
+}
+
+/** Brings the existing editor forward for a second launch. */
+function revealMainWindow(): void {
+  const window = mainWindow;
+  if (!window || window.isDestroyed()) return;
+  // Checked first: on Windows a minimized window reports isVisible() false.
+  if (window.isMinimized()) {
+    window.restore();
+  } else if (!window.isVisible()) {
+    // Still starting up: ready-to-show will reveal it.
+    return;
+  }
+  window.focus();
 }
 
 function createMainWindow(): BrowserWindow {
@@ -75,37 +90,65 @@ function createMainWindow(): BrowserWindow {
   });
   window.on("close", closeGuard.handleCloseRequest);
   window.on("session-end", closeGuard.allowClose);
+  window.on("closed", () => {
+    if (mainWindow === window) mainWindow = null;
+  });
 
+  // Show on first paint — or on a failed load, so a broken start is never
+  // an invisible window holding the process (and the single-instance lock).
   window.once("ready-to-show", () => window.show());
-  void window.loadURL(APP_ENTRY_URL);
+  window.webContents.on(
+    "did-fail-load",
+    (_event, _code, _description, _url, isMainFrame) => {
+      if (isMainFrame && !window.isDestroyed()) window.show();
+    },
+  );
+  window.loadURL(APP_ENTRY_URL).catch((error: unknown) => {
+    console.error("Layoutry failed to load its editor:", error);
+  });
   return window;
 }
 
-app.on("window-all-closed", () => {
-  app.quit();
-});
+function startLayoutry(): void {
+  registerAppSchemePrivileges();
+  app.enableSandbox();
 
-app
-  .whenReady()
-  .then(() => {
-    if (!existsSync(path.join(exportRoot, "index.html"))) {
-      dialog.showErrorBox(
-        "Layoutry",
-        `The desktop frontend has not been built (missing ${exportRoot}). Run "npm run desktop:build" first.`,
-      );
-      app.quit();
-      return;
-    }
-
-    // No application menu: removes Electron's default Reload, Force Reload,
-    // DevTools and zoom accelerators. Text editing shortcuts are handled by
-    // Chromium itself and keep working.
-    Menu.setApplicationMenu(null);
-    hardenSession(session.defaultSession);
-    handleAppProtocol(exportRoot);
-    createMainWindow();
-  })
-  .catch((error: unknown) => {
-    console.error("Layoutry failed to start:", error);
-    app.exit(1);
+  app.on("web-contents-created", (_event, contents) => {
+    hardenWebContents(contents);
   });
+  app.on("second-instance", revealMainWindow);
+  app.on("window-all-closed", () => {
+    app.quit();
+  });
+
+  app
+    .whenReady()
+    .then(() => {
+      if (!existsSync(path.join(exportRoot, "index.html"))) {
+        dialog.showErrorBox(
+          "Layoutry",
+          `The desktop frontend has not been built (missing ${exportRoot}). Run "npm run desktop:build" first.`,
+        );
+        app.quit();
+        return;
+      }
+
+      // No application menu: removes Electron's default Reload, Force
+      // Reload, DevTools and zoom accelerators. Text editing shortcuts are
+      // handled by Chromium itself and keep working.
+      Menu.setApplicationMenu(null);
+      hardenSession(session.defaultSession);
+      handleAppProtocol(exportRoot);
+      mainWindow = createMainWindow();
+    })
+    .catch((error: unknown) => {
+      console.error("Layoutry failed to start:", error);
+      app.exit(1);
+    });
+}
+
+if (app.requestSingleInstanceLock()) {
+  startLayoutry();
+} else {
+  app.quit();
+}

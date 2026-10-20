@@ -16,6 +16,8 @@ the full authority order.
   editor's document model, not the rendered canvas, is the source of truth.
 - [testing-strategy.md](./testing-strategy.md) — where tests live and what
   they should verify.
+- [desktop-shell.md](./desktop-shell.md) — the Electron desktop build: how
+  to build, run and test it, its security model, and its alpha limits.
 
 ## Related documentation
 
