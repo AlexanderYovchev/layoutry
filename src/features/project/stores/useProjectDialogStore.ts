@@ -1,18 +1,25 @@
 import { create } from "zustand";
 import type {
+  FileConflict,
   ImportMode,
   ProjectCommandError,
 } from "@/features/project/commands/projectCommands";
+import type { DesktopOpenedFile } from "@/features/project/desktop/desktopProjectFiles";
 import type {
   LayoutryProject,
   ProjectMetadata,
 } from "@/features/project/types/projectFile";
 
-/** An action that replaces the active project, held while the user confirms. */
+/**
+ * An action that replaces the active project — or, in the desktop app,
+ * closes the window — held while the user confirms.
+ */
 export type ProjectSwitch =
   | { kind: "new" }
   | { kind: "open"; id: string }
-  | { kind: "import"; project: LayoutryProject; mode: ImportMode };
+  | { kind: "import"; project: LayoutryProject; mode: ImportMode }
+  | { kind: "open-file"; file: DesktopOpenedFile; project: LayoutryProject }
+  | { kind: "close" };
 
 export type ProjectNamePurpose = "first-save" | "save-as" | "rename";
 
@@ -26,6 +33,7 @@ export type ProjectDialog =
       project: LayoutryProject;
       existing: ProjectMetadata;
     }
+  | { kind: "file-conflict"; conflict: FileConflict }
   | { kind: "error"; error: ProjectCommandError };
 
 interface ProjectDialogState {

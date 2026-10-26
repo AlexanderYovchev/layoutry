@@ -1,6 +1,19 @@
-import { app, BrowserWindow, dialog, Menu, screen, session } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  screen,
+  session,
+} from "electron";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { FileCapabilityRegistry } from "../files/fileCapabilities";
+import { projectFilesFromArguments } from "../files/launchArguments";
+import { createProjectFileService } from "../files/projectFileService";
+import { EVENT_CHANNELS } from "../ipc/channels";
+import { registerDesktopIpc } from "../ipc/registerDesktopIpc";
 import { APP_ENTRY_URL } from "../protocol/appOrigin";
 import {
   handleAppProtocol,
@@ -8,14 +21,20 @@ import {
 } from "../protocol/registerAppProtocol";
 import { hardenSession } from "../security/hardenSession";
 import { hardenWebContents } from "../security/hardenWebContents";
+import {
+  createCloseCoordinator,
+  type CloseCoordinator,
+} from "./closeCoordinator";
 import { createCloseGuard } from "./closeGuard";
 import { installDesktopShortcuts } from "./desktopShortcuts";
 import { outerMinimumForContent } from "./windowSizing";
 
 /**
  * Layoutry desktop shell entry point (ADR-0002). Serves the Next.js static
- * export over app://layoutry/ inside one hardened window. No preload, no
- * IPC, no Node.js in any renderer.
+ * export over app://layoutry/ inside one hardened window. No Node.js in any
+ * renderer: the editor page gets a sandboxed preload exposing a fixed,
+ * validated project-file API (PROJECT-1.3, desktop/ipc/channels.ts), and
+ * only ever holds opaque file tokens, never paths.
  *
  * Single instance: a second launch never opens a second editor. It hands
  * over to the running instance (which restores and focuses its window,
@@ -34,6 +53,49 @@ const devToolsEnabled = process.env.LAYOUTRY_DESKTOP_DEVTOOLS === "1";
 const exportRoot = path.join(app.getAppPath(), "out");
 
 let mainWindow: BrowserWindow | null = null;
+let closeCoordinator: CloseCoordinator | null = null;
+
+const PROJECT_FILE_FILTERS = [
+  { name: "Layoutry Project", extensions: ["layoutry"] },
+];
+
+const fileCapabilities = new FileCapabilityRegistry();
+const projectFiles = createProjectFileService({
+  registry: fileCapabilities,
+  defaultFolder: () => app.getPath("documents"),
+  showOpenDialog: async (defaultFolder) => {
+    const window = mainWindow;
+    if (!window) return null;
+    const result = await dialog.showOpenDialog(window, {
+      title: "Open Project",
+      defaultPath: defaultFolder ?? app.getPath("documents"),
+      filters: PROJECT_FILE_FILTERS,
+      properties: ["openFile"],
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  },
+  showSaveDialog: async (defaultPath) => {
+    const window = mainWindow;
+    if (!window) return null;
+    const result = await dialog.showSaveDialog(window, {
+      title: "Save Project",
+      defaultPath,
+      filters: PROJECT_FILE_FILTERS,
+      properties: ["showOverwriteConfirmation"],
+    });
+    return result.canceled ? null : (result.filePath ?? null);
+  },
+});
+
+/** Queues .layoutry files from a command line and tells the editor. */
+function queueProjectFilesFrom(argv: readonly string[], cwd: string): void {
+  let queued = false;
+  for (const file of projectFilesFromArguments(argv, cwd))
+    queued = projectFiles.queueExternalOpen(file) || queued;
+  const window = mainWindow;
+  if (queued && window && !window.isDestroyed())
+    window.webContents.send(EVENT_CHANNELS.pendingProjectFile);
+}
 
 async function confirmDiscardUnsavedDocument(
   window: BrowserWindow,
@@ -80,6 +142,8 @@ function createMainWindow(): BrowserWindow {
       webSecurity: true,
       webviewTag: false,
       devTools: devToolsEnabled,
+      // Runs in the main frame only (no Node.js; sandboxed).
+      preload: path.join(__dirname, "..", "preload", "preload.js"),
     },
   });
 
@@ -98,20 +162,37 @@ function createMainWindow(): BrowserWindow {
 
   installDesktopShortcuts(window.webContents, { devToolsEnabled });
 
+  const coordinator = createCloseCoordinator({
+    requestPageDecision: () => {
+      if (!window.isDestroyed())
+        window.webContents.send(EVENT_CHANNELS.closeRequested);
+    },
+    fallback: () => confirmDiscardUnsavedDocument(window),
+  });
+  closeCoordinator = coordinator;
   const closeGuard = createCloseGuard({
-    confirmDiscard: () => confirmDiscardUnsavedDocument(window),
+    confirmDiscard: coordinator.decide,
     closeWindow: () => window.close(),
   });
   window.on("close", closeGuard.handleCloseRequest);
-  // The page asks for confirmation (beforeunload) while it has unsaved
-  // changes. Electron shows no dialog for that and would silently keep the
-  // window open; the close guard above has already asked, so let it unload.
+  // Once closing is approved, never let a page beforeunload handler keep
+  // the window open silently (Electron shows no dialog for it).
   window.webContents.on("will-prevent-unload", (event) => {
     event.preventDefault();
   });
+  // A crashed or hung page can't answer a close request: fall back to the
+  // native dialog. Its file tokens die with it.
+  const ownerId = window.webContents.id;
+  window.webContents.on("render-process-gone", () => {
+    coordinator.pageLost();
+    fileCapabilities.revokeOwner(ownerId);
+  });
+  window.on("unresponsive", () => coordinator.pageLost());
   window.on("session-end", closeGuard.allowClose);
   window.on("closed", () => {
+    fileCapabilities.revokeOwner(ownerId);
     if (mainWindow === window) mainWindow = null;
+    if (closeCoordinator === coordinator) closeCoordinator = null;
   });
 
   // Show on first paint — or on a failed load, so a broken start is never
@@ -136,7 +217,10 @@ function startLayoutry(): void {
   app.on("web-contents-created", (_event, contents) => {
     hardenWebContents(contents);
   });
-  app.on("second-instance", revealMainWindow);
+  app.on("second-instance", (_event, argv, workingDirectory) => {
+    revealMainWindow();
+    queueProjectFilesFrom(argv, workingDirectory);
+  });
   app.on("window-all-closed", () => {
     app.quit();
   });
@@ -159,6 +243,17 @@ function startLayoutry(): void {
       Menu.setApplicationMenu(null);
       hardenSession(session.defaultSession);
       handleAppProtocol(exportRoot);
+      registerDesktopIpc({
+        ipcMain,
+        getMainWindow: () => mainWindow,
+        files: projectFiles,
+        close: {
+          reportUnsaved: (value) => closeCoordinator?.reportUnsaved(value),
+          respond: (close) => closeCoordinator?.respond(close),
+        },
+      });
+      // Files named on Layoutry's own command line open once the editor asks.
+      queueProjectFilesFrom(process.argv, process.cwd());
       mainWindow = createMainWindow();
     })
     .catch((error: unknown) => {

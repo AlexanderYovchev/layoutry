@@ -10,6 +10,22 @@ import { createProjectMetadata } from "@/features/project/utils/serializeProject
 export type ProjectOperation =
   "save" | "save-as" | "open" | "import" | "delete";
 
+/**
+ * Where the active project is stored (PROJECT-1.3). Session metadata, never
+ * written into the project file.
+ * - `unsaved`: nothing stored matches it (new, or its copy was deleted);
+ * - `library`: the IndexedDB project library; `revision` is the `updatedAt`
+ *   this session last read or wrote, used to detect another tab's save;
+ * - `file`: a native `.layoutry` file (desktop), held as an opaque token
+ *   from the main process plus its display name — never a path.
+ */
+export type ProjectLocation =
+  | { kind: "unsaved" }
+  | { kind: "library"; revision: string }
+  | { kind: "file"; token: string; fileName: string };
+
+export const UNSAVED_LOCATION: ProjectLocation = { kind: "unsaved" };
+
 export interface ProjectToast {
   /** Increments per toast so the same message twice still re-announces. */
   id: number;
@@ -37,12 +53,7 @@ export interface ProjectSessionState {
    * (its library record was deleted), so it counts as unsaved.
    */
   savedName: string | null;
-  /**
-   * `updatedAt` of the library record this session last wrote or opened;
-   * `null` while the project isn't in the library (a new project). Saves
-   * use it to detect another tab's newer save.
-   */
-  libraryRevision: string | null;
+  location: ProjectLocation;
   /** The library operation in flight, if any. */
   operation: ProjectOperation | null;
   library: ProjectLibraryState;
@@ -51,7 +62,7 @@ export interface ProjectSessionState {
   /** Makes `metadata` the active project, clean, after New / Open / Import / Save As. */
   activateProject: (
     metadata: ProjectMetadata,
-    libraryRevision: string | null,
+    location: ProjectLocation,
   ) => void;
   renameProject: (name: string) => void;
   /**
@@ -60,7 +71,11 @@ export interface ProjectSessionState {
    * in flight is kept and stays unsaved. Ignored if another project has
    * become active since.
    */
-  recordSave: (snapshot: ProjectMetadata, saved: ProjectMetadata) => void;
+  recordSave: (
+    snapshot: ProjectMetadata,
+    saved: ProjectMetadata,
+    location: ProjectLocation,
+  ) => void;
   /** The active project's library record was deleted: it is unsaved again. */
   detachFromLibrary: () => void;
   setOperation: (operation: ProjectOperation | null) => void;
@@ -75,20 +90,20 @@ const initialMetadata = createProjectMetadata();
 export const useProjectStore = create<ProjectSessionState>()((set) => ({
   metadata: initialMetadata,
   savedName: initialMetadata.name,
-  libraryRevision: null,
+  location: UNSAVED_LOCATION,
   operation: null,
   library: { status: "idle", entries: [], error: null },
   toast: null,
 
-  activateProject: (metadata, libraryRevision) =>
-    set({ metadata, savedName: metadata.name, libraryRevision }),
+  activateProject: (metadata, location) =>
+    set({ metadata, savedName: metadata.name, location }),
   renameProject: (name) =>
     set((state) =>
       state.metadata.name === name
         ? state
         : { metadata: { ...state.metadata, name } },
     ),
-  recordSave: (snapshot, saved) =>
+  recordSave: (snapshot, saved, location) =>
     set((state) =>
       state.metadata.id !== snapshot.id
         ? state
@@ -98,10 +113,10 @@ export const useProjectStore = create<ProjectSessionState>()((set) => ({
                 ? saved
                 : { ...state.metadata, updatedAt: saved.updatedAt },
             savedName: saved.name,
-            libraryRevision: saved.updatedAt,
+            location,
           },
     ),
-  detachFromLibrary: () => set({ savedName: null, libraryRevision: null }),
+  detachFromLibrary: () => set({ savedName: null, location: UNSAVED_LOCATION }),
   setOperation: (operation) => set({ operation }),
   setLibrary: (library) => set({ library }),
   showToast: (message) =>

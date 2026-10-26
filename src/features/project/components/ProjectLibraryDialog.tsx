@@ -29,9 +29,14 @@ interface ProjectLibraryDialogProps {
   onDeleteProject: (id: string, name: string | null) => void;
   onRetry: () => void;
   onClose: () => void;
+  /**
+   * "desktop": the same IndexedDB library inside the desktop app's profile,
+   * holding projects saved before native files (PROJECT-1.3).
+   */
+  variant?: "browser" | "desktop";
 }
 
-/** File › Open Project: the local project library. */
+/** File › Open Project (browser) or Open from Desktop Library (desktop). */
 export function ProjectLibraryDialog({
   open,
   library,
@@ -41,12 +46,19 @@ export function ProjectLibraryDialog({
   onDeleteProject,
   onRetry,
   onClose,
+  variant = "browser",
 }: ProjectLibraryDialogProps) {
+  const desktop = variant === "desktop";
   const isFirstLoad =
     library.status === "loading" && library.entries.length === 0;
 
   return (
-    <Dialog open={open} onClose={onClose} title="Open Project" size="lg">
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={desktop ? "Desktop Library" : "Open Project"}
+      size="lg"
+    >
       {library.status === "error" ? (
         <div role="alert" className="flex flex-col items-start gap-3">
           <p className="text-fg-primary">{library.error}</p>
@@ -61,11 +73,18 @@ export function ProjectLibraryDialog({
       ) : isFirstLoad || library.status === "idle" ? (
         <p aria-live="polite">Loading projects…</p>
       ) : library.entries.length === 0 ? (
-        <p>
-          No saved projects yet. Use{" "}
-          <span className="text-fg-primary font-medium">File › Save</span> to
-          add the current project to your library.
-        </p>
+        desktop ? (
+          <p>
+            The desktop library is empty. Projects are saved as .layoutry files
+            — use File › Open File… to open one.
+          </p>
+        ) : (
+          <p>
+            No saved projects yet. Use{" "}
+            <span className="text-fg-primary font-medium">File › Save</span> to
+            add the current project to your library.
+          </p>
+        )
       ) : (
         <ul
           aria-label="Saved projects"
@@ -148,9 +167,9 @@ export function ProjectLibraryDialog({
         </ul>
       )}
       <p className="border-line-subtle text-fg-secondary mt-4 border-t pt-3 text-xs">
-        Projects are stored in this browser on this device. Clearing site data,
-        or using another browser or device, makes them unavailable — use File ›
-        Download Project to keep a backup.
+        {desktop
+          ? "Projects saved inside Layoutry before .layoutry files existed. They stay here until you delete them. Use File › Save As… to keep one as a .layoutry file."
+          : "Projects are stored in this browser on this device. Clearing site data, or using another browser or device, makes them unavailable — use File › Download Project to keep a backup."}
       </p>
     </Dialog>
   );

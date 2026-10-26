@@ -21,6 +21,9 @@ the full authority order.
 - [project-format.md](./project-format.md) — the versioned `.layoutry`
   project file: structure, validation limits, migration policy, and how a
   loaded project is applied to the editor.
+- [desktop-files.md](./desktop-files.md) — native `.layoutry` files in
+  the desktop app: secure IPC, atomic writes, external-change detection,
+  closing, file association limits.
 - [project-storage.md](./project-storage.md) — the browser project library
   (IndexedDB), Save/Open/Import/Download semantics, dirty state and
   storage limitations.

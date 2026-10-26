@@ -1,21 +1,19 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
-  documentNodeCount,
   dragInsertContainer,
+  fileDialogCalls,
   launchLayoutry,
   makeTempDir,
   removeDir,
-  requestWindowClose,
-  scriptCloseDialog,
-  waitForExit,
+  scriptFileDialogs,
   type LaunchedLayoutry,
 } from "./support/layoutryApp";
 
 /**
- * PROJECT-1.2 in the real desktop shell: the browser project library runs
- * unchanged on the app://layoutry origin (IndexedDB in the user's Electron
- * profile), and the native close confirmation still closes a window whose
- * page reports unsaved changes.
+ * The PROJECT-1.2 project library inside the desktop app, after
+ * PROJECT-1.3 made native files the default: projects people saved in the
+ * library before 1.3 stay available, keep saving to the library, and are
+ * never migrated or deleted silently.
  */
 
 let layoutry: LaunchedLayoutry | undefined;
@@ -28,72 +26,116 @@ test.afterEach(async () => {
   profile = undefined;
 });
 
-async function saveNewProject(page: Page, name: string) {
+const LIBRARY_PROJECT = {
+  format: "layoutry-project",
+  formatVersion: 1,
+  project: {
+    id: "library-project-1",
+    name: "Saved before files",
+    createdAt: "2026-10-26T09:00:00.000Z",
+    updatedAt: "2026-10-26T09:00:00.000Z",
+  },
+  document: {
+    id: "page-root",
+    tag: "page",
+    children: [
+      { id: "heading-lib", tag: "h1", text: "From the desktop library" },
+    ],
+  },
+};
+
+/** Writes a library record the way PROJECT-1.2 did, straight into IndexedDB. */
+async function seedLibrary(page: Page) {
+  await page.evaluate(
+    (project) =>
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open("layoutry-projects", 1);
+        request.onupgradeneeded = () => {
+          request.result.createObjectStore("summaries", { keyPath: "id" });
+          request.result.createObjectStore("documents", { keyPath: "id" });
+        };
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const tx = database.transaction(
+            ["summaries", "documents"],
+            "readwrite",
+          );
+          tx.objectStore("summaries").put(project.project);
+          tx.objectStore("documents").put({
+            id: project.project.id,
+            text: JSON.stringify(project),
+          });
+          tx.oncomplete = () => {
+            database.close();
+            resolve();
+          };
+          tx.onabort = () => reject(tx.error);
+        };
+      }),
+    LIBRARY_PROJECT,
+  );
+}
+
+function storedUpdatedAt(page: Page) {
+  return page.evaluate(
+    (id) =>
+      new Promise<string>((resolve, reject) => {
+        const request = indexedDB.open("layoutry-projects");
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const get = request.result
+            .transaction("summaries")
+            .objectStore("summaries")
+            .get(id);
+          get.onsuccess = () => {
+            request.result.close();
+            resolve(String(get.result?.updatedAt));
+          };
+        };
+      }),
+    LIBRARY_PROJECT.project.id,
+  );
+}
+
+test("projects in the desktop library stay available and keep saving there", async () => {
+  profile = await makeTempDir("layoutry-desktop-library-");
+  layoutry = await launchLayoutry({ userDataDir: profile });
+  await seedLibrary(layoutry.page);
+  await layoutry.dispose();
+
+  // After a restart, as after upgrading Layoutry.
+  layoutry = await launchLayoutry({ userDataDir: profile });
+  const { app, page } = layoutry;
+  await scriptFileDialogs(app, {});
+
+  await page.getByRole("menuitem", { name: "File" }).click();
+  await page
+    .getByRole("menuitem", { name: "Open from Desktop Library…" })
+    .click();
+  const library = page.getByRole("dialog", { name: "Desktop Library" });
+  await library
+    .getByRole("button", { name: "Open Saved before files" })
+    .click();
+
+  await expect(page.locator("[data-document-surface] h1")).toHaveText(
+    "From the desktop library",
+  );
+  await expect(page.locator("[data-project-source]")).toHaveText(
+    /Desktop library/,
+  );
+
+  await dragInsertContainer(page);
   await page.keyboard.press("Control+s");
-  const dialog = page.getByRole("dialog", { name: "Save Project" });
-  await dialog.getByRole("textbox", { name: "Project name" }).fill(name);
-  await dialog.getByRole("button", { name: "Save" }).click();
   await expect(page.locator("[data-project-status]")).toHaveAttribute(
     "data-project-status",
     "saved",
   );
-}
-
-/** Closes through the real close path (native confirmation → Discard and Close). */
-async function closeGracefully(launched: LaunchedLayoutry) {
-  await scriptCloseDialog(launched.app, "discard");
-  const child = launched.app.process();
-  await requestWindowClose(launched.app).catch(() => {
-    // the main process may already be exiting
-  });
-  return waitForExit(child, 15_000);
-}
-
-test("a project saved in the desktop app is still there after a restart", async () => {
-  profile = await makeTempDir("layoutry-desktop-projects-");
-  layoutry = await launchLayoutry({ userDataDir: profile });
-  const before = await documentNodeCount(layoutry.page);
-  await dragInsertContainer(layoutry.page);
-  await expect.poll(() => documentNodeCount(layoutry!.page)).toBe(before + 1);
-  await saveNewProject(layoutry.page, "Desktop project");
-
-  expect(await closeGracefully(layoutry)).toBe(0);
-  layoutry = undefined;
-
-  layoutry = await launchLayoutry({ userDataDir: profile });
-  const { page } = layoutry;
-  expect(await documentNodeCount(page)).toBe(before);
-
-  await page.keyboard.press("Control+o");
-  await page
-    .getByRole("dialog", { name: "Open Project" })
-    .getByRole("button", { name: "Open Desktop project" })
-    .click();
-
-  await expect(
-    page.getByRole("button", {
-      name: "Project: Desktop project. Rename project",
-    }),
-  ).toBeVisible();
-  await expect.poll(() => documentNodeCount(page)).toBe(before + 1);
-});
-
-test("a window with unsaved changes closes once the native warning is confirmed", async () => {
-  layoutry = await launchLayoutry();
-  const before = await documentNodeCount(layoutry.page);
-  await dragInsertContainer(layoutry.page);
-  await expect.poll(() => documentNodeCount(layoutry!.page)).toBe(before + 1);
-  await expect(layoutry.page.locator("[data-project-status]")).toHaveText(
-    "Unsaved changes",
+  // Saved back into the library — no file dialog, nothing migrated.
+  expect(await fileDialogCalls(app)).toEqual([]);
+  expect(await storedUpdatedAt(page)).not.toBe(
+    LIBRARY_PROJECT.project.updatedAt,
   );
-
-  // Left unanswered on purpose: Playwright would otherwise answer the
-  // page's beforeunload itself. The main process must let the page unload
-  // after its own native confirmation, or the window silently stays open.
-  const pageDialogs: string[] = [];
-  layoutry.page.on("dialog", (dialog) => pageDialogs.push(dialog.type()));
-
-  expect(await closeGracefully(layoutry)).toBe(0);
 });
 
 test("Ctrl+N starts a new project in the desktop app after confirming", async () => {

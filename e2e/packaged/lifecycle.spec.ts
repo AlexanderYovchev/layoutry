@@ -24,9 +24,6 @@ import {
   requestMainWindowClose,
 } from "./support/windows";
 
-const CLOSE_MESSAGE =
-  "Closing Layoutry will discard any unsaved changes. Continue?";
-
 let layoutry: PackagedLayoutry | undefined;
 
 test.afterEach(async () => {
@@ -43,7 +40,13 @@ async function launchSecond(userDataDir: string) {
   return waitForExit(second, 20_000);
 }
 
-test("the native close warning can be cancelled, keeping the document", async () => {
+/**
+ * PROJECT-1.3: closing is decided by the editor itself — no prompt for a
+ * saved project, Layoutry's own Save / Don't Save / Cancel prompt for
+ * unsaved work. The native warning is only a fallback for a dead page
+ * (covered in the Electron suite).
+ */
+test("closing with unsaved work shows Layoutry's own prompt; Cancel keeps the document", async () => {
   layoutry = await launchPackaged(extractedExe());
   const { page, pid } = layoutry;
   const before = await documentNodeCount(page);
@@ -51,15 +54,13 @@ test("the native close warning can be cancelled, keeping the document", async ()
   await expect.poll(() => documentNodeCount(page)).toBe(before + 1);
 
   requestMainWindowClose(pid);
-  const dialog = nativeDialog(pid, "Cancel");
-  expect(dialog.found).toBe(true);
-  expect(dialog.text).toContain(CLOSE_MESSAGE);
-  expect(dialog.text).toContain("Projects saved with File › Save are kept.");
-  expect(dialog.buttons).toEqual(
-    expect.arrayContaining(["Cancel", "Discard and Close"]),
-  );
+  const prompt = page.getByRole("dialog", { name: "Unsaved Changes" });
+  await expect(prompt).toContainText("Save them before closing Layoutry?");
+  // No native warning on top of it.
+  expect(nativeDialog(pid, undefined, 1).found).toBe(false);
 
-  await expect.poll(() => nativeDialog(pid, undefined, 1).found).toBe(false);
+  await prompt.getByRole("button", { name: "Cancel" }).click();
+  await expect(prompt).toBeHidden();
   expect(isProcessAlive(pid)).toBe(true);
   expect(mainWindowState(pid)).toMatchObject({
     visible: true,
@@ -68,14 +69,30 @@ test("the native close warning can be cancelled, keeping the document", async ()
   expect(await documentNodeCount(page)).toBe(before + 1);
 });
 
-test("confirming the native close warning exits cleanly with no leftover processes", async () => {
+test("Don't Save exits cleanly with no leftover processes", async () => {
   layoutry = await launchPackaged(extractedExe());
-  const { pid, child } = layoutry;
+  const { page, pid, child } = layoutry;
+  await dragInsertContainer(page);
   const pids = processTree(pid).map((process) => process.pid);
   expect(pids.length).toBeGreaterThan(1);
 
   requestMainWindowClose(pid);
-  expect(nativeDialog(pid, "Discard and Close").found).toBe(true);
+  await page
+    .getByRole("dialog", { name: "Unsaved Changes" })
+    .getByRole("button", { name: "Don't Save" })
+    .click();
+  expect(await waitForExit(child, 15_000)).toBe(0);
+  await expect
+    .poll(() => pids.filter(isProcessAlive), { timeout: 10_000 })
+    .toEqual([]);
+});
+
+test("an untouched project closes at once, with no prompt and no leftover processes", async () => {
+  layoutry = await launchPackaged(extractedExe());
+  const { pid, child } = layoutry;
+  const pids = processTree(pid).map((process) => process.pid);
+
+  requestMainWindowClose(pid);
   expect(await waitForExit(child, 15_000)).toBe(0);
   await expect
     .poll(() => pids.filter(isProcessAlive), { timeout: 10_000 })
@@ -87,8 +104,8 @@ test("Layoutry reopens normally with the same profile after a normal exit", asyn
   try {
     layoutry = await launchPackaged(extractedExe(), { userDataDir });
     const first = layoutry;
+    // Untouched, so it closes without asking.
     requestMainWindowClose(first.pid);
-    expect(nativeDialog(first.pid, "Discard and Close").found).toBe(true);
     expect(await waitForExit(first.child, 15_000)).toBe(0);
     await first.dispose();
 
@@ -139,20 +156,23 @@ test("a second launch restores and focuses the running editor without opening an
   }
 });
 
-test("a second launch while the close warning is open exits and opens nothing", async () => {
+test("a second launch while the close prompt is open exits and opens nothing", async () => {
   const userDataDir = await makeTempDir("layoutry-packaged-single-");
   try {
     layoutry = await launchPackaged(extractedExe(), { userDataDir });
-    const { pid, browser } = layoutry;
+    const { pid, browser, page } = layoutry;
+    await dragInsertContainer(page);
     requestMainWindowClose(pid);
-    expect(nativeDialog(pid).found).toBe(true);
+    const prompt = page.getByRole("dialog", { name: "Unsaved Changes" });
+    await expect(prompt).toBeVisible();
 
     expect(await launchSecond(userDataDir)).toBe(0);
     expect(pageCount(browser)).toBe(1);
     expect(isProcessAlive(pid)).toBe(true);
+    expect(await page.locator("dialog[open]").count()).toBe(1);
 
-    expect(nativeDialog(pid, "Cancel").found).toBe(true);
-    await expect.poll(() => nativeDialog(pid, undefined, 1).found).toBe(false);
+    await prompt.getByRole("button", { name: "Cancel" }).click();
+    await expect(prompt).toBeHidden();
     expect(isProcessAlive(pid)).toBe(true);
   } finally {
     await layoutry?.dispose();

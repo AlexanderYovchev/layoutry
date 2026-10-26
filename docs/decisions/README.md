@@ -38,3 +38,5 @@ Each ADR is a numbered Markdown file, `ADR-NNNN-short-title.md`, containing:
   file format — Accepted
 - [ADR-0004](./ADR-0004-browser-project-library.md) — Browser project
   library in IndexedDB — Accepted
+- [ADR-0005](./ADR-0005-native-project-files.md) — Native project files
+  through capability-token IPC — Accepted

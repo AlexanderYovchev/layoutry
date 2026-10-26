@@ -158,6 +158,8 @@ export interface LaunchOptions {
   userDataDir?: string;
   /** Defaults to the repository checkout. */
   appPath?: string;
+  /** Extra command-line arguments, e.g. a .layoutry file to open. */
+  extraArgs?: string[];
 }
 
 /**
@@ -179,6 +181,7 @@ export async function launchLayoutry(
       options.appPath ?? REPO_ROOT,
       `--user-data-dir=${userDataDir}`,
       ...OFFLINE_SWITCHES,
+      ...(options.extraArgs ?? []),
     ],
     cwd: REPO_ROOT,
     env: electronEnv(),
@@ -353,4 +356,75 @@ export function windowCount(app: ElectronApplication): Promise<number> {
   return app.evaluate(
     ({ BrowserWindow }) => BrowserWindow.getAllWindows().length,
   );
+}
+
+/**
+ * Replaces the native Open/Save file dialogs (PROJECT-1.3) with scripted
+ * answers: each call takes the next path from its queue; an empty queue or
+ * null means the user pressed Cancel. Records every call's options.
+ */
+export async function scriptFileDialogs(
+  app: ElectronApplication,
+  answers: { open?: (string | null)[]; save?: (string | null)[] },
+): Promise<void> {
+  await app.evaluate(({ dialog }, scripted) => {
+    const calls: { kind: string; options: unknown }[] = [];
+    Reflect.set(globalThis, "__layoutryFileDialogCalls", calls);
+    const open = [...(scripted.open ?? [])];
+    const save = [...(scripted.save ?? [])];
+    dialog.showOpenDialog = (...args: unknown[]) => {
+      calls.push({ kind: "open", options: args[args.length - 1] });
+      const next = open.shift() ?? null;
+      return Promise.resolve({
+        canceled: next === null,
+        filePaths: next === null ? [] : [next],
+      });
+    };
+    dialog.showSaveDialog = (...args: unknown[]) => {
+      calls.push({ kind: "save", options: args[args.length - 1] });
+      const next = save.shift() ?? null;
+      return Promise.resolve(
+        next === null
+          ? { canceled: true, filePath: "" }
+          : { canceled: false, filePath: next },
+      );
+    };
+  }, answers);
+}
+
+export async function fileDialogCalls(
+  app: ElectronApplication,
+): Promise<{ kind: string; defaultPath: unknown; filters: unknown }[]> {
+  return app.evaluate(() => {
+    const calls: unknown = Reflect.get(globalThis, "__layoutryFileDialogCalls");
+    if (!Array.isArray(calls)) return [];
+    return calls.map((call: unknown) => {
+      const options =
+        typeof call === "object" && call !== null
+          ? Reflect.get(call, "options")
+          : null;
+      return {
+        kind: String(
+          typeof call === "object" && call !== null
+            ? Reflect.get(call, "kind")
+            : "",
+        ),
+        defaultPath:
+          typeof options === "object" && options !== null
+            ? Reflect.get(options, "defaultPath")
+            : null,
+        filters:
+          typeof options === "object" && options !== null
+            ? Reflect.get(options, "filters")
+            : null,
+      };
+    });
+  });
+}
+
+/** Crashes the editor's renderer process, as a real renderer crash would. */
+export async function crashRenderer(app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]?.webContents.forcefullyCrashRenderer();
+  });
 }

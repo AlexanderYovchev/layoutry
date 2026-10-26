@@ -87,7 +87,7 @@ describe("New Project", () => {
     expect(editor().past).toEqual([]);
     expect(session().metadata.id).not.toBe(previousId);
     expect(session().metadata.name).toBe("Untitled Project");
-    expect(session().libraryRevision).toBeNull();
+    expect(session().location).toEqual({ kind: "unsaved" });
     expect(unsaved()).toBe(false);
   });
 
@@ -112,7 +112,10 @@ describe("Save", () => {
       createdAt,
       name: "Landing",
     });
-    expect(session().libraryRevision).toBe(session().metadata.updatedAt);
+    expect(session().location).toEqual({
+      kind: "library",
+      revision: session().metadata.updatedAt,
+    });
     const stored = await base.read(id);
     const parsed = parseProjectFile(stored.text);
     expect(parsed.ok && parsed.project).toEqual({
@@ -199,7 +202,7 @@ describe("Save", () => {
     expect(unsaved()).toBe(true);
     expect(editor().persistedDocument).toBe(before.persisted);
     expect(session().metadata).toBe(before.metadata);
-    expect(session().libraryRevision).toBeNull();
+    expect(session().location).toEqual({ kind: "unsaved" });
     expect(session().toast).toBeNull();
     expect(session().operation).toBeNull();
   });
@@ -250,7 +253,7 @@ describe("Save", () => {
     await otherTab.save();
     useProjectStore.setState({
       metadata: ours,
-      libraryRevision: ours.updatedAt,
+      location: { kind: "library", revision: ours.updatedAt },
       savedName: ours.name,
     });
     edit();
@@ -259,7 +262,9 @@ describe("Save", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok)
-      expect(result.error.title).toBe("Project changed elsewhere");
+      expect("error" in result && result.error.title).toBe(
+        "Project changed elsewhere",
+      );
     expect(unsaved()).toBe(true);
   });
 
@@ -333,7 +338,10 @@ describe("Open", () => {
 
     expect(editor().document).toEqual(saved.document);
     expect(session().metadata).toEqual(saved.metadata);
-    expect(session().libraryRevision).toBe(saved.metadata.updatedAt);
+    expect(session().location).toEqual({
+      kind: "library",
+      revision: saved.metadata.updatedAt,
+    });
     expect(editor().past).toEqual([]);
     expect(editor().selection.ids).toEqual([]);
     expect(unsaved()).toBe(false);
@@ -368,7 +376,8 @@ describe("Open", () => {
       const result = await commands.open("saved-1");
 
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.title).toBe(title);
+      if (!result.ok)
+        expect("error" in result && result.error.title).toBe(title);
       expect(editor().document).toBe(before.document);
       expect(editor().persistedDocument).toBe(before.persisted);
       expect(session().metadata).toBe(before.metadata);
@@ -528,7 +537,7 @@ describe("Delete", () => {
     await expectOk(commands.remove(session().metadata.id));
 
     expect(editor().document).toBe(document);
-    expect(session().libraryRevision).toBeNull();
+    expect(session().location).toEqual({ kind: "unsaved" });
     expect(unsaved()).toBe(true);
   });
 
@@ -538,7 +547,7 @@ describe("Delete", () => {
     });
     await commands.save();
     expect((await commands.remove(session().metadata.id)).ok).toBe(false);
-    expect(session().libraryRevision).not.toBeNull();
+    expect(session().location.kind).toBe("library");
     expect(session().toast?.message).not.toMatch(/Deleted/);
   });
 });

@@ -8,8 +8,9 @@ guarantees.
 
 **Status:** DESKTOP-0.5. Layoutry ships as a QA-validated, portable
 Windows x64 ZIP for a small, controlled alpha (unsigned). Since
-PROJECT-1.2, projects can be saved to the local project library (IndexedDB
-in the Electron profile; see [project-storage.md](./project-storage.md)).
+PROJECT-1.3, projects are saved as native `.layoutry` files through a
+sandboxed preload bridge (see [desktop-files.md](./desktop-files.md)).
+Projects saved in the PROJECT-1.2 library stay available.
 The release QA record is in
 [docs/reports/desktop-0.5-release-qa.md](../reports/desktop-0.5-release-qa.md).
 
@@ -45,8 +46,10 @@ packaged `Layoutry.exe` ignores it (fuse).
 Layoutry.exe (main process: desktop-dist/main/main.js inside app.asar)
   ├─ single-instance lock (per user-data directory)
   ├─ app://layoutry/  → read-only handler over out/ (+ CSP header)
+  ├─ project files (PROJECT-1.3): native dialogs, capability tokens,
+  │   atomic writes — 7 validated IPC channels, nothing else
   └─ one BrowserWindow: contextIsolation, sandbox, no nodeIntegration,
-     no preload, no IPC, no application menu
+     a sandboxed preload (window.layoutryDesktop), no application menu
 ```
 
 The export root is `app.getAppPath()/out`. In the packaged app that path
@@ -156,10 +159,13 @@ It covers:
   Design/Preview, reload suppression, no console errors.
 - **Security:** Node isolation (editor and iframe), protocol responses
   from inside `app.asar`, navigation, popups, permissions, CSP.
-- **Lifecycle:** the real native close dialog (Cancel keeps the
-  document; Discard exits 0 with no leftover processes), and a second
-  launch restoring and focusing a minimized window, including while the
-  dialog is open.
+- **Lifecycle:** closing (no prompt when saved; the editor's own prompt
+  with unsaved work, where Cancel keeps the document and Don't Save exits
+  0 with no leftover processes), and a second launch restoring and
+  focusing a minimized window, including while the prompt is open.
+- **Project files (PROJECT-1.3):** the real Windows Save and Open dialogs
+  (and Windows' own replace confirmation), command-line opening, forwarding
+  from a second launch, and the bridge's fixed surface.
 - **Hardening:** each fuse proved by behaviour:
   - `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS=--require` and `--inspect` are
     ignored;
@@ -177,8 +183,19 @@ the user, which is the same trust level as the user.
 
 - **Renderer isolation:** `contextIsolation`, `sandbox` (plus
   `app.enableSandbox()`), `nodeIntegration: false`, `webSecurity`,
-  `webviewTag: false`. There is no preload script and no IPC. `require`,
-  `process` and `Buffer` are undefined in the editor and in iframes.
+  `webviewTag: false`. `require`, `process` and `Buffer` are undefined in
+  the editor and in iframes.
+- **Preload and IPC (PROJECT-1.3):** a sandboxed preload exposes only
+  `window.layoutryDesktop`, a frozen set of argument-checked functions.
+  The main process handles exactly seven channels:
+  - each checks that the caller is the main window's top frame on
+    `app://layoutry/`, and validates the payload strictly;
+  - file access goes through opaque, per-window tokens issued for paths the
+    user picked in a native dialog or passed on the command line;
+  - the renderer can never name a path.
+
+  Details: [desktop-files.md](./desktop-files.md#security-boundary).
+
 - **`app://` protocol:** GET/HEAD only. Host `layoutry` only. Each path
   segment is decoded and checked. Lexical traversal is rejected (400). The
   real path (after following symlinks or junctions) must stay inside
@@ -238,7 +255,9 @@ The lock is scoped to the user-data directory:
    the foreground.
 4. The open document is never touched.
 
-This also works while the close warning is open. The tests give each
+This also works while the close prompt is open. Since PROJECT-1.3, a
+second launch with a `.layoutry` file forwards that file to the running
+window. The tests give each
 launch its own `--user-data-dir`, so they never share a lock.
 
 ## Lifecycle
@@ -250,14 +269,16 @@ launch its own `--user-data-dir`, so they never share a lock.
   the editor's 900 × 600 floor. Below that floor the editor would be
   replaced by its "unsupported viewport" notice. Before DESKTOP-0.5 the
   minimum applied to the outer window, leaving an 884 px viewport.
-- Closing (X button, Alt+F4, taskbar) asks "Closing Layoutry will discard
-  any unsaved changes. Continue?" **Cancel** is the default. The main
-  process can't see the page's state (no IPC), so it always asks. Once
-  confirmed, it lets the page unload (`will-prevent-unload`) even if the
-  page's own `beforeunload` reports unsaved changes.
-  Repeated close requests absorb into one dialog, and a confirmed close
-  exits once, with code 0, leaving no child processes. A Windows session
-  end closes without asking.
+- Closing (X button, Alt+F4, taskbar), since PROJECT-1.3:
+  - a saved or untouched project closes at once;
+  - with unsaved work, the editor shows its own Save / Don't Save / Cancel,
+    and Save must succeed first;
+  - the native "Closing Layoutry will discard any unsaved changes.
+    Continue?" warning remains only as a fallback for a page that crashed,
+    hung or never loaded (Cancel is its default);
+  - repeated close requests absorb into one prompt, and a confirmed close
+    exits once, with code 0, leaving no child processes;
+  - a Windows session end closes without asking.
 - Reload shortcuts (Ctrl+R, Ctrl+Shift+R, F5, Shift+F5, Ctrl+F5) are
   swallowed. Editor and text-editing shortcuts are untouched.
 
@@ -303,9 +324,11 @@ The tester README says the same.
 
 ## Known alpha limitations
 
-- No autosave or recovery: closing, a crash or a Windows restart discards
-  unsaved changes. Saved projects live in the profile, not in files the
-  user chooses (native Save/Open dialogs are PROJECT-1.3).
+- No autosave or recovery: a crash or a Windows restart discards unsaved
+  changes (PROJECT-1.4).
+- No double-click file association: the portable app doesn't write to the
+  registry. "Open with → Layoutry.exe", dragging a file onto the exe, and
+  the command line all work.
 - No installer, no auto-update, no signing.
 - The ZIP is ~147 MB; unpacked it is ~370 MB. That is mostly the Chromium
   runtime: about 236 MB for the exe, plus 48 MB of locales and 20 MB of

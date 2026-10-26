@@ -10,13 +10,13 @@ import { useProjectStore } from "@/features/project/stores/useProjectStore";
  * Browsers show their own generic text and ignore custom messages, so
  * none is set.
  *
- * The desktop app confirms closing in its main process instead, and lets
- * the page unload once the user has agreed (see desktop/main/main.ts).
+ * Disabled in the desktop app, where closing is coordinated with the main
+ * process instead (useDesktopIntegration).
  */
-export function useUnsavedChangesWarning(): void {
+export function useUnsavedChangesWarning(enabled = true): void {
   const hasUnsavedChanges = useHasUnsavedProjectChanges();
   const busy = useProjectStore((project) => project.operation !== null);
-  const shouldWarn = hasUnsavedChanges || busy;
+  const shouldWarn = enabled && (hasUnsavedChanges || busy);
 
   useEffect(() => {
     if (!shouldWarn) return;

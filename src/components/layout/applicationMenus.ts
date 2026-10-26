@@ -38,6 +38,15 @@ export interface EditMenuCommands {
  * (ProjectWorkspace) and they reach the header through EditorApp/AppShell.
  */
 export interface FileMenuCommands {
+  /**
+   * PROJECT-1.3 — "desktop": projects are native .layoutry files (Open
+   * File…, Save/Save As via native dialogs) and the browser library is
+   * reachable as "Desktop Library" for projects saved before files existed.
+   * Defaults to "browser".
+   */
+  mode?: "browser" | "desktop";
+  /** Desktop: lists the local project library (pre-1.3 projects). */
+  onOpenLibrary?: () => void;
   /** False while a library operation (save, open, import…) is in flight. */
   canUseLibrary: boolean;
   /** Most recently saved projects, newest first. */
@@ -65,7 +74,64 @@ function separator(id: string): MenuItem {
   return { type: "separator", id };
 }
 
+function desktopFileMenu(commands: FileMenuCommands): TopLevelMenu {
+  const busy = !commands.canUseLibrary;
+  return {
+    id: "file",
+    label: "File",
+    items: [
+      {
+        type: "command",
+        id: "file-new-project",
+        label: "New Project",
+        shortcut: "Ctrl+N",
+        disabled: busy,
+        onSelect: commands.onNewProject,
+      },
+      {
+        type: "command",
+        id: "file-open-file",
+        label: "Open File…",
+        shortcut: "Ctrl+O",
+        disabled: busy,
+        onSelect: commands.onOpenProject,
+      },
+      {
+        type: "command",
+        id: "file-open-library",
+        label: "Open from Desktop Library…",
+        disabled: busy,
+        onSelect: commands.onOpenLibrary,
+      },
+      separator("file-sep-1"),
+      {
+        type: "command",
+        id: "file-save",
+        label: "Save",
+        shortcut: "Ctrl+S",
+        disabled: busy,
+        onSelect: commands.onSave,
+      },
+      {
+        type: "command",
+        id: "file-save-as",
+        label: "Save As…",
+        shortcut: "Ctrl+Shift+S",
+        disabled: busy,
+        onSelect: commands.onSaveAs,
+      },
+      {
+        type: "command",
+        id: "file-rename-project",
+        label: "Rename Project…",
+        onSelect: commands.onRename,
+      },
+    ],
+  };
+}
+
 function fileMenu(commands: FileMenuCommands | undefined): TopLevelMenu {
+  if (commands?.mode === "desktop") return desktopFileMenu(commands);
   const libraryDisabled = !commands?.canUseLibrary;
   const recentProjects = commands?.recentProjects ?? [];
   return {

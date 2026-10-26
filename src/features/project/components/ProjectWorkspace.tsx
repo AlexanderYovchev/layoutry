@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ChangeEvent,
+} from "react";
 import type { FileMenuCommands } from "@/components/layout/applicationMenus";
 import type { ProjectIdentityInfo } from "@/components/layout/ProjectIdentity";
 import { EditorApp } from "@/features/editor/components/EditorApp";
@@ -8,6 +15,7 @@ import { createProjectCommands } from "@/features/project/commands/projectComman
 import { createProjectWorkflow } from "@/features/project/commands/projectWorkflow";
 import {
   DeleteProjectDialog,
+  FileConflictDialog,
   ImportCollisionDialog,
   ProjectErrorDialog,
   UnsavedChangesDialog,
@@ -15,6 +23,11 @@ import {
 import { ProjectLibraryDialog } from "@/features/project/components/ProjectLibraryDialog";
 import { ProjectNameDialog } from "@/features/project/components/ProjectNameDialog";
 import { ProjectToast } from "@/features/project/components/ProjectToast";
+import {
+  getDesktopProjectFiles,
+  type DesktopProjectFiles,
+} from "@/features/project/desktop/desktopProjectFiles";
+import { useDesktopIntegration } from "@/features/project/hooks/useDesktopIntegration";
 import { useHasUnsavedProjectChanges } from "@/features/project/hooks/useHasUnsavedProjectChanges";
 import {
   useProjectKeyboardShortcuts,
@@ -33,9 +46,15 @@ import { downloadTextFile } from "@/features/project/utils/downloadTextFile";
 
 const RECENT_PROJECT_COUNT = 5;
 
+function subscribeToNothing(): () => void {
+  return () => undefined;
+}
+
 interface ProjectWorkspaceProps {
   /** Defaults to the browser's IndexedDB project library; tests inject their own. */
   createRepository?: () => ProjectRepository;
+  /** The desktop app's native-file bridge, or null in a browser (the default detects it). */
+  createDesktopFiles?: () => DesktopProjectFiles | null;
 }
 
 /**
@@ -43,23 +62,42 @@ interface ProjectWorkspaceProps {
  * supplies the File menu, the header's project name and status, the project
  * dialogs, project shortcuts and the unload warning. The editor feature
  * never imports this one; it only receives plain props.
+ *
+ * In the desktop app (PROJECT-1.3) projects are native .layoutry files and
+ * closing the window is coordinated with the main process; in a browser it
+ * is the IndexedDB library, exactly as in PROJECT-1.2.
  */
 export function ProjectWorkspace({
   createRepository = createIndexedDbProjectRepository,
+  createDesktopFiles = getDesktopProjectFiles,
 }: ProjectWorkspaceProps) {
-  const [workflow] = useState(() =>
-    createProjectWorkflow(
-      createProjectCommands({
-        repository: createRepository(),
-        saveFile: (fileName, text) =>
-          downloadTextFile(fileName, text, PROJECT_FILE_MEDIA_TYPE),
-      }),
-    ),
+  const [{ workflow, desktop }] = useState(() => {
+    const desktopFiles = createDesktopFiles();
+    return {
+      desktop: desktopFiles,
+      workflow: createProjectWorkflow(
+        createProjectCommands({
+          repository: createRepository(),
+          desktop: desktopFiles,
+          saveFile: (fileName, text) =>
+            downloadTextFile(fileName, text, PROJECT_FILE_MEDIA_TYPE),
+        }),
+        desktopFiles,
+      ),
+    };
+  });
+  // The static HTML is prerendered as the browser editor. Rendering the
+  // desktop variant only after hydration keeps the first client render
+  // identical to it (no hydration mismatch); behaviour uses `desktop` directly.
+  const isDesktop = useSyncExternalStore(
+    subscribeToNothing,
+    () => desktop !== null,
+    () => false,
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const metadata = useProjectStore((state) => state.metadata);
-  const libraryRevision = useProjectStore((state) => state.libraryRevision);
+  const location = useProjectStore((state) => state.location);
   const operation = useProjectStore((state) => state.operation);
   const library = useProjectStore((state) => state.library);
   const libraryOpen = useProjectDialogStore((state) => state.libraryOpen);
@@ -67,7 +105,8 @@ export function ProjectWorkspace({
   const hasUnsavedChanges = useHasUnsavedProjectChanges();
   const busy = operation !== null;
 
-  useUnsavedChangesWarning();
+  useUnsavedChangesWarning(desktop === null);
+  useDesktopIntegration(workflow, desktop);
 
   // Loads the library once so File › Open Recent is populated.
   useEffect(() => {
@@ -91,24 +130,28 @@ export function ProjectWorkspace({
         if (useProjectStore.getState().operation === null)
           void workflow.newProject();
       },
-      onOpenProject: () => workflow.showLibrary(),
+      onOpenProject: () =>
+        isDesktop ? void workflow.openFile() : workflow.showLibrary(),
       onSave: () => void workflow.save(),
-      onSaveAs: () => workflow.saveAs(),
+      onSaveAs: () => void workflow.saveAs(),
     }),
-    [workflow],
+    [workflow, isDesktop],
   );
   useProjectKeyboardShortcuts(shortcutHandlers);
 
   const fileMenuCommands: FileMenuCommands = {
+    mode: isDesktop ? "desktop" : "browser",
+    onOpenLibrary: () => workflow.showLibrary(),
     canUseLibrary: !busy,
     recentProjects: library.entries
       .flatMap((entry) => (entry.status === "ok" ? [entry.summary] : []))
       .slice(0, RECENT_PROJECT_COUNT),
     onNewProject: () => void workflow.newProject(),
-    onOpenProject: () => workflow.showLibrary(),
+    onOpenProject: () =>
+      isDesktop ? void workflow.openFile() : workflow.showLibrary(),
     onOpenRecent: (id) => void workflow.openProject(id),
     onSave: () => void workflow.save(),
-    onSaveAs: () => workflow.saveAs(),
+    onSaveAs: () => void workflow.saveAs(),
     onRename: () => workflow.rename(),
     onImport: chooseImportFile,
     onDownload: () => void workflow.download(),
@@ -120,9 +163,28 @@ export function ProjectWorkspace({
       ? "saving"
       : hasUnsavedChanges
         ? "unsaved"
-        : libraryRevision === null
+        : location.kind === "unsaved"
           ? "new"
           : "saved",
+    source:
+      location.kind === "file"
+        ? {
+            label: location.fileName,
+            description: `Saved to the file ${location.fileName}`,
+          }
+        : location.kind === "library"
+          ? isDesktop
+            ? {
+                label: "Desktop library",
+                description:
+                  "Saved in Layoutry's desktop library on this computer",
+              }
+            : {
+                label: "Browser library",
+                description:
+                  "Saved in this browser's project library on this device",
+              }
+          : undefined,
     onRename: () => workflow.rename(),
   };
 
@@ -150,6 +212,7 @@ export function ProjectWorkspace({
         onDeleteProject={(id, name) => workflow.requestDelete(id, name)}
         onRetry={() => void workflow.commands.refreshLibrary()}
         onClose={() => setLibraryOpen(false)}
+        variant={isDesktop ? "desktop" : "browser"}
       />
       <ProjectNameDialog
         purpose={dialog?.kind === "name" ? dialog.purpose : null}
@@ -164,9 +227,20 @@ export function ProjectWorkspace({
       <UnsavedChangesDialog
         open={dialog?.kind === "discard"}
         projectName={metadata.name}
+        intent={
+          dialog?.kind === "discard" && dialog.pending.kind === "close"
+            ? "close"
+            : "continue"
+        }
         onSave={() => void workflow.resolveDiscard("save")}
         onDiscard={() => void workflow.resolveDiscard("discard")}
-        onClose={() => closeDialogOfKind("discard")}
+        onClose={() => workflow.cancelDiscard()}
+      />
+      <FileConflictDialog
+        conflict={dialog?.kind === "file-conflict" ? dialog.conflict : null}
+        onOverwrite={() => void workflow.resolveFileConflict("overwrite")}
+        onSaveAs={() => void workflow.resolveFileConflict("save-as")}
+        onClose={() => closeDialogOfKind("file-conflict")}
       />
       <DeleteProjectDialog
         target={

@@ -182,6 +182,12 @@ direction.
 Renames are tracked separately by the project session store (PROJECT-1.2);
 see [project-storage.md](./project-storage.md#project-identity-and-dirty-state).
 
+## File locations are not project content
+
+A desktop file's location (PROJECT-1.3) is session state only: an opaque
+token in the project store. The file never contains its own path, so
+`.layoutry` files stay portable between folders and machines.
+
 ## Platform boundaries
 
 The project feature is pure TypeScript with no filesystem, Node, DOM or

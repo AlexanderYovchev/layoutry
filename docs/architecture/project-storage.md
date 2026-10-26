@@ -28,9 +28,11 @@ Rules that keep the layers apart:
   commands, the project name and status, and the dialogs into `EditorApp`
   as plain props.
 
-PROJECT-1.3 can add a desktop filesystem implementation of
-`ProjectRepository`, or a separate file-based flow, without touching the
-editor or the commands.
+PROJECT-1.3 added native `.layoutry` files for the desktop app as a
+separate, file-based flow (`saveToFile` / `openFile`) over a narrow
+preload bridge, without touching the editor — see
+[desktop-files.md](./desktop-files.md). In a browser everything below is
+unchanged.
 
 ## Browser library: IndexedDB schema
 
@@ -96,8 +98,13 @@ The project session store holds:
 
 - `metadata`: the active project's id, name, createdAt and updatedAt;
 - `savedName`: the metadata baseline;
-- `libraryRevision`: the `updatedAt` of the library record this session
-  last wrote or opened. `null` means the project isn't in the library.
+- `location` (PROJECT-1.3) — where the project is stored, never written
+  into the file:
+  - `unsaved`: nothing stored matches it;
+  - `library` with a `revision`: the `updatedAt` this session last wrote
+    or opened, used for the conflict check;
+  - `file` with an opaque token and a file name: desktop only, never a
+    path.
 
 The editor store keeps its own document baseline (`persistedDocument`, see
 project-format.md).
@@ -157,10 +164,11 @@ and Cancel.
 - **Browser tab:** while the project has unsaved changes or a library write
   is in flight, a `beforeunload` handler asks the browser to confirm. The
   browser shows its own text.
-- **Desktop:** the main process always confirms closing, because it can't
-  see the page's state without IPC. It then lets the page unload by
-  handling `will-prevent-unload`; without that, Electron would silently
-  keep a dirty window open. Reload shortcuts remain blocked.
+- **Desktop (PROJECT-1.3):** no `beforeunload`. The page reports its
+  unsaved state to the main process, a clean window closes without asking,
+  and unsaved work gets the editor's own Save / Don't Save / Cancel. See
+  [desktop-files.md](./desktop-files.md#closing-the-window). Reload
+  shortcuts remain blocked.
 
 ## Keyboard shortcuts
 
@@ -190,19 +198,17 @@ and Cancel.
   make them unavailable, and browsers may evict site storage under disk
   pressure. Use **Download Project** to keep `.layoutry` backups. The Open
   Project dialog says this.
-- **Desktop:** projects live in the Electron profile (`%APPDATA%`), not in
-  files you choose. Native Save/Open dialogs are PROJECT-1.3.
+- **Desktop:** since PROJECT-1.3, projects are `.layoutry` files the user
+  chooses. Library projects saved earlier stay in the Electron profile
+  (`%APPDATA%`) under **File › Open from Desktop Library…**.
 - **No autosave and no crash recovery.**
 - **Two tabs editing the same project** can't overwrite each other's
   saves; the later save gets a conflict and the user uses Save As.
 
 ## Future adapters
 
-- **Desktop filesystem (PROJECT-1.3):**
-  - native dialogs and `.layoutry` files, read and written by the main
-    process behind a narrow, validated preload API;
-  - the renderer still parses with `parseProjectFile`;
-  - IPC will also allow a dirty-aware close prompt.
+- **Desktop filesystem:** done in PROJECT-1.3 — see
+  [desktop-files.md](./desktop-files.md).
 - **Cloud (later):** another `ProjectRepository`. Project metadata
   intentionally has no owner or account fields. The `revision` expectation
   maps naturally onto server-side optimistic concurrency (ETags).

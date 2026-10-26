@@ -1,4 +1,10 @@
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import type {
+  DesktopOpenedFile,
+  DesktopProjectFiles,
+  DesktopServiceError,
+} from "@/features/project/desktop/desktopProjectFiles";
+import { normalizeProjectName } from "@/features/project/rules/projectName";
 import {
   DEFAULT_PROJECT_LIMITS,
   type ProjectLimits,
@@ -9,7 +15,9 @@ import {
   type WriteExpectation,
 } from "@/features/project/storage/projectRepository";
 import {
+  UNSAVED_LOCATION,
   useProjectStore,
+  type ProjectLocation,
   type ProjectOperation,
 } from "@/features/project/stores/useProjectStore";
 import type {
@@ -31,8 +39,19 @@ export interface ProjectCommandError {
   message: string;
 }
 
+/** The file on disk no longer matches what this session last read or wrote. */
+export interface FileConflict {
+  reason: "modified" | "missing";
+  fileName: string;
+}
+
 export type ProjectCommandResult =
-  { ok: true } | { ok: false; error: ProjectCommandError };
+  | { ok: true }
+  | { ok: false; error: ProjectCommandError }
+  /** The user cancelled a native dialog: nothing happened. */
+  | { ok: false; cancelled: true }
+  /** Saving would overwrite a change made outside Layoutry: nothing was written. */
+  | { ok: false; conflict: FileConflict };
 
 /**
  * How an imported project whose id may already be in the library is added:
@@ -46,6 +65,8 @@ export interface ProjectCommandsOptions {
   repository: ProjectRepository;
   /** Hands a finished `.layoutry` file to the user (the browser download). */
   saveFile: (fileName: string, text: string) => void;
+  /** Native `.layoutry` files, in the desktop app only (PROJECT-1.3). */
+  desktop?: DesktopProjectFiles | null;
   now?: () => Date;
   limits?: ProjectLimits;
 }
@@ -65,6 +86,7 @@ export interface ProjectCommandsOptions {
 export function createProjectCommands({
   repository,
   saveFile,
+  desktop = null,
   now = () => new Date(),
   limits = DEFAULT_PROJECT_LIMITS,
 }: ProjectCommandsOptions) {
@@ -126,6 +148,26 @@ export function createProjectCommands({
     }
   }
 
+  /** Lets go of the previous file's token once another location is active. */
+  function releaseReplacedFile(previous: ProjectLocation) {
+    const current = session().location;
+    if (
+      desktop &&
+      previous.kind === "file" &&
+      !(current.kind === "file" && current.token === previous.token)
+    )
+      desktop.releaseProjectFile(previous.token);
+  }
+
+  function activate(
+    metadata: ProjectMetadata,
+    location: ProjectLocation,
+  ): void {
+    const previous = session().location;
+    session().activateProject(metadata, location);
+    releaseReplacedFile(previous);
+  }
+
   async function writeProject(
     project: LayoutryProject,
     expectation: WriteExpectation,
@@ -141,7 +183,7 @@ export function createProjectCommands({
     newProject(): Promise<ProjectCommandResult> {
       return exclusive(null, async () => {
         editor().replaceDocument(createBlankDocument());
-        session().activateProject(createProjectMetadata({ now: now() }), null);
+        activate(createProjectMetadata({ now: now() }), UNSAVED_LOCATION);
         return { ok: true };
       });
     },
@@ -157,7 +199,8 @@ export function createProjectCommands({
 
         const snapshot = session().metadata;
         const document = editor().document;
-        const revision = session().libraryRevision;
+        const location = session().location;
+        const revision = location.kind === "library" ? location.revision : null;
         const saved = touchProjectMetadata(
           options.name === undefined
             ? snapshot
@@ -173,7 +216,11 @@ export function createProjectCommands({
 
         if (session().metadata.id === snapshot.id) {
           editor().markDocumentPersisted(document);
-          session().recordSave(snapshot, saved);
+          session().recordSave(snapshot, saved, {
+            kind: "library",
+            revision: saved.updatedAt,
+          });
+          releaseReplacedFile(location);
         }
         session().showToast(`Saved “${saved.name}”`);
         void refreshLibrary();
@@ -197,7 +244,7 @@ export function createProjectCommands({
 
         if (session().metadata.id === previousId) {
           editor().markDocumentPersisted(document);
-          session().activateProject(created, created.updatedAt);
+          activate(created, { kind: "library", revision: created.updatedAt });
         }
         session().showToast(`Saved as “${created.name}”`);
         void refreshLibrary();
@@ -222,10 +269,10 @@ export function createProjectCommands({
           );
 
         editor().replaceDocument(parsed.project.document);
-        session().activateProject(
-          parsed.project.metadata,
-          stored.metadata.updatedAt,
-        );
+        activate(parsed.project.metadata, {
+          kind: "library",
+          revision: stored.metadata.updatedAt,
+        });
         session().showToast(`Opened “${parsed.project.metadata.name}”`);
         return { ok: true };
       });
@@ -264,11 +311,129 @@ export function createProjectCommands({
         );
 
         editor().replaceDocument(project.document);
-        session().activateProject(metadata, metadata.updatedAt);
+        activate(metadata, { kind: "library", revision: metadata.updatedAt });
         session().showToast(`Imported “${metadata.name}”`);
         void refreshLibrary();
         return { ok: true };
       });
+    },
+
+    /**
+     * Makes an opened native file (already validated by the caller with
+     * parseProjectFile) the active project, replacing the document
+     * atomically. Desktop only.
+     */
+    openFile(
+      file: DesktopOpenedFile,
+      project: LayoutryProject,
+    ): Promise<ProjectCommandResult> {
+      return exclusive("open", async () => {
+        editor().replaceDocument(project.document);
+        activate(project.metadata, {
+          kind: "file",
+          token: file.token,
+          fileName: file.fileName,
+        });
+        session().showToast(`Opened ${file.fileName}`);
+        return { ok: true };
+      });
+    },
+
+    /**
+     * Saves to a native `.layoutry` file (desktop). Without `saveAs`, a
+     * project that already has a file is written back to it; otherwise the
+     * native Save dialog picks the destination, and the project takes the
+     * file's name. Save As always creates a new project identity, like the
+     * library's Save As; the first save of a new project keeps its own.
+     *
+     * Nothing changes unless the write succeeds. `force` overwrites a file
+     * that changed outside Layoutry, after the user confirmed it.
+     */
+    saveToFile(
+      options: { saveAs?: boolean; force?: boolean } = {},
+    ): Promise<ProjectCommandResult> {
+      const saveAs = options.saveAs ?? false;
+      return exclusive(saveAs ? "save-as" : "save", async () => {
+        if (!desktop)
+          return failure(
+            "Files aren't available here",
+            "Saving to files needs the Layoutry desktop app.",
+          );
+        const blocked = editInProgress();
+        if (blocked) return blocked;
+
+        const previous = session().location;
+        let target: { token: string; fileName: string };
+        let chosen = false;
+        if (!saveAs && previous.kind === "file") {
+          target = previous;
+        } else {
+          const choice = await desktop.chooseSaveLocation(
+            projectFileName(session().metadata.name),
+          );
+          if (choice.status === "cancelled")
+            return { ok: false, cancelled: true };
+          if (choice.status === "error") return fileFailure(choice.error);
+          target = choice.target;
+          chosen = true;
+        }
+
+        // Taken after the dialog: this exact snapshot is what gets written.
+        const snapshot = session().metadata;
+        const document = editor().document;
+        const name = chosen
+          ? (nameFromFileName(target.fileName) ?? snapshot.name)
+          : snapshot.name;
+        const saved = saveAs
+          ? createProjectMetadata({ name, now: now() })
+          : touchProjectMetadata({ ...snapshot, name }, now());
+        let text: string;
+        try {
+          text = serializeProject({ metadata: saved, document }, limits);
+        } catch (error) {
+          if (chosen) desktop.releaseProjectFile(target.token);
+          throw error;
+        }
+
+        const result = await desktop.writeProjectFile(
+          target.token,
+          text,
+          options.force ?? false,
+        );
+        if (result.status !== "saved") {
+          if (chosen) desktop.releaseProjectFile(target.token);
+          return result.status === "conflict"
+            ? {
+                ok: false,
+                conflict: { reason: result.reason, fileName: result.fileName },
+              }
+            : fileFailure(result.error);
+        }
+
+        const location: ProjectLocation = {
+          kind: "file",
+          token: target.token,
+          fileName: target.fileName,
+        };
+        if (session().metadata.id === snapshot.id) {
+          editor().markDocumentPersisted(document);
+          if (saveAs) activate(saved, location);
+          else {
+            session().recordSave(snapshot, saved, location);
+            releaseReplacedFile(previous);
+          }
+        } else if (chosen) {
+          // Another project became active meanwhile: don't adopt the file.
+          desktop.releaseProjectFile(target.token);
+        }
+        session().showToast(`Saved ${target.fileName}`);
+        return { ok: true };
+      });
+    },
+
+    /** Resolves once every queued operation has finished. */
+    whenIdle(): Promise<void> {
+      return (queueTail ?? Promise.resolve()).then(() => undefined);
     },
 
     /**
@@ -312,6 +477,33 @@ export function createProjectCommands({
 }
 
 export type ProjectCommands = ReturnType<typeof createProjectCommands>;
+
+/** "Landing page.layoutry" → "Landing page", if that is a valid project name. */
+export function nameFromFileName(fileName: string): string | null {
+  const stem = fileName.replace(/\.layoutry$/i, "");
+  const result = normalizeProjectName(stem);
+  return result.ok ? result.name : null;
+}
+
+const FILE_ERROR_TITLES: Record<string, string> = {
+  "not-found": "File not found",
+  "permission-denied": "Permission denied",
+  locked: "The file is in use",
+  "disk-full": "The disk is full",
+  "too-large": "This file is too large",
+  "not-a-file": "This isn't a project file",
+  "symbolic-link": "Links can't be opened or saved",
+  "invalid-path": "This location can't be used",
+  "verification-failed": "The save couldn't be verified",
+  "invalid-token": "Layoutry lost access to this file",
+};
+
+function fileFailure(error: DesktopServiceError): ProjectCommandResult {
+  return failure(
+    FILE_ERROR_TITLES[error.code] ?? "The file couldn't be saved",
+    error.message,
+  );
+}
 
 function failure(title: string, message: string): ProjectCommandResult {
   return { ok: false, error: { title, message } };

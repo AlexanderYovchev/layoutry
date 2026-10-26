@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { spawn } from "node:child_process";
 import {
-  answerPendingCloseDialog,
   closeDialogCalls,
+  crashRenderer,
   copyApp,
   documentNodeCount,
   dragInsertContainer,
@@ -55,63 +55,109 @@ function secondInstanceEvents(launched: LaunchedLayoutry) {
   );
 }
 
-test("cancelling the close warning keeps the window and the document", async () => {
-  layoutry = await launchLayoutry();
-  const { app, page } = layoutry;
+/** The editor's own unsaved-changes prompt (PROJECT-1.3), shown for a close. */
+function closePrompt(page: LaunchedLayoutry["page"]) {
+  return page.getByRole("dialog", { name: "Unsaved Changes" });
+}
+
+async function makeUnsavedChange(page: LaunchedLayoutry["page"]) {
   const before = await documentNodeCount(page);
   await dragInsertContainer(page);
   await expect.poll(() => documentNodeCount(page)).toBe(before + 1);
+  return before + 1;
+}
 
+test("a saved (or untouched) project closes at once, with no prompt at all", async () => {
+  layoutry = await launchLayoutry();
+  const { app } = layoutry;
+  await scriptCloseDialog(app, "cancel");
+  const child = app.process();
+  await requestWindowClose(app).catch(() => {
+    // the main process may already be exiting
+  });
+  expect(await waitForExit(child, 15_000)).toBe(0);
+  layoutry = undefined;
+});
+
+test("cancelling the close prompt keeps the window and the document", async () => {
+  layoutry = await launchLayoutry();
+  const { app, page } = layoutry;
+  const nodes = await makeUnsavedChange(page);
+  await scriptCloseDialog(app, "cancel");
+
+  await requestWindowClose(app);
+  const prompt = closePrompt(page);
+  await expect(prompt).toContainText("Save them before closing Layoutry?");
+  // The editor asks; the native dialog is not shown on top of it.
+  expect(await closeDialogCalls(app)).toEqual([]);
+
+  await prompt.getByRole("button", { name: "Cancel" }).click();
+  await expect(prompt).toBeHidden();
+  expect(await windowCount(app)).toBe(1);
+  expect(await documentNodeCount(page)).toBe(nodes);
+
+  // Asking again shows the prompt again.
+  await requestWindowClose(app);
+  await expect(prompt).toBeVisible();
+  expect(await windowCount(app)).toBe(1);
+});
+
+test("repeated close requests while the prompt is open show a single prompt", async () => {
+  layoutry = await launchLayoutry();
+  const { app, page } = layoutry;
+  await makeUnsavedChange(page);
   await scriptCloseDialog(app, "cancel");
   await requestWindowClose(app);
-  await expect.poll(async () => (await closeDialogCalls(app)).length).toBe(1);
+  await requestWindowClose(app);
+  await requestWindowClose(app);
+  await expect(closePrompt(page)).toBeVisible();
+  expect(await page.locator("dialog[open]").count()).toBe(1);
+  expect(await closeDialogCalls(app)).toEqual([]);
+  expect(await windowCount(app)).toBe(1);
 
+  await closePrompt(page).getByRole("button", { name: "Cancel" }).click();
+  await expect.poll(() => windowCount(app)).toBe(1);
+});
+
+test("Don't Save exits cleanly with no leftover processes", async () => {
+  layoutry = await launchLayoutry();
+  const { app, page } = layoutry;
+  await makeUnsavedChange(page);
+  const pids = await app.evaluate(({ app: electronApp }) =>
+    electronApp.getAppMetrics().map((metric) => metric.pid),
+  );
+  expect(pids.length).toBeGreaterThan(1);
+
+  const child = app.process();
+  await requestWindowClose(app);
+  await closePrompt(page).getByRole("button", { name: "Don't Save" }).click();
+  expect(await waitForExit(child, 15_000)).toBe(0);
+
+  await expect
+    .poll(() => pids.filter(isProcessAlive), { timeout: 10_000 })
+    .toEqual([]);
+});
+
+test("if the editor page has crashed, closing falls back to the native warning", async () => {
+  layoutry = await launchLayoutry();
+  const { app, page } = layoutry;
+  await makeUnsavedChange(page);
+  await scriptCloseDialog(app, "cancel");
+  await crashRenderer(app);
+
+  await requestWindowClose(app);
+  await expect.poll(async () => (await closeDialogCalls(app)).length).toBe(1);
   const [call] = await closeDialogCalls(app);
   expect(call).toEqual({
     message: CLOSE_MESSAGE,
     buttons: ["Cancel", "Discard and Close"],
   });
   expect(await windowCount(app)).toBe(1);
-  expect(await documentNodeCount(page)).toBe(before + 1);
-
-  // Asking again shows the warning again.
-  await requestWindowClose(app);
-  await expect.poll(async () => (await closeDialogCalls(app)).length).toBe(2);
-  expect(await windowCount(app)).toBe(1);
-});
-
-test("repeated close requests while the warning is open show a single dialog", async () => {
-  layoutry = await launchLayoutry();
-  const { app } = layoutry;
-  await scriptCloseDialog(app, "pending");
-  await requestWindowClose(app);
-  await requestWindowClose(app);
-  await requestWindowClose(app);
-  await expect.poll(async () => (await closeDialogCalls(app)).length).toBe(1);
-  expect(await windowCount(app)).toBe(1);
-
-  await answerPendingCloseDialog(app, "cancel");
-  await expect.poll(() => windowCount(app)).toBe(1);
-});
-
-test("confirming the close warning exits cleanly with no leftover processes", async () => {
-  layoutry = await launchLayoutry();
-  const { app } = layoutry;
-  const pids = await app.evaluate(({ app: electronApp }) =>
-    electronApp.getAppMetrics().map((metric) => metric.pid),
-  );
-  expect(pids.length).toBeGreaterThan(1);
 
   await scriptCloseDialog(app, "discard");
   const child = app.process();
-  await requestWindowClose(app).catch(() => {
-    // the main process may already be exiting
-  });
+  await requestWindowClose(app).catch(() => undefined);
   expect(await waitForExit(child, 15_000)).toBe(0);
-
-  await expect
-    .poll(() => pids.filter(isProcessAlive), { timeout: 10_000 })
-    .toEqual([]);
 });
 
 test("a second launch focuses the running editor instead of opening another", async () => {
@@ -151,20 +197,20 @@ test("a second launch focuses the running editor instead of opening another", as
   expect(page.url()).toBe("app://layoutry/");
 });
 
-test("a second launch while the close warning is open still exits and opens nothing", async () => {
+test("a second launch while the close prompt is open still exits and opens nothing", async () => {
   layoutry = await launchLayoutry();
-  const { app, userDataDir } = layoutry;
+  const { app, page, userDataDir } = layoutry;
   await recordSecondInstanceEvents(layoutry);
-  await scriptCloseDialog(app, "pending");
+  await makeUnsavedChange(page);
   await requestWindowClose(app);
-  await expect.poll(async () => (await closeDialogCalls(app)).length).toBe(1);
+  await expect(closePrompt(page)).toBeVisible();
 
   expect(await launchSecondInstance(userDataDir)).toBe(0);
   await expect.poll(() => secondInstanceEvents(layoutry!)).toBe(1);
   expect(await windowCount(app)).toBe(1);
-  expect(await closeDialogCalls(app)).toHaveLength(1);
+  expect(await page.locator("dialog[open]").count()).toBe(1);
 
-  await answerPendingCloseDialog(app, "cancel");
+  await closePrompt(page).getByRole("button", { name: "Cancel" }).click();
   expect(await windowCount(app)).toBe(1);
 });
 

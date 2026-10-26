@@ -9,12 +9,17 @@ import {
   primaryButtonClass,
   secondaryButtonClass,
 } from "@/features/project/components/projectDialogButtons";
-import type { ProjectCommandError } from "@/features/project/commands/projectCommands";
+import type {
+  FileConflict,
+  ProjectCommandError,
+} from "@/features/project/commands/projectCommands";
 import type { ProjectMetadata } from "@/features/project/types/projectFile";
 
 interface UnsavedChangesDialogProps {
   open: boolean;
   projectName: string;
+  /** "close": the desktop window is closing (PROJECT-1.3). */
+  intent?: "continue" | "close";
   onSave: () => void;
   onDiscard: () => void;
   onClose: () => void;
@@ -24,6 +29,7 @@ interface UnsavedChangesDialogProps {
 export function UnsavedChangesDialog({
   open,
   projectName,
+  intent = "continue",
   onSave,
   onDiscard,
   onClose,
@@ -38,7 +44,10 @@ export function UnsavedChangesDialog({
     >
       <p>
         <span className="text-fg-primary font-medium">“{projectName}”</span> has
-        changes that aren&apos;t saved. Save them before continuing?
+        changes that aren&apos;t saved.{" "}
+        {intent === "close"
+          ? "Save them before closing Layoutry?"
+          : "Save them before continuing?"}
       </p>
       <div className={dialogFooterClass}>
         <button
@@ -221,6 +230,88 @@ export function ProjectErrorDialog({
               className={primaryButtonClass}
             >
               OK
+            </button>
+          </div>
+        </>
+      )}
+    </Dialog>
+  );
+}
+
+interface FileConflictDialogProps {
+  conflict: FileConflict | null;
+  onOverwrite: () => void;
+  onSaveAs: () => void;
+  onClose: () => void;
+}
+
+/**
+ * Saving would replace a version of the file Layoutry hasn't seen
+ * (PROJECT-1.3). Nothing is written until the user picks an option; Cancel
+ * is focused, and overwriting is never the default.
+ */
+export function FileConflictDialog({
+  conflict,
+  onOverwrite,
+  onSaveAs,
+  onClose,
+}: FileConflictDialogProps) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const missing = conflict?.reason === "missing";
+  return (
+    <Dialog
+      open={conflict !== null}
+      onClose={onClose}
+      title={
+        missing ? "File Moved or Deleted" : "File Changed Outside Layoutry"
+      }
+      initialFocusRef={cancelRef}
+    >
+      {conflict && (
+        <>
+          <p role="alert">
+            {missing ? (
+              <>
+                <span className="text-fg-primary font-medium">
+                  “{conflict.fileName}”
+                </span>{" "}
+                was moved, renamed or deleted after you opened or saved it.
+              </>
+            ) : (
+              <>
+                <span className="text-fg-primary font-medium">
+                  “{conflict.fileName}”
+                </span>{" "}
+                was changed by another program or person after you opened or
+                saved it. Saving now would replace those changes.
+              </>
+            )}
+          </p>
+          <p className="mt-2">
+            Nothing has been saved yet. Use Save As to keep both versions.
+          </p>
+          <div className={dialogFooterClass}>
+            <button
+              ref={cancelRef}
+              type="button"
+              onClick={onClose}
+              className={secondaryButtonClass}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onOverwrite}
+              className={dangerButtonClass}
+            >
+              {missing ? "Save Here Anyway" : "Overwrite"}
+            </button>
+            <button
+              type="button"
+              onClick={onSaveAs}
+              className={primaryButtonClass}
+            >
+              Save As…
             </button>
           </div>
         </>

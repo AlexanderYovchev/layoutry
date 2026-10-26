@@ -42,22 +42,38 @@ Layoutry builds you received directly from the project owner.
 
 
 IMPORTANT: SAVE YOUR WORK
-Use File > Save (Ctrl+S) to save a project inside Layoutry, and File >
-Open Project (Ctrl+O) to reopen it. Layoutry has no autosave or recovery:
-changes made since your last save are lost when:
-- you close the window (Layoutry will ask you to confirm first),
-- the app crashes, or
-- Windows restarts, shuts down or signs you out.
-Saved projects live in Layoutry's own data folder on this computer. Use
-File > Download Project to keep a .layoutry backup copy elsewhere.
+Projects are saved as .layoutry files, wherever you choose:
+- File > Save (Ctrl+S) the first time asks where to save. After that it
+  saves straight back to the same file.
+- File > Save As (Ctrl+Shift+S) saves a separate copy under a new name.
+- File > Open File (Ctrl+O) opens a .layoutry file.
+- The project name and the file it is saved in are shown at the top.
+If another program (or a colleague on a shared folder) changed the file
+since you opened it, Layoutry asks before replacing it. Use Save As to
+keep both versions.
+
+Layoutry has no autosave or recovery. Changes made since your last save
+are lost if the app crashes or Windows restarts, shuts down or signs you
+out. When you close the window with unsaved changes, Layoutry asks:
+Save, Don't Save or Cancel.
+
+Projects you saved with an earlier alpha (inside Layoutry, before
+.layoutry files) are still there: File > Open from Desktop Library.
+
+To open a .layoutry file from Explorer, right-click it and choose
+Open with > Choose another app, then browse to Layoutry.exe. You can also
+drag a .layoutry file onto Layoutry.exe. (This alpha doesn't install
+itself, so it can't register .layoutry files for double-click on its own.)
+
 Reload shortcuts (F5, Ctrl+R) are disabled so they cannot erase your work
 by accident. Starting Layoutry a second time just brings the open window
-back to the front.
+back to the front (and opens the file you started it with, if any).
 
 
 KNOWN LIMITATIONS OF THIS ALPHA
-- No autosave, no recovery and no exporting of code yet. Projects are
-  saved inside Layoutry, not as files you choose with a Save dialog.
+- No autosave, no recovery and no exporting of code yet.
+- Double-clicking a .layoutry file doesn't open Layoutry until you choose
+  it with "Open with" (see above).
 - No installer and no automatic updates: new versions arrive as a new ZIP.
 - The editor needs a window at least 900 x 600 pixels inside. On very
   small screens with high display scaling, it may not fit.

@@ -7,10 +7,14 @@ import { cn } from "@/lib/utils";
  * - `unsaved`: edited or renamed since then (or its library copy was deleted)
  * - `new`: a new project that was never saved and has no changes yet
  * - `saving`: a library write is in flight
+ *
+ * PROJECT-1.3 — `source` says where the project is stored, e.g. a file
+ * name ("Website.layoutry") or "Desktop library". Never a full path.
  */
 export interface ProjectIdentityInfo {
   name: string;
   status: "saved" | "unsaved" | "new" | "saving";
+  source?: { label: string; description: string };
   onRename: () => void;
 }
 
@@ -67,6 +71,16 @@ export function ProjectIdentity({ project }: ProjectIdentityProps) {
         />
         {STATUS_LABELS[status]}
       </span>
+      {project?.source && (
+        <span
+          data-project-source
+          title={project.source.description}
+          className="text-fg-secondary min-w-0 truncate text-xs"
+        >
+          <span className="sr-only">Stored in: </span>
+          {project.source.label}
+        </span>
+      )}
     </div>
   );
 }
