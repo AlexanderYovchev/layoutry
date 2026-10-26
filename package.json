@@ -19,7 +19,10 @@
     "desktop:start": "npm run desktop:compile && node desktop/scripts/start-electron.mjs",
     "desktop:test": "npm run desktop:build && playwright test -c playwright.desktop.config.ts",
     "desktop:package": "npm run desktop:build && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON desktop/scripts/package-windows.mjs",
-    "desktop:test:packaged": "playwright test -c playwright.packaged.config.ts"
+    "desktop:test:packaged": "playwright test -c playwright.packaged.config.ts",
+    "desktop:soak": "node desktop/scripts/run-soak.mjs",
+    "desktop:manifest": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON desktop/scripts/write-release-manifest.mjs",
+    "desktop:release": "npm run desktop:package && npm run desktop:test:packaged && npm run desktop:manifest"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -48,6 +48,13 @@ public static class LayoutryWin32 {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
   [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+  [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr hWnd);
+  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+  [StructLayout(LayoutKind.Sequential)] struct RECT { public int Left, Top, Right, Bottom; }
+  public static int[] Bounds(IntPtr hWnd) {
+    RECT r; GetWindowRect(hWnd, out r); return new[] { r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top };
+  }
   [DllImport("user32.dll")] static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
   /** Text of every Win32 push button inside a dialog. */
   public static string[] Buttons(IntPtr dialog) {
@@ -123,6 +130,50 @@ export function minimizeMainWindow(pid: number): void {
   // SW_MINIMIZE = 6
   powershell(`${WIN32}
 [void][LayoutryWin32]::ShowWindow((Find-LayoutryMainWindow ${pid}), 6)`);
+}
+
+export type WindowCommand = "maximize" | "restore" | "minimize";
+
+/** ShowWindow on the main window: SW_MAXIMIZE 3, SW_RESTORE 9, SW_MINIMIZE 6. */
+export function showMainWindow(pid: number, command: WindowCommand): void {
+  const code = { maximize: 3, restore: 9, minimize: 6 }[command];
+  powershell(`${WIN32}
+[void][LayoutryWin32]::ShowWindow((Find-LayoutryMainWindow ${pid}), ${code})`);
+}
+
+/** Asks Windows to resize the main window (it enforces the app's minimum). */
+export function resizeMainWindow(
+  pid: number,
+  width: number,
+  height: number,
+): void {
+  // SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE
+  powershell(`${WIN32}
+[void][LayoutryWin32]::SetWindowPos((Find-LayoutryMainWindow ${pid}), [IntPtr]::Zero, 0, 0, ${width}, ${height}, 0x0016)`);
+}
+
+export interface WindowGeometry {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  maximized: boolean;
+}
+
+export function mainWindowGeometry(pid: number): WindowGeometry {
+  const json = powershell(`${WIN32}
+$h = Find-LayoutryMainWindow ${pid}
+$b = [LayoutryWin32]::Bounds($h)
+@{ x = $b[0]; y = $b[1]; width = $b[2]; height = $b[3]; maximized = [LayoutryWin32]::IsZoomed($h) } | ConvertTo-Json -Compress`);
+  const parsed: unknown = JSON.parse(json);
+  const field = (name: string) => Number(Reflect.get(Object(parsed), name));
+  return {
+    x: field("x"),
+    y: field("y"),
+    width: field("width"),
+    height: field("height"),
+    maximized: Reflect.get(Object(parsed), "maximized") === true,
+  };
 }
 
 /**
@@ -247,6 +298,24 @@ $icon = [System.Drawing.Icon]::ExtractAssociatedIcon(${psString(exePath)})
 $stream = New-Object System.IO.MemoryStream
 $icon.ToBitmap().Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
 [BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($stream.ToArray()))`);
+}
+
+/** Every entry path inside a ZIP, read with .NET's ZipFile ("/"-separated). */
+export function zipEntries(zipPath: string): string[] {
+  const output = powershell(`
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zip = [System.IO.Compression.ZipFile]::OpenRead(${psString(zipPath)})
+try { $zip.Entries | ForEach-Object { $_.FullName.Replace('\\', '/') } } finally { $zip.Dispose() }`);
+  return output.split(/\r?\n/).filter(Boolean);
+}
+
+/** Local TCP ports a set of processes is listening on. */
+export function listeningPorts(pids: number[]): number[] {
+  if (pids.length === 0) return [];
+  const output = powershell(
+    `@(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { @(${pids.join(",")}) -contains $_.OwningProcess } | ForEach-Object { $_.LocalPort }) -join ','`,
+  );
+  return output.split(",").filter(Boolean).map(Number);
 }
 
 export function expandZip(zipPath: string, destination: string): void {

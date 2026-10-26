@@ -5,6 +5,7 @@ import {
   pageCount,
   type PackagedLayoutry,
 } from "./support/packagedApp";
+import { listeningPorts, processTree } from "./support/windows";
 
 /**
  * The security rules are unit-tested and verified in dev Electron
@@ -20,6 +21,13 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await layoutry?.dispose();
+});
+
+test("the app opens no local network services of its own", async () => {
+  // Only the DevTools port this test passed on the command line may listen;
+  // Layoutry itself runs no server (no localhost, no loopback HTTP).
+  const pids = processTree(layoutry.pid).map((process) => process.pid);
+  expect(listeningPorts(pids)).toEqual([layoutry.devToolsPort]);
 });
 
 test("the renderer and its iframes have no Node.js or file access", async () => {

@@ -77,6 +77,8 @@ export interface PackagedLayoutry {
   userDataDir: string;
   /** Spawn → editor hydrated and window visible, in ms. */
   startupMs: number;
+  /** The test-only DevTools port this launch was given. */
+  devToolsPort: number;
   output: () => string;
   dispose: () => Promise<void>;
 }
@@ -161,6 +163,7 @@ export async function launchPackaged(
       page,
       userDataDir,
       startupMs,
+      devToolsPort: port,
       output: () => output,
       dispose: async () => {
         await browser.close().catch(() => {});

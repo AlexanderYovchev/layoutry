@@ -34,6 +34,7 @@ import {
   RELEASE,
   releasePaths,
   REQUIRED_ASAR_ENTRIES,
+  TESTER_DOCUMENTS,
 } from "../packaging/releaseInfo.mjs";
 
 const REPO_ROOT = path.resolve(
@@ -57,12 +58,6 @@ const electronDist = path.join(
   "dist",
 );
 const exportRoot = path.join(REPO_ROOT, "out");
-const TESTER_README = path.join(
-  REPO_ROOT,
-  "desktop",
-  "packaging",
-  "README-alpha.txt",
-);
 const mainProcessRoot = path.join(REPO_ROOT, "desktop-dist");
 
 function fail(message) {
@@ -125,13 +120,16 @@ await cp(mainProcessRoot, path.join(STAGED_APP_DIR, "desktop-dist"), {
     (path.extname(source) === "" || source.endsWith(".js")),
 });
 await cp(exportRoot, path.join(STAGED_APP_DIR, "out"), { recursive: true });
-// Tester README, shipped next to Layoutry.exe (outside app.asar).
-await writeFile(
-  path.join(STAGED_BUILD_RESOURCES_DIR, "README.txt"),
-  (await readFile(TESTER_README, "utf8"))
-    .replaceAll("{{VERSION}}", RELEASE.version)
-    .replace(/\r?\n/g, "\r\n"),
-);
+// Tester documents, shipped next to Layoutry.exe (outside app.asar), with
+// the version filled in and Windows line endings for Notepad.
+for (const { source, name } of TESTER_DOCUMENTS) {
+  await writeFile(
+    path.join(STAGED_BUILD_RESOURCES_DIR, name),
+    (await readFile(path.join(REPO_ROOT, source), "utf8"))
+      .replaceAll("{{VERSION}}", RELEASE.version)
+      .replace(/\r?\n/g, "\r\n"),
+  );
+}
 
 // --- 2. Icon from the existing logo mark --------------------------------
 const iconPath = path.join(STAGED_BUILD_RESOURCES_DIR, "icon.ico");
@@ -173,12 +171,10 @@ await build({
       target: [{ target: "zip", arch: ["x64"] }],
       icon: iconPath,
     },
-    extraFiles: [
-      {
-        from: path.join(STAGED_BUILD_RESOURCES_DIR, "README.txt"),
-        to: "README.txt",
-      },
-    ],
+    extraFiles: TESTER_DOCUMENTS.map(({ name }) => ({
+      from: path.join(STAGED_BUILD_RESOURCES_DIR, name),
+      to: name,
+    })),
     // Fuses go in after electron-builder has embedded the ASAR integrity
     // hash into the executable and before its resource-editing step. Our
     // own pinned @electron/fuses is used: electron-builder bundles an older
@@ -214,9 +210,12 @@ for (const key of Object.keys(FuseV1Options).filter((k) =>
     fail(`fuse ${key} is ${actual}, expected ${expected}`);
 }
 
-const readme = await readFile(path.join(UNPACKED_DIR, "README.txt"), "utf8");
-if (!readme.includes(RELEASE.version) || readme.includes("{{")) {
-  fail("README.txt is missing or was not filled in");
+for (const { name } of TESTER_DOCUMENTS) {
+  const shipped = path.join(UNPACKED_DIR, name);
+  const text = existsSync(shipped) ? await readFile(shipped, "utf8") : "";
+  if (!text.includes(RELEASE.version) || text.includes("{{")) {
+    fail(`${name} is missing or was not filled in`);
+  }
 }
 
 const resourcesDir = path.join(UNPACKED_DIR, "resources");

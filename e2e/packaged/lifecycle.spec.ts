@@ -82,6 +82,32 @@ test("confirming the native close warning exits cleanly with no leftover process
     .toEqual([]);
 });
 
+test("Layoutry reopens normally with the same profile after a normal exit", async () => {
+  const userDataDir = await makeTempDir("layoutry-packaged-reopen-");
+  try {
+    layoutry = await launchPackaged(extractedExe(), { userDataDir });
+    const first = layoutry;
+    requestMainWindowClose(first.pid);
+    expect(nativeDialog(first.pid, "Discard and Close").found).toBe(true);
+    expect(await waitForExit(first.child, 15_000)).toBe(0);
+    await first.dispose();
+
+    // The single-instance lock was released; a fresh, editable session starts.
+    layoutry = await launchPackaged(extractedExe(), { userDataDir });
+    await expect(layoutry.page).toHaveTitle("Layoutry");
+    expect(await documentNodeCount(layoutry.page)).toBeGreaterThan(0);
+    await dragInsertContainer(layoutry.page);
+    expect(mainWindowState(layoutry.pid)).toMatchObject({
+      visible: true,
+      minimized: false,
+    });
+  } finally {
+    await layoutry?.dispose();
+    layoutry = undefined;
+    await removeDir(userDataDir);
+  }
+});
+
 test("a second launch restores and focuses the running editor without opening another", async () => {
   const userDataDir = await makeTempDir("layoutry-packaged-single-");
   try {

@@ -9,6 +9,7 @@ import {
   FORBIDDEN_ASAR_PATTERNS,
   RELEASE,
   REQUIRED_ASAR_ENTRIES,
+  TESTER_DOCUMENTS,
   ZIP_NAME,
 } from "../../desktop/packaging/releaseInfo.mjs";
 import { electronBinary } from "../desktop/support/layoutryApp";
@@ -19,7 +20,11 @@ import {
   UNPACKED_EXE,
   ZIP_PATH,
 } from "./support/packagedApp";
-import { associatedIconHash, executableInfo } from "./support/windows";
+import {
+  associatedIconHash,
+  executableInfo,
+  zipEntries,
+} from "./support/windows";
 
 const allFuses = Object.values(FuseV1Options).filter(
   (value): value is FuseV1Options => typeof value === "number",
@@ -66,12 +71,48 @@ test("the release ZIP is deterministically named and extracts to a flat, complet
     "resources/app.asar",
   ]);
 
-  const readme = await readFile(
-    path.join(extractedAppDir(), "README.txt"),
-    "utf8",
+  for (const { name } of TESTER_DOCUMENTS) {
+    const text = await readFile(path.join(extractedAppDir(), name), "utf8");
+    expect(text, name).toContain(RELEASE.version);
+    expect(text, name).not.toContain("{{");
+  }
+});
+
+test("the ZIP's own entry list contains no development files", () => {
+  const entries = zipEntries(ZIP_PATH);
+  expect(entries.length).toBeGreaterThan(50);
+  expect(entries).toContain("Layoutry.exe");
+  expect(entries).toContain("FEEDBACK-TEMPLATE.txt");
+  const suspicious = entries.filter((entry) =>
+    /(^|\/)(node_modules|src|e2e|test|docs|\.git|\.next|desktop)\/|\.(map|ts|tsx|env|pem|log)$|(^|\/)\.env/i.test(
+      entry,
+    ),
   );
-  expect(readme).toContain(RELEASE.version);
-  expect(readme).not.toContain("{{");
+  expect(suspicious).toEqual([]);
+});
+
+test("shipped app code and documents contain no secrets or developer-machine paths", async () => {
+  const shipped = [
+    path.join(extractedAppDir(), "resources", "app.asar"),
+    ...TESTER_DOCUMENTS.map(({ name }) => path.join(extractedAppDir(), name)),
+  ];
+  const patterns: [string, RegExp][] = [
+    ["developer checkout path", /Main Projects|Visual CSS Playground Project/i],
+    ["user profile path", /C:\\\\?Users\\\\?User\b/i],
+    ["developer e-mail", /yovchev/i],
+    ["private key", /BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY/],
+    ["AWS access key", /AKIA[0-9A-Z]{16}/],
+    ["GitHub token", /gh[pousr]_[A-Za-z0-9]{30,}/],
+    ["Anthropic/OpenAI-style key", /\bsk-[A-Za-z0-9_-]{20,}/],
+  ];
+  for (const file of shipped) {
+    const content = (await readFile(file)).toString("latin1");
+    for (const [label, pattern] of patterns) {
+      expect(pattern.test(content), `${label} in ${path.basename(file)}`).toBe(
+        false,
+      );
+    }
+  }
 });
 
 test("app.asar holds only the compiled main process and the static export", async () => {

@@ -10,6 +10,7 @@ import { hardenSession } from "../security/hardenSession";
 import { hardenWebContents } from "../security/hardenWebContents";
 import { createCloseGuard } from "./closeGuard";
 import { installDesktopShortcuts } from "./desktopShortcuts";
+import { outerMinimumForContent } from "./windowSizing";
 
 /**
  * Layoutry desktop shell entry point (ADR-0002). Serves the Next.js static
@@ -24,8 +25,10 @@ import { installDesktopShortcuts } from "./desktopShortcuts";
  */
 
 const DEFAULT_WINDOW_SIZE = { width: 1440, height: 900 };
-// The editor's minimum supported viewport width.
-const MIN_WINDOW_SIZE = { width: 900, height: 600 };
+// The editor's minimum supported viewport (AppShell shows an "unsupported
+// viewport" notice instead of the editor below 900px wide). Applied to the
+// window's content area — see outerMinimumForContent.
+const MIN_CONTENT_SIZE = { width: 900, height: 600 };
 
 const devToolsEnabled = process.env.LAYOUTRY_DESKTOP_DEVTOOLS === "1";
 const exportRoot = path.join(app.getAppPath(), "out");
@@ -69,8 +72,6 @@ function createMainWindow(): BrowserWindow {
     title: "Layoutry",
     width: Math.min(DEFAULT_WINDOW_SIZE.width, workArea.width),
     height: Math.min(DEFAULT_WINDOW_SIZE.height, workArea.height),
-    minWidth: MIN_WINDOW_SIZE.width,
-    minHeight: MIN_WINDOW_SIZE.height,
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -81,6 +82,19 @@ function createMainWindow(): BrowserWindow {
       devTools: devToolsEnabled,
     },
   });
+
+  // minWidth/minHeight would constrain the outer window, letting the
+  // viewport shrink below the editor's floor by the frame's size (884px
+  // at 100% scaling) and replacing the editor with its "unsupported
+  // viewport" notice. Size the outer minimum from the actual frame.
+  const [outerWidth, outerHeight] = window.getSize();
+  const [contentWidth, contentHeight] = window.getContentSize();
+  const minimum = outerMinimumForContent(
+    MIN_CONTENT_SIZE,
+    { width: outerWidth, height: outerHeight },
+    { width: contentWidth, height: contentHeight },
+  );
+  window.setMinimumSize(minimum.width, minimum.height);
 
   installDesktopShortcuts(window.webContents, { devToolsEnabled });
 

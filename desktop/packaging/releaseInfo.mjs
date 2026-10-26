@@ -35,6 +35,28 @@ export function releasePaths(repoRoot) {
   };
 }
 
+/** Tester-facing documents shipped next to Layoutry.exe ({{VERSION}} is filled in). */
+export const TESTER_DOCUMENTS = [
+  { source: "desktop/packaging/README-alpha.txt", name: "README.txt" },
+  {
+    source: "desktop/packaging/FEEDBACK-TEMPLATE.txt",
+    name: "FEEDBACK-TEMPLATE.txt",
+  },
+];
+
+/** Supported platforms, as stated in the release manifest and README. */
+export const SUPPORTED_WINDOWS = "Windows 10 and Windows 11, 64-bit (x64)";
+
+/** Known alpha limitations, as stated in the release manifest. */
+export const KNOWN_LIMITATIONS = [
+  "No project saving, opening, autosave, recovery or export: closing, a crash or a Windows restart discards the document.",
+  "Unsigned executable: Windows SmartScreen and antivirus products may warn on first launch.",
+  "No installer and no auto-update: each release is a new ZIP.",
+  "Validated on one Windows 10 x64 machine (single 1920x1080 monitor, 100% scaling); 125%/150% scaling was simulated; Windows 11 and multi-monitor setups are untested.",
+  "The editor needs a content area of at least 900 x 600 pixels.",
+  "Offline operation was verified by blocking and observing network requests, not on a machine without a network adapter.",
+];
+
 /** Files every packaged app.asar must contain. */
 export const REQUIRED_ASAR_ENTRIES = [
   "package.json",

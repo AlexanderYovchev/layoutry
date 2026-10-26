@@ -36,7 +36,16 @@ test("opens one hardened Layoutry window on app://layoutry/", async () => {
         title: window.getTitle(),
         visible: window.isVisible(),
         resizable: window.isResizable(),
-        minimumSize: window.getMinimumSize(),
+        // Outer minimum minus the frame = the content (viewport) floor.
+        minimumContentSize: (() => {
+          const [minWidth, minHeight] = window.getMinimumSize();
+          const [outerWidth, outerHeight] = window.getSize();
+          const [contentWidth, contentHeight] = window.getContentSize();
+          return [
+            minWidth - (outerWidth - contentWidth),
+            minHeight - (outerHeight - contentHeight),
+          ];
+        })(),
         applicationMenu: Menu.getApplicationMenu(),
         devToolsOpened: window.webContents.isDevToolsOpened(),
         renderers: renderers.length,
@@ -51,7 +60,7 @@ test("opens one hardened Layoutry window on app://layoutry/", async () => {
     title: "Layoutry",
     visible: true,
     resizable: true,
-    minimumSize: [900, 600],
+    minimumContentSize: [900, 600],
     applicationMenu: null,
     devToolsOpened: false,
     renderers: expect.any(Number),

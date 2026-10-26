@@ -1,0 +1,44 @@
+LAYOUTRY ALPHA — FEEDBACK
+Copy this file, fill in what you can, and send it to the person who gave
+you Layoutry. Short answers are fine. "I don't know" is fine too.
+
+--------------------------------------------------------------------------
+ABOUT YOUR COMPUTER
+Windows version (Settings > System > About, e.g. "Windows 11 Home 23H2"):
+
+Screen resolution and scaling (Settings > System > Display,
+e.g. "1920 x 1080 at 125%"):
+
+Number of monitors:
+
+Layoutry version: {{VERSION}}
+
+--------------------------------------------------------------------------
+WHAT HAPPENED
+What were you trying to do?
+
+What did you expect to happen?
+
+What actually happened?
+
+Steps to make it happen again (1, 2, 3...):
+1.
+2.
+3.
+
+Does it happen every time, sometimes, or only once?
+
+Screenshot or screen recording attached? (yes / no)
+Tip: Windows key + Shift + S takes a screenshot.
+
+--------------------------------------------------------------------------
+HOW BAD IS IT? (put an X next to one)
+[ ] Blocker   — Layoutry would not start, crashed, or I lost my work
+[ ] Serious   — I could not do something important
+[ ] Annoying  — it worked, but it was confusing or I needed a workaround
+[ ] Cosmetic  — something looks wrong but works
+
+--------------------------------------------------------------------------
+ANYTHING ELSE?
+Ideas, confusing moments, things you liked:
+

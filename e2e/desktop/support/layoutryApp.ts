@@ -247,10 +247,20 @@ export async function dragInsertContainer(page: Page): Promise<void> {
   const to = await surface.boundingBox();
   if (!from || !to) throw new Error("Container card or Canvas not visible");
 
+  // The drop point must be on screen: the page sheet can extend below the
+  // visible Workspace in a short window.
+  const workspace = await page
+    .getByRole("main", { name: "Workspace" })
+    .boundingBox();
+  const viewportHeight = await page.evaluate(() => innerHeight);
+  const visibleBottom = Math.min(
+    viewportHeight,
+    workspace ? workspace.y + workspace.height : viewportHeight,
+  );
   const start = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
   const end = {
     x: to.x + Math.min(300, to.width / 2),
-    y: to.y + Math.min(650, to.height - 40),
+    y: Math.min(to.y + Math.min(650, to.height - 40), visibleBottom - 60),
   };
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
@@ -260,6 +270,9 @@ export async function dragInsertContainer(page: Page): Promise<void> {
       start.y + ((end.y - start.y) * step) / 15,
     );
   }
+  // Dwell before releasing, as a person would: dnd-kit settles its drop
+  // target on the following animation frames.
+  await page.waitForTimeout(100);
   await page.mouse.up();
 }
 

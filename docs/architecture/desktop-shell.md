@@ -6,20 +6,25 @@ hardened Electron shell. The decision and its alternatives are recorded in
 explains how to build, run, package and test the shell, and what it
 guarantees.
 
-**Status:** DESKTOP-0.4. Layoutry is packaged as a portable Windows x64
-ZIP (unsigned private alpha). Projects cannot be saved.
+**Status:** DESKTOP-0.5. Layoutry ships as a QA-validated, portable
+Windows x64 ZIP for a small, controlled alpha (unsigned). Projects cannot
+be saved. The release QA record is in
+[docs/reports/desktop-0.5-release-qa.md](../reports/desktop-0.5-release-qa.md).
 
 ## Commands
 
-| Command                         | What it does                                                                                                                                                           |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run dev`                   | The browser editor, unchanged by the desktop work.                                                                                                                     |
-| `npm run desktop:build`         | Builds the Next.js static export into `out/` (`LAYOUTRY_DESKTOP_BUILD=1`), then compiles `desktop/` into `desktop-dist/`. Both folders are gitignored.                 |
-| `npm run desktop:compile`       | Compiles only the main process (`desktop/` → `desktop-dist/`).                                                                                                         |
-| `npm run desktop:start`         | Compiles the main process and launches development Electron against the existing `out/`. Run `desktop:build` first.                                                    |
-| `npm run desktop:test`          | Runs `desktop:build`, then the dev-Electron Playwright suite (`playwright.desktop.config.ts`, `e2e/desktop/`). Exits nonzero on any failure.                           |
-| `npm run desktop:package`       | Runs `desktop:build`, then packages the Windows release into `release/` and verifies it (`desktop/scripts/package-windows.mjs`). Fails on any verification error.      |
-| `npm run desktop:test:packaged` | Runs the packaged-app suite (`playwright.packaged.config.ts`, `e2e/packaged/`) against the real `Layoutry.exe`. Requires `desktop:package` first; it does not rebuild. |
+| Command                           | What it does                                                                                                                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                     | The browser editor, unchanged by the desktop work.                                                                                                                              |
+| `npm run desktop:build`           | Builds the Next.js static export into `out/` (`LAYOUTRY_DESKTOP_BUILD=1`), then compiles `desktop/` into `desktop-dist/`. Both folders are gitignored.                          |
+| `npm run desktop:compile`         | Compiles only the main process (`desktop/` → `desktop-dist/`).                                                                                                                  |
+| `npm run desktop:start`           | Compiles the main process and launches development Electron against the existing `out/`. Run `desktop:build` first.                                                             |
+| `npm run desktop:test`            | Runs `desktop:build`, then the dev-Electron Playwright suite (`playwright.desktop.config.ts`, `e2e/desktop/`). Exits nonzero on any failure.                                    |
+| `npm run desktop:package`         | Runs `desktop:build`, then packages the Windows release into `release/` and verifies it (`desktop/scripts/package-windows.mjs`). Fails on any verification error.               |
+| `npm run desktop:test:packaged`   | Runs the packaged-app suite (`playwright.packaged.config.ts`, `e2e/packaged/`) against the real `Layoutry.exe`. Requires `desktop:package` first; it does not rebuild.          |
+| `npm run desktop:soak [-- <min>]` | Opt-in stability session (default 20 minutes) of repeated editing in the packaged exe; writes `release/soak-results.json`.                                                      |
+| `npm run desktop:manifest`        | Writes `release/<zip>.sha256` and `release/<zip base>.manifest.md` from the actual ZIP, Git and the latest test results. Fails if the ZIP was not validated after it was built. |
+| `npm run desktop:release`         | `desktop:package` → `desktop:test:packaged` → `desktop:manifest`: one command for a validated release.                                                                          |
 
 All of them work in PowerShell, CMD and POSIX shells; environment
 variables are set inside Node scripts, never with `VAR=x` syntax.
@@ -78,11 +83,13 @@ the archive, so no packaged-specific code path exists.
 
 All of these are generated and gitignored (`/release/`):
 
-| Path                                     | What                                                                                                     |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `release/Layoutry-<version>-win-x64.zip` | The distributable: the complete app folder at the ZIP root.                                              |
-| `release/win-unpacked/`                  | The same app, unzipped (`Layoutry.exe`, Chromium runtime, `resources/app.asar`, `README.txt`, licences). |
-| `release/builder-debug.yml`              | electron-builder's log of the effective build.                                                           |
+| Path                                                              | What                                                                                                     |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `release/Layoutry-<version>-win-x64.zip`                          | The distributable: the complete app folder at the ZIP root.                                              |
+| `release/win-unpacked/`                                           | The same app, unzipped (`Layoutry.exe`, Chromium runtime, `resources/app.asar`, `README.txt`, licences). |
+| `release/builder-debug.yml`                                       | electron-builder's log of the effective build.                                                           |
+| `release/<zip>.sha256`, `release/<zip base>.manifest.md`          | Checksum and release manifest (`desktop:manifest`). Ship them with the ZIP.                              |
+| `release/packaged-test-results.json`, `release/soak-results.json` | Validation records the manifest reads.                                                                   |
 
 The version is `RELEASE.version` in `desktop/packaging/releaseInfo.mjs`
 (currently `0.1.0-alpha.1`). It is separate from the repository's
@@ -98,20 +105,26 @@ The version is `RELEASE.version` in `desktop/packaging/releaseInfo.mjs`
 | LegalCopyright                | empty, because no copyright holder has been stated                                                           |
 | Signature                     | none (`NotSigned`)                                                                                           |
 
-The tester README ships in the ZIP as `README.txt`. Its source is
-`desktop/packaging/README-alpha.txt`, with `{{VERSION}}` filled in at
-packaging time.
+Two tester documents ship next to `Layoutry.exe`, with `{{VERSION}}`
+filled in and Windows line endings:
+
+- `README.txt`, from `desktop/packaging/README-alpha.txt`
+- `FEEDBACK-TEMPLATE.txt`, from `desktop/packaging/FEEDBACK-TEMPLATE.txt`
 
 ### Rebuilding a release
 
 ```text
-npm ci                          # network: npm registry, Electron download
-npm run desktop:package         # network: Google Fonts (next/font), electron-builder tools
-npm run desktop:test:packaged   # offline: tests the exe that was just built
+npm ci                    # network: npm registry, Electron download
+npm run desktop:release   # network for the build step only (Google Fonts, electron-builder tools);
+                          # then tests the exact ZIP offline and writes manifest + checksum
+npm run desktop:soak      # optional: 20-minute stability session on the same ZIP
+npm run desktop:manifest  # re-run to include the stability results
 ```
 
 `desktop:package` always deletes and recreates `release/`, so every run
-starts clean. Distribute only the ZIP.
+starts clean. Build releases from a committed tree: the manifest records
+the commit and flags uncommitted changes. Distribute the ZIP together with
+its `.manifest.md` and `.sha256` files.
 
 ### Packaged-app test suite
 
@@ -230,6 +243,11 @@ launch its own `--user-data-dir`, so they never share a lock.
 
 - The window shows on `ready-to-show`, or on a failed main-frame load, so a
   broken start is never an invisible process holding the lock.
+- The window's minimum size is set from its actual frame
+  (`desktop/main/windowSizing.ts`), so the content area never drops below
+  the editor's 900 × 600 floor. Below that floor the editor would be
+  replaced by its "unsupported viewport" notice. Before DESKTOP-0.5 the
+  minimum applied to the outer window, leaving an 884 px viewport.
 - Closing (X button, Alt+F4, taskbar) asks "Closing Layoutry will discard
   your current unsaved document. Continue?" **Cancel** is the default.
   Repeated close requests absorb into one dialog, and a confirmed close
@@ -259,8 +277,11 @@ Limitations of this approach:
   offline.
 - Chromium-internal traffic outside the page (for example DNS prefetch) is
   not observed.
-- A run on a machine with no network adapter at all remains a manual
-  DESKTOP-0.5 check.
+- The packaged suite also checks that the app listens on no local ports of
+  its own: no localhost server or service.
+- A run on a machine with no network adapter at all (or with an OS
+  firewall rule) has not been done. It needs administrator rights, which
+  the DESKTOP-0.5 machine did not have.
 
 ## SmartScreen, antivirus and signing
 
@@ -283,11 +304,15 @@ The tester README says the same.
 - The ZIP is ~147 MB; unpacked it is ~370 MB. That is mostly the Chromium
   runtime: about 236 MB for the exe, plus 48 MB of locales and 20 MB of
   licences. Trimming locales is possible later and has not been done.
-- High-DPI scaling and multi-monitor placement rely on Electron's
-  per-monitor DPI handling. They have not been tested beyond the
-  developer's own display.
-- Packaged testing so far is on one Windows 10 x64 machine. Clean
-  Windows 10 and 11 machines are DESKTOP-0.5.
+- Validated on one Windows 10 Pro x64 (22H2) machine: one 1920 × 1080
+  monitor at 100% scaling.
+  - 125% and 150% scaling were **simulated** with Chromium's
+    `--force-device-scale-factor`.
+  - Real Windows display scaling, Windows 11 and multi-monitor setups are
+    untested. Alpha testers are the first coverage there.
+- On small screens with high scaling (for example 1366 × 768 at 150%, a
+  910-pixel-wide work area), the 900-pixel editor floor plus the window
+  frame can exceed the screen.
 - Renderer crashes are not handled specially yet. The window stays open
   and can be closed.
 - Performance numbers are single-machine baselines that include test
