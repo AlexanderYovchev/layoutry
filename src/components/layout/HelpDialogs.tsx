@@ -38,13 +38,12 @@ export function HelpDialogs({ openDialogId, onClose }: HelpDialogsProps) {
         onClose={onClose}
         title="Keyboard Shortcuts"
       >
-        <p className="mb-3">
-          This is an initial shortcut reference. These labels reflect planned
-          shortcuts and are not yet registered as active keyboard commands.
-        </p>
+        <p className="mb-3">On macOS, use Cmd instead of Ctrl.</p>
         <dl className="space-y-1.5">
           {[
             { label: "Save", keys: "Ctrl+S" },
+            { label: "Save As", keys: "Ctrl+Shift+S" },
+            { label: "Open Project", keys: "Ctrl+O" },
             { label: "Undo", keys: "Ctrl+Z" },
             { label: "Redo", keys: "Ctrl+Shift+Z" },
             { label: "Copy", keys: "Ctrl+C" },

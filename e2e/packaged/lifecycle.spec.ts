@@ -25,7 +25,7 @@ import {
 } from "./support/windows";
 
 const CLOSE_MESSAGE =
-  "Closing Layoutry will discard your current unsaved document. Continue?";
+  "Closing Layoutry will discard any unsaved changes. Continue?";
 
 let layoutry: PackagedLayoutry | undefined;
 
@@ -54,7 +54,7 @@ test("the native close warning can be cancelled, keeping the document", async ()
   const dialog = nativeDialog(pid, "Cancel");
   expect(dialog.found).toBe(true);
   expect(dialog.text).toContain(CLOSE_MESSAGE);
-  expect(dialog.text).toContain("Layoutry can't save projects yet.");
+  expect(dialog.text).toContain("Projects saved with File › Save are kept.");
   expect(dialog.buttons).toEqual(
     expect.arrayContaining(["Cancel", "Discard and Close"]),
   );

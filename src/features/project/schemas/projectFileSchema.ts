@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { editorElementNodeSchema } from "@/features/editor/schemas/editorDocumentSchema";
 import {
+  containsControlCharacters,
+  MAX_PROJECT_NAME_LENGTH,
+} from "@/features/project/rules/projectName";
+import {
   CURRENT_PROJECT_FORMAT_VERSION,
   PROJECT_FILE_FORMAT,
   type ProjectFile,
@@ -9,7 +13,6 @@ import {
 
 /** Project ids: UUIDs today; the pattern also admits future cloud ids. */
 export const PROJECT_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
-export const MAX_PROJECT_NAME_LENGTH = 256;
 
 export const projectMetadataSchema = z.strictObject({
   id: z.string().regex(PROJECT_ID_PATTERN, { message: "invalid project id" }),
@@ -18,6 +21,9 @@ export const projectMetadataSchema = z.strictObject({
     .max(MAX_PROJECT_NAME_LENGTH)
     .refine((name) => name.trim().length > 0, {
       message: "project name must not be empty",
+    })
+    .refine((name) => !containsControlCharacters(name), {
+      message: "project name must not contain control characters",
     }),
   createdAt: z.iso.datetime({ message: "timestamps must be ISO 8601 UTC" }),
   updatedAt: z.iso.datetime({ message: "timestamps must be ISO 8601 UTC" }),

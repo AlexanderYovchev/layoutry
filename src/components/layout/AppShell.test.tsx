@@ -380,7 +380,7 @@ describe("AppShell status bar", () => {
     const statusBar = screen.getByRole("contentinfo", { name: "Status bar" });
 
     expect(statusBar).toHaveTextContent("Design mode");
-    expect(statusBar).toHaveTextContent("Saving isn't available yet");
+    expect(statusBar).toHaveTextContent("Projects are saved on this device");
     expect(statusBar).not.toHaveTextContent(/Saved|Zoom|selected/);
 
     rerender(

@@ -1,5 +1,5 @@
-import { EditorApp } from "@/features/editor/components/EditorApp";
+import { ProjectWorkspace } from "@/features/project";
 
 export default function Home() {
-  return <EditorApp />;
+  return <ProjectWorkspace />;
 }

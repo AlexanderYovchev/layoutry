@@ -20,7 +20,7 @@ import {
 } from "./support/layoutryApp";
 
 const CLOSE_MESSAGE =
-  "Closing Layoutry will discard your current unsaved document. Continue?";
+  "Closing Layoutry will discard any unsaved changes. Continue?";
 
 let layoutry: LaunchedLayoutry | undefined;
 

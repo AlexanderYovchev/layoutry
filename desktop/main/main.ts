@@ -41,9 +41,9 @@ async function confirmDiscardUnsavedDocument(
   const { response } = await dialog.showMessageBox(window, {
     type: "warning",
     title: "Layoutry",
-    message:
-      "Closing Layoutry will discard your current unsaved document. Continue?",
-    detail: "Layoutry can't save projects yet.",
+    message: "Closing Layoutry will discard any unsaved changes. Continue?",
+    detail:
+      "Projects saved with File › Save are kept. Unsaved changes are lost.",
     buttons: ["Cancel", "Discard and Close"],
     defaultId: 0,
     cancelId: 0,
@@ -103,6 +103,12 @@ function createMainWindow(): BrowserWindow {
     closeWindow: () => window.close(),
   });
   window.on("close", closeGuard.handleCloseRequest);
+  // The page asks for confirmation (beforeunload) while it has unsaved
+  // changes. Electron shows no dialog for that and would silently keep the
+  // window open; the close guard above has already asked, so let it unload.
+  window.webContents.on("will-prevent-unload", (event) => {
+    event.preventDefault();
+  });
   window.on("session-end", closeGuard.allowClose);
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;

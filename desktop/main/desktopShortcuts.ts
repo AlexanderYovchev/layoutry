@@ -9,8 +9,8 @@ export type DesktopShortcutAction =
   "block-reload" | "toggle-devtools" | "pass-through";
 
 /**
- * Layoutry has no persistence yet, so a reload silently destroys the
- * document. Ctrl+R, Ctrl+Shift+R, F5, Shift+F5 and Ctrl+F5 are swallowed
+ * A reload would silently discard unsaved changes, and the desktop app has
+ * no reload confirmation. Ctrl+R, Ctrl+Shift+R, F5, Shift+F5 and Ctrl+F5 are swallowed
  * before the page sees them. F12 / Ctrl+Shift+I toggle DevTools only when
  * explicitly enabled for development. Everything else — Ctrl+Z, Ctrl+Y,
  * Ctrl+C/X/V/D, Delete, text editing — passes through untouched.

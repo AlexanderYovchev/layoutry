@@ -7,8 +7,10 @@ explains how to build, run, package and test the shell, and what it
 guarantees.
 
 **Status:** DESKTOP-0.5. Layoutry ships as a QA-validated, portable
-Windows x64 ZIP for a small, controlled alpha (unsigned). Projects cannot
-be saved. The release QA record is in
+Windows x64 ZIP for a small, controlled alpha (unsigned). Since
+PROJECT-1.2, projects can be saved to the local project library (IndexedDB
+in the Electron profile; see [project-storage.md](./project-storage.md)).
+The release QA record is in
 [docs/reports/desktop-0.5-release-qa.md](../reports/desktop-0.5-release-qa.md).
 
 ## Commands
@@ -249,7 +251,10 @@ launch its own `--user-data-dir`, so they never share a lock.
   replaced by its "unsupported viewport" notice. Before DESKTOP-0.5 the
   minimum applied to the outer window, leaving an 884 px viewport.
 - Closing (X button, Alt+F4, taskbar) asks "Closing Layoutry will discard
-  your current unsaved document. Continue?" **Cancel** is the default.
+  any unsaved changes. Continue?" **Cancel** is the default. The main
+  process can't see the page's state (no IPC), so it always asks. Once
+  confirmed, it lets the page unload (`will-prevent-unload`) even if the
+  page's own `beforeunload` reports unsaved changes.
   Repeated close requests absorb into one dialog, and a confirmed close
   exits once, with code 0, leaving no child processes. A Windows session
   end closes without asking.
@@ -298,8 +303,9 @@ The tester README says the same.
 
 ## Known alpha limitations
 
-- No project persistence: closing, a crash or a Windows restart discards
-  the document.
+- No autosave or recovery: closing, a crash or a Windows restart discards
+  unsaved changes. Saved projects live in the profile, not in files the
+  user chooses (native Save/Open dialogs are PROJECT-1.3).
 - No installer, no auto-update, no signing.
 - The ZIP is ~147 MB; unpacked it is ~370 MB. That is mostly the Chromium
   runtime: about 236 MB for the exe, plus 48 MB of locales and 20 MB of

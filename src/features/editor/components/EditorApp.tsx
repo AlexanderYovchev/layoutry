@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -12,7 +12,8 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { AppShell } from "@/components/layout/AppShell";
-import type { EditMenuCommands } from "@/components/layout/applicationMenus";
+import type { EditMenuCommands, FileMenuCommands } from "@/components/layout/applicationMenus";
+import type { ProjectIdentityInfo } from "@/components/layout/ProjectIdentity";
 import type { CatalogCardPlaceholder } from "@/components/layout/creationToolbarCategories";
 import { DocumentCanvas } from "@/features/canvas/components/DocumentCanvas";
 import { EditorNoticeBanner } from "@/features/editor/components/EditorNoticeBanner";
@@ -30,6 +31,19 @@ interface ActiveDragPreview {
   label: string;
 }
 
+interface EditorAppProps {
+  /**
+   * PROJECT-1.2 — project UI supplied by the project feature's
+   * ProjectWorkspace, which wraps this component. Passed in as props so the
+   * editor never imports the project feature (ADR-0003). All optional: the
+   * editor runs on its own without them.
+   */
+  fileMenuCommands?: FileMenuCommands;
+  project?: ProjectIdentityInfo;
+  /** Project dialogs and notices, rendered alongside the editor. */
+  overlays?: ReactNode;
+}
+
 /**
  * The editor's top-level composition root: assembles AppShell with real
  * feature content and owns the one shared DndContext both the Creation
@@ -45,7 +59,7 @@ interface ActiveDragPreview {
  * activation band and stops automatically the instant a drag ends
  * (dnd-kit's own guarantee, not something this component manages).
  */
-export function EditorApp() {
+export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProps = {}) {
   const documentModel = useEditorStore((state) => state.document);
   const selection = useEditorStore((state) => state.selection);
   const clipboard = useEditorStore((state) => state.clipboard);
@@ -143,8 +157,11 @@ export function EditorApp() {
         onActivateCatalogCard={handleActivateCard}
         editMenuCommands={editMenuCommands}
         previewControl={previewControl}
+        fileMenuCommands={fileMenuCommands}
+        project={project}
       />
       <EditorNoticeBanner />
+      {overlays}
       <DragOverlay>
         {activeDrag && (
           <div className="rounded-control border-accent/40 bg-surface-panel text-fg-primary shadow-elevated pointer-events-none flex items-center gap-2 border px-3 py-2 text-sm font-medium">

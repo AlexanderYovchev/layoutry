@@ -1,16 +1,34 @@
 "use client";
 
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { X } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface DialogProps {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  /** Focused when the dialog opens, instead of the first focusable element (Close). */
+  initialFocusRef?: RefObject<HTMLElement | null>;
+  /** "lg" for list-style content; defaults to "md". */
+  size?: "md" | "lg";
 }
 
-export function Dialog({ open, onClose, title, children }: DialogProps) {
+export function Dialog({
+  open,
+  onClose,
+  title,
+  children,
+  initialFocusRef,
+  size = "md",
+}: DialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
   const headingId = useId();
@@ -22,10 +40,11 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
     if (open && !dialogEl.open) {
       previouslyFocused.current = document.activeElement as HTMLElement | null;
       dialogEl.showModal();
+      initialFocusRef?.current?.focus();
     } else if (!open && dialogEl.open) {
       dialogEl.close();
     }
-  }, [open]);
+  }, [open, initialFocusRef]);
 
   useEffect(() => {
     const dialogEl = dialogRef.current;
@@ -56,7 +75,10 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
           dialogRef.current?.close();
         }
       }}
-      className="rounded-surface border-line bg-surface-panel text-fg-primary shadow-elevated w-full max-w-md border p-0 backdrop:bg-slate-950/40"
+      className={cn(
+        "rounded-surface border-line bg-surface-panel text-fg-primary shadow-elevated m-auto w-full border p-0 backdrop:bg-slate-950/40",
+        size === "lg" ? "max-w-xl" : "max-w-md",
+      )}
     >
       <div className="border-line-subtle flex items-center justify-between border-b px-4 py-3">
         <h2 id={headingId} className="text-sm font-semibold">

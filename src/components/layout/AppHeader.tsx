@@ -6,11 +6,12 @@ import { MenuBarTrigger } from "@/components/ui/menu/MenuBarTrigger";
 import {
   buildApplicationMenus,
   type EditMenuCommands,
+  type FileMenuCommands,
   type HelpDialogId,
   type ViewState,
 } from "@/components/layout/applicationMenus";
 import { LayoutryLogoMark } from "@/components/layout/LayoutryLogoMark";
-import { ProjectIdentity } from "@/components/layout/ProjectIdentity";
+import { ProjectIdentity, type ProjectIdentityInfo } from "@/components/layout/ProjectIdentity";
 import { GlobalActions, type HistoryControl, type PreviewControl } from "@/components/layout/GlobalActions";
 import { HelpDialogs } from "@/components/layout/HelpDialogs";
 
@@ -19,9 +20,18 @@ interface AppHeaderProps {
   onToggleView: (region: keyof ViewState) => void;
   editMenuCommands: EditMenuCommands;
   previewControl: PreviewControl;
+  fileMenuCommands?: FileMenuCommands;
+  project?: ProjectIdentityInfo;
 }
 
-export function AppHeader({ viewState, onToggleView, editMenuCommands, previewControl }: AppHeaderProps) {
+export function AppHeader({
+  viewState,
+  onToggleView,
+  editMenuCommands,
+  previewControl,
+  fileMenuCommands,
+  project,
+}: AppHeaderProps) {
   const [openDialogId, setOpenDialogId] = useState<HelpDialogId | null>(null);
 
   const menus = buildApplicationMenus({
@@ -29,6 +39,7 @@ export function AppHeader({ viewState, onToggleView, editMenuCommands, previewCo
     onToggleView,
     onOpenHelpDialog: setOpenDialogId,
     editMenuCommands,
+    fileMenuCommands,
   });
 
   // Checkpoint 1.15.6.10.2 — the exact same canUndo/canRedo/onUndo/onRedo
@@ -69,7 +80,7 @@ export function AppHeader({ viewState, onToggleView, editMenuCommands, previewCo
           ))}
         </MenuBarRoot>
 
-        <ProjectIdentity />
+        <ProjectIdentity project={project} />
 
         <GlobalActions historyControl={historyControl} previewControl={previewControl} />
       </header>

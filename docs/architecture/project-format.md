@@ -1,7 +1,8 @@
 # Project File Format (`.layoutry`)
 
 Layoutry's canonical, versioned project format (PROJECT-1.1). One format
-serves browser storage (PROJECT-1.2), desktop `.layoutry` files
+serves browser storage (PROJECT-1.2, see
+[project-storage.md](./project-storage.md)), desktop `.layoutry` files
 (PROJECT-1.3) and future cloud storage. The decision is recorded in
 [ADR-0003](../decisions/ADR-0003-versioned-project-format.md).
 
@@ -79,8 +80,9 @@ partially valid document. The pipeline runs in this order:
 6. **Strict Zod schema.** Unknown fields are rejected everywhere. Types,
    enums and finite numbers are enforced (`1e999`, which parses to
    Infinity, is rejected). Tags must be known editor tags. Element and
-   project ids must match `[A-Za-z0-9_-]{1,128}`. Timestamps must be ISO
-   8601 UTC. URL fields reuse the Inspector's own checks: no `javascript:`
+   project ids must match `[A-Za-z0-9_-]{1,128}`. Project names must
+   not be blank or contain control characters (the same rule the Rename
+   dialog uses, `rules/projectName.ts`). Timestamps must be ISO 8601 UTC. URL fields reuse the Inspector's own checks: no `javascript:`
    in `href`, `src` or `poster`, and no CSS-breaking characters in
    background images. Failures give `invalid-structure`, with a path.
 7. **Document integrity** (`integrity`, or `too-complex` for limits):
@@ -174,12 +176,11 @@ Selection, Preview and panel changes never affect it.
 serialized, so edits made during an asynchronous save still count as
 unsaved.
 
-Two known simplifications:
+Manually re-typing the old value is reported as dirty. That's the safe
+direction.
 
-- Manually re-typing the old value is reported as dirty. That's the safe
-  direction.
-- Metadata changes (a rename) are not tracked yet; PROJECT-1.2 adds that
-  alongside the project name UI.
+Renames are tracked separately by the project session store (PROJECT-1.2);
+see [project-storage.md](./project-storage.md#project-identity-and-dirty-state).
 
 ## Platform boundaries
 
@@ -190,7 +191,8 @@ identically in the browser, the Electron renderer and Node tests.
 
 Storage is the caller's job:
 
-- **Browser storage (PROJECT-1.2):** in the renderer.
+- **Browser storage (PROJECT-1.2):** IndexedDB, in the renderer — see
+  [project-storage.md](./project-storage.md).
 - **Desktop files (PROJECT-1.3):** read and written by the Electron main
   process behind a narrow, validated preload API. The renderer still parses
   with `parseProjectFile`.
@@ -199,9 +201,7 @@ Storage is the caller's job:
 
 ## Known limitations
 
-- There is no Save/Open UI, storage or autosave yet; that is PROJECT-1.2
-  and 1.3.
-- The project name in the header is still static, and metadata isn't held
-  in the editor store yet.
+- Browser Save/Open arrived in PROJECT-1.2; native desktop files are
+  PROJECT-1.3. There is no autosave.
 - Inline `data:` URLs count toward the 16 Mi limit. Very large embedded
   images will need asset storage later.

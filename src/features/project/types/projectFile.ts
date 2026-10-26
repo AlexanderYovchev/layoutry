@@ -49,7 +49,9 @@ export type ProjectLoadErrorCode =
   | "too-complex"
   | "forbidden-key"
   | "invalid-structure"
-  | "integrity";
+  | "integrity"
+  /** The file itself couldn't be read (PROJECT-1.2 browser import). */
+  | "unreadable";
 
 export interface ProjectLoadError {
   code: ProjectLoadErrorCode;

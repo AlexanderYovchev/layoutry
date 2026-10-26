@@ -13,8 +13,9 @@ export interface CloseGuard {
 }
 
 /**
- * Alpha safeguard while Layoutry cannot save: every close asks before the
- * in-memory document is discarded. Repeated close requests while the
+ * Every close asks before unsaved changes are discarded. The main process
+ * can't see whether the page has unsaved changes (there is no IPC), so it
+ * always asks. Repeated close requests while the
  * dialog is open are absorbed (one dialog, never a stack of them), and an
  * approved close goes through exactly once without asking again.
  */

@@ -8,7 +8,8 @@ import {
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { AppHeader } from "./AppHeader";
-import type { EditMenuCommands, ViewState } from "./applicationMenus";
+import type { EditMenuCommands, FileMenuCommands, ViewState } from "./applicationMenus";
+import type { ProjectIdentityInfo } from "./ProjectIdentity";
 import type { PreviewControl } from "./GlobalActions";
 
 const noopPreviewControl: PreviewControl = { mode: "design", onToggle: () => {} };
@@ -249,7 +250,7 @@ describe("AppHeader", () => {
     await user.click(screen.getByRole("menuitem", { name: "Open Recent" }));
 
     const emptyItem = screen.getByRole("menuitem", {
-      name: "No recent projects",
+      name: "No saved projects",
     });
     expect(emptyItem).toBeInTheDocument();
     expect(emptyItem).toBeDisabled();
@@ -321,5 +322,117 @@ describe("AppHeader", () => {
     await user.click(copyItem);
 
     expect(onCopy).toHaveBeenCalledOnce();
+  });
+
+  describe("File menu and project identity (PROJECT-1.2)", () => {
+    function fileCommands(overrides: Partial<FileMenuCommands> = {}): FileMenuCommands {
+      return {
+        canUseLibrary: true,
+        recentProjects: [],
+        onNewProject: vi.fn(),
+        onOpenProject: vi.fn(),
+        onOpenRecent: vi.fn(),
+        onSave: vi.fn(),
+        onSaveAs: vi.fn(),
+        onRename: vi.fn(),
+        onImport: vi.fn(),
+        onDownload: vi.fn(),
+        ...overrides,
+      };
+    }
+
+    function renderWithProject(commands: FileMenuCommands, project?: ProjectIdentityInfo) {
+      render(
+        <AppHeader
+          viewState={defaultViewState}
+          onToggleView={vi.fn()}
+          editMenuCommands={noopEditMenuCommands}
+          previewControl={noopPreviewControl}
+          fileMenuCommands={commands}
+          project={project}
+        />,
+      );
+    }
+
+    it.each([
+      ["New Project", "onNewProject"],
+      ["Open Project…", "onOpenProject"],
+      ["Save", "onSave"],
+      ["Save As…", "onSaveAs"],
+      ["Rename Project…", "onRename"],
+      ["Import Project…", "onImport"],
+      ["Download Project", "onDownload"],
+    ] as const)("%s calls its project command", async (label, handler) => {
+      const user = userEvent.setup();
+      const commands = fileCommands();
+      renderWithProject(commands);
+
+      await user.click(screen.getByRole("menuitem", { name: "File" }));
+      await user.click(screen.getByRole("menuitem", { name: label }));
+
+      expect(commands[handler]).toHaveBeenCalledOnce();
+    });
+
+    it("exposes only working commands: no Export or Project Settings placeholders", async () => {
+      const user = userEvent.setup();
+      renderWithProject(fileCommands());
+
+      await user.click(screen.getByRole("menuitem", { name: "File" }));
+      const menu = screen.getByRole("menu", { name: "File" });
+      for (const item of within(menu).getAllByRole("menuitem")) {
+        if (item.textContent?.includes("Open Recent")) continue;
+        expect(item).not.toBeDisabled();
+      }
+      expect(within(menu).queryByRole("menuitem", { name: /Export/ })).not.toBeInTheDocument();
+      expect(within(menu).queryByRole("menuitem", { name: /Project Settings/ })).not.toBeInTheDocument();
+    });
+
+    it("lists recent projects and opens the chosen one", async () => {
+      const user = userEvent.setup();
+      const commands = fileCommands({
+        recentProjects: [
+          { id: "p-1", name: "Landing page" },
+          { id: "p-2", name: "Pricing" },
+        ],
+      });
+      renderWithProject(commands);
+
+      await user.click(screen.getByRole("menuitem", { name: "File" }));
+      await user.click(screen.getByRole("menuitem", { name: "Open Recent" }));
+      await user.click(screen.getByRole("menuitem", { name: "Pricing" }));
+
+      expect(commands.onOpenRecent).toHaveBeenCalledWith("p-2");
+    });
+
+    it("disables library commands while an operation is in flight", async () => {
+      const user = userEvent.setup();
+      renderWithProject(fileCommands({ canUseLibrary: false }));
+
+      await user.click(screen.getByRole("menuitem", { name: "File" }));
+      for (const label of ["New Project", "Open Project…", "Save", "Save As…", "Import Project…"])
+        expect(screen.getByRole("menuitem", { name: label })).toBeDisabled();
+      expect(screen.getByRole("menuitem", { name: "Download Project" })).not.toBeDisabled();
+    });
+
+    it.each([
+      ["saved", "Saved"],
+      ["unsaved", "Unsaved changes"],
+      ["new", "Not saved"],
+      ["saving", "Saving…"],
+    ] as const)("shows the %s project status", (status, label) => {
+      renderWithProject(fileCommands(), { name: "Landing page", status, onRename: vi.fn() });
+
+      expect(screen.getByText(label)).toBeInTheDocument();
+    });
+
+    it("renames the project from the header", async () => {
+      const user = userEvent.setup();
+      const onRename = vi.fn();
+      renderWithProject(fileCommands(), { name: "Landing page", status: "saved", onRename });
+
+      await user.click(screen.getByRole("button", { name: "Project: Landing page. Rename project" }));
+
+      expect(onRename).toHaveBeenCalledOnce();
+    });
   });
 });

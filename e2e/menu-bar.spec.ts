@@ -14,11 +14,13 @@ test.describe("application menu bar", () => {
     await expect(menu).toBeVisible();
     await expect(fileTrigger).toHaveAttribute("aria-expanded", "true");
 
-    // "New Project" and "Open Project" are disabled; the first enabled item
-    // ("Open Recent") should receive focus.
+    // Opening focuses the first item ("New Project"); ArrowDown moves on.
+    await expect(
+      page.getByRole("menuitem", { name: "New Project" }),
+    ).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await expect(
-      page.getByRole("menuitem", { name: "Open Recent" }),
+      page.getByRole("menuitem", { name: "Open Project…" }),
     ).toBeFocused();
 
     await page.keyboard.press("Escape");
@@ -49,11 +51,11 @@ test.describe("application menu bar", () => {
   test("does not activate disabled commands", async ({ page }) => {
     await gotoApp(page);
 
-    await page.getByRole("menuitem", { name: "File" }).click();
-    const saveItem = page.getByRole("menuitem", { name: "Save", exact: true });
-    await expect(saveItem).toBeDisabled();
+    await page.getByRole("menuitem", { name: "View" }).click();
+    const zoomItem = page.getByRole("menuitem", { name: "Zoom In" });
+    await expect(zoomItem).toBeDisabled();
 
-    await saveItem.click({ force: true });
+    await zoomItem.click({ force: true });
     await expect(page.getByRole("menu")).toBeVisible();
   });
 

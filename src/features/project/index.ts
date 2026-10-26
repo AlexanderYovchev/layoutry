@@ -1,6 +1,6 @@
-// Public API of the project feature (PROJECT-1.1): the versioned
-// `.layoutry` format and its pure serialization. Storage (browser,
-// desktop files, cloud) lives elsewhere and builds on these.
+// Public API of the project feature: the versioned `.layoutry` format and
+// its pure serialization (PROJECT-1.1), and project management on top of a
+// storage interface — the browser library in IndexedDB (PROJECT-1.2).
 export {
   CURRENT_PROJECT_FORMAT_VERSION,
   DEFAULT_PROJECT_NAME,
@@ -25,3 +25,27 @@ export {
   serializeProject,
   touchProjectMetadata,
 } from "@/features/project/utils/serializeProject";
+
+// PROJECT-1.2: browser project library and project management.
+export { ProjectWorkspace } from "@/features/project/components/ProjectWorkspace";
+export {
+  createProjectCommands,
+  type ImportMode,
+  type ProjectCommandError,
+  type ProjectCommandResult,
+  type ProjectCommands,
+} from "@/features/project/commands/projectCommands";
+export {
+  ProjectStorageError,
+  type ProjectLibraryEntry,
+  type ProjectRepository,
+  type ProjectStorageErrorCode,
+  type StoredProject,
+  type WriteExpectation,
+} from "@/features/project/storage/projectRepository";
+export { createIndexedDbProjectRepository } from "@/features/project/storage/indexedDbProjectRepository";
+export { loadProjectFromFile } from "@/features/project/utils/loadProjectFromFile";
+export {
+  normalizeProjectName,
+  MAX_PROJECT_NAME_LENGTH,
+} from "@/features/project/rules/projectName";

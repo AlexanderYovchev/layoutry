@@ -12,7 +12,8 @@ import { Workspace } from "@/components/layout/Workspace";
 import { computeAppliedPanelWidths } from "@/components/ui/resizable/computeAppliedPanelWidths";
 import { useResizablePanelWidth } from "@/components/ui/resizable/useResizablePanelWidth";
 import { useViewportWidth } from "@/components/ui/viewport/useViewportWidth";
-import type { EditMenuCommands, ViewState } from "@/components/layout/applicationMenus";
+import type { EditMenuCommands, FileMenuCommands, ViewState } from "@/components/layout/applicationMenus";
+import type { ProjectIdentityInfo } from "@/components/layout/ProjectIdentity";
 import type { CatalogCardPlaceholder } from "@/components/layout/creationToolbarCategories";
 
 interface AppShellProps {
@@ -22,6 +23,8 @@ interface AppShellProps {
   onActivateCatalogCard?: (card: CatalogCardPlaceholder) => void;
   editMenuCommands: EditMenuCommands;
   previewControl: PreviewControl;
+  fileMenuCommands?: FileMenuCommands;
+  project?: ProjectIdentityInfo;
 }
 
 const initialViewState: ViewState = {
@@ -85,6 +88,8 @@ export function AppShell({
   onActivateCatalogCard,
   editMenuCommands,
   previewControl,
+  fileMenuCommands,
+  project,
 }: AppShellProps) {
   const [viewState, setViewState] = useState<ViewState>(initialViewState);
   const [collapseState, setCollapseState] =
@@ -175,6 +180,8 @@ export function AppShell({
         onToggleView={handleToggleView}
         editMenuCommands={editMenuCommands}
         previewControl={previewControl}
+        fileMenuCommands={fileMenuCommands}
+        project={project}
       />
       <CreationToolbar onActivateCard={onActivateCatalogCard} />
       <div className="flex min-h-0 flex-1 overflow-x-auto py-2">

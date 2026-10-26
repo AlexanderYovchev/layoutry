@@ -41,19 +41,23 @@ Please do not turn off SmartScreen or your antivirus for this. Only run
 Layoutry builds you received directly from the project owner.
 
 
-IMPORTANT: YOUR WORK IS NOT SAVED
-Layoutry cannot save or open projects yet, and it has no autosave or
-recovery. Your page exists only while the window is open. It is lost when:
+IMPORTANT: SAVE YOUR WORK
+Use File > Save (Ctrl+S) to save a project inside Layoutry, and File >
+Open Project (Ctrl+O) to reopen it. Layoutry has no autosave or recovery:
+changes made since your last save are lost when:
 - you close the window (Layoutry will ask you to confirm first),
 - the app crashes, or
 - Windows restarts, shuts down or signs you out.
+Saved projects live in Layoutry's own data folder on this computer. Use
+File > Download Project to keep a .layoutry backup copy elsewhere.
 Reload shortcuts (F5, Ctrl+R) are disabled so they cannot erase your work
 by accident. Starting Layoutry a second time just brings the open window
 back to the front.
 
 
 KNOWN LIMITATIONS OF THIS ALPHA
-- No saving, opening, autosave or exporting of projects yet.
+- No autosave, no recovery and no exporting of code yet. Projects are
+  saved inside Layoutry, not as files you choose with a Save dialog.
 - No installer and no automatic updates: new versions arrive as a new ZIP.
 - The editor needs a window at least 900 x 600 pixels inside. On very
   small screens with high display scaling, it may not fit.

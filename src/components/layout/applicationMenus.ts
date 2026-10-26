@@ -32,18 +32,42 @@ export interface EditMenuCommands {
   onDelete: () => void;
 }
 
+/**
+ * PROJECT-1.2 — the File menu's project commands, as plain callbacks for
+ * the same reason as EditMenuCommands. The project feature computes them
+ * (ProjectWorkspace) and they reach the header through EditorApp/AppShell.
+ */
+export interface FileMenuCommands {
+  /** False while a library operation (save, open, import…) is in flight. */
+  canUseLibrary: boolean;
+  /** Most recently saved projects, newest first. */
+  recentProjects: readonly { id: string; name: string }[];
+  onNewProject: () => void;
+  onOpenProject: () => void;
+  onOpenRecent: (id: string) => void;
+  onSave: () => void;
+  onSaveAs: () => void;
+  onRename: () => void;
+  onImport: () => void;
+  onDownload: () => void;
+}
+
 interface BuildApplicationMenusOptions {
   viewState: ViewState;
   onToggleView: (region: keyof ViewState) => void;
   onOpenHelpDialog: (id: HelpDialogId) => void;
   editMenuCommands: EditMenuCommands;
+  /** Absent when the shell is rendered without a project (tests): every item is disabled. */
+  fileMenuCommands?: FileMenuCommands;
 }
 
 function separator(id: string): MenuItem {
   return { type: "separator", id };
 }
 
-function fileMenu(): TopLevelMenu {
+function fileMenu(commands: FileMenuCommands | undefined): TopLevelMenu {
+  const libraryDisabled = !commands?.canUseLibrary;
+  const recentProjects = commands?.recentProjects ?? [];
   return {
     id: "file",
     label: "File",
@@ -52,26 +76,38 @@ function fileMenu(): TopLevelMenu {
         type: "command",
         id: "file-new-project",
         label: "New Project",
-        disabled: true,
+        disabled: libraryDisabled,
+        onSelect: commands?.onNewProject,
       },
       {
         type: "command",
         id: "file-open-project",
-        label: "Open Project",
-        disabled: true,
+        label: "Open Project…",
+        shortcut: "Ctrl+O",
+        disabled: libraryDisabled,
+        onSelect: commands?.onOpenProject,
       },
       {
         type: "submenu",
         id: "file-open-recent",
         label: "Open Recent",
-        items: [
-          {
-            type: "command",
-            id: "file-open-recent-empty",
-            label: "No recent projects",
-            disabled: true,
-          },
-        ],
+        items:
+          recentProjects.length === 0
+            ? [
+                {
+                  type: "command",
+                  id: "file-open-recent-empty",
+                  label: "No saved projects",
+                  disabled: true,
+                },
+              ]
+            : recentProjects.map((project): MenuItem => ({
+                type: "command",
+                id: `file-open-recent-${project.id}`,
+                label: project.name,
+                disabled: libraryDisabled,
+                onSelect: () => commands?.onOpenRecent(project.id),
+              })),
       },
       separator("file-sep-1"),
       {
@@ -79,24 +115,38 @@ function fileMenu(): TopLevelMenu {
         id: "file-save",
         label: "Save",
         shortcut: "Ctrl+S",
-        disabled: true,
+        disabled: libraryDisabled,
+        onSelect: commands?.onSave,
       },
       {
         type: "command",
         id: "file-save-as",
-        label: "Save As",
+        label: "Save As…",
         shortcut: "Ctrl+Shift+S",
-        disabled: true,
+        disabled: libraryDisabled,
+        onSelect: commands?.onSaveAs,
       },
-      separator("file-sep-2"),
-      { type: "command", id: "file-import", label: "Import", disabled: true },
-      { type: "command", id: "file-export", label: "Export", disabled: true },
-      separator("file-sep-3"),
       {
         type: "command",
-        id: "file-project-settings",
-        label: "Project Settings",
-        disabled: true,
+        id: "file-rename-project",
+        label: "Rename Project…",
+        disabled: !commands,
+        onSelect: commands?.onRename,
+      },
+      separator("file-sep-2"),
+      {
+        type: "command",
+        id: "file-import-project",
+        label: "Import Project…",
+        disabled: libraryDisabled,
+        onSelect: commands?.onImport,
+      },
+      {
+        type: "command",
+        id: "file-download-project",
+        label: "Download Project",
+        disabled: !commands,
+        onSelect: commands?.onDownload,
       },
     ],
   };
@@ -456,9 +506,10 @@ export function buildApplicationMenus({
   onToggleView,
   onOpenHelpDialog,
   editMenuCommands,
+  fileMenuCommands,
 }: BuildApplicationMenusOptions): TopLevelMenu[] {
   return [
-    fileMenu(),
+    fileMenu(fileMenuCommands),
     editMenu(editMenuCommands),
     viewMenu(viewState, onToggleView),
     insertMenu(),

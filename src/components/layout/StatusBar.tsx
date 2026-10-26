@@ -11,6 +11,8 @@ interface StatusBarProps {
  * static, so they were removed rather than wired up: saving, zoom and
  * selection reporting don't exist in the status bar yet. The mode comes
  * from AppShell's existing previewControl — no new editor subscription.
+ * Since PROJECT-1.2 the right side states where projects are kept; the
+ * live save status is in the header, next to the project name.
  */
 export function StatusBar({ mode }: StatusBarProps) {
   const isPreview = mode === "preview";
@@ -30,7 +32,7 @@ export function StatusBar({ mode }: StatusBarProps) {
         />
         {isPreview ? "Preview mode" : "Design mode"}
       </span>
-      <span className="truncate">Saving isn&apos;t available yet</span>
+      <span className="truncate">Projects are saved on this device</span>
     </footer>
   );
 }
