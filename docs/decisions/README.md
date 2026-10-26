@@ -34,3 +34,5 @@ Each ADR is a numbered Markdown file, `ADR-NNNN-short-title.md`, containing:
   architecture — Accepted
 - [ADR-0002](./ADR-0002-electron-desktop-shell.md) — Electron desktop
   shell — Accepted
+- [ADR-0003](./ADR-0003-versioned-project-format.md) — Versioned project
+  file format — Accepted

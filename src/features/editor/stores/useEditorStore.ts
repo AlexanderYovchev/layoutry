@@ -236,6 +236,15 @@ interface EditorState {
   activeSnapGuides: ActiveSnapGuides | null;
 
   /**
+   * The document as it was last loaded or saved (PROJECT-1.1). Unsaved
+   * changes are detected by reference: every committed edit produces a new
+   * document object, and undo/redo restore the exact snapshot objects, so
+   * `document !== persistedDocument` is precise through edit → save →
+   * undo → redo with no hashing. See selectHasUnsavedChanges.
+   */
+  persistedDocument: EditorElementNode;
+
+  /**
    * Design vs Preview (Checkpoint 1.15.6.8) — see types/editorMode.ts's
    * own doc comment. Editor UI state, exactly like svgEditingNodeId:
    * never touched by pushHistory/undo/redo, never duplicated, never
@@ -653,6 +662,26 @@ interface EditorState {
   deleteSelection: () => void;
   undo: () => void;
   redo: () => void;
+
+  /**
+   * Replaces the whole authored document in one atomic update — the only
+   * way a loaded or new project enters the editor (PROJECT-1.1). Takes an
+   * ALREADY VALIDATED document (see parseProjectFile): a failed load never
+   * calls this, so it leaves the current document untouched. Resets every
+   * piece of session state that refers to the old document — selection,
+   * undo/redo history, in-progress transactions, notices, Preview runtime
+   * state, SVG editing and snap guides — and returns to Design mode. The
+   * clipboard and the Snap preference are app-level and survive. The new
+   * document becomes the saved baseline (no unsaved changes).
+   */
+  replaceDocument: (document: EditorElementNode) => void;
+  /** Records `document` as saved. Pass the exact object that was serialized, so edits made while a save was in flight still count as unsaved. */
+  markDocumentPersisted: (document: EditorElementNode) => void;
+}
+
+/** Whether the authored document differs from the last loaded/saved one. Ignores selection, Preview, panels and other session state. */
+export function selectHasUnsavedChanges(state: Pick<EditorState, "document" | "persistedDocument">): boolean {
+  return state.document !== state.persistedDocument;
 }
 
 /** Snapshot of the state a history entry needs, taken *before* a mutation is applied. */
@@ -826,6 +855,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   svgDraft: null,
   snapEnabled: true,
   activeSnapGuides: null,
+  persistedDocument: fixtureDocument,
 
   selectElement: (id) => set({ selection: selectionFromSingle(id) }),
   selectOnly: (id) => set({ selection: selectionFromSingle(id) }),
@@ -1832,6 +1862,27 @@ export const useEditorStore = create<EditorState>()((set) => ({
         future: rest,
       };
     }),
+
+  replaceDocument: (document) =>
+    set({
+      document,
+      persistedDocument: document,
+      selection: EMPTY_SELECTION,
+      past: [],
+      future: [],
+      transactionSnapshot: null,
+      editorNotice: null,
+      editorMode: DEFAULT_EDITOR_MODE,
+      runtimeVisibility: {},
+      svgEditingNodeId: null,
+      selectedSvgObjectIds: [],
+      primarySvgObjectId: null,
+      activeSvgTool: "select",
+      svgDraft: null,
+      activeSnapGuides: null,
+    }),
+
+  markDocumentPersisted: (document) => set({ persistedDocument: document }),
 }));
 
 /**

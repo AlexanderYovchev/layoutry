@@ -977,6 +977,9 @@ export function isInsertableElementType(value: string): value is InsertableEleme
   return value in FACTORIES_BY_TYPE;
 }
 
+/** Every registered insertable type, e.g. for exhaustive tests over all factories. */
+export const INSERTABLE_ELEMENT_TYPES = Object.keys(FACTORIES_BY_TYPE).filter(isInsertableElementType);
+
 /**
  * A freshly created node has no dimensions at all — it sizes itself
  * naturally in Flow. A Free container has no such thing as "size itself

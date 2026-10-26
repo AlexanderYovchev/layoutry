@@ -18,6 +18,9 @@ the full authority order.
   they should verify.
 - [desktop-shell.md](./desktop-shell.md) — the Electron desktop build: how
   to build, run and test it, its security model, and its alpha limits.
+- [project-format.md](./project-format.md) — the versioned `.layoutry`
+  project file: structure, validation limits, migration policy, and how a
+  loaded project is applied to the editor.
 
 ## Related documentation
 
