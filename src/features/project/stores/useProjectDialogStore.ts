@@ -5,10 +5,12 @@ import type {
   ProjectCommandError,
 } from "@/features/project/commands/projectCommands";
 import type { DesktopOpenedFile } from "@/features/project/desktop/desktopProjectFiles";
+import type { ProjectLocation } from "@/features/project/stores/useProjectStore";
 import type {
   LayoutryProject,
   ProjectMetadata,
 } from "@/features/project/types/projectFile";
+import type { RecoveryGroup } from "@/features/project/types/recoveryRecord";
 
 /**
  * An action that replaces the active project — or, in the desktop app,
@@ -19,6 +21,14 @@ export type ProjectSwitch =
   | { kind: "open"; id: string }
   | { kind: "import"; project: LayoutryProject; mode: ImportMode }
   | { kind: "open-file"; file: DesktopOpenedFile; project: LayoutryProject }
+  /** PROJECT-1.4: recovered work, validated, and the groups still on offer. */
+  | {
+      kind: "restore";
+      project: LayoutryProject;
+      location: ProjectLocation;
+      group: RecoveryGroup;
+      others: RecoveryGroup[];
+    }
   | { kind: "close" };
 
 export type ProjectNamePurpose = "first-save" | "save-as" | "rename";
@@ -34,6 +44,16 @@ export type ProjectDialog =
       existing: ProjectMetadata;
     }
   | { kind: "file-conflict"; conflict: FileConflict }
+  /**
+   * PROJECT-1.4: recovered work of ended sessions. Updated in place (never
+   * closed and reopened) while a restore or discard runs.
+   */
+  | {
+      kind: "recovery";
+      groups: RecoveryGroup[];
+      error: { groupKey: string; message: string } | null;
+      busy: boolean;
+    }
   | { kind: "error"; error: ProjectCommandError };
 
 interface ProjectDialogState {

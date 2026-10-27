@@ -40,3 +40,5 @@ Each ADR is a numbered Markdown file, `ADR-NNNN-short-title.md`, containing:
   library in IndexedDB — Accepted
 - [ADR-0005](./ADR-0005-native-project-files.md) — Native project files
   through capability-token IPC — Accepted
+- [ADR-0006](./ADR-0006-recovery-snapshots.md) — Recovery snapshots
+  separate from saves — Accepted

@@ -1,3 +1,4 @@
+import { ShieldAlert, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -10,11 +11,15 @@ import { cn } from "@/lib/utils";
  *
  * PROJECT-1.3 — `source` says where the project is stored, e.g. a file
  * name ("Website.layoutry") or "Desktop library". Never a full path.
+ *
+ * PROJECT-1.4 — `recovery`: whether unsaved changes have a recovery copy.
+ * "protected" never means saved; it is shown next to "Unsaved changes".
  */
 export interface ProjectIdentityInfo {
   name: string;
   status: "saved" | "unsaved" | "new" | "saving";
   source?: { label: string; description: string };
+  recovery?: { state: "protected" | "unavailable"; description: string };
   onRename: () => void;
 }
 
@@ -71,6 +76,27 @@ export function ProjectIdentity({ project }: ProjectIdentityProps) {
         />
         {STATUS_LABELS[status]}
       </span>
+      {project?.recovery && (
+        <span
+          data-recovery-status={project.recovery.state}
+          title={project.recovery.description}
+          className={cn(
+            "flex shrink-0 items-center gap-1 text-xs",
+            project.recovery.state === "protected"
+              ? "text-fg-secondary"
+              : "text-amber-700",
+          )}
+        >
+          {project.recovery.state === "protected" ? (
+            <ShieldCheck aria-hidden="true" className="size-3.5" />
+          ) : (
+            <ShieldAlert aria-hidden="true" className="size-3.5" />
+          )}
+          {project.recovery.state === "protected"
+            ? "Recovery protected"
+            : "Recovery unavailable"}
+        </span>
+      )}
       {project?.source && (
         <span
           data-project-source

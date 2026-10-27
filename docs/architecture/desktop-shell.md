@@ -187,14 +187,16 @@ the user, which is the same trust level as the user.
   the editor and in iframes.
 - **Preload and IPC (PROJECT-1.3):** a sandboxed preload exposes only
   `window.layoutryDesktop`, a frozen set of argument-checked functions.
-  The main process handles exactly seven channels:
+  The main process handles exactly twelve channels (seven for files and
+  closing; five for recovery snapshots since PROJECT-1.4):
   - each checks that the caller is the main window's top frame on
     `app://layoutry/`, and validates the payload strictly;
   - file access goes through opaque, per-window tokens issued for paths the
     user picked in a native dialog or passed on the command line;
   - the renderer can never name a path.
 
-  Details: [desktop-files.md](./desktop-files.md#security-boundary).
+  Details: [desktop-files.md](./desktop-files.md#security-boundary) and
+  [project-recovery.md](./project-recovery.md#desktop-storage).
 
 - **`app://` protocol:** GET/HEAD only. Host `layoutry` only. Each path
   segment is decoded and checked. Lexical traversal is rejected (400). The
@@ -324,8 +326,11 @@ The tester README says the same.
 
 ## Known alpha limitations
 
-- No autosave or recovery: a crash or a Windows restart discards unsaved
-  changes (PROJECT-1.4).
+- Recovery (PROJECT-1.4) brings back unsaved work after a crash, a killed
+  process or a Windows restart, but only what was captured: edits from the
+  last few seconds (up to 30 s of continuous editing) can still be lost.
+  Recovery copies stay on this computer and aren't backups. See
+  [project-recovery.md](./project-recovery.md).
 - No double-click file association: the portable app doesn't write to the
   registry. "Open with → Layoutry.exe", dragging a file onto the exe, and
   the command line all work.

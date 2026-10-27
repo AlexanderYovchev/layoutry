@@ -42,7 +42,9 @@ Editor ─► project workflow / commands ─► serializeProject / parseProject
     window are kept.
   - Tokens are revoked when the window closes or its renderer crashes.
 - **The bridge is fixed.** `window.layoutryDesktop` is a frozen object of
-  nine functions plus `apiVersion`. There is no `ipcRenderer`, no generic
+  nine functions plus `apiVersion` (fourteen since PROJECT-1.4 added the
+  five recovery functions — see [project-recovery.md](./project-recovery.md)).
+  There is no `ipcRenderer`, no generic
   `invoke` and no Node.js.
 - **The preload is sandboxed:** `sandbox: true`, `contextIsolation: true`,
   `nodeIntegration: false`, and it can only `require("electron")`. It runs
@@ -145,8 +147,10 @@ byte-identical and that no temp file is left behind.
 - **Race window:** the content check and the rename are separate steps, so
   another program writing in the milliseconds between them can't be
   detected.
-- **No backup copies yet:** there is no `.bak` and no autosave. That is
-  PROJECT-1.4.
+- **No backup copies:** there is no `.bak` and no autosave. PROJECT-1.4
+  adds recovery snapshots of unsaved work, kept in the profile's Recovery
+  folder and never written to the user's file; see
+  [project-recovery.md](./project-recovery.md).
 
 ## External changes
 
@@ -198,7 +202,13 @@ Native saves use the same one-at-a-time queue as library saves
   process still ignores `beforeunload` once a close is approved, so the
   window can't be trapped.
 - **Windows shutdown / sign-out** (`session-end`) closes without asking.
-  Unsaved work is lost; crash recovery is PROJECT-1.4.
+  Unsaved work captured by a recovery snapshot (PROJECT-1.4) is offered at
+  the next start; edits newer than the last snapshot are lost.
+- **Recovery on close:** Save cleans up this session's recovery snapshots;
+  Don't Save stops recovery and deletes them before the window closes. A
+  restored file project saves back to its file only if the file still
+  matches the version the crashed session last saw; otherwise the conflict
+  dialog appears.
 
 ## File association
 

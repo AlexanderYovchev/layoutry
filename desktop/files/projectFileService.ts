@@ -78,7 +78,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Exactly these keys, nothing more: unexpected fields are a bug or an attack. */
-function expectKeys(
+export function expectKeys(
   value: unknown,
   keys: readonly string[],
 ): Record<string, unknown> {
@@ -93,7 +93,7 @@ function expectKeys(
   return value;
 }
 
-function expectToken(value: unknown): string {
+export function expectToken(value: unknown): string {
   if (typeof value !== "string" || !FILE_TOKEN_PATTERN.test(value))
     throw new InvalidPayloadError("malformed file token");
   return value;

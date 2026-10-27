@@ -16,6 +16,11 @@ import { EVENT_CHANNELS } from "../ipc/channels";
 import { registerDesktopIpc } from "../ipc/registerDesktopIpc";
 import { APP_ENTRY_URL } from "../protocol/appOrigin";
 import {
+  createRecoveryService,
+  type RecoveryService,
+} from "../recovery/recoveryService";
+import { createRecoveryStore } from "../recovery/recoveryStore";
+import {
   handleAppProtocol,
   registerAppSchemePrivileges,
 } from "../protocol/registerAppProtocol";
@@ -34,7 +39,9 @@ import { outerMinimumForContent } from "./windowSizing";
  * export over app://layoutry/ inside one hardened window. No Node.js in any
  * renderer: the editor page gets a sandboxed preload exposing a fixed,
  * validated project-file API (PROJECT-1.3, desktop/ipc/channels.ts), and
- * only ever holds opaque file tokens, never paths.
+ * only ever holds opaque file tokens, never paths. Recovery snapshots of
+ * unsaved work (PROJECT-1.4) go to an app-owned Recovery folder in the
+ * profile, through the same kind of fixed, validated channels.
  *
  * Single instance: a second launch never opens a second editor. It hands
  * over to the running instance (which restores and focuses its window,
@@ -54,6 +61,7 @@ const exportRoot = path.join(app.getAppPath(), "out");
 
 let mainWindow: BrowserWindow | null = null;
 let closeCoordinator: CloseCoordinator | null = null;
+let recoveryService: RecoveryService | null = null;
 
 const PROJECT_FILE_FILTERS = [
   { name: "Layoutry Project", extensions: ["layoutry"] },
@@ -105,7 +113,7 @@ async function confirmDiscardUnsavedDocument(
     title: "Layoutry",
     message: "Closing Layoutry will discard any unsaved changes. Continue?",
     detail:
-      "Projects saved with File › Save are kept. Unsaved changes are lost.",
+      "Projects saved with File › Save are kept. Changes Layoutry captured for recovery are offered the next time it starts; anything newer is lost.",
     buttons: ["Cancel", "Discard and Close"],
     defaultId: 0,
     cancelId: 0,
@@ -186,11 +194,14 @@ function createMainWindow(): BrowserWindow {
   window.webContents.on("render-process-gone", () => {
     coordinator.pageLost();
     fileCapabilities.revokeOwner(ownerId);
+    // Its recovery snapshots are now orphaned: offered at the next start.
+    recoveryService?.endSession(ownerId);
   });
   window.on("unresponsive", () => coordinator.pageLost());
   window.on("session-end", closeGuard.allowClose);
   window.on("closed", () => {
     fileCapabilities.revokeOwner(ownerId);
+    recoveryService?.endSession(ownerId);
     if (mainWindow === window) mainWindow = null;
     if (closeCoordinator === coordinator) closeCoordinator = null;
   });
@@ -243,6 +254,19 @@ function startLayoutry(): void {
       Menu.setApplicationMenu(null);
       hardenSession(session.defaultSession);
       handleAppProtocol(exportRoot);
+      // PROJECT-1.4: recovery snapshots in an app-owned folder of the
+      // profile, never next to the user's files or in the app folder.
+      const recovery = createRecoveryService({
+        store: createRecoveryStore({
+          directory: path.join(app.getPath("userData"), "Recovery"),
+        }),
+        registry: fileCapabilities,
+      });
+      recoveryService = recovery;
+      // Creates the folder and clears interrupted writes early.
+      recovery.ready().catch((error: unknown) => {
+        console.error("Layoutry recovery folder unavailable:", error);
+      });
       registerDesktopIpc({
         ipcMain,
         getMainWindow: () => mainWindow,
@@ -251,6 +275,7 @@ function startLayoutry(): void {
           reportUnsaved: (value) => closeCoordinator?.reportUnsaved(value),
           respond: (close) => closeCoordinator?.respond(close),
         },
+        recovery,
       });
       // Files named on Layoutry's own command line open once the editor asks.
       queueProjectFilesFrom(process.argv, process.cwd());

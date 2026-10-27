@@ -1,5 +1,6 @@
 import type { ProjectFileService } from "../files/projectFileService";
 import type { CloseCoordinator } from "../main/closeCoordinator";
+import type { RecoveryService } from "../recovery/recoveryService";
 import { APP_ORIGIN } from "../protocol/appOrigin";
 import { INVOKE_CHANNELS } from "./channels";
 
@@ -46,11 +47,16 @@ export interface DesktopIpcOptions {
     "open" | "takePending" | "chooseSaveLocation" | "write" | "release"
   >;
   close: Pick<CloseCoordinator, "reportUnsaved" | "respond">;
+  recovery: Pick<
+    RecoveryService,
+    "beginSession" | "write" | "list" | "read" | "discard"
+  >;
 }
 
 /**
- * Registers the whole desktop IPC surface (PROJECT-1.3): seven fixed
- * channels, each validating its sender and payload. Payload errors reject
+ * Registers the whole desktop IPC surface (PROJECT-1.3): twelve fixed
+ * channels (five for recovery since PROJECT-1.4), each validating its
+ * sender and payload. Payload errors reject
  * the call; nothing reaches the filesystem without a valid capability.
  */
 export function registerDesktopIpc({
@@ -58,6 +64,7 @@ export function registerDesktopIpc({
   getMainWindow,
   files,
   close,
+  recovery,
 }: DesktopIpcOptions): void {
   function handle(
     channel: string,
@@ -111,4 +118,19 @@ export function registerDesktopIpc({
   handle(INVOKE_CHANNELS.respondToCloseRequest, (_owner, payload) => {
     close.respond(expectBooleanField(payload, "close"));
   });
+  handle(INVOKE_CHANNELS.beginRecoverySession, (owner, payload) =>
+    recovery.beginSession(owner, payload),
+  );
+  handle(INVOKE_CHANNELS.writeRecoverySnapshot, (owner, payload) =>
+    recovery.write(owner, payload),
+  );
+  handle(INVOKE_CHANNELS.listRecovery, (owner, payload) =>
+    recovery.list(owner, payload),
+  );
+  handle(INVOKE_CHANNELS.readRecovery, (owner, payload) =>
+    recovery.read(owner, payload),
+  );
+  handle(INVOKE_CHANNELS.discardRecovery, (owner, payload) =>
+    recovery.discard(owner, payload),
+  );
 }

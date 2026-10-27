@@ -337,6 +337,7 @@ describe("AppHeader", () => {
         onRename: vi.fn(),
         onImport: vi.fn(),
         onDownload: vi.fn(),
+        onRecover: vi.fn(),
         ...overrides,
       };
     }
@@ -402,6 +403,15 @@ describe("AppHeader", () => {
       await user.click(screen.getByRole("menuitem", { name: "Pricing" }));
 
       expect(commands.onOpenRecent).toHaveBeenCalledWith("p-2");
+    });
+
+    it("offers Recover Unsaved Work… (PROJECT-1.4)", async () => {
+      const user = userEvent.setup();
+      const commands = fileCommands();
+      renderWithProject(commands);
+      await user.click(screen.getByRole("menuitem", { name: "File" }));
+      await user.click(screen.getByRole("menuitem", { name: "Recover Unsaved Work…" }));
+      expect(commands.onRecover).toHaveBeenCalledTimes(1);
     });
 
     it("disables library commands while an operation is in flight", async () => {

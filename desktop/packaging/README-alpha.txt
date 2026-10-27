@@ -52,10 +52,18 @@ If another program (or a colleague on a shared folder) changed the file
 since you opened it, Layoutry asks before replacing it. Use Save As to
 keep both versions.
 
-Layoutry has no autosave or recovery. Changes made since your last save
-are lost if the app crashes or Windows restarts, shuts down or signs you
-out. When you close the window with unsaved changes, Layoutry asks:
-Save, Don't Save or Cancel.
+Layoutry doesn't save for you, but it keeps a recovery copy of unsaved
+changes a few seconds after you stop editing (the top bar then says
+"Recovery protected"). If Layoutry crashes, is closed by force, or Windows
+restarts, it offers that work the next time it starts: Restore, Keep for
+Later, or Discard. Restored work is still unsaved, so save it. Changes from
+the last few seconds before a crash can still be lost, and recovery copies
+are kept on this computer only (in your Layoutry profile folder), so they
+are not backups. To keep backups, save .layoutry files and copy them to
+another drive or a synced folder.
+
+When you close the window with unsaved changes, Layoutry asks: Save,
+Don't Save or Cancel. Don't Save also deletes the recovery copy.
 
 Projects you saved with an earlier alpha (inside Layoutry, before
 .layoutry files) are still there: File > Open from Desktop Library.
@@ -71,7 +79,8 @@ back to the front (and opens the file you started it with, if any).
 
 
 KNOWN LIMITATIONS OF THIS ALPHA
-- No autosave, no recovery and no exporting of code yet.
+- No autosave and no exporting of code yet. Recovery copies only cover
+  changes up to a few seconds before a crash.
 - Double-clicking a .layoutry file doesn't open Layoutry until you choose
   it with "Open with" (see above).
 - No installer and no automatic updates: new versions arrive as a new ZIP.

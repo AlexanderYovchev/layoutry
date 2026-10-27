@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 /**
- * The desktop bridge (PROJECT-1.3), exposed to the editor page as
+ * The desktop bridge (PROJECT-1.3; recovery since PROJECT-1.4), exposed to the editor page as
  * `window.layoutryDesktop`. Sandboxed preload: it may only require
  * "electron", so it is self-contained — channel names repeat
  * desktop/ipc/channels.ts (kept in sync by a test).
@@ -19,6 +19,11 @@ const INVOKE = {
   releaseProjectFile: "layoutry:project-file:release",
   setUnsavedChanges: "layoutry:window:set-unsaved",
   respondToCloseRequest: "layoutry:window:close-response",
+  beginRecoverySession: "layoutry:recovery:begin-session",
+  writeRecoverySnapshot: "layoutry:recovery:write",
+  listRecovery: "layoutry:recovery:list",
+  readRecovery: "layoutry:recovery:read",
+  discardRecovery: "layoutry:recovery:discard",
 } as const;
 
 const EVENTS = {
@@ -38,6 +43,24 @@ function requireBoolean(value: unknown, name: string): boolean {
   return value;
 }
 
+function requireInteger(value: unknown, name: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value))
+    throw new TypeError(`${name} must be an integer`);
+  return value;
+}
+
+/** A fresh object with only the known source fields: nothing else crosses. */
+function copySource(value: unknown): Record<string, string> {
+  if (typeof value !== "object" || value === null)
+    throw new TypeError("source must be an object");
+  const copy: Record<string, string> = {};
+  for (const key of ["kind", "revision", "token", "fileName"]) {
+    const field: unknown = Reflect.get(value, key);
+    if (field !== undefined) copy[key] = requireString(field, key);
+  }
+  return copy;
+}
+
 function subscribe(channel: string, listener: unknown): () => void {
   if (typeof listener !== "function")
     throw new TypeError("listener must be a function");
@@ -53,7 +76,7 @@ function subscribe(channel: string, listener: unknown): () => void {
 contextBridge.exposeInMainWorld(
   "layoutryDesktop",
   Object.freeze({
-    apiVersion: 1,
+    apiVersion: 2,
     openProjectFile: () => ipcRenderer.invoke(INVOKE.openProjectFile),
     takePendingProjectFile: () =>
       ipcRenderer.invoke(INVOKE.takePendingProjectFile),
@@ -79,6 +102,36 @@ contextBridge.exposeInMainWorld(
       ipcRenderer.invoke(INVOKE.respondToCloseRequest, {
         close: requireBoolean(close, "close"),
       }),
+    // PROJECT-1.4: recovery snapshots in the app-owned Recovery folder.
+    beginRecoverySession: () => ipcRenderer.invoke(INVOKE.beginRecoverySession),
+    writeRecoverySnapshot: (snapshot: unknown) => {
+      if (typeof snapshot !== "object" || snapshot === null)
+        throw new TypeError("snapshot must be an object");
+      return ipcRenderer.invoke(INVOKE.writeRecoverySnapshot, {
+        generation: requireInteger(
+          Reflect.get(snapshot, "generation"),
+          "generation",
+        ),
+        source: copySource(Reflect.get(snapshot, "source")),
+        sha256: requireString(Reflect.get(snapshot, "sha256"), "sha256"),
+        text: requireString(Reflect.get(snapshot, "text"), "text"),
+      });
+    },
+    listRecovery: () => ipcRenderer.invoke(INVOKE.listRecovery),
+    readRecovery: (recordId: unknown, forRestore: unknown) =>
+      ipcRenderer.invoke(INVOKE.readRecovery, {
+        recordId: requireString(recordId, "recordId"),
+        forRestore: requireBoolean(forRestore, "forRestore"),
+      }),
+    discardRecovery: (recordIds: unknown) => {
+      if (!Array.isArray(recordIds))
+        throw new TypeError("recordIds must be an array");
+      return ipcRenderer.invoke(INVOKE.discardRecovery, {
+        recordIds: recordIds.map((id: unknown) =>
+          requireString(id, "recordId"),
+        ),
+      });
+    },
     onCloseRequested: (listener: unknown) =>
       subscribe(EVENTS.closeRequested, listener),
     onPendingProjectFile: (listener: unknown) =>

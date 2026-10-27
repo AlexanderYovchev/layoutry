@@ -431,6 +431,29 @@ export function createProjectCommands({
       });
     },
 
+    /**
+     * Restores recovered work (PROJECT-1.4), already validated by the
+     * recovery coordinator, replacing the document atomically. The project
+     * keeps its id and is unsaved; `location` decides where Save goes,
+     * with the version the crashed session last saw as the conflict
+     * baseline, so nothing is ever overwritten silently.
+     */
+    restoreRecovered(
+      project: LayoutryProject,
+      location: ProjectLocation,
+    ): Promise<ProjectCommandResult> {
+      return exclusive("open", async () => {
+        editor().replaceDocument(project.document);
+        const previous = session().location;
+        session().activateRecovered(project.metadata, location);
+        releaseReplacedFile(previous);
+        session().showToast(
+          `Restored “${project.metadata.name}”. It isn't saved yet.`,
+        );
+        return { ok: true };
+      });
+    },
+
     /** Resolves once every queued operation has finished. */
     whenIdle(): Promise<void> {
       return (queueTail ?? Promise.resolve()).then(() => undefined);

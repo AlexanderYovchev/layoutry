@@ -13,8 +13,9 @@ import { useProjectStore } from "@/features/project/stores/useProjectStore";
  *   without a prompt;
  * - answers the main process's close requests with the editor's own
  *   Save / Don't Save / Cancel dialog;
- * - opens `.layoutry` files passed on the command line, from Explorer, or
- *   forwarded by a second launch.
+ * - opens `.layoutry` files forwarded later by Explorer or a second
+ *   launch. (A file named on Layoutry's own command line is opened by
+ *   workflow.startup(), after any recovery prompt.)
  */
 export function useDesktopIntegration(
   workflow: ProjectWorkflow,
@@ -36,8 +37,6 @@ export function useDesktopIntegration(
     const stopPending = desktop.onPendingProjectFile(
       () => void workflow.openPendingFile(),
     );
-    // A file named when Layoutry was launched is waiting already.
-    void workflow.openPendingFile();
     return () => {
       stopClose();
       stopPending();

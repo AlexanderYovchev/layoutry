@@ -27,6 +27,9 @@ the full authority order.
 - [project-storage.md](./project-storage.md) — the browser project library
   (IndexedDB), Save/Open/Import/Download semantics, dirty state and
   storage limitations.
+- [project-recovery.md](./project-recovery.md) — automatic recovery
+  snapshots: scheduling, browser and desktop storage, retention, the
+  recovery dialog, Save integration and crash-recovery limits.
 
 ## Related documentation
 

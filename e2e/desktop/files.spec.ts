@@ -383,17 +383,23 @@ test("the page gets a fixed bridge: no paths, no ipcRenderer, forged tokens and 
   });
 
   expect(probe).not.toBeNull();
+  // PROJECT-1.4 added the five recovery functions (recovery.spec.ts).
   expect(probe?.keys).toEqual([
     "apiVersion",
+    "beginRecoverySession",
     "chooseSaveLocation",
+    "discardRecovery",
+    "listRecovery",
     "onCloseRequested",
     "onPendingProjectFile",
     "openProjectFile",
+    "readRecovery",
     "releaseProjectFile",
     "respondToCloseRequest",
     "setUnsavedChanges",
     "takePendingProjectFile",
     "writeProjectFile",
+    "writeRecoverySnapshot",
   ]);
   expect(probe?.frozen).toBe(true);
   expect(probe?.ipcRenderer).toBe("undefined");

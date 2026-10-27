@@ -96,7 +96,7 @@ export function fingerprintOf(bytes: Buffer): FileFingerprint {
   };
 }
 
-function errnoOf(error: unknown): string {
+export function errnoOf(error: unknown): string {
   if (typeof error !== "object" || error === null || !("code" in error))
     return "";
   return typeof error.code === "string" ? error.code : "";
@@ -185,6 +185,7 @@ type CurrentState =
 async function currentState(
   filePath: string,
   ops: ProjectFileOps,
+  maxBytes: number = MAX_PROJECT_FILE_BYTES,
 ): Promise<CurrentState> {
   const fileName = path.basename(filePath);
   let stat;
@@ -196,8 +197,7 @@ async function currentState(
   }
   if (stat.isSymbolicLink()) throw fileError("symbolic-link", fileName);
   if (!stat.isFile()) throw fileError("not-a-file", fileName);
-  if (stat.size > MAX_PROJECT_FILE_BYTES)
-    throw fileError("too-large", fileName);
+  if (stat.size > maxBytes) throw fileError("too-large", fileName);
   let bytes: Buffer;
   try {
     bytes = await ops.readFile(filePath);
@@ -280,7 +280,6 @@ export async function writeProjectFileAtomically(
   const bytes = Buffer.from(text, "utf8");
   if (bytes.length > MAX_PROJECT_FILE_BYTES)
     throw fileError("too-large", fileName);
-  const written = fingerprintOf(bytes);
 
   // 1. The destination must still be the version we expect.
   const before = await currentState(filePath, ops);
@@ -290,6 +289,30 @@ export async function writeProjectFileAtomically(
       throw fileError("modified-externally", fileName);
   }
 
+  return replaceFileAtomically(
+    filePath,
+    bytes,
+    { tempExtension: ".layoutry-tmp", maxBytes: MAX_PROJECT_FILE_BYTES },
+    ops,
+    hooks,
+  );
+}
+
+/**
+ * Steps 2–4 of an atomic write: temporary file, flush, rename over the
+ * destination, read-back check. Shared by project files and recovery
+ * snapshots (PROJECT-1.4); callers validate the destination first.
+ */
+export async function replaceFileAtomically(
+  filePath: string,
+  bytes: Buffer,
+  options: { tempExtension: string; maxBytes: number },
+  ops: ProjectFileOps = nodeProjectFileOps,
+  hooks: WriteHooks = {},
+): Promise<FileFingerprint> {
+  const fileName = path.basename(filePath);
+  const written = fingerprintOf(bytes);
+
   // 2. A unique, unpredictable temporary file next to the destination, so
   //    the final rename stays on one volume. Exclusive create never
   //    follows or reuses an existing entry.
@@ -298,7 +321,7 @@ export async function writeProjectFileAtomically(
   )();
   const tempPath = path.join(
     path.dirname(filePath),
-    `.${path.basename(filePath, path.extname(filePath))}.${suffix}.layoutry-tmp`,
+    `.${path.basename(filePath, path.extname(filePath))}.${suffix}${options.tempExtension}`,
   );
 
   let tempCreated = false;
@@ -351,7 +374,9 @@ export async function writeProjectFileAtomically(
   }
 
   // 4. Read back what is now on disk.
-  const after = await currentState(filePath, ops).catch(() => null);
+  const after = await currentState(filePath, ops, options.maxBytes).catch(
+    () => null,
+  );
   if (after?.kind !== "file" || after.fingerprint.sha256 !== written.sha256)
     throw fileError("verification-failed", fileName);
   return written;

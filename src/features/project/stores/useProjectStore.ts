@@ -64,6 +64,15 @@ export interface ProjectSessionState {
     metadata: ProjectMetadata,
     location: ProjectLocation,
   ) => void;
+  /**
+   * Makes restored recovery work the active project (PROJECT-1.4). It is
+   * unsaved: no stored copy is known to match it, so `savedName` is null
+   * until the next successful save.
+   */
+  activateRecovered: (
+    metadata: ProjectMetadata,
+    location: ProjectLocation,
+  ) => void;
   renameProject: (name: string) => void;
   /**
    * Records a successful write of `saved`, built from the `snapshot`
@@ -97,6 +106,8 @@ export const useProjectStore = create<ProjectSessionState>()((set) => ({
 
   activateProject: (metadata, location) =>
     set({ metadata, savedName: metadata.name, location }),
+  activateRecovered: (metadata, location) =>
+    set({ metadata, savedName: null, location }),
   renameProject: (name) =>
     set((state) =>
       state.metadata.name === name

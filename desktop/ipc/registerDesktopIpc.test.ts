@@ -35,6 +35,16 @@ function setup() {
     release: vi.fn(),
   };
   const close = { reportUnsaved: vi.fn(), respond: vi.fn() };
+  const recovery = {
+    beginSession: vi.fn(() => ({ sessionId: "s" })),
+    write: vi.fn(async () => ({ status: "stale" as const })),
+    list: vi.fn(async () => ({ status: "ok" as const, entries: [] })),
+    read: vi.fn(async () => ({
+      status: "error" as const,
+      error: { code: "not-found", message: "" },
+    })),
+    discard: vi.fn(async () => ({ status: "ok" as const, removed: 0 })),
+  };
   registerDesktopIpc({
     ipcMain: {
       handle: (channel, handler) => void handlers.set(channel, handler),
@@ -42,6 +52,7 @@ function setup() {
     getMainWindow: () => window,
     files,
     close,
+    recovery,
   });
   const trusted: DesktopIpcEvent = {
     sender: webContents,
@@ -56,15 +67,55 @@ function setup() {
     if (!handler) throw new Error(`no handler for ${channel}`);
     return Promise.resolve().then(() => handler(event, ...args));
   };
-  return { handlers, files, close, trusted, call, webContents, mainFrame };
+  return {
+    handlers,
+    files,
+    close,
+    recovery,
+    trusted,
+    call,
+    webContents,
+    mainFrame,
+  };
 }
 
 describe("desktop IPC surface", () => {
-  it("handles exactly the seven allowlisted channels", () => {
+  it("handles exactly the twelve allowlisted channels", () => {
     const { handlers } = setup();
     expect([...handlers.keys()].sort()).toEqual(
       Object.values(INVOKE_CHANNELS).sort(),
     );
+    expect(handlers.size).toBe(12);
+  });
+
+  it("routes recovery calls with the window id as the session owner", async () => {
+    const { call, trusted, recovery } = setup();
+    await call(INVOKE_CHANNELS.beginRecoverySession, trusted);
+    expect(recovery.beginSession).toHaveBeenCalledWith(3, undefined);
+    await call(INVOKE_CHANNELS.writeRecoverySnapshot, trusted, { g: 1 });
+    expect(recovery.write).toHaveBeenCalledWith(3, { g: 1 });
+    await call(INVOKE_CHANNELS.listRecovery, trusted);
+    expect(recovery.list).toHaveBeenCalledWith(3, undefined);
+    await call(INVOKE_CHANNELS.readRecovery, trusted, { recordId: "r" });
+    expect(recovery.read).toHaveBeenCalledWith(3, { recordId: "r" });
+    await call(INVOKE_CHANNELS.discardRecovery, trusted, { recordIds: [] });
+    expect(recovery.discard).toHaveBeenCalledWith(3, { recordIds: [] });
+  });
+
+  it("refuses recovery calls from anything but the editor's top frame", async () => {
+    const { call, webContents, recovery } = setup();
+    const subframe = { url: "app://layoutry/" };
+    for (const channel of [
+      INVOKE_CHANNELS.beginRecoverySession,
+      INVOKE_CHANNELS.listRecovery,
+      INVOKE_CHANNELS.readRecovery,
+      INVOKE_CHANNELS.discardRecovery,
+    ])
+      await expect(
+        call(channel, { sender: webContents, senderFrame: subframe }),
+      ).rejects.toThrow("not allowed");
+    expect(recovery.beginSession).not.toHaveBeenCalled();
+    expect(recovery.discard).not.toHaveBeenCalled();
   });
 
   it("routes each call with the sender's window id as the capability owner", async () => {
@@ -188,6 +239,60 @@ describe("preload", () => {
         key,
         key === "apiVersion" ? "number" : "function",
       ]);
+
+    expect(Object.keys(api).sort()).toEqual(
+      [
+        "apiVersion",
+        "openProjectFile",
+        "takePendingProjectFile",
+        "chooseSaveLocation",
+        "writeProjectFile",
+        "releaseProjectFile",
+        "setUnsavedChanges",
+        "respondToCloseRequest",
+        "beginRecoverySession",
+        "writeRecoverySnapshot",
+        "listRecovery",
+        "readRecovery",
+        "discardRecovery",
+        "onCloseRequested",
+        "onPendingProjectFile",
+      ].sort(),
+    );
+
+    const writeRecoverySnapshot = Reflect.get(api, "writeRecoverySnapshot");
+    // Only the known fields cross the bridge; anything extra is dropped.
+    await writeRecoverySnapshot({
+      generation: 2,
+      source: {
+        kind: "file",
+        token: "t",
+        fileName: "a.layoutry",
+        path: "C:\\",
+      },
+      sha256: "h",
+      text: "{}",
+      extra: "dropped",
+    });
+    expect(invoke).toHaveBeenLastCalledWith(
+      INVOKE_CHANNELS.writeRecoverySnapshot,
+      {
+        generation: 2,
+        source: { kind: "file", token: "t", fileName: "a.layoutry" },
+        sha256: "h",
+        text: "{}",
+      },
+    );
+    expect(() =>
+      writeRecoverySnapshot({
+        generation: 1.5,
+        source: {},
+        sha256: "",
+        text: "",
+      }),
+    ).toThrow(TypeError);
+    const discardRecovery = Reflect.get(api, "discardRecovery");
+    expect(() => discardRecovery("x")).toThrow(TypeError);
 
     const writeProjectFile = Reflect.get(api, "writeProjectFile");
     expect(() => writeProjectFile("t", 5, false)).toThrow(TypeError);

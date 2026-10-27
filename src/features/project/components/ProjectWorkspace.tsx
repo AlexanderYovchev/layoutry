@@ -14,6 +14,10 @@ import { EditorApp } from "@/features/editor/components/EditorApp";
 import { createProjectCommands } from "@/features/project/commands/projectCommands";
 import { createProjectWorkflow } from "@/features/project/commands/projectWorkflow";
 import {
+  createRecoveryCoordinator,
+  type RecoveryCoordinatorOptions,
+} from "@/features/project/commands/recoveryCoordinator";
+import {
   DeleteProjectDialog,
   FileConflictDialog,
   ImportCollisionDialog,
@@ -23,10 +27,12 @@ import {
 import { ProjectLibraryDialog } from "@/features/project/components/ProjectLibraryDialog";
 import { ProjectNameDialog } from "@/features/project/components/ProjectNameDialog";
 import { ProjectToast } from "@/features/project/components/ProjectToast";
+import { RecoveryDialog } from "@/features/project/components/RecoveryDialog";
 import {
   getDesktopProjectFiles,
   type DesktopProjectFiles,
 } from "@/features/project/desktop/desktopProjectFiles";
+import { getDesktopRecoveryStorage } from "@/features/project/desktop/desktopRecoveryStorage";
 import { useDesktopIntegration } from "@/features/project/hooks/useDesktopIntegration";
 import { useHasUnsavedProjectChanges } from "@/features/project/hooks/useHasUnsavedProjectChanges";
 import {
@@ -35,9 +41,12 @@ import {
 } from "@/features/project/hooks/useProjectKeyboardShortcuts";
 import { useUnsavedChangesWarning } from "@/features/project/hooks/useUnsavedChangesWarning";
 import { createIndexedDbProjectRepository } from "@/features/project/storage/indexedDbProjectRepository";
+import { createBrowserRecoveryStorage } from "@/features/project/storage/indexedDbRecoveryStorage";
 import type { ProjectRepository } from "@/features/project/storage/projectRepository";
+import type { RecoveryStorage } from "@/features/project/storage/recoveryStorage";
 import { useProjectDialogStore } from "@/features/project/stores/useProjectDialogStore";
 import { useProjectStore } from "@/features/project/stores/useProjectStore";
+import { useRecoveryStore } from "@/features/project/stores/useRecoveryStore";
 import {
   PROJECT_FILE_EXTENSION,
   PROJECT_FILE_MEDIA_TYPE,
@@ -55,7 +64,21 @@ interface ProjectWorkspaceProps {
   createRepository?: () => ProjectRepository;
   /** The desktop app's native-file bridge, or null in a browser (the default detects it). */
   createDesktopFiles?: () => DesktopProjectFiles | null;
+  /**
+   * Where recovery snapshots go (PROJECT-1.4): the desktop Recovery folder
+   * or the browser's IndexedDB by default; null where neither works.
+   */
+  createRecoveryStorage?: (desktop: boolean) => RecoveryStorage | null;
+  /** Tests shorten the recovery timers. */
+  recoveryTiming?: RecoveryCoordinatorOptions["timing"];
 }
+
+function defaultRecoveryStorage(desktop: boolean): RecoveryStorage | null {
+  return desktop ? getDesktopRecoveryStorage() : createBrowserRecoveryStorage();
+}
+
+const RECOVERY_UNSUPPORTED =
+  "This browser can't keep recovery copies on this page (it needs a secure https connection). Save your work to keep it.";
 
 /**
  * The editor with project management (PROJECT-1.2): wraps EditorApp and
@@ -66,23 +89,48 @@ interface ProjectWorkspaceProps {
  * In the desktop app (PROJECT-1.3) projects are native .layoutry files and
  * closing the window is coordinated with the main process; in a browser it
  * is the IndexedDB library, exactly as in PROJECT-1.2.
+ *
+ * Recovery (PROJECT-1.4): unsaved work is copied automatically to recovery
+ * storage, never to the project's own destination, and offered back after
+ * a crash or an unexpected close.
  */
 export function ProjectWorkspace({
   createRepository = createIndexedDbProjectRepository,
   createDesktopFiles = getDesktopProjectFiles,
+  createRecoveryStorage = defaultRecoveryStorage,
+  recoveryTiming,
 }: ProjectWorkspaceProps) {
-  const [{ workflow, desktop }] = useState(() => {
+  const [{ workflow, desktop, recovery }] = useState(() => {
     const desktopFiles = createDesktopFiles();
+    const repository = createRepository();
+    const recoveryStorage = createRecoveryStorage(desktopFiles !== null);
+    const recoveryCoordinator = recoveryStorage
+      ? createRecoveryCoordinator({
+          storage: recoveryStorage,
+          timing: recoveryTiming,
+          findLibraryProject: (id) =>
+            repository.read(id).then(
+              (stored) => ({
+                updatedAt: stored.metadata.updatedAt,
+                text: stored.text,
+              }),
+              () => null,
+            ),
+          releaseFile: (token) => desktopFiles?.releaseProjectFile(token),
+        })
+      : null;
     return {
       desktop: desktopFiles,
+      recovery: recoveryCoordinator,
       workflow: createProjectWorkflow(
         createProjectCommands({
-          repository: createRepository(),
+          repository,
           desktop: desktopFiles,
           saveFile: (fileName, text) =>
             downloadTextFile(fileName, text, PROJECT_FILE_MEDIA_TYPE),
         }),
         desktopFiles,
+        recoveryCoordinator,
       ),
     };
   });
@@ -103,6 +151,8 @@ export function ProjectWorkspace({
   const libraryOpen = useProjectDialogStore((state) => state.libraryOpen);
   const dialog = useProjectDialogStore((state) => state.dialog);
   const hasUnsavedChanges = useHasUnsavedProjectChanges();
+  const recoveryStatus = useRecoveryStore((state) => state.status);
+  const recoveryMessage = useRecoveryStore((state) => state.message);
   const busy = operation !== null;
 
   useUnsavedChangesWarning(desktop === null);
@@ -112,6 +162,18 @@ export function ProjectWorkspace({
   useEffect(() => {
     void workflow.commands.refreshLibrary();
   }, [workflow]);
+
+  // Recovery first (it may offer work from a crashed session), then a file
+  // named on the desktop command line.
+  useEffect(() => {
+    if (!recovery)
+      useRecoveryStore
+        .getState()
+        .setStatus("unavailable", RECOVERY_UNSUPPORTED);
+    void workflow.startup();
+    void recovery?.start();
+    return () => recovery?.stop();
+  }, [workflow, recovery]);
 
   function chooseImportFile() {
     fileInputRef.current?.click();
@@ -142,6 +204,7 @@ export function ProjectWorkspace({
   const fileMenuCommands: FileMenuCommands = {
     mode: isDesktop ? "desktop" : "browser",
     onOpenLibrary: () => workflow.showLibrary(),
+    onRecover: () => void workflow.showRecovery(),
     canUseLibrary: !busy,
     recentProjects: library.entries
       .flatMap((entry) => (entry.status === "ok" ? [entry.summary] : []))
@@ -184,6 +247,22 @@ export function ProjectWorkspace({
                 description:
                   "Saved in this browser's project library on this device",
               }
+          : undefined,
+    recovery: !hasUnsavedChanges
+      ? undefined
+      : recoveryStatus === "protected"
+        ? {
+            state: "protected",
+            description:
+              "Your latest changes have a recovery copy on this device. They are not saved yet.",
+          }
+        : recoveryStatus === "unavailable"
+          ? {
+              state: "unavailable",
+              description:
+                recoveryMessage ??
+                "Recovery copies can't be made right now. Save your work to keep it.",
+            }
           : undefined,
     onRename: () => workflow.rename(),
   };
@@ -256,6 +335,15 @@ export function ProjectWorkspace({
         onImportCopy={() => void workflow.resolveImportCollision("copy")}
         onReplace={() => void workflow.resolveImportCollision("replace")}
         onClose={() => closeDialogOfKind("import-collision")}
+      />
+      <RecoveryDialog
+        dialog={dialog?.kind === "recovery" ? dialog : null}
+        variant={isDesktop ? "desktop" : "browser"}
+        onRestore={(groupKey, recordId) =>
+          void workflow.restoreRecovery(groupKey, recordId)
+        }
+        onDiscard={(groupKey) => void workflow.discardRecovery(groupKey)}
+        onKeep={() => workflow.keepRecoveryForLater()}
       />
       <ProjectErrorDialog
         error={dialog?.kind === "error" ? dialog.error : null}

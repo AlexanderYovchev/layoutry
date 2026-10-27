@@ -4,6 +4,7 @@ import type {
   ProjectCommandResult,
   ProjectCommands,
 } from "@/features/project/commands/projectCommands";
+import type { RecoveryCoordinator } from "@/features/project/commands/recoveryCoordinator";
 import type {
   DesktopOpenResult,
   DesktopProjectFiles,
@@ -36,13 +37,22 @@ import { parseProjectFile } from "@/features/project/utils/parseProjectFile";
  * - a new project → a file chosen in the native Save dialog (desktop), or
  *   the browser library after naming it (browser).
  * Save As → a new file (desktop) or a new library project (browser).
+ *
+ * Recovery (PROJECT-1.4): at startup, and from File › Recover Unsaved
+ * Work…, work left by ended sessions is offered before anything else
+ * opens. Restoring goes through the same unsaved-changes prompt. Don't
+ * Save discards this session's recovery copies once the switch succeeded.
  */
 export function createProjectWorkflow(
   commands: ProjectCommands,
   desktop: DesktopProjectFiles | null = null,
+  recovery: RecoveryCoordinator | null = null,
 ) {
   const ui = () => useProjectDialogStore.getState();
   const session = () => useProjectStore.getState();
+  let startupRun: Promise<void> | null = null;
+  /** A file from the command line waits until the recovery dialog is answered. */
+  let pendingFileDeferred = false;
 
   function hasUnsavedChanges(): boolean {
     return selectHasUnsavedProjectChanges(session(), useEditorStore.getState());
@@ -70,10 +80,51 @@ export function createProjectWorkflow(
     if (pending.kind === "open-file")
       desktop?.releaseProjectFile(pending.file.token);
     if (pending.kind === "close") desktop?.respondToCloseRequest(false);
+    if (pending.kind === "restore") {
+      if (pending.location.kind === "file")
+        desktop?.releaseProjectFile(pending.location.token);
+      recovery?.release([pending.group, ...pending.others]);
+    }
   }
 
-  async function runSwitch(pending: ProjectSwitch): Promise<boolean> {
+  function afterRecoveryDialog() {
+    if (!pendingFileDeferred) return;
+    pendingFileDeferred = false;
+    void openPendingFile();
+  }
+
+  /**
+   * Restored: the dialog moves on to what's left right away, while the
+   * restored work is protected by a fresh snapshot in the background (only
+   * then are the ended session's copies removed).
+   */
+  function finishRestore(pending: Extract<ProjectSwitch, { kind: "restore" }>) {
+    void recovery?.adopt(pending.group, pending.others);
+    if (pending.others.length > 0)
+      ui().showDialog({
+        kind: "recovery",
+        groups: pending.others,
+        error: null,
+        busy: false,
+      });
+    else {
+      if (ui().dialog?.kind === "recovery") ui().closeDialog();
+      afterRecoveryDialog();
+    }
+  }
+
+  /**
+   * `discardThrough`: the user chose Don't Save — once the switch has
+   * happened, this session's recovery copies up to that point go too.
+   */
+  async function runSwitch(
+    pending: ProjectSwitch,
+    discardThrough: number | null = null,
+  ): Promise<boolean> {
     if (pending.kind === "close") {
+      // Nothing may start writing while the window goes away; Don't Save
+      // takes this session's recovery copies with it.
+      await recovery?.shutdown({ discard: discardThrough !== null });
       desktop?.respondToCloseRequest(true);
       return true;
     }
@@ -84,10 +135,53 @@ export function createProjectWorkflow(
           ? await commands.open(pending.id)
           : pending.kind === "open-file"
             ? await commands.openFile(pending.file, pending.project)
-            : await commands.importProject(pending.project, pending.mode);
-    if (result.ok) ui().setLibraryOpen(false);
-    else releaseSwitch(pending);
+            : pending.kind === "restore"
+              ? await commands.restoreRecovered(
+                  pending.project,
+                  pending.location,
+                )
+              : await commands.importProject(pending.project, pending.mode);
+    if (result.ok) {
+      ui().setLibraryOpen(false);
+      if (discardThrough !== null)
+        void recovery?.discardThrough(discardThrough);
+      if (pending.kind === "restore") finishRestore(pending);
+    } else releaseSwitch(pending);
     return report(result);
+  }
+
+  /**
+   * Offers work left by ended sessions. `showEmpty`: from the menu, say so
+   * when there is none. Resolves true when the dialog is showing.
+   */
+  async function checkRecovery(showEmpty: boolean): Promise<boolean> {
+    const groups = recovery ? await recovery.findRecoverable() : [];
+    if (groups.length === 0) {
+      if (showEmpty)
+        ui().showDialog({
+          kind: "recovery",
+          groups: [],
+          error: null,
+          busy: false,
+        });
+      return false;
+    }
+    if (ui().dialog !== null && !showEmpty) {
+      // Never cover a dialog the user is answering; offer it later.
+      recovery?.release(groups);
+      return false;
+    }
+    ui().showDialog({ kind: "recovery", groups, error: null, busy: false });
+    return true;
+  }
+
+  async function openPendingFile(): Promise<boolean> {
+    if (!desktop) return false;
+    if (ui().dialog?.kind === "recovery") {
+      pendingFileDeferred = true;
+      return false;
+    }
+    return openDesktopResult(await desktop.takePendingProjectFile());
   }
 
   function requestSwitch(pending: ProjectSwitch): Promise<boolean> {
@@ -157,9 +251,121 @@ export function createProjectWorkflow(
     },
 
     /** Desktop: the next file from Explorer, the command line or a second launch. */
-    async openPendingFile(): Promise<boolean> {
-      if (!desktop) return false;
-      return openDesktopResult(await desktop.takePendingProjectFile());
+    openPendingFile,
+
+    /**
+     * Once per page load: starts recovery, offers work left by ended
+     * sessions, then (desktop) opens a file named on the command line —
+     * after the recovery dialog is answered, if it is showing.
+     */
+    startup(): Promise<void> {
+      startupRun ??= (async () => {
+        await recovery?.start();
+        const offered = await checkRecovery(false);
+        if (!desktop) return;
+        if (offered) pendingFileDeferred = true;
+        else await openPendingFile();
+      })();
+      return startupRun;
+    },
+
+    /** File › Recover Unsaved Work…: offers recovered work again. */
+    showRecovery: () => checkRecovery(true),
+
+    /** Validates the chosen version, then restores it (asking about unsaved changes first). */
+    async restoreRecovery(
+      groupKey: string,
+      recordId: string,
+    ): Promise<boolean> {
+      const dialog = ui().dialog;
+      if (!recovery || dialog?.kind !== "recovery" || dialog.busy) return false;
+      const group = dialog.groups.find(
+        (candidate) => candidate.key === groupKey,
+      );
+      if (!group) return false;
+      ui().showDialog({ ...dialog, busy: true, error: null });
+      const prepared = await recovery.prepareRestore(group, recordId);
+      if (!prepared.ok) {
+        const groups = dialog.groups.map((candidate) =>
+          candidate.key !== groupKey
+            ? candidate
+            : {
+                ...candidate,
+                versions: candidate.versions.map((version) =>
+                  version.recordId === recordId
+                    ? { ...version, damaged: true }
+                    : version,
+                ),
+              },
+        );
+        ui().showDialog({
+          kind: "recovery",
+          groups,
+          busy: false,
+          error: { groupKey, message: prepared.message },
+        });
+        return false;
+      }
+      return requestSwitch({
+        kind: "restore",
+        project: prepared.project,
+        location: prepared.location,
+        group,
+        others: dialog.groups.filter((candidate) => candidate.key !== groupKey),
+      });
+    },
+
+    /** Deletes a group's recovered work; the dialog has already asked to confirm. */
+    async discardRecovery(groupKey: string): Promise<boolean> {
+      const dialog = ui().dialog;
+      if (!recovery || dialog?.kind !== "recovery" || dialog.busy) return false;
+      const group = dialog.groups.find(
+        (candidate) => candidate.key === groupKey,
+      );
+      if (!group) return false;
+      const others = dialog.groups.filter(
+        (candidate) => candidate.key !== groupKey,
+      );
+      ui().showDialog({ ...dialog, busy: true, error: null });
+      const result = await recovery.discard(group, others);
+      if (!result.ok) {
+        ui().showDialog({
+          ...dialog,
+          busy: false,
+          error: { groupKey, message: result.message },
+        });
+        return false;
+      }
+      session().showToast("Recovered work discarded");
+      if (others.length > 0)
+        ui().showDialog({
+          kind: "recovery",
+          groups: others,
+          error: null,
+          busy: false,
+        });
+      else {
+        ui().closeDialog();
+        afterRecoveryDialog();
+      }
+      return true;
+    },
+
+    /** Keep for Later: closes the dialog; the recovered work stays where it is. */
+    keepRecoveryForLater() {
+      const dialog = ui().dialog;
+      if (dialog?.kind !== "recovery") return;
+      ui().closeDialog();
+      // Closed (Escape) while a restore or discard runs: that flow
+      // finishes and reopens the dialog with its outcome if needed.
+      if (dialog.busy) return;
+      if (dialog.groups.length > 0) {
+        recovery?.release(dialog.groups);
+        session().showToast(
+          "Recovered work kept. Open it later from File › Recover Unsaved Work…",
+        );
+      }
+      afterRecoveryDialog();
     },
 
     async save(): Promise<boolean> {
@@ -254,7 +460,10 @@ export function createProjectWorkflow(
         releaseSwitch(dialog.pending);
         return false;
       }
-      return runSwitch(dialog.pending);
+      return runSwitch(
+        dialog.pending,
+        choice === "discard" ? (recovery?.boundary() ?? null) : null,
+      );
     },
 
     /** Cancel on the unsaved-changes prompt: nothing changes, the window stays open. */
@@ -263,6 +472,8 @@ export function createProjectWorkflow(
       if (dialog?.kind !== "discard") return;
       ui().closeDialog();
       releaseSwitch(dialog.pending);
+      // Back to the recovered work the user was choosing from.
+      if (dialog.pending.kind === "restore") void checkRecovery(false);
     },
 
     /**
@@ -290,6 +501,7 @@ export function createProjectWorkflow(
       const dialog = ui().dialog;
       if (dialog?.kind === "discard" && dialog.pending.kind === "close") return;
       if (!hasUnsavedChanges()) {
+        await recovery?.shutdown({ discard: false });
         desktop.respondToCloseRequest(true);
         return;
       }

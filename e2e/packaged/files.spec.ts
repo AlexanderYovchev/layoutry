@@ -222,8 +222,9 @@ test("the packaged bridge exposes only the fixed API and refuses forged access",
       ),
     };
   });
+  // 9 file/window functions + apiVersion (PROJECT-1.3) + 5 recovery functions (PROJECT-1.4).
   expect(probe).toMatchObject({
-    keys: 10,
+    keys: 15,
     frozen: true,
     forged: { status: "error", error: { code: "invalid-token" } },
     notAProject: "rejected",

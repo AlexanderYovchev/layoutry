@@ -208,6 +208,11 @@ Storage is the caller's job:
 ## Known limitations
 
 - Browser Save/Open arrived in PROJECT-1.2; native desktop files are
-  PROJECT-1.3. There is no autosave.
+  PROJECT-1.3. There is no autosave: PROJECT-1.4 keeps separate recovery
+  snapshots instead. A snapshot carries this same canonical text inside a
+  small record with its own `recoveryVersion`; that version describes
+  only the record, and the text inside is loaded (and migrated) by
+  `parseProjectFile` like any file — see
+  [project-recovery.md](./project-recovery.md#recovery-record).
 - Inline `data:` URLs count toward the 16 Mi limit. Very large embedded
   images will need asset storage later.

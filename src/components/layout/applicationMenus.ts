@@ -47,6 +47,8 @@ export interface FileMenuCommands {
   mode?: "browser" | "desktop";
   /** Desktop: lists the local project library (pre-1.3 projects). */
   onOpenLibrary?: () => void;
+  /** PROJECT-1.4 — offers work recovered from sessions that ended unsaved. */
+  onRecover?: () => void;
   /** False while a library operation (save, open, import…) is in flight. */
   canUseLibrary: boolean;
   /** Most recently saved projects, newest first. */
@@ -102,6 +104,13 @@ function desktopFileMenu(commands: FileMenuCommands): TopLevelMenu {
         label: "Open from Desktop Library…",
         disabled: busy,
         onSelect: commands.onOpenLibrary,
+      },
+      {
+        type: "command",
+        id: "file-recover",
+        label: "Recover Unsaved Work…",
+        disabled: busy || !commands.onRecover,
+        onSelect: commands.onRecover,
       },
       separator("file-sep-1"),
       {
@@ -174,6 +183,13 @@ function fileMenu(commands: FileMenuCommands | undefined): TopLevelMenu {
                 disabled: libraryDisabled,
                 onSelect: () => commands?.onOpenRecent(project.id),
               })),
+      },
+      {
+        type: "command",
+        id: "file-recover",
+        label: "Recover Unsaved Work…",
+        disabled: libraryDisabled || !commands?.onRecover,
+        onSelect: commands?.onRecover,
       },
       separator("file-sep-1"),
       {

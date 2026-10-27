@@ -63,6 +63,7 @@ export const REQUIRED_ASAR_ENTRIES = [
   "desktop-dist/main/main.js",
   "desktop-dist/preload/preload.js",
   "desktop-dist/files/projectFileSystem.js",
+  "desktop-dist/recovery/recoveryStore.js",
   "desktop-dist/protocol/appProtocolHandler.js",
   "desktop-dist/security/contentSecurityPolicy.js",
   "out/index.html",

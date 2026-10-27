@@ -28,6 +28,10 @@ Rules that keep the layers apart:
   commands, the project name and status, and the dialogs into `EditorApp`
   as plain props.
 
+PROJECT-1.4 added automatic recovery snapshots, kept in their own
+storage and never treated as saves — see
+[project-recovery.md](./project-recovery.md).
+
 PROJECT-1.3 added native `.layoutry` files for the desktop app as a
 separate, file-based flow (`saveToFile` / `openFile`) over a narrow
 preload bridge, without touching the editor — see
@@ -119,6 +123,7 @@ Snap and panel changes never count.
 | Unsaved changes            | Edited or renamed since the last save or open, or its library record was deleted |
 | Saving…                    | A library operation is in flight                                                 |
 | Saved                      | In the library and unchanged                                                     |
+| + Recovery protected       | (PROJECT-1.4) Unsaved, but a recovery copy of the latest changes exists          |
 
 The **baseline is set only after a successful write**, and only to the
 exact document and metadata snapshot that was written:
@@ -201,7 +206,10 @@ and Cancel.
 - **Desktop:** since PROJECT-1.3, projects are `.layoutry` files the user
   chooses. Library projects saved earlier stay in the Electron profile
   (`%APPDATA%`) under **File › Open from Desktop Library…**.
-- **No autosave and no crash recovery.**
+- **No autosave.** Recovery snapshots (PROJECT-1.4) bring back recent
+  unsaved work after a crash or an accidental close, but they aren't saves
+  or backups, and the last seconds of editing can still be lost. See
+  [project-recovery.md](./project-recovery.md).
 - **Two tabs editing the same project** can't overwrite each other's
   saves; the later save gets a conflict and the user uses Save As.
 
