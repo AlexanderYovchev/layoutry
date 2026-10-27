@@ -6,20 +6,8 @@ import { useNativeFormValueEditing } from "@/features/canvas/hooks/useNativeForm
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
-import { resolveBackgroundStyle } from "@/features/canvas/utils/resolveBackgroundStyle";
-import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderRadiusStyle";
-import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
-import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowStyle";
-import { resolveAspectRatioStyle } from "@/features/canvas/utils/resolveAspectRatioStyle";
-import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
-import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle";
-import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
-import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
-import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
-import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
-import { resolveTransformStyle } from "@/features/canvas/utils/resolveTransformStyle";
-import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
+import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
+import { resolveControlElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
 import { getInputType, isToggleInputType, sanitizeTelValue } from "@/features/editor/types/input";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
@@ -84,14 +72,12 @@ export function InputElement({ node, parentId, parentLayoutMode, parentFlowDispl
   });
   const checkedResyncRef = useRef<HTMLInputElement | null>(null);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
+  const recipe = resolveControlElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
 
   useEffect(() => {
     if (!isToggle) return;
     if (checkedResyncRef.current) checkedResyncRef.current.checked = node.checked ?? false;
   }, [isToggle, node.checked]);
-
-  const usesLegacyRadiusChrome = !node.borderRadius;
-  const usesLegacyBorderChrome = !node.border;
 
   return (
     <input
@@ -107,39 +93,12 @@ export function InputElement({ node, parentId, parentLayoutMode, parentFlowDispl
       {...documentNodeAttributes(node, parentId)}
       {...(isToggle ? { onMouseDown: preventCheckedToggle, onClick: preventCheckedToggle } : editable.editableProps)}
       className={cn(
-        isToggle ? "size-4" : "h-9 w-full min-w-0 bg-white px-3 text-sm text-zinc-900 outline-none dark:bg-zinc-950 dark:text-zinc-100",
-        usesLegacyRadiusChrome && !isToggle && "rounded-md",
-        usesLegacyBorderChrome && "border border-zinc-200 dark:border-zinc-800",
+        documentDefaultClasses(recipe.defaults),
         !isToggle && editable.isEditing && "cursor-text",
         isDragging && "opacity-40",
         node.className,
       )}
-      style={{
-        // resolvePositionStyle spread first, and elementPositionStyle after
-        // (Checkpoint 5.1) — a Free child's own position: absolute (see
-        // freeChildStyle, applied inside elementPositionStyle) must always
-        // win over this checkpoint's general Position control; see
-        // types/position.ts's own doc comment for the full ownership
-        // conflict this resolves.
-        ...resolvePositionStyle(node),
-        ...elementPositionStyle(node, parentLayoutMode),
-        ...resolveAspectRatioStyle(node),
-        ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
-        // Spread AFTER resolveFlexOrGridChildStyle deliberately (Checkpoint
-        // 5.7) — see HeadingElement's identical comment for the full
-        // reasoning (an explicit user min-width/min-height must win over
-        // that resolver's own Flex/Grid containment default of 0).
-        ...resolveSizeConstraintsStyle(node, parentLayoutMode),
-        ...resolveTypographyStyle(node),
-        ...resolveBackgroundStyle(node),
-        ...resolveBorderStyle(node),
-        ...resolveBorderRadiusStyle(node),
-        ...resolveBoxShadowStyle(node),
-        ...resolveFilterStyle(node),
-        ...resolveTransitionStyle(node, isPreview),
-        ...resolveTransformStyle(node),
-        ...resolveDisplayStyle(node),
-      }}
+      style={recipe.style}
       {...(!isToggle && editable.isEditing ? undefined : listeners)}
     />
   );

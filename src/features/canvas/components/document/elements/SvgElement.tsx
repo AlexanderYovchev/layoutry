@@ -9,19 +9,8 @@ import { useSvgShapeDrawingSession } from "@/features/canvas/hooks/useSvgShapeDr
 import { SvgVectorEditingOverlay } from "@/features/canvas/components/document/elements/SvgVectorEditingOverlay";
 import { SvgVectorObjectRenderer } from "@/features/canvas/components/document/elements/SvgVectorObjectRenderer";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
-import { resolveAspectRatioStyle } from "@/features/canvas/utils/resolveAspectRatioStyle";
-import { resolveBackgroundStyle } from "@/features/canvas/utils/resolveBackgroundStyle";
-import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderRadiusStyle";
-import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
-import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowStyle";
-import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle";
-import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
-import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
-import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
-import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
-import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
-import { resolveTransformStyle } from "@/features/canvas/utils/resolveTransformStyle";
+import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
+import { resolveSvgElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
 import { cn, mergeRefs } from "@/lib/utils";
 import {
   SVG_CIRCLE_GEOMETRY,
@@ -158,15 +147,7 @@ export function SvgElement({ node, parentId, parentLayoutMode, parentFlowDisplay
     [],
   );
 
-  // Same "legacy chrome gets out of the way once real data exists" rule
-  // ContainerElement/ImageElement/VideoElement's own usesLegacy* flags
-  // already establish: a fixed default height would silently block an
-  // explicit ratio-mode Aspect Ratio from ever visibly reshaping an
-  // unresized SVG, the exact Checkpoint 5.6 bug those flags were
-  // originally found and fixed for. Width has no such conflict (aspect-
-  // ratio computes height FROM width), so it stays a fixed default
-  // regardless — the same asymmetry Image/Video's own chrome uses.
-  const usesLegacyHeightChrome = node.aspectRatio?.mode !== "ratio";
+  const recipe = resolveSvgElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
 
   const viewBox = resolveSvgViewBox(node);
   const useSceneRendering = isEditingThisSvg || hasSvgScene(node);
@@ -194,23 +175,10 @@ export function SvgElement({ node, parentId, parentLayoutMode, parentFlowDisplay
       {...documentNodeAttributes(node, parentId)}
       {...({ draggable: false } as Record<string, unknown>)}
       viewBox={formatSvgViewBox(viewBox)}
-      className={cn("w-50", usesLegacyHeightChrome && "h-50", isDragging && "opacity-40", node.className)}
-      style={{
-        ...resolvePositionStyle(node),
-        ...elementPositionStyle(node, parentLayoutMode),
-        ...resolveAspectRatioStyle(node),
-        ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
-        ...resolveSizeConstraintsStyle(node, parentLayoutMode),
-        ...resolveBackgroundStyle(node),
-        ...resolveBorderStyle(node),
-        ...resolveBorderRadiusStyle(node),
-        ...resolveBoxShadowStyle(node),
-        ...resolveFilterStyle(node),
-        ...resolveTransitionStyle(node, isPreview),
-        ...resolveTransformStyle(node),
-        ...resolveDisplayStyle(node),
-        userSelect: "none",
-      }}
+      className={cn(documentDefaultClasses(recipe.defaults), isDragging && "opacity-40", node.className)}
+      // userSelect: "none" is editor-only (it keeps drag-to-draw gestures
+      // from selecting text) and deliberately not part of the shared recipe.
+      style={{ ...recipe.style, userSelect: "none" }}
       // Dragging the outer document node via dnd-kit and drawing/selecting
       // vector content inside it are mutually exclusive gestures — while
       // this SVG is being edited, the pointer belongs entirely to its own

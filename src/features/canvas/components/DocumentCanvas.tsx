@@ -1,6 +1,7 @@
 "use client";
 
 import { CanvasInteractionBoundary } from "@/features/canvas/components/CanvasInteractionBoundary";
+import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 
 /**
@@ -26,7 +27,10 @@ export function DocumentCanvas() {
   return (
     <div
       data-document-surface=""
-      className="animate-fade-in-up border-line shadow-page relative min-h-500 w-full max-w-360 shrink-0 rounded-md border bg-white font-sans text-zinc-950 scheme-light"
+      // Sheet chrome (shadow, border, rounding, presentation width/height)
+      // first; the page's own surface (background, font, text color, color
+      // scheme) comes from the shared defaults HTML/CSS export also emits.
+      className={`animate-fade-in-up border-line shadow-page relative min-h-500 w-full max-w-360 shrink-0 rounded-md border ${documentDefaultClasses(["page-surface"])}`}
     >
       <CanvasInteractionBoundary document={document} />
     </div>

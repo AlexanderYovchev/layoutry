@@ -63,8 +63,8 @@ src/
 │   │   ├── hooks/
 │   │   ├── stores/                # created when canvas needs its own store
 │   │   ├── types/
-│   │   ├── utils/                 # created when canvas needs its own utils
-│   │   └── index.ts
+│   │   ├── utils/                 # resolvers, element style recipes, default styles
+│   │   └── index.ts               # pure styling API shared with export (EXPORT-1.2) — no React components
 │   │
 │   ├── inspector/
 │   │   ├── components/
@@ -82,12 +82,10 @@ src/
 │   │   └── index.ts
 │   │
 │   └── export/
-│       ├── generators/                # created when HTML/CSS generation logic exists
-│       ├── formatters/                 # created when output formatting logic exists
-│       ├── types/
-│       ├── schemas/                     # created when the first Zod schema is needed
-│       ├── utils/
-│       └── index.ts
+│       ├── types/                       # Export IR, diagnostics, result types (EXPORT-1.2)
+│       ├── utils/                       # IR builder, validators, URL policy, HTML/CSS printers
+│       ├── components/                  # created when the export UI exists
+│       └── index.ts                     # exportHtmlCss(), buildExportDocument() — see export-engine.md
 │
 ├── lib/                      # framework-independent shared utilities/integrations
 │   └── utils.ts               # cn() class-composition helper

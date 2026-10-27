@@ -1,0 +1,810 @@
+LAYOUTRY — EXPORT-1.2 — HTML/CSS Export Foundation & Visual Fidelity Architecture
+Date: 2026-10-27        Branch: main        HEAD at start: bee1d42 (EXPORT-1.1 audit report untracked)
+Status: implemented and validated. NOT committed. EXPORT-1.3 is not started.
+
+==========================================================================================
+SUMMARY
+==========================================================================================
+Layoutry now has a working, pure HTML/CSS Export Engine:
+
+  exportHtmlCss(document, { mode: "standalone" | "separate", title?, lang? })
+    -> { ok, files: [{ path, content, mediaType }], diagnostics }
+
+How it works:
+- It converts the authored document into a target-independent IR
+  (ExportDocument), then prints a complete HTML5 page and a stylesheet.
+- The stylesheet is either embedded (index.html) or separate
+  (index.html + styles.css).
+- It is deterministic and DOM-free. It has no React runtime, no Electron, no
+  storage and no billing dependency.
+
+Visual fidelity was the acceptance criterion, and it is measured in a real
+browser:
+- 8 fixtures were compared: 7 targeted fidelity documents plus every catalog
+  entry on one page.
+- In both output modes, the exported page reproduces the Canvas Preview with
+  ZERO computed-style differences and ZERO geometry differences. That covers
+  33,019 property checks over 371 elements per mode, with a maximum geometry
+  delta of 0.00003 px.
+- Screenshots are identical in size, with 99.98%–99.996% of pixels within
+  8/255 per channel.
+- Every remaining pixel difference was inspected. Each has a known cause that
+  is not a style or geometry difference (section S).
+
+The Canvas and the export compose CSS from the same code (V1):
+- The per-element style composition and every Canvas default moved out of
+  the React components into shared, pure design-rule modules.
+- These are exposed by the new canvas public API (src/features/canvas/index.ts).
+- Each default carries its Tailwind classes AND the exact CSS they compile to.
+  A unit test compiles them with the repo's own Tailwind and checks that the
+  two are equal.
+
+Validation:
+- typecheck, lint, Vitest (4,946 tests), browser Playwright (39), and the
+  Next.js production build: all pass.
+- Desktop/Electron results: section AE.
+
+==========================================================================================
+A. GIT BASELINE AND REPOSITORY AUDIT
+==========================================================================================
+- Start: main @ bee1d42. The only untracked file was
+  docs/reports/export-1.1-architecture-audit.txt (EXPORT-1.1, uncommitted).
+- Baseline: Vitest 322 files / 4,800 passed / 1 skipped. typecheck and lint
+  clean.
+- What I inspected, as the brief required: CLAUDE.md, the EXPORT-1.1 report,
+  editorDocumentSchema, DocumentNodeRenderer, all 30 element components,
+  every resolver, the factories (INSERTABLE_ELEMENT_TYPES), globals.css,
+  layout.tsx, DocumentCanvas/CanvasInteractionBoundary, the URL validators
+  and the tests.
+- Ground truth for defaults:
+  - I compiled every default class string the Canvas uses with the repo's own
+    Tailwind v4.3.2 (tailwindcss.compile) to get the exact CSS.
+  - I read Tailwind's preflight.css and theme.css verbatim.
+  - I read React's unitless-number list and its style setter from react-dom.
+- The audit counts were verified against the current repository:
+  - 81 enabled catalog entries (INSERTABLE_ELEMENT_TYPES.length === 81,
+    asserted in a test): 40 primitives and 41 compositions.
+  - 46 rendered HTML tags (documentNodeComponents has 48 entries; the 2 extra
+    are the virtual page and the legacy body).
+
+==========================================================================================
+B. SHARED STYLING ARCHITECTURE (V1)
+==========================================================================================
+New pure modules in the canvas feature, exposed by src/features/canvas/index.ts
+(pure exports only, never React components):
+
+- utils/documentDefaultStyles.ts — DOCUMENT_DEFAULT_STYLES, 36 entries.
+  - Each entry pairs the Canvas `classes` (byte-identical to what the
+    components used before) with the exact CSS `declarations`. Media-query
+    and ::backdrop variants are included.
+  - It covers the page surface, page root, legacy body, container defaults
+    and list markers.
+  - It covers the heading, paragraph (and prose measure), list item, button
+    (and radius/shadow), link (and underline) and media frames/heights.
+  - It covers the input, textarea and select controls, the table and its
+    cells, caption, legend, figcaption, divider, SVG and dialog.
+  - Table order = cascade order (table-header-cell after table-cell).
+- utils/elementStyleRecipes.ts — 14 recipe functions:
+  - container, text, control, option, table structure, table cell, box
+    (hr/progress), image, video/iframe, audio, svg, dialog, page root,
+    legacy body.
+  - Each returns { defaults, style } (plus innerStyle for media) and reproduces
+    the component's former spread order exactly.
+  - The rationale comments that used to sit in the components moved here.
+- types/documentDefaultStyle.ts, types/elementStyleRecipe.ts.
+
+The Canvas consumes them. All 30 element components plus DocumentCanvas now
+render:
+- style={recipe.style}
+- className={cn(documentDefaultClasses(recipe.defaults), <editor-only>, node.className)}
+
+Editor-only state stays in the components: drag opacity, text-editing
+outline/cursor, readonly guards, data-node-*, event handlers, MediaInteraction
+Shield, the empty-image icon, and SVG user-select.
+
+Behavior preserved: all 3,318 canvas/editor/layout tests passed immediately
+after the refactor. Then the full suite passed (section AB).
+
+Drift guards:
+(1) documentDefaultStyles.test.ts compiles every entry with tailwindcss and
+    asserts declarations === compiled CSS, after Tailwind's own cascade order.
+    That is 37 assertions.
+(2) canvasExportParity.test.tsx renders the real Canvas components in Preview
+    and compares every node with the IR (section R).
+
+==========================================================================================
+C. EXPORT IR DESIGN
+==========================================================================================
+src/features/export/types/exportIr.ts:
+
+ExportDocument { root, defaultStyles, interactions, assets, diagnostics }
+
+ExportElement fields:
+- tag
+- sourceNodeId
+- styleKey: "node-N" in document order, "-media", "-shape-i"
+- defaultStyles: shared ids
+- declarations: ordered, validated CSS
+- attributes: validated, unescaped; `true` means a boolean attribute
+- authoredClassNames
+- children
+
+ExportText { text } holds raw text. Printers escape it.
+
+The IR has no escaping, class names or files. It is independent of React,
+Vue, Tailwind, Electron, storage and billing. It describes the authored page
+as seen in Preview: transitions included, authored-hidden nodes carry
+`hidden`, and dialog open state is taken from initial visibility.
+
+Interaction bindings are kept (triggerNodeId, targetNodeId, trigger, action)
+for EXPORT-1.3. Assets are listed with their kind (remote, relative or data).
+
+==========================================================================================
+D. HTML GENERATOR
+==========================================================================================
+printExportHtml.ts:
+- Writes <!DOCTYPE html>, <html lang>, meta charset utf-8, meta viewport,
+  <title>, then <style> or <link rel="stylesheet" href="styles.css">.
+- The page root is the body's only child. No script is ever emitted.
+- Real tags throughout: semantic sectioning, h1–h6, p, a, button, ul/ol/li,
+  the full table family, form/label/fieldset/legend, input (9 types),
+  textarea, select/option, figure/figcaption, img/video/audio/iframe (each
+  inside its layout frame, as on the Canvas), svg with its shapes, dialog,
+  hr and progress.
+  - The page root and a legacy body become <div>.
+  - blockquote, which has no Canvas renderer, becomes a <div> plus a
+    diagnostic. This matches FallbackElement.
+- Escaping: & < > in text; & < > " ' in double-quoted attributes. A textarea
+  value with a leading newline is preserved.
+- Void elements are printed without an end tag. Boolean attributes print
+  bare. SVG children self-close.
+- Attribute order is deterministic: id, class, then the element's own
+  attributes in recipe order.
+- Whitespace-safe formatting. React emits no whitespace between elements, so
+  children are indented only where whitespace cannot render (a flex/grid
+  container, judged by its final display, and table/select/svg). Elsewhere
+  they are printed adjacently. This avoids gaps between inline-level
+  siblings.
+
+==========================================================================================
+E. CSS GENERATOR
+==========================================================================================
+printExportStylesheet.ts prints in cascade order:
+1. Base reset (exportBaseStylesheet.ts): a curated Tailwind v4.3.2 Preflight
+   subset with MIT attribution. html antialiasing (from layout.tsx).
+2. body = the shared page-surface default.
+3. .ly-<default> rules actually used, in shared table order, plus @media and
+   ::backdrop rules.
+4. .ly-node-N rules in document order.
+
+Values come from the recipes via serializeStyleObject. It is React's exact
+rule: px for non-zero numbers except React's unitless list, zero stays "0",
+and key order is preserved, so shorthand/longhand overrides resolve exactly
+as React applies them. No rounding. Authored values are preserved verbatim.
+
+Every static property the editor can author is covered:
+- typography: family, size, weight, style, color, line height, letter
+  spacing, alignment, decoration;
+- backgrounds: color, image, size, position, repeat, attachment, linear and
+  radial gradients;
+- borders per side, radius per corner, clip-path shapes, multi-layer
+  box-shadows;
+- margin, padding, width, height, min/max sizes, aspect ratio;
+- display, visibility, overflow (+x/y), pointer-events, cursor, user-select;
+- position, insets, z-index;
+- flex container/item, grid container/item;
+- opacity and filters, transforms, transitions (Preview semantics);
+- object-fit and object-position.
+
+Text shadow: the editor has no text-shadow field, so none is exported. I
+didn't invent one.
+
+==========================================================================================
+F. CSS SELECTOR STRATEGY
+==========================================================================================
+- Single-class selectors only, so there is one specificity and source order
+  decides.
+- .ly-<default-id> holds the shared defaults (e.g. .ly-heading).
+- .ly-node-N holds one element's authored rule. N is the 1-based document
+  pre-order index, so it is stable for identical documents and never derived
+  from random editor ids.
+- Inner media use .ly-node-N-media.
+- The "ly-" prefix is reserved. Authored classes using it are dropped with
+  reserved-class-name. No Tailwind classes and no editor classes ever appear
+  in the output (asserted).
+
+==========================================================================================
+G. CANVAS DEFAULTS AND RESET POLICY (V2)
+==========================================================================================
+Exported — everything visible on the authored page in Preview:
+- the Preflight baseline;
+- per-element default looks;
+- legacy fallbacks for unset fields (container p-8, flex column with gap-4,
+  faint zinc-100 border, rounded-lg; media frame background, height and
+  dashed border);
+- list markers;
+- the page surface (white, Tailwind sans stack, zinc-950, color-scheme
+  light, antialiasing).
+
+Not exported — editor interface:
+- sheet chrome (max-width 1440px, min-height, border, shadow, rounding,
+  fade-in animation);
+- workspace;
+- the Canvas wrapper's pointer cursor and isolation;
+- selection, hover, resize and snap overlays;
+- media interaction shields;
+- the empty-image placeholder icon;
+- drag opacity, editing outlines, readonly guards, data-node-*;
+- SVG's drag-to-draw user-select.
+
+Verification: Tailwind compile test (B), jsdom parity (R), browser parity (S).
+
+Cascade check: defaults precede element rules at equal specificity. Authored
+values therefore win exactly where the Canvas's inline styles beat its
+classes. Overlapping defaults (th: table-cell then table-header-cell) are
+compile-tested against Tailwind's own order.
+
+==========================================================================================
+H. PAGE ROOT AND VIEWPORT SEMANTICS
+==========================================================================================
+- The Canvas page root (a flex column) becomes body > div.ly-page-root.
+- The body carries the page surface, with margin 0 from the reset.
+- The exported page is fluid and takes the browser's width. The 1440px sheet
+  cap and the 2000px sheet minimum height are editor presentation and are
+  not exported.
+- Inherited page-root style (font family, size, line height, letter spacing,
+  weight, smoothing, color-scheme, alignment, white-space, direction) was
+  asserted equal in the browser for every fixture. Color was compared as the
+  painted color.
+- Viewport widths: the parity spec renders the export at the exact Canvas page
+  width (800px). The unit tests exercise the output independently of width.
+  No breakpoints exist in the model and none are invented. The only media
+  query is the legacy body's existing sm: padding, reproduced verbatim.
+- position: fixed and vw/vh resolve against the browser window on both sides.
+  In the editor that window is not the page sheet, so these are documented,
+  not "fixed" (AF).
+
+==========================================================================================
+I. FLOW LAYOUT FIDELITY
+==========================================================================================
+- Flow is preserved exactly as the Canvas renders it:
+  - "block" flowLayout is a flex column with align-items: flex-start, not
+    display: block. That is the Canvas's own definition.
+  - Legacy nodes keep their Tailwind fallback.
+  - Resized flow children keep width/height px, flex-shrink 0, and the
+    max-width/height 100% (or min(100%, Npx)) clamp.
+  - West/north anchors keep their margin offsets.
+  - Spacing composes with anchors.
+- Browser results: spacing-nesting, typography and catalog have 0
+  differences; 0 px geometry delta.
+
+==========================================================================================
+J. FREE LAYOUT FIDELITY
+==========================================================================================
+- Free children export as position: absolute with the authored left, top,
+  width and height. Nothing is rounded.
+- A Free host that is not itself a Free child gets position: relative, so it
+  is the correct containing block. A nested Free host inside a Free parent
+  uses its own absolute box, as on the Canvas.
+- A Free container's retained flowLayout (e.g. grid) never leaks to its
+  children. The child context is forced to "block", mirroring
+  DocumentNodeRenderer (unit-tested).
+- Paragraphs in a Free parent lose the prose measure, as on the Canvas.
+- Browser result (free-layout fixture, including nested Free): 0 differences,
+  0 px delta.
+
+==========================================================================================
+K. FLEXBOX FIDELITY
+==========================================================================================
+- Preserved: direction, wrap, justify-content, align-items, align-content,
+  row and column gaps; per-item grow, shrink, basis and align-self.
+- Also preserved: the min-width/min-height 0 containment default, and the
+  "manually resized items don't shrink" rule.
+- Browser result (row wrap space-between with mixed items, plus a resized
+  column): 0 differences.
+
+==========================================================================================
+L. GRID FIDELITY
+==========================================================================================
+- Columns 1–4 export as repeat(N, minmax(0, 1fr)). Rows are auto or a fixed
+  count. Gaps are preserved.
+- Item placement exports as `span N` or `start / span N`.
+- Unresized items get the 100% fill; resized items keep their size.
+- Browser result (span-2, explicit placement col 3 / row 2 span 2, a resized
+  cell, and a fixed 2×2 grid): 0 differences.
+
+==========================================================================================
+M. ELEMENT AND COMPONENT COVERAGE
+==========================================================================================
+- Rendered tags: every tag in documentNodeComponents exports without
+  fallback (unit-asserted).
+- Catalog: all 81 entries export. Node-by-node jsdom parity with the real
+  Canvas covers all 250 rendered nodes of the catalog page. The browser
+  catalog fixture (9,425 px tall) shows 0 style or geometry differences.
+
+| Group (count)                     | Static export | Needs JS (EXPORT-1.3)           |
+|-----------------------------------|---------------|---------------------------------|
+| HTML containers/semantic (9)      | yes           | –                               |
+| Simple Footer                     | yes           | –                               |
+| Heading, Paragraph, Link          | yes           | –                               |
+| Lists (3), Button                 | yes           | –                               |
+| Divider, Figure, Progress, Table  | yes           | –                               |
+| Dialog                            | structure     | yes (opens via interactions)    |
+| Image, Video, Audio, SVG, Embed   | yes           | –                               |
+| Form, Label, Fieldset             | yes           | –                               |
+| 7 text inputs, Textarea, Select   | yes           | –                               |
+| Checkbox, Radio                   | yes           | –                               |
+| Buttons 1–5                       | yes           | –                               |
+| Dropdown Button                   | structure     | yes                             |
+| Cards (6), Navigation (6)         | yes           | –                               |
+| Forms & Inputs (6)                | yes           | –                               |
+| Collapsible, Basic Tabs           | structure     | yes                             |
+| Modal, Drawer                     | structure     | yes (native modal dialog)       |
+| Alerts 1–4                        | yes           | –                               |
+| Dismissible Alert, Manual Toast   | structure     | yes                             |
+| Popover                           | structure     | yes                             |
+| Data display (6)                  | yes           | –                               |
+
+"structure" means:
+- the markup and CSS export faithfully;
+- initially-hidden parts carry `hidden`;
+- a closed dialog has no `open`;
+- each such node gets a warning diagnostic (interaction-requires-runtime /
+  dialog-requires-runtime).
+Nothing is claimed to be interactive.
+
+Image Card, Horizontal Card and Profile Card: their factories leave the
+image empty. They export an empty frame plus missing-media-source, while the
+Canvas shows an editor-only placeholder icon there.
+
+==========================================================================================
+N. SECURITY AND VALIDATION
+==========================================================================================
+Order of checks:
+1. Iterative limits scan: 20,000 nodes, depth 100.
+2. The strict project schema.
+Either failure is an error and no files are produced.
+
+URL policy (exportUrlPolicy.ts) uses browser-equivalent scheme detection:
+tab/newline are stripped and C0/space trimmed, which defeats "java\tscript:".
+- link: http, https, mailto, tel, #, relative
+- image / poster / background: http, https, relative, data:image/*
+- media: http, https, relative, data:video|audio/*
+- iframe: http, https, relative
+- data:text/html, javascript:, vbscript: are refused everywhere. A link
+  falls back to the Canvas's own "#".
+- blob: and file: are non-portable and refused.
+
+CSS (validateExportCssValue.ts):
+- Every value is structurally checked: no ; { } < > \ ! @, no comments, no
+  control characters, balanced parentheses and quotes.
+- Colors must be a real color syntax: hex, rgb/hsl/hwb/lab/lch/oklab/oklch/
+  color/color-mix, named colors, or keywords.
+- font-family must be a valid list.
+- background url() is re-checked and re-serialized with CSS escapes (< as
+  \3c ).
+- A dropped value equals what the browser drops on the Canvas.
+- The embedded stylesheet is asserted free of "</style".
+
+Markup:
+- Generated attribute names are checked (no on*, strict syntax; data-*/aria-*
+  allowed).
+- An id containing whitespace is dropped. A duplicate id is kept with a
+  warning.
+- SVG paint must be none or a valid color.
+- The reserved class prefix is enforced.
+
+Tested with a hostile corpus parsed by DOMParser:
+- script injection in text, attributes, id, class, title, textarea, CSS
+  color and font-family, background url and SVG paint;
+- obfuscated javascript:, data:text/html links and frames.
+Result: no <script>, no on* attribute, no executable URL, one <style>, and
+every drop reported. Plain javascript: is already refused by the project
+schema (asserted).
+
+Deep (100) and maximum-size (20,000) documents export. Over-limit documents
+are refused before any recursion.
+
+==========================================================================================
+O. EXPORT DIAGNOSTICS
+==========================================================================================
+Shape: { code, severity: error | warning | info, nodeId?, property?, message }.
+Codes:
+- invalid-document, document-too-large, document-too-deep
+- unsafe-url, non-portable-url, relative-url, missing-media-source
+- invalid-css-value, invalid-color, invalid-font-family, invalid-svg-paint
+- unsafe-attribute, invalid-html-id, duplicate-html-id, reserved-class-name
+- unsupported-element, invalid-nesting, ignored-children
+- interaction-requires-runtime, dialog-requires-runtime
+- control-characters-removed
+
+An error means ok: false and files: []. Warnings and info still produce
+files.
+
+The catalog produces only runtime warnings and 3 missing-media-source
+warnings (asserted).
+
+==========================================================================================
+P. STANDALONE HTML OUTPUT
+==========================================================================================
+One index.html with the stylesheet in <style>, directly openable, with no
+runtime. Verified in Chromium for all 8 fixtures (results in S).
+
+==========================================================================================
+Q. SEPARATE HTML/CSS OUTPUT
+==========================================================================================
+- index.html with <link rel="stylesheet" href="styles.css"> (relative), plus
+  styles.css.
+- styles.css is byte-identical to the standalone embedded CSS, and the HTML
+  is identical apart from how the stylesheet is attached (unit-asserted).
+- Verified in Chromium served from a test origin. Results are identical to
+  standalone for every fixture.
+
+==========================================================================================
+R. VISUAL PARITY TEST METHODOLOGY
+==========================================================================================
+1. Translation — documentDefaultStyles.test.ts: Tailwind compile vs
+   declarations.
+2. Structure — canvasExportParity.test.tsx (jsdom):
+   - the real Canvas components are rendered in Preview;
+   - for every node, the test compares tag, inline style (per longhand,
+     through the same CSSOM), default classes, attributes, text, inner
+     media, SVG shapes and the selected option.
+   Known Canvas-only artifacts are excluded by name, with reasons:
+   - readonly guard, `open` / `hidden` runtime state;
+   - React's `muted` property and option selection;
+   - React's value="" on toggle inputs;
+   - SVG user-select.
+3. Rendering — e2e/export-visual-parity.spec.ts (Chromium, Playwright):
+   - Each fixture is imported into the real editor via project import, and
+     Preview is entered.
+   - The page sheet is pinned to a whole-pixel width (800px content). The
+     editor window is nudged until the page sits on whole pixels. This is
+     presentation width only.
+   - The page root is screenshotted with animations disabled and the caret
+     hidden.
+   - The export is rendered in a clean page at width 800 in both modes:
+     same browser, same device scale factor, same fonts, offline data:
+     assets only.
+   - For every element (including inner media and SVG shapes), the test
+     compares the bounding rectangle (tolerance 0.5px) and 89 computed
+     properties.
+   - Colors are compared as painted RGBA, because the app's CSS build
+     rewrites theme oklch() values as equivalent lab() values. This was
+     confirmed in .next output.
+   - Box-shadow ignores Tailwind's transparent zero layers.
+   - The inherited page-root style is compared, plus a pixel diff with a
+     diff image.
+   - Thresholds:
+     - zero style or geometry differences;
+     - identical screenshot size;
+     - at least 99% of pixels within 8/255.
+   - Nothing is masked, blurred or excluded from the pixel comparison.
+   - Results, screenshots and diffs go to test-results/export-parity/.
+
+Fixtures (test/fixtures/export/exportFixtureDocuments.ts):
+- typography, box-styles, spacing-nesting, free-layout, flexbox, grid,
+  media-forms, catalog-components.
+- They cover headings, paragraphs, authored typography, links, lists,
+  figure and fieldset.
+- They cover colors, linear and radial gradients, image backgrounds,
+  per-side borders, per-corner radii, multi and inset shadows,
+  opacity/filter/transition, transforms, clip-path and overflow.
+- They cover nested margins and padding, resize anchors, min/max sizes,
+  aspect ratio, legacy containers, nested Free, flex and grid.
+- They cover images with object-fit, legacy and scene SVG, hr, inputs,
+  checkbox, textarea, select and progress, plus all 81 catalog entries.
+
+==========================================================================================
+S. VISUAL PARITY RESULTS (both modes identical; per fixture)
+==========================================================================================
+| Fixture            | Size     | Elements | Prop checks | Style/geo diffs | Exact   | ≤8/255   | >8/255 px |
+|--------------------|----------|----------|-------------|-----------------|---------|----------|-----------|
+| typography         | 800×485  | 17       | 1,513       | 0               | 99.984% | 99.9959% | 16        |
+| box-styles         | 800×458  | 24       | 2,136       | 0               | 95.165% | 99.9896% | 38        |
+| spacing-nesting    | 800×488  | 10       | 890         | 0               | 99.989% | 99.9959% | 16        |
+| free-layout        | 800×370  | 8        | 712         | 0               | 99.975% | 99.9946% | 16        |
+| flexbox            | 800×388  | 16       | 1,424       | 0               | 99.971% | 99.9948% | 16        |
+| grid               | 800×354  | 22       | 1,958       | 0               | 99.946% | 99.9944% | 16        |
+| media-forms        | 800×899  | 24       | 2,136       | 0               | 99.899% | 99.9808% | 138       |
+| catalog-components | 800×9425 | 250      | 22,250      | 0               | 99.876% | 99.9797% | 1,527     |
+
+Maximum geometry delta over all elements is 0.00003 px. The inherited root
+style is equal in every case. The lowest similarity at the 8/255 tolerance is
+99.98%. Exact similarity is 95.2%–99.99%.
+
+Every residual difference was located on diff images and explained:
+- 16 px in every fixture: the editor sheet's 6px rounded border curves into
+  the page's two top corners. This is editor chrome inside the Canvas
+  screenshot clip.
+- Gradients (box-styles, the 4.8% sub-tolerance pixels): Chrome's gradient
+  dithering depends on the element's absolute position on screen. The values
+  are equal within 8/255.
+- Anti-aliasing of a few edge pixels on curves and diagonals (the image
+  circle, the 50% radius, the dotted-border corner, the SVG star's inner
+  edges): the geometry and colors are identical (0 differences) while edge
+  rasterization differs by layer. This is a browser rendering limitation, not
+  a style difference.
+- Catalog: the 3 empty image cards show the editor-only placeholder icon on
+  the Canvas, which export intentionally omits (missing-media-source).
+
+Initial run, before the harness fixes (not export defects):
+- The theme color notation (lab vs oklch) was solved by comparing painted
+  color.
+- Rects for <option>s with no layout box were skipped.
+- A half-pixel sheet offset was solved with whole-pixel positioning.
+
+==========================================================================================
+T. PROPERTY-LEVEL PARITY RESULTS
+==========================================================================================
+Browser computed styles: 33,019 property checks per mode over 371 elements,
+with 0 differences. The properties cover:
+- width, height, padding, margin, font size, weight, line height and family,
+  color, background color and image;
+- border width, style, color and radius; display, position and insets;
+- transform, filter, opacity, box-shadow, clip-path;
+- flex and grid properties; overflow; object-fit and object-position; list
+  style;
+- transitions and color-scheme.
+
+jsdom parity: 8/8 documents, every node matching node by node.
+
+==========================================================================================
+U. DETERMINISM AND PERFORMANCE
+==========================================================================================
+Determinism:
+- Identical documents give byte-identical files in both modes. This also
+  holds for rebuilt documents and documents whose object keys are reversed.
+- The input document is never mutated. There are no timestamps or random ids
+  in the output.
+
+Performance (Vitest, Node, this machine; exportHtmlCss including schema
+validation):
+- small fixture: 1.0 ms, 6.1 KiB
+- 81-entry catalog: 11.3 ms, 83.9 KiB
+- 2,000 nodes: 59 ms, 343 KiB
+- 20,000 nodes (the project maximum): 463 ms. HTML 1.56 MiB, CSS 1.91 MiB,
+  heap delta about 71 MiB (transient).
+- depth-100 document: 3 ms
+
+The traversal is single-pass (plus the iterative limits scan and the schema
+parse). No worker was added. If an export UI needs it, a 20,000-node export
+(~0.5 s) belongs in a worker. That is documented.
+
+==========================================================================================
+V. FILES ADDED
+==========================================================================================
+src/features/canvas/
+- index.ts
+- types/documentDefaultStyle.ts
+- types/elementStyleRecipe.ts
+- utils/documentDefaultStyles.ts
+- utils/documentDefaultStyles.test.ts
+- utils/elementStyleRecipes.ts
+
+src/features/export/
+- index.ts
+- types/exportDiagnostic.ts, types/exportIr.ts, types/exportResult.ts
+- utils/buildExportDocument.ts (+ .test.ts)
+- utils/canvasExportParity.test.tsx
+- utils/escapeMarkup.ts (+ .test.ts)
+- utils/exportBaseStylesheet.ts
+- utils/exportClassNames.ts
+- utils/exportHtmlCss.ts (+ .test.ts)
+- utils/exportUrlPolicy.ts (+ .test.ts)
+- utils/printExportHtml.ts
+- utils/printExportStylesheet.ts
+- utils/serializeStyleObject.ts (+ .test.ts)
+- utils/validateExportCssValue.ts (+ .test.ts)
+
+Tests and fixtures:
+- test/fixtures/export/exportFixtureDocuments.ts
+- e2e/export-visual-parity.spec.ts
+- e2e/support/exportParity.ts
+
+Documentation:
+- docs/architecture/export-engine.md
+- docs/decisions/ADR-0008-export-shared-styling-and-ir.md
+- docs/reports/export-1.2-html-css-export-foundation.txt (this report)
+
+Not part of the repository's tracked tree (gitignored folder):
+- changelogs/2026-10-27-html-css-export-foundation-checkpoint-EXPORT-1.2.txt
+
+Deleted:
+- src/features/export/types/.gitkeep
+- src/features/export/utils/.gitkeep
+(Replaced by real content.)
+
+==========================================================================================
+W. FILES MODIFIED
+==========================================================================================
+Canvas (behavior-neutral refactor onto the shared recipes):
+- components/DocumentCanvas.tsx
+- the element components:
+  - Audio, Body, Button, Caption, Container, Dialog, Divider, DocumentRoot;
+  - Figcaption, Heading, Iframe, Image, Input, Legend, Link, ListItem;
+  - Option, Paragraph, Progress, Select, Svg, TableCell, Table, TableRow;
+  - TableSection, Textarea, Video.
+
+Docs:
+- architecture/README.md, editor-domain-model.md, repository-structure.md,
+  testing-strategy.md
+- decisions/README.md
+- roadmap/milestones.md
+
+No schema change. No editor store, command, factory or inspector change.
+
+==========================================================================================
+X. DEPENDENCIES
+==========================================================================================
+None added.
+- Tests use the existing devDependency tailwindcss (its compile API).
+- Playwright and jsdom are already present.
+- The generator itself has no runtime dependency beyond repo code. Its only
+  React reference is a type-only CSSProperties.
+
+==========================================================================================
+Y. DOCUMENTATION
+==========================================================================================
+- export-engine.md covers:
+  - pipeline and public API;
+  - the shared styling API;
+  - the IR;
+  - HTML and CSS rules;
+  - defaults and reset policy;
+  - security policy;
+  - diagnostics;
+  - parity methodology;
+  - known limitations;
+  - integration points.
+- ADR-0008 records the shared styling and IR decision.
+- The architecture and ADR indexes, repository structure, testing strategy,
+  domain model and roadmap were updated.
+
+==========================================================================================
+Z.  TYPESCRIPT  — npm run typecheck: pass (tsc --noEmit, no output).
+AA. ESLINT      — npm run lint: pass, 0 problems. One unused-variable
+                  warning in a new test was fixed and rerun.
+                  Prettier is not enforced in this repo: format:check already
+                  fails on untouched baseline files (e.g. the original
+                  HeadingElement at HEAD). New files were not reformatted, to
+                  avoid churn.
+AB. VITEST      — npx vitest run: 330 files passed. 4,946 tests passed, 1
+                  skipped (baseline 322 / 4,800 / 1). That is +8 files and
+                  +146 tests.
+AC. PLAYWRIGHT  — npx playwright test (browser): 39 passed. The 31 existing
+                  plus 8 new export parity tests.
+AD. NEXT BUILD  — npm run build: pass. Compiled successfully, TypeScript
+                  finished, routes / and /_not-found static.
+AE. DESKTOP     — npm run desktop:test: the desktop static build and compile
+                  passed. Electron Playwright: 53 passed, 2 skipped (the
+                  opt-in persistence benchmarks).
+                  npm run desktop:package: passed (Layoutry 0.1.0-alpha.1
+                  win-x64 zip built, fuses verified).
+                  npm run desktop:test:packaged: NOT COMPLETED. It was
+                  stopped at the user's request while running, because its
+                  tests repeatedly launch the packaged app's windows. No
+                  result is claimed. Run it when convenient.
+
+==========================================================================================
+AF. KNOWN LIMITATIONS
+==========================================================================================
+- Interactions and the modal dialog are static only (EXPORT-1.3). Nine
+  catalog entries are affected (M).
+- There is no responsive model, so no responsive output.
+- vw/vh and position: fixed resolve against the editor window on the Canvas
+  and against the real viewport in the export. These differ by design.
+- Authored font families are not loaded on either side.
+- img alt comes from the display name (the Canvas behavior). A real alt field
+  needs a schema change.
+- Not reproduced, because they are Canvas-only React artifacts:
+  - value="" on value-less toggle inputs;
+  - muted set as a property rather than an attribute.
+- Authored classes are verbatim. On the Canvas, tailwind-merge can let an
+  authored class that names a Tailwind utility override a default. Export
+  never does. This is rare and documented.
+- Remote and relative assets are referenced, not packaged (no ZIP in scope).
+  Relative paths are reported.
+- Iframes have no sandbox attribute (no model field; product decision from
+  DESKTOP-0.1).
+- A 20,000-node export takes about 0.5 s on the main thread.
+
+==========================================================================================
+AG. UNRESOLVED FIDELITY ISSUES
+==========================================================================================
+No style, geometry or structure mismatch is unresolved.
+
+Residual pixel differences are rasterization only:
+- gradient dithering;
+- edge anti-aliasing;
+- editor-chrome corner pixels in the Canvas screenshot;
+- the omitted editor placeholder icon.
+All are explained in S.
+
+Product question (not a defect): the container's faint zinc-100 border and the
+empty-media dashed frame are legacy defaults visible in Preview, so they are
+exported (V2). If they should be Design-only chrome, that is a Canvas plus
+export product change. A one-line recipe change covers both sides.
+
+==========================================================================================
+AH. NEXT CHECKPOINT RECOMMENDATION
+==========================================================================================
+EXPORT-1.3 — Interactive Component Runtime & Advanced Fidelity:
+- A dependency-free vanilla runtime, emitted only when the document has
+  interactions:
+  - click show/hide/toggle;
+  - initially-hidden nodes;
+  - outside-click and Escape dismissal, matching findDismissibleRelationships;
+  - dialog showModal/close with backdrop click.
+  It is driven by ExportDocument.interactions and generated target tokens
+  (never authored ids).
+- Preview-equivalent behavior tests in Playwright for the 9 runtime entries.
+- A dialog/top-layer visual parity fixture.
+- An optional decision on the Design-only chrome question (AG).
+
+==========================================================================================
+DIRECT ANSWERS
+==========================================================================================
+ 1. Is there a functional HTML/CSS Export Engine? Yes: exportHtmlCss.
+ 2. Does it use shared Canvas styling logic? Yes. Shared recipes and the
+    default table are consumed by both sides via canvas/index.ts.
+ 3. Is it independent of React and Electron? Yes. It has no React runtime and
+    no DOM, and it is tested in a Node environment.
+ 4. Is the IR reusable for Tailwind, React and Vue? Yes. It is
+    target-independent and holds semantic defaults and declarations.
+ 5. Are all static HTML tags supported? Yes, all 46 rendered tags. blockquote
+    is a diagnosed div, as on the Canvas.
+ 6. Are authored CSS properties preserved? Yes. Verbatim values, React
+    serialization, 0 browser differences.
+ 7. Are Canvas visual defaults reproduced? Yes, and compile-verified against
+    Tailwind.
+ 8. Is editor-only styling excluded? Yes (G), and asserted.
+ 9. Are page-root and viewport semantics correct? Yes: a fluid page, the page
+    surface on body, no 1440px cap, and the inherited style verified.
+10. Is Flow layout preserved? Yes (I).
+11. Is Free positioning preserved? Yes, including nested Free (J).
+12. Is Flexbox preserved? Yes (K).
+13. Is Grid preserved? Yes (L).
+14. Are nested containers preserved? Yes. The structure is printed 1:1.
+15. Is text escaped safely? Yes.
+16. Are attributes escaped safely? Yes.
+17. Are unsafe URLs rejected? Yes, by context, including obfuscated schemes.
+18. Are free-text CSS values validated? Yes: structural plus color and
+    font-family checks.
+19. Are diagnostics produced for unsupported content? Yes (O).
+20. Is output deterministic? Yes: byte-identical, and key-order independent.
+21. Does standalone HTML work? Yes, verified in Chromium.
+22. Does separate HTML/CSS work? Yes, verified in Chromium.
+23. Are both output shapes visually equivalent? Yes. The CSS is
+    byte-identical and the browser results are identical.
+24. Are Canvas and export screenshots compared? Yes, for 8 fixtures × 2
+    modes.
+25. Are computed CSS properties compared? Yes: 89 properties per element.
+26. Are authored dimensions preserved? Yes: 0 px geometry delta.
+27. Are fonts and default styles reproduced? Yes: same stack, smoothing,
+    color-scheme and defaults.
+28. Are any important visual mismatches unresolved? No (AG).
+29. What similarity was achieved? Between 99.9797% and 99.9959% of pixels
+    within 8/255. Exact similarity was 95.2%–99.99%.
+30. Are the 81 catalog entries covered for static export? Yes.
+31. Which components still need JavaScript? Dropdown Button, Collapsible,
+    Basic Tabs, Modal, Drawer, Dismissible Alert, Manual Toast, Popover, and
+    the Dialog primitive.
+32. What are the export performance measurements? See U: 1 ms small, 11 ms
+    catalog, 59 ms for 2,000 nodes, 463 ms for 20,000 nodes.
+33. Did TypeScript pass? Yes.
+34. Did ESLint pass? Yes.
+35. Did Vitest pass? Yes: 4,946 passed, 1 skipped.
+36. Did browser Playwright pass? Yes: 39 passed.
+37. Did Electron Playwright pass? Yes: 53 passed, 2 opt-in skipped.
+38. Did packaged Windows tests pass, if applicable? Unknown. Packaging
+    succeeded, but the packaged suite was stopped at the user's request
+    before finishing (AE).
+39. Is the foundation ready for interactive component export? Yes. Bindings,
+    hidden state and dialog state are already in the IR.
+40. What should EXPORT-1.3 implement? See AH.
+
+Recommended commit message:
+  feat(export): add HTML/CSS export engine with shared canvas styling and visual parity tests
+
+STOP: EXPORT-1.3 is not started. It awaits review and approval.

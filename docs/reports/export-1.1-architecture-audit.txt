@@ -1,0 +1,888 @@
+LAYOUTRY — EXPORT-1.1 — Export Engine Architecture & Capability Audit
+Date: 2026-10-27      Type: read-only audit (no production code, schema, dependency or UI changes)
+Branch: main          HEAD at start: bee1d42 (working tree clean)
+
+==========================================================================================
+SUMMARY
+==========================================================================================
+No Export Engine exists. src/features/export/ contains only two empty .gitkeep files
+(types/, utils/). There is no HTML, CSS, Tailwind, React or Vue generator, no code preview,
+no export menu item, no export download, and no ZIP code anywhere in src/ or desktop/. A
+header test (AppHeader.test.tsx:377) asserts that NO "Export" menu item is shown.
+
+The situation is still good for export. The authored document is one typed, serializable,
+strictly Zod-validated tree (EditorElementNode). The Canvas computes almost all authored CSS
+through ~20 PURE resolver functions (node -> React CSSProperties) in
+src/features/canvas/utils/resolve*.ts. A deterministic generator can walk the document tree
+directly and reuse that style logic. It never needs to scrape the DOM.
+
+The main fidelity risk is not the authored CSS. It is the CSS that is NOT in the document but
+still shapes what the user sees on the Canvas:
+  1. Tailwind Preflight (the global reset: zero margins, list-style none, transparent buttons...).
+  2. Default Tailwind class strings hardcoded per element component (e.g. every h1–h6 renders
+     "text-3xl font-semibold tracking-tight text-zinc-900"; Button is a dark pill; Link is blue
+     and underlined).
+  3. "Legacy" fallback classes used when a field is unset (p-8, flex-col gap-4, rounded-lg,
+     shadow-sm, h-40...).
+  4. The page sheet (white, font-sans system stack, text-zinc-950, max-width 1440px).
+  5. Design-only vs Preview-only rendering (Dialog, transitions, autoplay, runtime visibility).
+All of these must be translated into an explicit, versioned "base stylesheet". Without it,
+exported pages will not look like the Canvas.
+
+Recommended next step: EXPORT-1.2 builds a shared Export IR (intermediate representation)
+plus a static HTML+CSS emitter with sanitization, in memory and with no UI. Three decisions are
+needed from the user before coding starts (section V).
+
+==========================================================================================
+A. REPOSITORY BASELINE AND GIT STATE
+==========================================================================================
+- Branch main, HEAD bee1d42 "test(project): stabilize persistence and validate recovery
+  reliability". Working tree clean at start (git status --porcelain empty).
+- Stack (package.json): Next 16.2.10, React 19.2.4, Zod 4, Zustand 5, dnd-kit, Tailwind v4
+  (devDependency, @tailwindcss/postcss), TypeScript 5 strict, Vitest 4 + jsdom + RTL,
+  Playwright 1.61 + @axe-core/playwright, Electron 44.9.0, electron-builder 26.15.3, Prettier 3.
+- Dependencies relevant to export that ALREADY exist: tailwindcss v4 (can compile utilities in
+  tests), typescript (can transpile/check generated JSX in tests), react-dom (server rendering
+  of generated React in tests), prettier (devDependency only; not shippable at runtime as-is),
+  Playwright (rendering comparison).
+- NOT present: any zip library, HTML validator (html-validate/vnu), CSS parser, Vue compiler
+  (@vue/compiler-sfc), runtime formatter.
+- Validation baseline: see section R ("Baseline validation run").
+
+==========================================================================================
+B. EXISTING EXPORT FUNCTIONALITY
+==========================================================================================
+Searched src/ and desktop/ for: export (feature), serialize, generateHTML, generateCSS,
+tailwind, toJSX, vue, minif, prettier, jszip/zip, Blob, createObjectURL, download.
+
+| Capability                  | Status          | Evidence                                              |
+|-----------------------------|-----------------|-------------------------------------------------------|
+| export feature module       | ABSENT          | src/features/export/{types,utils}/.gitkeep only       |
+| HTML generation             | ABSENT          | no generator; the Canvas renders React, not markup    |
+| CSS generation              | ABSENT (*)      | (*) pure resolvers emit React style objects, which    |
+|                             |                 |     can be reused as export input                     |
+| Tailwind / React / Vue      | ABSENT          | no matches                                            |
+| Formatter / minifier        | ABSENT          | prettier is a devDependency for repo formatting only  |
+| Text download               | PRESENT (reuse) | project/utils/downloadTextFile.ts (Blob + <a download>)|
+|                             |                 | used by "Download Project" (.layoutry, NOT code)      |
+| ZIP                         | ABSENT          |                                                       |
+| Export menu / button        | ABSENT, by test | AppHeader.test.tsx:377 "no Export ... placeholders"   |
+| Code preview panel          | ABSENT          |                                                       |
+| Project serialization       | PRESENT         | project/utils/serializeProject.ts + canonicalJson.ts  |
+|                             |                 | (.layoutry JSON; this is persistence, not export)     |
+
+Answer: no export target is even partially implemented. The reusable foundations are the
+style resolvers, the Zod schema, the deterministic canonical JSON serializer (a model for
+deterministic output), downloadTextFile, and the desktop native-file IPC pattern.
+
+==========================================================================================
+C. AUTHORED DOCUMENT MODEL
+==========================================================================================
+Source: src/features/editor/types/document.ts (EditorElementNode, ~50 optional fields) and
+src/features/editor/schemas/editorDocumentSchema.ts (strict Zod schema; Equal<> drift guards
+fail typecheck if the schema and the type diverge).
+
+Root: { id: "page-root", tag: "page", children: [] } (createBlankDocument). "page" is a
+virtual tag rendered as <div class="flex flex-col">. Older documents/fixtures may also contain
+a "body" node, which is rendered as a <div> ("flex flex-col gap-8 p-10 sm:p-14"). It must NOT
+be exported as a second <body>.
+
+Nesting: one recursive `children` array. Only DocumentNodeRenderer walks it. Limits are
+enforced on load (projectLimits.ts): 20,000 nodes, depth 100, 16 Mi characters.
+
+Identity:
+- `id`: internal editor id (`${tag}-${suffix}`, NODE_ID_PATTERN /^[A-Za-z0-9_-]{1,128}$/).
+  Editor-only. The only cross-node reference is interactions[].targetId.
+- `htmlId`: the authored HTML id. Free string. Uniqueness is NOT enforced (documented).
+- `className`: the authored class string. Free string, opaque. No stylesheet behind it.
+
+Tag: lowercase real HTML tag. 47 real tags are accepted by KNOWN_ELEMENT_TAGS. 46 of them have
+a renderer. "blockquote" is allowed by the schema but has no renderer (FallbackElement) and no
+factory creates it. Heading level = the tag itself (h1–h6). Input variant = `inputType`.
+
+"Component variants" are not stored in the model. All 41 library components are built by
+factories (editor/factories/*Compositions.ts) into ordinary primitive nodes plus `displayName`
+labels. Export therefore only needs to handle the 46 rendered tags, never component types.
+(src/features/components-library/ is empty; the catalog lives in components/layout.)
+
+Content and attribute fields (one dedicated field per concern, no generic attribute bag):
+text, src, href, poster, title, name, placeholder, value, checked, selected, inputType,
+controls, autoplay, muted, loop, progressValue, progressMax, htmlId, className,
+svgKind/svgViewBox/svgFill/svgStroke/svgStrokeWidth/svgScene.
+
+Style fields: dimensions, freeLayout, layoutMode, flowLayout, flexChild, gridChild, spacing,
+typography, background (color/image/gradient), border (4 sides), borderRadius (4 corners),
+shape (clip-path preset), boxShadow (layer list), filters (+opacity), display
+(display/visibility/overflow/pointer-events/cursor/user-select), position (+insets, z-index),
+aspectRatio, sizeConstraints, mediaFit, transition, transform.
+
+Behavior fields: interactions[] (click -> show|hide|toggle -> targetId),
+initialPreviewVisibility ("visible"|"hidden").
+
+Editor-only fields (must NEVER appear in output):
+id (except as a source for generated hook names), displayName (Structure label; see the alt
+issue below), lockChildStyles, aspectRatioLocked, childResizePolicy, retained-but-inactive
+data (flowLayout while layoutMode=free, svgKind/svgViewBox once svgScene exists, inactive
+background gradient/image, flexChild/gridChild under a non-flex/grid parent), plus all
+store-only state (selection, runtimeVisibility, editorMode, history, clipboard, snap,
+svgEditMode).
+
+Is the model sufficient for faithful export? YES for structure, content and authored CSS. The
+gaps are in the RENDER CONTEXT (base styles, defaults, page sheet), not in the model. There is
+one small content gap: <img alt> is currently taken from displayName (ImageElement.tsx:112),
+because no `alt` field exists (see V, schema recommendations).
+
+==========================================================================================
+D. HTML CAPABILITY MATRIX
+==========================================================================================
+"Canvas" = how the editor renders it today. "Export" = what a generator should emit.
+
+| Area                  | In model? | Canvas render                              | Export notes                          |
+|-----------------------|-----------|--------------------------------------------|---------------------------------------|
+| Valid HTML5 doc shell | n/a       | none (page = div)                          | generator adds doctype/html/head/body; |
+|                       |           |                                            | lang/title/charset/viewport defaults   |
+| Semantic sectioning   | yes       | real header/nav/main/article/aside/footer/ | direct                                 |
+|                       |           | section/form/label/fieldset/figure         |                                        |
+| Headings h1–h6        | yes (tag) | real tag, all share text-3xl default       | direct; default size issue (E)         |
+| Paragraph, Link, Btn  | yes       | real p / a href / button type="button"     | direct; href sanitize; keep type=button|
+| Lists ul/ol/li        | yes       | real tags, list-disc/decimal list-inside   | direct + default list CSS              |
+| Tables                | yes       | table/caption/thead/tbody/tfoot/tr/th/td   | direct (no colspan/rowspan in model)   |
+| Forms                 | yes       | form/label/input(9 types)/textarea/select/ | value->value attr, checked->checked,   |
+|                       |           | option/fieldset/legend; submit prevented   | selected->selected; no action/method   |
+|                       |           |                                            | in model                               |
+| Images                | yes       | <div wrapper><img src alt=displayName>     | wrapper decision (V); alt gap          |
+| Video / Audio         | yes       | <div wrapper><video|audio ...> + shield    | attrs direct; drop shield; autoplay is |
+|                       |           |                                            | Preview-gated on Canvas, emit as stored|
+| Iframe                | yes       | <div wrapper><iframe src title> + shield   | src allowlist; sandbox (not in model)  |
+| SVG                   | yes       | real <svg viewBox> + rect/circle/polygon/  | direct; serialize scene objects; add   |
+|                       |           | ellipse/line/path                          | xmlns only for standalone .svg         |
+| Dialog                | yes       | Design: static+open; Preview: showModal()  | needs JS runtime (J)                   |
+| hr, progress          | yes       | real tags                                  | direct; indeterminate = no value attr  |
+| figure/figcaption     | yes       | real tags                                  | direct                                 |
+| blockquote            | schema    | FallbackElement (no renderer)              | emit as blockquote; no factory makes it|
+| ARIA attributes       | partial   | dialog aria-label/aria-description derived | reuse resolveDialogAccessibleName      |
+|                       |           | (resolveDialogAccessibleName); iframe title|                                        |
+| Custom attributes     | NO        | no generic attribute bag (by design)       | only htmlId/className                  |
+| Escaping              | n/a       | React escapes text and attributes          | generator must escape everything (O)   |
+
+Canvas-only markup to strip: data-node-id/-type/-parent-id, dnd-kit listeners/refs,
+contentEditable/editing props, onClick/onSubmit preventDefault, MediaInteractionShield, the
+placeholder icon (<svg> lucide) shown when an image has no src, isDragging opacity.
+
+Can a deterministic HTML generator run directly on the authored tree? YES. Every renderer
+picks its tag from node.tag, and there is only one recursion point.
+
+==========================================================================================
+E. CSS CAPABILITY MATRIX
+==========================================================================================
+Representation: typed settings objects per section. Each section has a pure resolver
+(canvas/utils/resolve<Section>Style.ts) that returns React CSSProperties: camelCase keys,
+numbers meaning px. Each element component spreads a TAG-SPECIFIC subset of resolvers in a
+fixed order. Order matters: later spreads win (e.g. Display after FlowLayout, SizeConstraints
+after FlexOrGridChild).
+
+| Section (field)        | Resolver                       | Export mapping / notes                              |
+|------------------------|--------------------------------|-----------------------------------------------------|
+| Typography             | resolveTypographyStyle         | font-family, size, weight, style, color, align,     |
+|                        |                                | line-height, letter-spacing, text-decoration-line.  |
+|                        |                                | fontFamily and color are UNVALIDATED free strings.  |
+| Background             | resolveBackgroundStyle         | color, url() image, size/position/repeat/attachment,|
+|                        |                                | linear/radial gradients (formatGradientCss)         |
+| Border                 | resolveBorderStyle             | per-side longhands; validated (isValidBorderSide…)  |
+| Border radius          | resolveBorderRadiusStyle       | per-corner; validated                               |
+| Shape (clip-path)      | resolveShapeStyle              | clip-path presets; containers only                  |
+| Box shadow             | resolveBoxShadowStyle          | layer list, enabled filter, validated               |
+| Filters + opacity      | resolveFilterStyle             | filter function list + opacity; validated per field |
+| Display/visibility/    | resolveDisplayStyle            | display (block/inline/inline-block/none...),        |
+| overflow/cursor/...    |                                | overflow precedence rules, pointer-events, cursor,  |
+|                        |                                | user-select; validated                              |
+| Position + insets + z  | resolvePositionStyle           | validated; Free/host overrides win                  |
+| Spacing                | elementPositionStyle           | margin/padding longhands; composed with offsetX/Y   |
+| Dimensions (Flow)      | elementDimensionsStyle         | width/height px + flex-shrink:0 + margin anchor     |
+| Free geometry          | freeChildStyle                 | position:absolute left/top/width/height px          |
+| Size constraints       | resolveSizeConstraintsStyle    | min/max; `min(100%, Npx)` composition               |
+| Aspect ratio           | resolveAspectRatioStyle        | aspect-ratio                                        |
+| Media fit              | resolveMediaFitStyle           | object-fit/object-position, inner media element only|
+| Flow layout (container)| resolveFlowLayoutStyle         | "block" => display:flex column align-items:start    |
+|                        |                                | (NOT display:block); flex; grid repeat(n,minmax(0,1fr))|
+| Flex/Grid child        | resolveFlexOrGridChildStyle    | flex-grow/shrink/basis/align-self, min-*:0; grid    |
+|                        |                                | span placement; width/height:100% unless resized    |
+| Transition             | resolveTransitionStyle(isPrev.)| emitted only in Preview; export = Preview semantics |
+| Transform              | resolveTransformStyle          | translate/rotate/scale, both modes                  |
+| SVG fill/stroke        | SvgElement presentation attrs  | SVG attributes, not CSS                             |
+
+Not supported by the editor (nothing to export, do not invent): pseudo-states (:hover,
+:focus), @keyframes animations, custom CSS text, CSS variables/design tokens, global styles,
+per-breakpoint rules, list-style controls, text-transform/white-space/word-break, gap on
+non-container tags, background layers beyond one source.
+
+Runtime-only styling that MUST be translated into a base stylesheet (fidelity-critical):
+1. Tailwind v4 Preflight (globals.css imports tailwindcss). Examples: margin:0 on headings/p,
+   list-style:none, button background transparent, img/svg/video display:block +
+   max-width:100%, border-box sizing, border:0 solid, table border-collapse defaults.
+   Exported plain CSS must ship an equivalent reset, or every page will render differently.
+2. Per-component default classes (extracted from the element components):
+     Heading     text-3xl font-semibold tracking-tight text-zinc-900   (same for h1..h6)
+     Paragraph   text-base leading-relaxed text-zinc-600 (+ max-w-prose when unresized flow)
+     ListItem    text-base text-zinc-600
+     Button      inline-flex w-fit items-center justify-center bg-zinc-900 px-4 py-2 text-sm
+                 font-medium text-white (+ rounded-md, shadow-sm when radius/shadow unset)
+     Link        inline-block text-blue-600 (+ underline underline-offset-2 when decoration unset)
+     Select      h-9 w-full min-w-0 bg-white px-3 text-sm text-zinc-900 outline-none
+     Textarea    h-24 w-full min-w-0 resize-none bg-white px-3 py-2 text-sm text-zinc-900
+     Table       border-collapse text-sm text-zinc-900;  th/td px-3 py-2 text-left align-top
+                 text-sm text-zinc-600;  caption px-3 py-2 text-left text-sm text-zinc-600
+     Legend      text-sm font-medium text-zinc-900;  Figcaption text-sm text-zinc-500
+     Dialog      max-w-none bg-white p-8 text-zinc-900 backdrop:bg-black/40 (+rounded-lg, border)
+     Image/Video/Iframe/Audio wrapper  w-full overflow-hidden bg-zinc-50 (+h-40 / h-13.5,
+                 rounded-md, dashed border when unset)
+     SVG         w-50 (+h-50)
+     Container family (legacy only)  rounded-lg, border border-zinc-100, flex flex-col
+                 items-start gap-4, p-8, ul list-disc list-inside, ol list-decimal list-inside
+     Page root   flex flex-col;  legacy body: flex flex-col gap-8 p-10 sm:p-14
+   (Input/Progress/Divider/TableRow/TableSection/Option components also carry defaults; EXPORT-1.2
+   must inventory every element component file. This list was taken from the cn() base strings.)
+3. Page sheet (DocumentCanvas.tsx): bg-white, font-sans (Tailwind system stack), text-zinc-950,
+   w-full max-w-360 (1440px), min-h-500. The editor font (Inter) is chrome-only and never reaches
+   the document.
+4. dark: variants never apply inside [data-document-surface] (globals.css custom variant).
+   Export must ignore them. This is correct by construction if the base stylesheet is
+   hand-translated.
+
+Fidelity problems to plan for:
+- Tailwind colors are oklch() values in v4 (e.g. zinc-900). A hand-translated stylesheet must
+  copy the exact values, not approximate hex.
+- React's number→px conversion and its unitless-property list (flexGrow, flexShrink, zIndex,
+  opacity, fontWeight, lineHeight-as-number, order, aspectRatio...) must be reproduced exactly
+  by the CSSProperties→CSS serializer.
+- vw/vh units resolve against the browser window on the Canvas, not against the page sheet
+  (which is narrower). Exported pages resolve them against the real viewport. This is inherent
+  and should be documented, not "fixed".
+- Free fontFamily strings name fonts that are never loaded. The output uses the same fallback
+  the Canvas uses (whatever the OS has).
+- `display` set explicitly overrides flex/grid by design. Exported `hidden` handling must
+  survive an authored display value (use [hidden]{display:none!important}).
+
+==========================================================================================
+F. LAYOUT MAPPING
+==========================================================================================
+| Mode        | Model                               | Canvas CSS                               | Export        |
+|-------------|-------------------------------------|------------------------------------------|---------------|
+| Flow/Block  | flowLayout.display="block"          | display:flex; flex-direction:column;     | faithful      |
+|             |                                     | align-items:flex-start (NOT block)       |               |
+| Flow/legacy | flowLayout unset                    | Tailwind flex flex-col items-start gap-4 | faithful via  |
+|             |                                     | (+ p-8 when spacing unset)               | base CSS      |
+| Flex        | flowLayout.flex{direction,wrap,     | display:flex + justify/align/gaps;       | faithful      |
+|             | justify,align,alignContent,gaps}    | children min-w/h:0 (overflow fix)        |               |
+| Grid        | flowLayout.grid{columns 1–4, rows   | repeat(n, minmax(0,1fr)), gaps; child    | faithful      |
+|             | auto|1–4, gaps}                     | span/start placement; 100% fill unless   |               |
+|             |                                     | resized                                  |               |
+| Free        | layoutMode="free" on the parent;    | parent position:relative (unless itself  | faithful but  |
+|             | child.freeLayout{x,y,w,h} px        | a Free child); child position:absolute   | NOT responsive|
+|             |                                     | left/top/width/height px                 |               |
+
+Points of special attention:
+- Nested containers: style depends on the PARENT's layoutMode and resolved flow display
+  (DocumentNodeRenderer passes parentLayoutMode/parentFlowDisplay; a Free parent forces "block"
+  for its children). The export traversal must carry the same context.
+- Resized Flow children: width/height px + flex-shrink:0 + max-width/height:100% clamp
+  (preferred size survives a narrower parent). Faithful.
+- West/north resize anchoring = negative/positive margin (offsetX/Y), added to spacing.margin.
+- Coordinates are stored zoom-independent (zoom menu items are disabled; no canvas transform
+  scale exists). Nothing canvas-specific leaks into stored geometry. Do NOT export overlay,
+  snap guides, resize handles or selection outlines; they are separate overlay components.
+- Free layout absolute coordinates were authored against the page sheet width (fluid, at most
+  1440px). The export body should reproduce the sheet (centered, max-width 1440px) to keep
+  coordinates meaningful.
+- Overflow: authored Display overflow wins; text tags get a legacy overflow:hidden clip only
+  when resized and no overflow is set (clipOverflowY). Preserve it exactly.
+- Dialog: Design forces position:static + open. Preview uses resolvePositionStyle, margin:auto,
+  and showModal(). Export follows Preview.
+
+==========================================================================================
+G. COMPONENT COVERAGE MATRIX
+==========================================================================================
+Enabled catalog cards: 81 (creationToolbarCategories.ts: 81 cards with an elementType, 29
+disabled placeholders without one). 40 are HTML/Media/Forms primitives and 41 are Components.
+Every card produces ordinary primitive nodes, so the export work is per TAG, plus the
+interaction runtime for the components that use bindings.
+
+Difficulty: L = direct tag+CSS, M = needs special attribute/structure handling,
+H = needs a JS runtime or a wrapper decision.
+
+PRIMITIVES (40)
+| Card(s)                                   | Tags emitted                     | Diff | Notes                       |
+|-------------------------------------------|----------------------------------|------|-----------------------------|
+| Container, Section                        | div, section                     | L    | flow/free/flex/grid context |
+| Header, Nav, Main, Article, Aside, Footer | same                             | L    |                             |
+| Simple Footer (composition)               | footer > p, a ...                | L    |                             |
+| Heading, Paragraph                        | h1–h6, p                         | L    | default-size base CSS       |
+| Link                                      | a href                           | M    | URL allowlist; '#' default  |
+| Button                                    | button type=button               | L    |                             |
+| Unordered/Ordered List, List Item         | ul, ol, li                       | L    | list marker base CSS        |
+| Table                                     | table/caption/thead/tbody/tfoot/ | L    |                             |
+|                                           | tr/th/td                         |      |                             |
+| Divider, Progress                         | hr, progress                     | M    | hr Preflight reset;         |
+|                                           |                                  |      | indeterminate progress      |
+| Figure                                    | figure > img + figcaption        | M    | image wrapper rule          |
+| Dialog                                    | dialog                           | H    | showModal runtime           |
+| Image                                     | (div) > img                      | M    | alt gap; data: placeholder  |
+| Video, Audio                              | (div) > video|audio              | M    | controls default true       |
+| SVG                                       | svg > shapes/scene objects       | M    | scene serialization         |
+| Embed                                     | (div) > iframe                   | M    | URL policy, sandbox         |
+| Form, Label, Fieldset                     | form, label, fieldset > legend   | L    | no action/method            |
+| Text/Email/Password/Number/Search/URL/Tel | input type=…                     | M    | value/name/placeholder      |
+| Checkbox, Radio                           | input type=checkbox|radio        | M    | checked                     |
+| Textarea                                  | textarea                         | M    | value as text content       |
+| Select                                    | select > option                  | M    | selected option -> attr     |
+
+COMPONENTS (41)
+| Group (count)            | Cards                                                  | Diff | Needs runtime JS  |
+|--------------------------|--------------------------------------------------------|------|-------------------|
+| Buttons (6)              | Primary/Secondary/Outline/Ghost, Button Group,          | L/H  | Dropdown Button   |
+|                          | Dropdown Button                                        |      |                   |
+| Cards (6)                | Basic, Image, Horizontal, Profile, Feature, Pricing     | L/M  | no                |
+| Navigation (6)           | Basic/CTA/Centered Navbar, Breadcrumbs, Pagination,     | L    | no                |
+|                          | Sidebar                                                |      |                   |
+| Forms & Inputs (6)       | Labeled Text, Search Bar, Newsletter, Contact, Login,   | M    | no                |
+|                          | Labeled Select                                         |      |                   |
+| Interactive (2)          | Collapsible, Basic Tabs                                | H    | yes               |
+| Feedback & Overlays (9)  | Modal, Info/Success/Warning/Error Alert, Dismissible    | L/H  | Modal, Dismissible|
+|                          | Alert, Manual Toast, Popover, Drawer                   |      | Toast, Popover,   |
+|                          |                                                        |      | Drawer            |
+| Data Display (6)         | Badge, Avatar, Avatar+Text, Stat Card, Metadata Row,    | L/M  | no                |
+|                          | Progress Bar                                           |      |                   |
+
+Special handling: Dialog, Modal, Drawer (native dialog + runtime); Dropdown Button,
+Collapsible, Basic Tabs, Popover, Manual Toast, Dismissible Alert (interaction runtime +
+dismissal); Image/Image Card/Avatar/Profile Card/Figure (embedded data:image/svg+xml
+placeholder src, elementFactories.ts:718, dataDisplayCompositions.ts:155); SVG (scene);
+Video/Audio/Embed (wrappers, remote URLs); Select/Checkbox/Radio/Inputs (authored defaults ->
+attributes). Accessibility caveat: Basic Tabs explicitly has "no keyboard/ARIA tab semantics
+yet" (catalog description). Export should reproduce exactly that, not invent ARIA.
+
+==========================================================================================
+H. RESPONSIVE MODEL
+==========================================================================================
+There is no authored responsive model. There are no breakpoints, no per-breakpoint styles and
+no device presets. "Project > Responsive Breakpoints" is a disabled placeholder
+(applicationMenus.ts:500). "Layout > Responsive Presets" cards are disabled placeholders. The
+only viewport media query that touches the document is BodyElement's `sm:p-14`, which is chrome
+on legacy "body" nodes.
+
+Exportable responsive behavior today is intrinsic only: % / rem / em / vw / vh units, flex wrap,
+grid fr tracks, max-width:100% clamps on resized elements, max-w-prose paragraphs. Free layout
+is fixed px and not responsive.
+
+Conclusion: export emits NO media queries in EXPORT-1.x. Responsive export needs a schema
+milestone first (breakpoint definitions + per-breakpoint overrides). It is out of scope.
+
+==========================================================================================
+I. ASSET HANDLING
+==========================================================================================
+- There is no asset upload, no asset store and no file input for media. The only type="file"
+  input imports .layoutry projects (ProjectWorkspace.tsx:299). The "Project > Assets" menu item
+  is a disabled placeholder.
+- Media are URL strings in src (img/video/audio/iframe), poster (video) and background.image.
+  The schema allows anything except javascript: (src/href/poster), and forbids certain
+  characters in background URLs (isValidBackgroundImageUrl).
+- Embedded data URLs: factories stamp data:image/svg+xml;utf8 placeholders for Image and
+  several data-display/card compositions. Users may also paste data: URLs (file limit
+  headroom of 16 Mi exists for this).
+- Fonts: free-text fontFamily only, no @font-face and no font loading. The editor's Inter is
+  chrome-only.
+- Icons: none in the document (lucide is chrome; the "Icon" card is a disabled placeholder).
+  SVG is authored geometry inline in the document.
+
+Portability:
+| Kind                  | Portable?                     | Export strategy                          |
+|-----------------------|-------------------------------|------------------------------------------|
+| data: URLs            | yes, self-contained           | emit inline (size warning above ~N KB)   |
+| http(s) URLs          | yes, needs network at view    | emit as-is; list in export manifest      |
+| relative / bare paths | unresolvable (no base)        | emit as-is + diagnostic warning          |
+| file:, blob: URLs     | not portable                  | drop or warn (blob: dies with the tab)   |
+| fonts                 | name only                     | emit font-family; no files to copy       |
+
+There are NO local assets to copy today. A single-file HTML (or index.html + styles.css)
+output is complete. ZIP packaging is not needed for the MVP. It becomes necessary only once
+there is an asset store or multi-file targets (React/Vue projects).
+
+==========================================================================================
+J. INTERACTION MODEL
+==========================================================================================
+Authored: interactions[] {trigger:"click", action: show|hide|toggle, targetId} and
+initialPreviewVisibility. Executor: useEditorStore.executeInteractionsForNode, which only
+changes the ephemeral runtimeVisibility map. Hidden nodes are NOT RENDERED AT ALL
+(DocumentNodeRenderer returns null), so siblings reflow.
+
+Dismissal (CanvasInteractionBoundary + editor/utils/dismissibleTargets.ts): for a
+click->toggle binding whose target is authored initially-hidden and is currently visible,
+a click outside the trigger and target region closes it, and Escape closes the first one.
+Dialog: when visible in Preview, showModal(); backdrop click closes; the native close event
+calls dismissRuntimeTarget.
+
+| Behavior                     | Category              | Export needs                               |
+|------------------------------|-----------------------|--------------------------------------------|
+| Link navigation              | pure HTML             | <a href> (Canvas prevents it; export must  |
+|                              |                       | not)                                       |
+| Button                       | pure HTML             | <button type="button">, no handler         |
+| Form submission              | pure HTML             | <form> with no action/method = submits to  |
+|                              |                       | the same URL with GET. Decide whether to   |
+|                              |                       | emit as-is (recommended, documented)       |
+| Native controls (select,     | pure HTML             | attributes only                            |
+| checkbox, video controls)    |                       |                                            |
+| cursor/pointer-events/       | CSS-only              | CSS                                        |
+| user-select                  |                       |                                            |
+| Transitions                  | CSS-only              | CSS. Note: nothing in the model changes    |
+|                              |                       | style at runtime, so they are inert except |
+|                              |                       | against user CSS added later               |
+| Hover/focus states           | not supported         | nothing                                    |
+| Animations                   | not supported         | nothing                                    |
+| show/hide/toggle on click    | JS-dependent          | small vanilla runtime                      |
+| initially hidden in Preview  | JS-free possible      | `hidden` attribute + reset rule            |
+| outside-click / Escape       | JS-dependent          | same runtime                               |
+| dismissal                    |                       |                                            |
+| Dialog modal open/close      | JS-dependent          | runtime calls showModal()/close()          |
+| Selection, drag, resize,     | editor-only           | never exported                             |
+| text editing, snapping,      |                       |                                            |
+| media shields, preventDefault|                       |                                            |
+
+The runtime is small: about 60–100 lines of dependency-free JS, driven by data-* attributes
+(e.g. data-ly-click="toggle:t3 hide:t7" on the trigger, data-ly-target="t3" on the target).
+Target hooks must be GENERATED deterministic tokens (traversal index), not authored htmlId
+(no uniqueness) and not raw internal ids. With no interactions in the document, NO script is
+emitted.
+
+==========================================================================================
+K. HTML/CSS EXPORT FEASIBILITY
+==========================================================================================
+Feasible now, with no schema change and no new dependency. Minimum viable architecture:
+  document -> buildExportTree (IR: tags, sanitized attributes, text, ordered CSS declarations,
+  behaviors, diagnostics) -> emitHtml + emitCss -> { files: [index.html, styles.css] }
+  or a single file with an inlined <style>.
+
+Styles: one generated class per styled element (e.g. .ly-12, numbered by traversal order),
+emitted in document order after a versioned base stylesheet (Preflight-equivalent reset +
+per-tag defaults + page sheet). The author's className is appended as-is (token-validated).
+Specificity: base (element selectors) < generated classes. Inline style attributes are not
+needed. Optional later: deduplicate identical declaration blocks into shared classes.
+
+Body/page: <body> gets the page-sheet styles (white, system sans, zinc-950); the root container
+becomes <div class="ly-page"> (flex column, max-width 1440px, centered). "body" legacy nodes
+become <div>.
+
+==========================================================================================
+L. TAILWIND EXPORT FEASIBILITY
+==========================================================================================
+Feasible as a SECOND emitter over the same IR: CSS declarations -> utilities. Tailwind's own
+Preflight reproduces the Canvas reset for free, and the per-tag defaults are already Tailwind
+classes, so Tailwind output is arguably the most faithful target.
+
+Mapping quality:
+- Clean: display, flex direction/wrap/justify/align, grid-cols-N (exactly
+  repeat(N,minmax(0,1fr))), col/row-span, position, overflow, cursor, select-none,
+  pointer-events, object-fit, text-align, font-weight, italic, underline/line-through,
+  opacity steps, z-index integers.
+- Arbitrary values required: most px spacing/sizes (Tailwind v4 spacing is a multiple of
+  0.25rem; exact matches like p-4 only when px % 4 == 0 at a 16px root. Use `p-[13px]`
+  otherwise), every authored color (`bg-[#1e40af]`, `text-[rgb(…)]`), letter-spacing, line
+  height, font sizes, insets, Free geometry (`left-[123px]`), min(100%,Npx), aspect ratios,
+  border widths per side, per-corner radii.
+- Arbitrary values or arbitrary properties for complex CSS: multi-layer box-shadow, gradients
+  (v4 bg-linear-<angle>/from/via/to covers 2–3 stops; more need
+  `bg-[linear-gradient(...)]` with underscore escaping), filter lists, clip-path presets
+  (`[clip-path:polygon(...)]`), transitions with custom properties, transforms combined.
+- Must be validated: the user's className may collide with Tailwind utility names. Pass it
+  through unchanged and document it.
+
+Target version: Tailwind v4 (matches the repo). Generated class lists must be compiled in tests
+with the existing tailwindcss devDependency to prove that every class produces CSS (no silent
+misses), and the computed styles must be compared with the CSS emitter in Playwright.
+
+==========================================================================================
+M. REACT EXPORT FEASIBILITY
+==========================================================================================
+Feasible over the same IR. Element -> JSX element, attributes -> React props (className,
+htmlFor not needed since labels wrap controls, defaultValue/defaultChecked for form fields,
+<select defaultValue> from the selected option, autoPlay/muted/loop/controls,
+strokeWidth/viewBox for SVG). Styles: emit the same styles.css imported by the component
+(simplest, identical fidelity) or a Tailwind className variant. Interactions:
+useState<Record<string, boolean>> visibility map + handlers, plus useRef/useEffect for
+showModal, and outside-click/Escape effects. Components: one Page component in v1. Splitting
+repeated subtrees into components is deferred. Assets: same URLs. Output: Page.tsx (or .jsx)
++ styles.css. Validation in tests with the existing typescript (transpile + type-check against
+@types/react) and react-dom/server renderToStaticMarkup, which can be compared with the HTML
+emitter output.
+
+==========================================================================================
+N. VUE EXPORT FEASIBILITY
+==========================================================================================
+Feasible over the same IR. The template is almost identical to the HTML emitter (Vue templates
+are HTML): attributes as-is, `value`/`checked`/`selected` as static attributes,
+v-show/v-if driven by a reactive visibility map for interactions, a template ref + onMounted
+watch for dialog showModal. Output: Page.vue SFC (<template>, <script setup>, <style> or an
+imported CSS file). Blocker for validation: compile-checking requires @vue/compiler-sfc, a NEW
+devDependency that needs explicit approval. Without it, Vue output can only be string-tested,
+which is not enough to gate a release.
+
+Shared logic across all four targets: IR building, style resolution, sanitization, asset/URL
+policy, deterministic ordering, the base stylesheet, generated target tokens, and the
+interaction "behavior graph". Each emitter is a thin printer. This avoids four independent
+rendering engines.
+
+==========================================================================================
+O. SECURITY RISKS
+==========================================================================================
+Project files are untrusted input. The schema is strict, but several values reach output as
+free strings. The Canvas is safe today only because React escapes text and sets styles through
+the CSSOM. A text generator has neither protection.
+
+| Risk                         | Where                                    | Mitigation (in the IR builder)             |
+|------------------------------|------------------------------------------|--------------------------------------------|
+| HTML injection via text      | text, option/textarea text, button text  | escape & < > in text; textarea/title RCDATA|
+| Attribute breakout           | htmlId, className, name, placeholder,    | escape & " < > in quoted attributes;       |
+|                              | value, title, alt                        | always double-quote                        |
+| CSS injection / </style>     | typography.color, background.color,      | validate colors with isValidCssColor (+named|
+| breakout                     | gradient stop colors, fontFamily,        | colors if accepted); fontFamily grammar    |
+|                              | svgFill/svgStroke (attrs)                | whitelist; drop+diagnose on failure; never |
+|                              |                                          | emit a raw string into CSS; escape "<" in  |
+|                              |                                          | <style>                                    |
+| Malicious URLs               | href/src/poster allow everything except  | export allowlist: http, https, mailto, tel,|
+|                              | javascript: (vbscript:, data:text/html,  | #fragment, relative; data:image/* (+video/ |
+|                              | file: pass the schema)                   | audio) for media only; drop others + diag  |
+| url() escaping               | background.image                         | CSS string escaper (not JSON.stringify)    |
+| Unsafe generated JS          | interaction runtime                      | static runtime source; only generated      |
+|                              |                                          | tokens interpolated; no eval/innerHTML     |
+| <script> data breakout       | any JSON embedded in script              | avoid embedding data; or escape </ and     |
+|                              |                                          | U+2028/2029                                |
+| Iframe embedding             | iframe src (remote pages)                | URL policy; recommend sandbox (product     |
+|                              |                                          | decision, raised in DESKTOP-0.1, still open)|
+| Invalid nesting              | factories enforce rules; hostile files   | validate parent/child via insertionRules   |
+|                              | may not                                  | before export; diagnose                    |
+| Duplicate ids                | htmlId not unique                        | detect + warn; never rely on htmlId        |
+| Class token injection        | className                                | split on whitespace, drop tokens with      |
+|                              |                                          | quote or angle characters                  |
+| Path traversal               | future ZIP/asset names                   | generated file names only; never from      |
+|                              |                                          | authored strings                           |
+| Non-determinism              | Date, Math.random, Map/Set order         | pure function of the document + options;   |
+|                              |                                          | no timestamps in output                    |
+| Excessive output size        | 20k nodes, data: URLs up to 16 Mi        | size diagnostics; stream/join arrays       |
+
+Rule: every value that leaves the IR builder has passed a typed validator. Emitters print and
+never validate. Test this with a hostile-document fixture corpus.
+
+==========================================================================================
+P. EXPORT UI INTEGRATION
+==========================================================================================
+Current state: Export is not available anywhere. There are no placeholder Export buttons (a
+test forbids them). No code preview, no formatting options, no target picker. The
+browser-mode File menu has "Download Project" (.layoutry only). Desktop mode uses native
+.layoutry IPC (projectFileService enforces .layoutry).
+
+Integration points for a future checkpoint (do not build in 1.2):
+- applicationMenus.ts FileMenuCommands: add an onExport? callback (plain callback, because
+  components/layout must not import features), wired from ProjectWorkspace/EditorApp like
+  onDownload. Update the AppHeader test that forbids Export at the same time.
+- GlobalActions (header right) is the natural place for a primary "Export" or "Code" action
+  next to Preview.
+- An export dialog/panel component should be owned by src/features/export/components/.
+- Browser delivery: reuse downloadTextFile (move or duplicate decision; it currently lives in
+  the project feature).
+- Electron: generation is pure JS in the renderer, so it works fully offline. Saving needs
+  a new narrow IPC channel (e.g. layoutry:export:write) with a native save dialog restricted
+  to export extensions, following projectFileService's validated-write pattern. There is no
+  generic invoke channel by design. No will-download handler exists. Whether Blob downloads
+  behave acceptably in the hardened Electron window is NOT verified (open question).
+- Code preview: a sandboxed iframe (srcdoc) would need a CSP check. frame-src currently allows
+  only http:/https:, and srcdoc/about: behavior under this CSP must be verified in Electron.
+
+==========================================================================================
+Q. SUBSCRIPTION INTEGRATION BOUNDARY
+==========================================================================================
+- The generator (src/features/export, pure functions) knows nothing about accounts, billing
+  or entitlements. It is always callable, which keeps tests and preview honest.
+- Gate at the ACTION layer: one `ExportEntitlements` port (interface, e.g.
+  canUseExportTarget(target) / canCopyCode()) consulted by the export UI command just before
+  copy/download/save.
+- The implementation is injected at the composition root (EditorApp/ProjectWorkspace). Until
+  billing exists, the only implementation is an explicit "unrestricted" one. No fake paywall
+  or hardcoded paid/unpaid flag.
+- Per docs/project-idea.md: "Viewing and live-editing the page is free. Copying/exporting the
+  generated source code is a subscription feature". So code preview visibility vs code
+  copy/download is a product decision. Keep both behind the same port.
+- Electron: entitlement checks must also run in the renderer before IPC. The main process
+  should not hold billing logic either.
+
+==========================================================================================
+R. TESTING STRATEGY
+==========================================================================================
+Unit (Vitest, colocated in src/features/export):
+- IR builder: traversal order, context propagation (parent layout/flow display), editor-only
+  field stripping, legacy nodes, Free/Flex/Grid, every CSS section, Preview semantics.
+- Canvas parity (drift guard, jsdom): render each element component with RTL for a node
+  corpus, read element.style, and compare with the IR's declarations for the same node. This
+  catches resolver-order or recipe drift whenever a canvas component changes.
+- Serializer: React unitless/px rules, number formatting (no 0.30000000000000004), stable
+  property order.
+- Escaping/sanitization: hostile corpus (script in text/attrs/colors/fontFamily/URLs,
+  </style>, data:text/html, vbscript:, duplicate htmlIds, huge data URLs).
+- Determinism: same document gives byte-identical output (run twice, also with shuffled object
+  keys). Golden snapshots per fixture (small, reviewed).
+- HTML well-formedness: parse with DOMParser (jsdom), re-serialize, compare structure.
+  Assert no unknown tags and no data-node-* attributes.
+- Tailwind: compile emitted class lists with the existing tailwindcss v4 and assert that
+  every class yields a rule.
+- React: transpile + type-check generated TSX with the existing typescript; render with
+  react-dom/server; compare with HTML emitter output.
+- Vue: needs @vue/compiler-sfc (new dependency, approval required) to parse/compile the SFC.
+- Large documents: 20k-node and depth-100 synthetic documents within a time budget, with no
+  stack overflow.
+- Interaction runtime: jsdom tests of show/hide/toggle/initial-hidden/dismissal/dialog.
+
+Browser (Playwright, e2e/):
+- Visual/computed-style fidelity: for a fixture corpus, load the editor in Preview and the
+  exported page at the same width, then compare getComputedStyle per mapped element (more
+  robust than pixel diffs) plus a few screenshot diffs with tolerance.
+- CSS validity: load exported CSS and compare declared vs parsed (document.styleSheets)
+  declaration counts. Dropped declarations reveal invalid CSS.
+- Accessibility: axe-core on exported pages (dependency already present).
+- Interactions: click/Escape/outside-click on the exported page.
+- Electron offline export: desktop Playwright suite (playwright.desktop.config.ts), export
+  with the network blocked.
+
+Baseline validation run (this checkpoint, read-only, HEAD bee1d42):
+  npm run typecheck  -> pass (tsc --noEmit, no output)
+  npm run lint       -> pass (eslint ., no output)
+  npx vitest run     -> 322 test files passed; 4800 tests passed, 1 skipped (153.8 s)
+  Playwright e2e / desktop suites: NOT run (no code changed; nothing to verify in a browser).
+
+==========================================================================================
+S. PERFORMANCE RISKS
+==========================================================================================
+Estimates (nothing implemented, so nothing measured):
+- Traversal is O(n), with one resolver pass per node (about 20 small functions). Small/medium
+  documents (<1k nodes) take milliseconds. At 20k nodes it is expected to stay well under a
+  second if output is built with array pushes and one join.
+- Repeated CSS generation: avoid re-running resolvers per emitter. Build the IR once and let
+  all emitters read it. Optional declaration-block dedup via a canonical key map.
+- Memory: the output roughly equals the CSS text (about 20k × ~300 B = 6 MB) plus inlined data
+  URLs (up to the 16 Mi file cap, duplicated if one URL is used twice). Warn and consider
+  hoisting repeated data URLs to one CSS custom property or file.
+- Main thread: a worker pattern already exists (project/workers, snapshot worker). Move export
+  into a worker only if measurement on a 20k-node fixture shows more than about 100 ms. Do not
+  do it pre-emptively.
+- Recursion: depth is capped at 100. A recursive builder is safe, but an explicit stack keeps
+  it robust.
+- ZIP: not needed for the MVP. Later, STORE (uncompressed) zip with CRC32 is small to write, or
+  an approved library.
+- Interaction lookups: precompute a targetId -> token map once (no findNodeById per binding).
+
+==========================================================================================
+T. ARCHITECTURE RECOMMENDATION
+==========================================================================================
+Pipeline:   EditorElementNode (validated)
+              -> buildExportTree(document, options)        [pure; shared by every target]
+                   ExportIR = { root: ExportElement, behaviors, diagnostics, assets }
+                   ExportElement = { tag, attrs: [name, value][] (sanitized), text?,
+                                     styles: [property, value][] (CSS text form, ordered),
+                                     classNames, token?, children }
+              -> emitHtmlCss | emitTailwind | emitReact | emitVue   [pure printers]
+              -> ExportResult = { files: {path, content, mediaType}[], diagnostics }
+           Delivery (download/IPC) and entitlements live outside the generator.
+
+Module layout (respecting CLAUDE.md placement; only create files when real content exists):
+  src/features/export/types/        exportIr.ts, exportTarget.ts, exportResult.ts, diagnostics
+  src/features/export/utils/        buildExportTree.ts, elementStyleRecipes.ts,
+                                    exportBaseStylesheet.ts, serializeCssDeclarations.ts,
+                                    escapeHtml.ts, escapeCssString.ts, exportUrlPolicy.ts,
+                                    sanitizeCssValue.ts, emitHtmlDocument.ts, emitStylesheet.ts,
+                                    interactionRuntimeSource.ts (later), emit* per target (later)
+  src/features/export/components/   (EXPORT UI milestone only)
+  src/features/export/index.ts      public API: generateExport(), types. Created with 1.2.
+  If utils/ grows past ~15 files, propose ir/, emit/ subfolders through a
+  repository-structure.md update instead of doing it silently.
+
+KEY ARCHITECTURE DECISION (requires approval; it touches ownership rules):
+The style resolvers and the per-tag "which resolvers, in which order, plus which default
+classes" recipe live in the canvas feature (canvas/utils + each element component). Export
+must reproduce them exactly. Options:
+  A) export imports canvas's pure resolvers through a new src/features/canvas/index.ts public
+     API and keeps its own per-tag recipe table, guarded by the jsdom parity test.
+     Smallest change, no canvas refactor. RECOMMENDED for EXPORT-1.2.
+  B) Extract the per-tag recipe into a shared pure module that both canvas components and
+     export call. Parity by construction, but it refactors ~30 canvas components (regression
+     risk). Candidate follow-up after export is proven.
+  C) Copy the resolvers into export. Rejected: guaranteed drift.
+Either way: export calls resolveTransitionStyle(node, true) (Preview semantics). The
+React-CSSProperties -> CSS text conversion lives in export.
+
+Fidelity policy (requires approval; product decision): which Canvas defaults are AUTHORED LOOK
+(exported) and which are EDITOR CHROME (dropped). Proposal:
+  Export:  Preflight-equivalent reset, page sheet, all per-tag typography/button/link/form/table
+           defaults, legacy p-8 / gap-4 / flex-column fallbacks, rounded-md/shadow-sm on
+           buttons, max-w-prose.
+  Drop:    container faint border-zinc-100 "so empty containers read as a box", dashed
+           placeholder borders/background/icon on media without src, isDragging opacity,
+           outline-none editing affordance, sm:p-14 on legacy body (use p-10 or keep: decide),
+           all dark: variants.
+  Decide:  container default rounded-lg (invisible without background/border).
+Checkpoints 4.4–4.6 already treated the container border/rounding and button shadow as
+editor chrome (their "chrome leak" bug fixes), which supports dropping the container ones.
+
+==========================================================================================
+U. PROPOSED MILESTONES (revised order)
+==========================================================================================
+Change from the suggested sequence: Export UI moves earlier (HTML/CSS is the MVP users need),
+the assets milestone is folded in (there are no local assets), responsive is documented as
+unsupported, Vue is separated (dependency approval), packaging and scale come last.
+
+EXPORT-1.2 — Export IR + static HTML/CSS foundation
+  Objective: pure generateExport(document,{target:"html-css"}) producing index.html (+inline or
+    separate CSS) for every rendered tag, every CSS section and every layout mode. No UI.
+  Foundations: schema, resolvers, KNOWN_ELEMENT_TAGS, canonicalJson determinism precedent.
+  Scope: IR types; IR builder with layout context; per-tag recipes; CSSProperties serializer;
+    base stylesheet v1 (reset + defaults + page sheet); sanitizers + URL policy; diagnostics;
+    Preview semantics for dialog/transition/autoplay; `hidden` for initially-hidden nodes;
+    canvas public API (option A). Interaction script NOT yet.
+  Dependencies: decisions V1–V3.
+  Risks: base-stylesheet accuracy (oklch values, Preflight details); resolver-order drift.
+  Acceptance: all 81 card outputs and the fixture document export without errors;
+    byte-identical on re-run; hostile corpus produces no injection; parity test green for
+    every element component; no data-node-*/editor attributes in output; typecheck/lint/tests
+    green.
+  Tests: unit + parity + determinism + hostile corpus + DOMParser well-formedness.
+
+EXPORT-1.3 — Fidelity verification & interaction runtime
+  Objective: prove the export looks like Canvas Preview, and make interactive components work.
+  Scope: Playwright computed-style + screenshot comparison harness over a fixture corpus;
+    vanilla interaction runtime (show/hide/toggle, dismissal, Escape, dialog showModal/backdrop);
+    CSS-validity check; axe on exported pages; fix base-stylesheet gaps found.
+  Risks: dialog/top-layer differences; dismissal event-order subtleties (already documented in
+    CanvasInteractionBoundary).
+  Acceptance: the corpus matches within agreed tolerance; all 8 interaction components behave
+    like Preview; axe has no new violations vs Canvas.
+
+EXPORT-1.4 — Export UI, delivery & entitlement boundary
+  Objective: users can preview code, copy it and download it, in browser and Electron.
+  Scope: File menu/header Export command (update the AppHeader test), export dialog with code
+    preview + diagnostics, single-file vs html+css option, browser download, Electron IPC
+    save channel with a native dialog, ExportEntitlements port with an "unrestricted"
+    implementation.
+  Risks: Electron download/CSP behavior; large-output preview performance.
+  Acceptance: e2e export in browser; desktop suite exports offline; no billing logic in the
+    generator.
+
+EXPORT-1.5 — Tailwind export
+  Scope: declaration->utility mapper with arbitrary-value fallback; class ordering; output
+    page using Tailwind v4.
+  Acceptance: every emitted class compiles (tailwindcss in tests); the computed styles match
+    the CSS export on the corpus.
+
+EXPORT-1.6 — React export
+  Scope: JSX printer, props mapping, styles.css or Tailwind variant, React interaction runtime.
+  Acceptance: generated TSX type-checks and renders (react-dom/server) equivalent to the HTML
+    export; Playwright behavior parity for interactions.
+
+EXPORT-1.7 — Vue export (requires @vue/compiler-sfc devDependency approval)
+  Scope: SFC printer, v-show visibility, dialog ref.
+  Acceptance: SFC compiles; behavior parity.
+
+EXPORT-1.8 — Packaging, scale & final regression
+  Scope: multi-file/ZIP packages for React/Vue projects (library or in-house STORE zip),
+    data-URL hoisting, 20k-node performance budget (worker only if needed), full regression
+    across targets/browser/Electron.
+
+Deferred / out of scope: responsive breakpoints (needs schema), asset store/upload, hover
+states/animations/custom CSS (editor lacks them), component extraction in React/Vue, Svelte
+or other targets, minification, server-side export.
+
+==========================================================================================
+V. KNOWN BLOCKERS AND DECISIONS NEEDED
+==========================================================================================
+Blockers for EXPORT-1.2 (decisions, not code):
+ V1. Style-sharing architecture (T, options A/B/C). Recommendation: A (canvas/index.ts public
+     API + parity test).
+ V2. Fidelity policy: chrome vs authored defaults table (T). Recommendation as proposed.
+ V3. Output shape for 1.2: single index.html with inline <style> vs index.html + styles.css.
+     Recommendation: generator returns both forms from the same IR; the UI picks later.
+Blockers for later milestones:
+ V4. Vue compile validation needs @vue/compiler-sfc (new devDependency).
+ V5. Electron save path: new IPC channel design (security review like PROJECT-1.3).
+ V6. Iframe sandbox policy (open since DESKTOP-0.1).
+ V7. Paid-gating scope: is code preview free and copy/download paid, or is everything paid?
+Schema changes: NONE required for EXPORT-1.2..1.8 as scoped. Recommended (each a separate,
+approved schema/migration checkpoint):
+  - `alt` for img (today alt = displayName, which leaks editor labels into accessibility text
+    and can't be authored independently).
+  - Document metadata (title, lang, description). Export can default title to the project name.
+  - Optional iframe `sandbox`/`allow`, form `action`/`method`.
+  - Responsive breakpoints (large, future).
+Conflict note: none between this task and CLAUDE.md. The only ownership tension is V1 (export
+consuming canvas-owned style logic), raised for approval rather than resolved silently.
+
+==========================================================================================
+W. DIRECT ANSWERS
+==========================================================================================
+ 1. Does any Export Engine already exist? No. src/features/export has only empty .gitkeep
+    folders; a test asserts that no Export menu item exists.
+ 2. Partially implemented targets? None. The reusable pieces are the pure style resolvers,
+    the schema, downloadTextFile and canonical-JSON determinism.
+ 3. Can the current tree produce standalone HTML? Yes. Every tag, attribute and text needed is
+    in the typed tree; the generator adds the document shell and a base stylesheet.
+ 4. Can authored CSS be reconstructed accurately? Yes for authored fields (pure resolvers).
+    Accurate VISUAL reconstruction also needs the Preflight-equivalent reset, per-tag default
+    classes and the page sheet, translated into an explicit base stylesheet.
+ 5. Are Flow, Free, Flex and Grid exportable? Yes, all four map to plain CSS faithfully. Note
+    that "block" is a flex column, and Free is absolute px and not responsive.
+ 6. Are responsive styles represented? No. There are no breakpoints or per-breakpoint styles,
+    only intrinsic units (%/vw/vh/rem), flex/grid and max-width clamps.
+ 7. Components enabled? 81 catalog cards (40 primitives + 41 compositions), built from 46
+    rendered HTML tags (47 schema-known; blockquote has no renderer).
+ 8. Special handling: Dialog, Modal, Drawer, Dropdown Button, Collapsible, Basic Tabs, Popover,
+    Manual Toast, Dismissible Alert (runtime JS); Image/Video/Audio/Embed (wrapper + URL
+    policy; img alt); SVG (scene); Select/inputs/checkbox/radio/textarea (authored defaults ->
+    attributes); progress (indeterminate); legacy page/body nodes.
+ 9. Are images and other assets portable? data: URLs yes; http(s) yes but need a network;
+    relative/file:/blob: no. There are no uploaded/local assets to package.
+10. Which interactions require JavaScript? Click show/hide/toggle, outside-click and Escape
+    dismissal, and dialog modal open/close. Initial hidden state and transitions do not.
+11. Is the existing export UI functional? There is none, and placeholders are deliberately
+    forbidden by a test.
+12. Can export operate entirely offline? Generation yes (pure renderer-side JS). Delivery: the
+    browser download is local; Electron needs a native save channel (not built), and remote
+    media URLs in the output still need a network when viewed.
+13. Security risks to address first: unescaped text/attributes; CSS injection through
+    unvalidated color/fontFamily strings (the schema allows any string); the URL allowlist
+    (the schema blocks only javascript:); </style> and </script> breakout; duplicate ids.
+14. Can all four targets share a common IR? Yes. One IR (tags, sanitized attrs, ordered CSS
+    declarations, behavior graph, diagnostics) with thin per-target printers.
+15. Recommended module architecture: section T. src/features/export/{types,utils}, pure
+    generateExport() public API via index.ts, canvas resolvers consumed via a canvas public
+    API, entitlements/delivery outside the generator.
+16. What should EXPORT-1.2 implement first? The IR types + builder with layout context, the
+    CSS serializer, sanitizers/URL policy, the base stylesheet v1, and the static HTML/CSS
+    emitter, with parity, determinism and hostile-corpus tests. No UI, no interactions script.
+17. Defer: Tailwind/React/Vue, the export UI, ZIP/packaging, the interaction runtime (to 1.3),
+    workers, minification, responsive, assets store, component extraction.
+18. Schema changes necessary? None for export as scoped. Recommended separately: img alt,
+    document metadata, iframe sandbox, form action/method; later, breakpoints.
+19. Gating tests per milestone: listed per milestone in U. Always: typecheck, lint, unit suite,
+    determinism, hostile corpus, parity; from 1.3 Playwright fidelity + axe; per target its
+    compile check (Tailwind compile, TS/React render, Vue SFC compile).
+20. Largest fidelity risks: (1) the implicit Tailwind Preflight + per-tag defaults; (2) drift
+    between canvas element recipes and export recipes; (3) Design-vs-Preview divergence
+    (dialog, transitions, autoplay, runtime hiding); (4) Free layout coordinates vs exported
+    page width; (5) vw/vh measured against different containers; (6) chrome-vs-authored
+    ambiguity; (7) unloaded fontFamily fonts.
+
+==========================================================================================
+FILES / COMMANDS
+==========================================================================================
+Files created: docs/reports/export-1.1-architecture-audit.txt (this report),
+  changelogs/2026-10-27-export-engine-architecture-audit-checkpoint-EXPORT-1.1.txt.
+Files modified / moved / deleted: none.
+Commands: git status/log/rev-parse; read-only grep/find/cat/sed over src, desktop, docs;
+  npm run typecheck; npm run lint; npx vitest run.
+Recommended commit message:
+  docs(export): add EXPORT-1.1 export engine architecture and capability audit
+STOP: EXPORT-1.2 is not started. It awaits review and decisions V1–V3.

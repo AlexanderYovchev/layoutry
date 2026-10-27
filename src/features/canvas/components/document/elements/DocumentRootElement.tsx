@@ -2,6 +2,8 @@
 
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
+import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
+import { resolvePageRootElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
 /**
@@ -17,7 +19,7 @@ export function DocumentRootElement({ node, parentId, children }: DocumentElemen
   const setNodeRef = useNodeDropRegistration(node);
 
   return (
-    <div ref={setNodeRef} {...documentNodeAttributes(node, parentId)} className="flex flex-col">
+    <div ref={setNodeRef} {...documentNodeAttributes(node, parentId)} className={documentDefaultClasses(resolvePageRootElementStyle().defaults)}>
       {children}
     </div>
   );

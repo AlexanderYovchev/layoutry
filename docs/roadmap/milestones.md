@@ -14,7 +14,7 @@ within a milestone are scoped and approved when that milestone starts.
 | M5        | Element insertion and manipulation                                     | Planned                        |
 | M6        | CSS inspector                                                          | Planned                        |
 | M7        | Component library                                                      | Planned                        |
-| M8        | HTML/CSS export                                                        | Planned                        |
+| M8        | HTML/CSS export                                                        | In progress (EXPORT-1.2)       |
 | M9        | Local project persistence                                              | Planned                        |
 | M10       | Authentication and cloud projects                                      | Planned                        |
 | M11       | Subscription and billing                                               | Planned                        |
@@ -40,6 +40,13 @@ within a milestone are scoped and approved when that milestone starts.
   [docs/architecture/editor-domain-model.md](../architecture/editor-domain-model.md)
   for the one architectural principle already locked in for M3 (a typed,
   serializable document model as the editor's source of truth).
+- **M8 — HTML/CSS export:** EXPORT-1.1 audited the codebase
+  ([report](../reports/export-1.1-architecture-audit.txt)); EXPORT-1.2
+  delivered the pure HTML/CSS engine, its IR and visual parity tests
+  ([export-engine.md](../architecture/export-engine.md),
+  [report](../reports/export-1.2-html-css-export-foundation.txt)). The
+  interaction runtime (EXPORT-1.3), export UI, Tailwind, React and Vue
+  follow, each after review.
 
 This file should be updated as milestones complete or scope is approved —
 not used to pre-commit to unapproved implementation details.

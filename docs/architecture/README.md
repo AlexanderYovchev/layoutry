@@ -33,6 +33,10 @@ the full authority order.
 - [project-persistence.md](./project-persistence.md) — the persistence
   subsystem on one page (PROJECT-1.5): architecture, guarantees, known
   limits, dirty state, security boundaries, alpha-tester guidance.
+- [export-engine.md](./export-engine.md) — the HTML/CSS Export Engine
+  (EXPORT-1.2): shared Canvas styling API, export IR, HTML/CSS generation
+  rules, defaults and reset policy, security policy, visual parity testing
+  and known limitations.
 
 ## Related documentation
 

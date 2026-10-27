@@ -15,6 +15,10 @@
   `test/fixtures/`. `test/fixtures/persistence/` holds byte-exact data
   written by earlier checkpoints (PROJECT-1.5). It is never regenerated or
   reformatted (`.gitattributes` and `.prettierignore` protect it).
+- `test/fixtures/export/` holds the authored documents the HTML/CSS export
+  fidelity tests share: the jsdom Canvas/export parity test, the export
+  unit tests, and the Playwright visual parity spec (EXPORT-1.2 — see
+  [export-engine.md](./export-engine.md#visual-parity-testing)).
 - **End-to-end tests** (Playwright) live under `e2e/`, never colocated with
   source. E2E specs exercise the built application through a real browser
   and belong together regardless of which feature they touch.

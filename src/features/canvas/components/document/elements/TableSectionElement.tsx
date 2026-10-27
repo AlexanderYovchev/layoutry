@@ -3,9 +3,7 @@
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { resolveBackgroundStyle } from "@/features/canvas/utils/resolveBackgroundStyle";
-import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
-import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
+import { resolveTableStructureElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -45,11 +43,7 @@ export function TableSectionElement({ node, parentId, parentLayoutMode, children
       ref={mergeRefs<HTMLElement>(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
       className={cn(isDragging && "opacity-40", node.className)}
-      style={{
-        ...resolveTypographyStyle(node),
-        ...resolveBackgroundStyle(node),
-        ...resolveBorderStyle(node),
-      }}
+      style={resolveTableStructureElementStyle(node).style}
       {...listeners}
     >
       {children}

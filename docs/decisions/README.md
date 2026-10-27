@@ -44,3 +44,5 @@ Each ADR is a numbered Markdown file, `ADR-NNNN-short-title.md`, containing:
   separate from saves — Accepted
 - [ADR-0007](./ADR-0007-persistence-stabilization.md) — Persistence
   stabilization: snapshot worker and migration chain — Accepted
+- [ADR-0008](./ADR-0008-export-shared-styling-and-ir.md) — Export shares
+  the Canvas's styling rules through one IR — Accepted

@@ -3,18 +3,8 @@
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
-import { resolveAspectRatioStyle } from "@/features/canvas/utils/resolveAspectRatioStyle";
-import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderRadiusStyle";
-import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
-import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowStyle";
-import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle";
-import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
-import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
-import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
-import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
-import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
-import { resolveTransformStyle } from "@/features/canvas/utils/resolveTransformStyle";
+import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
+import { resolveBoxElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
@@ -39,12 +29,12 @@ import type { DocumentElementProps } from "@/features/canvas/types/documentRende
  * cascades after the universal reset) restores exactly a 1px solid top
  * border and a 0 own-height box — meaning a completely UNSTYLED `<hr>` in
  * this app already renders as a real, visible divider line, not an
- * invisible collapsed box. usesLegacyBorderChrome only replaces Preflight's
+ * invisible collapsed box. The divider-border default only replaces Preflight's
  * own `border-color: currentColor` (which would render in whatever text
  * color happens to be inherited) with a proper neutral gray, the same
  * "sensible default appearance only until real authored Border data
- * exists" role ImageElement/ContainerElement's own usesLegacyBorderChrome
- * already plays — once real Border data exists, resolveBorderStyle alone
+ * exists" role the media-placeholder-border/container-border defaults
+ * already play — once real Border data exists, resolveBorderStyle alone
  * governs and this class gets out of the way entirely. No capability
  * override was needed in elementCapabilities.ts: "hr" is neither a
  * container nor text-bearing, so DEFAULT_CAPABILITIES' own border/border-
@@ -57,8 +47,7 @@ export function DividerElement({ node, parentId, parentLayoutMode, parentFlowDis
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
-
-  const usesLegacyBorderChrome = !node.border;
+  const recipe = resolveBoxElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
 
   return (
     <hr
@@ -66,24 +55,11 @@ export function DividerElement({ node, parentId, parentLayoutMode, parentFlowDis
       ref={mergeRefs<HTMLElement>(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
       className={cn(
-        usesLegacyBorderChrome && "border-zinc-200 dark:border-zinc-800",
+        documentDefaultClasses(recipe.defaults),
         isDragging && "opacity-40",
         node.className,
       )}
-      style={{
-        ...resolvePositionStyle(node),
-        ...elementPositionStyle(node, parentLayoutMode),
-        ...resolveAspectRatioStyle(node),
-        ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
-        ...resolveSizeConstraintsStyle(node, parentLayoutMode),
-        ...resolveBorderStyle(node),
-        ...resolveBorderRadiusStyle(node),
-        ...resolveBoxShadowStyle(node),
-        ...resolveFilterStyle(node),
-        ...resolveTransitionStyle(node, isPreview),
-        ...resolveTransformStyle(node),
-        ...resolveDisplayStyle(node),
-      }}
+      style={recipe.style}
       {...listeners}
     />
   );

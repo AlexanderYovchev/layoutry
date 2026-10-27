@@ -30,7 +30,9 @@ possible without a rewrite:
 - **Undo/redo** (part of `editor`'s ownership) — history is a sequence of
   document states or commands, not DOM snapshots.
 - **Export** (M8) — HTML/CSS generation reads the model and emits
-  deterministic output; it does not scrape rendered markup.
+  deterministic output; it does not scrape rendered markup. Since
+  EXPORT-1.2 it composes each node's CSS from the same shared style recipes
+  the Canvas uses — see [export-engine.md](./export-engine.md).
 - **Validation** — Zod schemas can validate a plain data structure; they
   cannot validate a live DOM tree.
 - **Migration** — as the model evolves, versioned data can be migrated;

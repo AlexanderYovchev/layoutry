@@ -5,20 +5,8 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
-import { resolveBackgroundStyle } from "@/features/canvas/utils/resolveBackgroundStyle";
-import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderRadiusStyle";
-import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
-import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowStyle";
-import { resolveAspectRatioStyle } from "@/features/canvas/utils/resolveAspectRatioStyle";
-import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
-import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle";
-import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
-import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
-import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
-import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
-import { resolveTransformStyle } from "@/features/canvas/utils/resolveTransformStyle";
-import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
+import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
+import { resolveControlElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
 import { getSelectedOptionValue } from "@/features/editor/types/select";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
@@ -73,6 +61,7 @@ export function SelectElement({ node, parentId, parentLayoutMode, parentFlowDisp
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const selectRef = useRef<HTMLSelectElement | null>(null);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
+  const recipe = resolveControlElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
 
   const selectedValue = getSelectedOptionValue(node);
 
@@ -92,9 +81,6 @@ export function SelectElement({ node, parentId, parentLayoutMode, parentFlowDisp
     }
   }, [selectedValue]);
 
-  const usesLegacyRadiusChrome = !node.borderRadius;
-  const usesLegacyBorderChrome = !node.border;
-
   return (
     <select
       name={node.name}
@@ -107,31 +93,11 @@ export function SelectElement({ node, parentId, parentLayoutMode, parentFlowDisp
       onMouseDown={preventSelectActivation}
       onClick={preventSelectActivation}
       className={cn(
-        "h-9 w-full min-w-0 bg-white px-3 text-sm text-zinc-900 outline-none dark:bg-zinc-950 dark:text-zinc-100",
-        usesLegacyRadiusChrome && "rounded-md",
-        usesLegacyBorderChrome && "border border-zinc-200 dark:border-zinc-800",
+        documentDefaultClasses(recipe.defaults),
         isDragging && "opacity-40",
         node.className,
       )}
-      style={{
-        // Same resolver ordering as every other primitive — see
-        // ContainerElement/InputElement's identical comments for the
-        // full reasoning behind each ordering decision.
-        ...resolvePositionStyle(node),
-        ...elementPositionStyle(node, parentLayoutMode),
-        ...resolveAspectRatioStyle(node),
-        ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
-        ...resolveSizeConstraintsStyle(node, parentLayoutMode),
-        ...resolveTypographyStyle(node),
-        ...resolveBackgroundStyle(node),
-        ...resolveBorderStyle(node),
-        ...resolveBorderRadiusStyle(node),
-        ...resolveBoxShadowStyle(node),
-        ...resolveFilterStyle(node),
-        ...resolveTransitionStyle(node, isPreview),
-        ...resolveTransformStyle(node),
-        ...resolveDisplayStyle(node),
-      }}
+      style={recipe.style}
       {...listeners}
     >
       {children}

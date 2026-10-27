@@ -3,18 +3,7 @@
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
-import { resolveAspectRatioStyle } from "@/features/canvas/utils/resolveAspectRatioStyle";
-import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderRadiusStyle";
-import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
-import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowStyle";
-import { resolveDisplayStyle } from "@/features/canvas/utils/resolveDisplayStyle";
-import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
-import { resolveFlexOrGridChildStyle } from "@/features/canvas/utils/resolveFlexOrGridChildStyle";
-import { resolvePositionStyle } from "@/features/canvas/utils/resolvePositionStyle";
-import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
-import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
-import { resolveTransformStyle } from "@/features/canvas/utils/resolveTransformStyle";
+import { resolveBoxElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
 import { getProgressMax, getProgressValue } from "@/features/editor/types/progress";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
@@ -61,6 +50,7 @@ export function ProgressElement({ node, parentId, parentLayoutMode, parentFlowDi
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
+  const recipe = resolveBoxElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
 
   return (
     <progress
@@ -70,20 +60,7 @@ export function ProgressElement({ node, parentId, parentLayoutMode, parentFlowDi
       value={getProgressValue(node)}
       max={getProgressMax(node)}
       className={cn(isDragging && "opacity-40", node.className)}
-      style={{
-        ...resolvePositionStyle(node),
-        ...elementPositionStyle(node, parentLayoutMode),
-        ...resolveAspectRatioStyle(node),
-        ...resolveFlexOrGridChildStyle(node, parentFlowDisplay),
-        ...resolveSizeConstraintsStyle(node, parentLayoutMode),
-        ...resolveBorderStyle(node),
-        ...resolveBorderRadiusStyle(node),
-        ...resolveBoxShadowStyle(node),
-        ...resolveFilterStyle(node),
-        ...resolveTransitionStyle(node, isPreview),
-        ...resolveTransformStyle(node),
-        ...resolveDisplayStyle(node),
-      }}
+      style={recipe.style}
       {...listeners}
     />
   );

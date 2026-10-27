@@ -4,17 +4,8 @@ import { useEditableText } from "@/features/canvas/hooks/useEditableText";
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { elementPositionStyle } from "@/features/canvas/utils/elementDimensionsStyle";
-import { resolveAspectRatioStyle } from "@/features/canvas/utils/resolveAspectRatioStyle";
-import { resolveBackgroundStyle } from "@/features/canvas/utils/resolveBackgroundStyle";
-import { resolveBorderRadiusStyle } from "@/features/canvas/utils/resolveBorderRadiusStyle";
-import { resolveBorderStyle } from "@/features/canvas/utils/resolveBorderStyle";
-import { resolveBoxShadowStyle } from "@/features/canvas/utils/resolveBoxShadowStyle";
-import { resolveFilterStyle } from "@/features/canvas/utils/resolveFilterStyle";
-import { resolveSizeConstraintsStyle } from "@/features/canvas/utils/resolveSizeConstraintsStyle";
-import { resolveTransitionStyle } from "@/features/canvas/utils/resolveTransitionStyle";
-import { resolveTransformStyle } from "@/features/canvas/utils/resolveTransformStyle";
-import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
+import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
+import { resolveTableCellElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
@@ -39,6 +30,7 @@ export function CaptionElement({ node, parentId, parentLayoutMode }: DocumentEle
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const editable = useEditableText(node);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
+  const recipe = resolveTableCellElementStyle(node, { parentLayoutMode, parentFlowDisplay: "block", isPreview });
 
   return (
     <caption
@@ -47,24 +39,12 @@ export function CaptionElement({ node, parentId, parentLayoutMode }: DocumentEle
       {...documentNodeAttributes(node, parentId)}
       {...editable.editableProps}
       className={cn(
-        "px-3 py-2 text-left text-sm text-zinc-600 dark:text-zinc-400",
+        documentDefaultClasses(recipe.defaults),
         editable.isEditing && "outline-none",
         isDragging && "opacity-40",
         node.className,
       )}
-      style={{
-        ...elementPositionStyle(node, parentLayoutMode),
-        ...resolveAspectRatioStyle(node),
-        ...resolveSizeConstraintsStyle(node, parentLayoutMode),
-        ...resolveTypographyStyle(node),
-        ...resolveBackgroundStyle(node),
-        ...resolveBorderStyle(node),
-        ...resolveBorderRadiusStyle(node),
-        ...resolveBoxShadowStyle(node),
-        ...resolveFilterStyle(node),
-        ...resolveTransitionStyle(node, isPreview),
-        ...resolveTransformStyle(node),
-      }}
+      style={recipe.style}
       {...(editable.isEditing ? undefined : listeners)}
     >
       {node.text}

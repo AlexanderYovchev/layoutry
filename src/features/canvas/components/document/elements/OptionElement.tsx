@@ -1,8 +1,7 @@
 "use client";
 
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { resolveBackgroundStyle } from "@/features/canvas/utils/resolveBackgroundStyle";
-import { resolveTypographyStyle } from "@/features/canvas/utils/resolveTypographyStyle";
+import { resolveOptionElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
 /**
@@ -37,10 +36,7 @@ export function OptionElement({ node, parentId }: DocumentElementProps) {
       id={node.htmlId}
       className={node.className}
       {...documentNodeAttributes(node, parentId)}
-      style={{
-        ...resolveTypographyStyle(node),
-        ...resolveBackgroundStyle(node),
-      }}
+      style={resolveOptionElementStyle(node).style}
     >
       {node.text}
     </option>
