@@ -45,6 +45,7 @@ import type { ContainerLayoutMode } from "@/features/editor/types/layout";
 import type { FlowDisplayMode } from "@/features/editor/types/flowLayout";
 import type { ExportDiagnostic, ExportDiagnosticCode, ExportDiagnosticSeverity } from "@/features/export/types/exportDiagnostic";
 import type { ExportAsset, ExportAttribute, ExportDocument, ExportElement, ExportInteraction, ExportNode } from "@/features/export/types/exportIr";
+import { buildExportBehaviors } from "@/features/export/utils/buildExportBehaviors";
 import { escapeCssString, stripNullCharacters } from "@/features/export/utils/escapeMarkup";
 import { checkExportUrl, type ExportUrlContext } from "@/features/export/utils/exportUrlPolicy";
 import { serializeStyleObject } from "@/features/export/utils/serializeStyleObject";
@@ -172,6 +173,9 @@ function identity(state: BuildState, node: EditorElementNode): { attributes: Exp
   if (node.htmlId !== undefined && node.htmlId !== "") {
     if (/\s/.test(node.htmlId)) {
       report(state, "warning", "invalid-html-id", `"${node.htmlId}" contains whitespace, which an HTML id cannot, so it was not exported.`, node.id, "id");
+    } else if (node.htmlId.startsWith(RESERVED_CLASS_PREFIX)) {
+      // Generated ids (aria-controls targets) share the reserved prefix.
+      report(state, "warning", "invalid-html-id", `The id "${node.htmlId}" uses the "${RESERVED_CLASS_PREFIX}" prefix reserved for generated ids, so it was not exported.`, node.id, "id");
     } else {
       const firstOwner = state.htmlIds.get(node.htmlId);
       if (firstOwner === undefined) state.htmlIds.set(node.htmlId, node.id);
@@ -446,8 +450,9 @@ function buildElement(state: BuildState, node: EditorElementNode, styleKey: stri
 
   if (tag === "dialog") {
     const own = identity(state, node);
+    // A dialog open at load keeps `open` as the no-script fallback; the
+    // interaction runtime re-opens it modally, as Preview does.
     const isOpen = getInitialPreviewVisibility(node) !== "hidden";
-    report(state, "warning", "dialog-requires-runtime", isOpen ? "This dialog is open when Preview starts; standalone HTML shows it non-modally until the interaction runtime (EXPORT-1.3) opens it as a modal." : "This dialog starts closed; opening it needs the interaction runtime (EXPORT-1.3).", node.id);
     const attributes = [...own.attributes, ...attribute("aria-label", resolveDialogAccessibleName(node)), ...attribute("aria-description", resolveDialogAccessibleDescription(node)), ...attribute("open", isOpen)];
     return makeElement(state, node, "dialog", styleKey, resolveDialogElementStyle(node, context), attributes, own.classNames, buildChildren(state, node));
   }
@@ -466,13 +471,9 @@ function buildNode(state: BuildState, node: EditorElementNode, placement: Placem
   // that statically (a dialog's own closed state already does).
   if (node.tag !== "dialog" && getInitialPreviewVisibility(node) === "hidden") element.attributes.push({ name: "hidden", value: true });
 
-  const bindings = getInteractions(node);
-  if (bindings.length > 0) {
-    for (const binding of bindings) {
-      if (!state.nodeIds.has(binding.targetId)) continue;
-      state.interactions.push({ triggerNodeId: node.id, targetNodeId: binding.targetId, trigger: binding.trigger, action: binding.action });
-    }
-    report(state, "warning", "interaction-requires-runtime", `This element has ${bindings.length} click interaction(s); they are exported as static structure only until the interaction runtime (EXPORT-1.3).`, node.id);
+  for (const binding of getInteractions(node)) {
+    if (!state.nodeIds.has(binding.targetId)) continue;
+    state.interactions.push({ triggerNodeId: node.id, targetNodeId: binding.targetId, trigger: binding.trigger, action: binding.action });
   }
   return element;
 }
@@ -505,12 +506,14 @@ export function buildExportDocument(document: EditorElementNode, limits: Project
     nodeIds: collectNodeIds(parsed.data),
   };
   const root = buildNode(state, parsed.data, { parentLayoutMode: "flow", parentFlowDisplay: "block" });
+  const behaviors = buildExportBehaviors(parsed.data, state.diagnostics);
   return {
     ok: true,
     document: {
       root,
       defaultStyles: DOCUMENT_DEFAULT_STYLE_IDS.filter((id) => state.usedDefaults.has(id)),
       interactions: state.interactions,
+      behaviors,
       assets: state.assets,
       diagnostics: state.diagnostics,
     },

@@ -1,11 +1,14 @@
 # Export Engine (HTML/CSS)
 
 Layoutry's Export Engine turns the authored document into source code. It
-reads the typed document model, never the rendered DOM. EXPORT-1.2 delivers
+reads the typed document model, never the rendered DOM. EXPORT-1.2 delivered
 the foundation: a pure HTML/CSS exporter and a target-independent
-intermediate representation (IR). Tailwind, React and Vue will become
+intermediate representation (IR). EXPORT-1.3 added the
+[interaction runtime](#interaction-runtime-export-13), so interactive
+components work in the exported page. Tailwind, React and Vue will become
 printers over that same IR. The decisions behind this design are in
-[ADR-0008](../decisions/ADR-0008-export-shared-styling-and-ir.md).
+[ADR-0008](../decisions/ADR-0008-export-shared-styling-and-ir.md) and
+[ADR-0009](../decisions/ADR-0009-export-interaction-runtime.md).
 
 **Visual fidelity is the primary acceptance criterion.** An exported page
 must look like the page the user built on the Canvas, in Preview.
@@ -32,12 +35,15 @@ exportHtmlCss(document, { mode: "standalone" | "separate", title?, lang? })
 buildExportDocument(document) // → { ok: true, document: ExportDocument } | { ok: false, diagnostics }
 ```
 
-- **standalone** produces one `index.html` with the stylesheet in `<style>`.
-- **separate** produces `index.html`, which links `styles.css` by a relative
-  path, plus `styles.css`.
+| Page                       | standalone                                         | separate                                                |
+| -------------------------- | -------------------------------------------------- | ------------------------------------------------------- |
+| Static (no interactions)   | `index.html` (CSS in `<style>`), no script         | `index.html` + `styles.css`, no script                  |
+| Interactive                | `index.html` (CSS in `<style>`, runtime in `<script>`) | `index.html` + `styles.css` + `script.js`           |
 
-Both modes print the same IR and the very same stylesheet text, so they
-render identically. Tests check this byte for byte and in a browser.
+All paths are relative, and nothing is loaded from a CDN. Both modes print
+the same IR, the very same stylesheet text and the very same runtime, so
+they render and behave identically. Tests check this byte for byte and in
+a browser.
 
 ## Shared styling — one set of design rules
 
@@ -223,17 +229,18 @@ editor schema. Either failure refuses the export with no files. After that:
 
 - `error` — export refused, `files: []`. Causes: an invalid document, over
   the limits, or an unsafe attribute name.
-- `warning` — something authored was dropped or replaced, or does not
-  behave like Preview yet. Examples: `unsafe-url`, `invalid-color`,
-  `interaction-requires-runtime`, `dialog-requires-runtime`,
-  `missing-media-source`, `ignored-children`.
+- `warning` — something authored was dropped or replaced, or cannot behave
+  fully. Examples: `unsafe-url`, `invalid-color`, `missing-media-source`,
+  `ignored-children`, `unsupported-trigger` (bindings on the page root,
+  which Preview never runs), `non-operable-trigger` (a click trigger that
+  isn't a button, link or form control, so keyboards can't reach it).
 - `info` — the output is complete but worth knowing about. Examples:
   `relative-url` (the file must ship next to the page) and
   `control-characters-removed`.
 
 ## Visual parity testing
 
-Visual parity is tested at three levels:
+Visual and behavioral parity are tested at four levels:
 
 1. **Translation**
    (`canvas/utils/documentDefaultStyles.test.ts`): each default's
@@ -261,14 +268,115 @@ Visual parity is tested at three levels:
    - at least 99% of pixels within 8/255 per channel.
 
    99% is a quality floor: every remaining difference was inspected.
+4. **Behavior, Chromium** (`e2e/export-interactions.spec.ts`, EXPORT-1.3).
+   - **Scenario:** one page holding every interactive component
+     (`test/fixtures/export/exportInteractionDocument.ts`, with two of
+     each, a dropdown inside a modal and a popover in a container) runs
+     the same 31-step scenario of real clicks and key presses in the
+     editor's Preview and in both export modes.
+   - **After every step:** the visibility of every target and the focused
+     node must match.
+   - **Visual states:** in-flow states compare the whole page as above.
+     Modal, drawer and toast compare the floating element itself (pixels
+     and computed styles, with rects relative to the element) plus its
+     anchoring in its window (centered, right edge, or bottom-right
+     offsets).
+   - **Same viewport:** the export page gets the editor window's height,
+     and the editor's side panels and status bar are hidden first, so they
+     don't paint over fixed content.
+   - **Other checks in the spec:** offline `file://` use, keyboard and
+     ARIA, axe, and runtime performance.
+
+## Interaction runtime (EXPORT-1.3)
+
+The editor has exactly one interaction model, and every interactive
+component is built from it. A node carries click bindings that **show**,
+**hide** or **toggle** another node, and a node may start hidden in
+Preview. Dropdown, Popover, Collapsible, Tabs, Modal, Drawer, Manual Toast
+and Dismissible Alert are only compositions of those bindings
+(`editor/factories/*Compositions.ts`). The export therefore reproduces the
+**Preview executor itself**, not nine component behaviors. Nothing is
+inferred from component names, so a user-authored binding works exactly
+like a catalog one.
+
+**Pipeline.** `buildExportBehaviors` (inside `buildExportDocument`) turns
+the bindings into behavior descriptors on `ExportDocument.behaviors`
+(`types/exportBehavior.ts`):
+
+- **Targets** are every node a binding points at, plus every dialog that
+  is open at load. Each gets a generated integer token, its kind
+  (element or dialog), its initial visibility, and an id assistive
+  technology can reference.
+- **Triggers** hold their actions in authored order. They also record the
+  targets they make dismissible (toggled and initially hidden), the target
+  `aria-expanded` mirrors, and whether they open a dialog.
+- **`nodesInsideTriggers`** marks click boundaries (see the rules below).
+
+The HTML printer writes these as data attributes (`data-ly-target`,
+`data-ly-on-click`, `data-ly-dismiss`, `data-ly-expands`, `data-ly-node`).
+A **constant** runtime (`utils/exportInteractionRuntime.ts`, 3.6 KB, 1.1 KB
+gzipped) reads them. Descriptors hold no code and no authored strings, so a
+React or Vue printer can turn them into component state instead.
+
+**Rules reproduced from Preview**:
+
+| Rule | Source |
+| --- | --- |
+| A target starts hidden when authored hidden (`hidden` in the static HTML, so there is no flash). show/hide/toggle change it, applied in authored order. | `executeInteractionsForNode` |
+| A click first hides every shown dismissible target it landed outside of (outside both the trigger and the target). Then it runs the actions of the **nearest** node only: a click on a node nested inside a trigger doesn't fire that trigger. | `CanvasInteractionBoundary`, `dismissibleTargets.ts` |
+| Escape hides the **first** shown dismissible target in document order. | `CanvasInteractionBoundary` |
+| A dialog target opens with `showModal()`. Its backdrop click and native Escape close it, and its Escape never reaches the page. A dialog open at load is re-opened modally. | `DialogElement` |
+
+**Accessibility.** These are derived only from what the bindings really do:
+
+- `aria-controls` on every trigger.
+- `aria-expanded` (kept in sync) on button and link triggers that toggle,
+  which is the disclosure pattern used by Dropdown, Popover and
+  Collapsible.
+- `aria-haspopup="dialog"` on dialog openers.
+- Native dialog focus: focus moves into the modal and returns to the
+  opener on close.
+- After Escape dismissal, focus returns to the trigger when it was inside
+  the dismissed target.
+- Triggers are native buttons, so Enter and Space work.
+- No roles are invented. Basic Tabs gets no `tab`/`tablist` roles, because
+  the editor has no tab keyboard model; Manual Toast gets no live region,
+  because the editor defines none.
+
+**Security.** The runtime is a fixed string with no `eval`, `Function`,
+`innerHTML` or timers, checked by a test. It is the same in every export.
+Document data reaches it only as generated digits and the three action
+keywords, and malformed tokens are ignored. Authored ids are used only for
+`aria-controls`, and only when they are valid and unique. Generated ids use
+the reserved `ly-` prefix, which authored ids may no longer use. The
+embedded script is refused if it contains `</script` or `<!--`.
+
+**CSP.** The separate mode (`script.js` from the same origin) works under
+`script-src 'self'`. Standalone uses one inline script, which needs
+`'unsafe-inline'` or the script's hash.
+
+**Offline.** No network, Node.js, Electron or preload API is involved. Both
+modes are tested from `file://` with all network requests blocked.
+
+**Browsers.** The runtime uses `<dialog>.showModal()` (Chromium 37+, Firefox
+98+, Safari 15.4+), `Element.closest` and the `hidden` attribute. It does
+not use the Popover API: popovers in the editor are ordinary in-flow
+panels, and the native top-layer popover would change their layout.
 
 ## Known limitations
 
-- **Interactions** (click show/hide/toggle, dismissal, the modal dialog)
-  are exported as static structure and flagged. The runtime is
-  EXPORT-1.3. Affected catalog entries: Dropdown Button, Collapsible,
-  Basic Tabs, Modal, Drawer, Dismissible Alert, Manual Toast, Popover, and
-  the Dialog primitive.
+- **Hidden versus removed:** Preview unmounts a hidden node, while export
+  sets `hidden`. They look and lay out the same. One difference remains:
+  the Canvas's re-mount resets unsaved form input inside a re-shown panel,
+  and export keeps it.
+- **Links inside interactive components** navigate in the exported page
+  (for example, `href="#"` scrolls to the top). The Canvas suppresses all
+  link navigation while editing.
+- **Focus when a control hides its own container** (Dismiss, toast Close)
+  falls back to the page, as on the Canvas. No focus target is invented.
+- **Fixed-position content on the Canvas** (a toast) can be painted under
+  the editor's own panels near the window edge. That is an editor
+  presentation limit; the export shows it as authored.
 - **No responsive rules exist** in the document model, so none are
   exported. The only media query is the legacy body's `sm:` padding,
   reproduced as-is.
@@ -297,9 +405,12 @@ Visual parity is tested at three levels:
 - **Tailwind (EXPORT-1.5):**
   - map `ExportElement.declarations` to utilities;
   - use `defaultStyles` directly, since their `classes` already exist.
-- **React / Vue:** print the same tree. Use `interactions` for state, and
-  `attributes` for props or template attributes.
-- **Interaction runtime (EXPORT-1.3):** `ExportDocument.interactions` plus
-  generated target tokens.
+- **React / Vue:** print the same tree, and `attributes` as props or
+  template attributes. `behaviors` maps directly to component state:
+  - one visibility flag per target token;
+  - click handlers from `triggers[].actions`;
+  - outside-click and Escape effects from `dismissibleTargetTokens`;
+  - a `ref` with `showModal()` for dialog targets.
+  The same rules apply as in the HTML runtime.
 - **Export UI and delivery:** call `exportHtmlCss`. Entitlement checks
   belong at the UI action, never inside the generator.

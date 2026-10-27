@@ -1,5 +1,6 @@
 import type { CssDeclaration, DocumentDefaultStyleId } from "@/features/canvas";
 import type { InteractionAction, InteractionTrigger } from "@/features/editor/types/interactions";
+import type { ExportBehaviors } from "@/features/export/types/exportBehavior";
 import type { ExportDiagnostic } from "@/features/export/types/exportDiagnostic";
 
 /*
@@ -69,7 +70,10 @@ export interface ExportDocument {
   root: ExportElement;
   /** Every default presentation used anywhere, in table order — the base rules a printer must emit. */
   defaultStyles: DocumentDefaultStyleId[];
+  /** The authored click bindings, raw. */
   interactions: ExportInteraction[];
+  /** What those bindings do at runtime — the input of every interaction runtime (EXPORT-1.3). */
+  behaviors: ExportBehaviors;
   assets: ExportAsset[];
   diagnostics: ExportDiagnostic[];
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { exportHtmlCss } from "@/features/export";
+import { EXPORT_INTERACTION_RUNTIME } from "@/features/export/utils/exportInteractionRuntime";
 import type { HtmlCssExportResult } from "@/features/export/types/exportResult";
 import { catalogDocument, VISUAL_PARITY_DOCUMENTS } from "../../../../test/fixtures/export/exportFixtureDocuments";
 
@@ -56,19 +57,36 @@ describe("exportHtmlCss — document shape", () => {
     expect(html).not.toContain("<script");
   });
 
-  it("links styles.css relatively in separate mode, with exactly the CSS standalone embeds", () => {
+  it("keeps a static page to index.html + styles.css, with no script in either mode", () => {
+    const document = VISUAL_PARITY_DOCUMENTS[1].build();
+    const separate = exportHtmlCss(document, { mode: "separate" });
+    expect(separate.files.map((candidate) => candidate.path)).toEqual(["index.html", "styles.css"]);
+    expect(file(separate, "index.html")).not.toContain("<script");
+    expect(file(exportHtmlCss(document, { mode: "standalone" }), "index.html")).not.toContain("<script");
+  });
+
+  it("links styles.css (and script.js for an interactive page) relatively, with exactly what standalone embeds", () => {
     const document = catalogDocument();
     const standalone = exportHtmlCss(document, { mode: "standalone" });
     const separate = exportHtmlCss(document, { mode: "separate" });
     expect(separate.files.map((candidate) => [candidate.path, candidate.mediaType])).toEqual([
       ["index.html", "text/html; charset=utf-8"],
       ["styles.css", "text/css; charset=utf-8"],
+      ["script.js", "text/javascript; charset=utf-8"],
     ]);
+    expect(file(separate, "script.js")).toBe(EXPORT_INTERACTION_RUNTIME);
+    expect(file(separate, "index.html")).toContain('<script src="script.js"></script>\n</body>');
+    expect(file(standalone, "index.html")).toContain(`<script>\n${EXPORT_INTERACTION_RUNTIME}</script>\n</body>`);
     expect(file(separate, "styles.css")).toBe(embeddedCss(file(standalone, "index.html")));
     expect(file(separate, "index.html")).toContain('<link rel="stylesheet" href="styles.css">');
-    // Apart from how the stylesheet is attached, the two documents are identical.
-    const standaloneHtml = file(standalone, "index.html").replace(/<style>\n[\s\S]*<\/style>/, "STYLESHEET");
-    expect(file(separate, "index.html").replace('<link rel="stylesheet" href="styles.css">', "STYLESHEET")).toBe(standaloneHtml);
+    // Apart from how the stylesheet and script are attached, the two documents are identical.
+    const standaloneHtml = file(standalone, "index.html")
+      .replace(/<style>\n[\s\S]*<\/style>/, "STYLESHEET")
+      .replace(/<script>\n[\s\S]*<\/script>/, "SCRIPT");
+    const separateHtml = file(separate, "index.html")
+      .replace('<link rel="stylesheet" href="styles.css">', "STYLESHEET")
+      .replace('<script src="script.js"></script>', "SCRIPT");
+    expect(separateHtml).toBe(standaloneHtml);
   });
 
   it("prints void and boolean attributes correctly and keeps a textarea's leading newline", () => {

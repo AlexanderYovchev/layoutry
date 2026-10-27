@@ -29,8 +29,8 @@ export type ExportDiagnosticCode =
   | "unsupported-element"
   | "invalid-nesting"
   | "ignored-children"
-  | "interaction-requires-runtime"
-  | "dialog-requires-runtime"
+  | "unsupported-trigger"
+  | "non-operable-trigger"
   | "control-characters-removed";
 
 export interface ExportDiagnostic {

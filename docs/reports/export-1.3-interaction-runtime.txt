@@ -1,0 +1,540 @@
+LAYOUTRY — EXPORT-1.3 — Interactive Component Runtime & Behavioral Fidelity
+Date: 2026-10-27        Branch: main        HEAD at start: e25728d (clean)
+Status: implemented and validated. NOT committed. EXPORT-1.4 is not started.
+
+==========================================================================================
+SUMMARY
+==========================================================================================
+Interactive components now work in exported pages, without Layoutry, React, Next.js,
+Zustand, Tailwind's runtime or Electron.
+
+The editor has one generic interaction model:
+- click bindings that show, hide or toggle another node;
+- an authored "hidden in Preview" initial state;
+- a native <dialog> that opens modally.
+All nine targeted components are compositions of that model. So the export replays
+Preview's own executor rather than inventing nine component behaviors. The replay
+covers:
+- the nearest-node click rule;
+- outside-click and Escape dismissal of toggled, initially-hidden targets;
+- the dialog's modal lifecycle.
+
+How it works:
+- buildExportBehaviors derives declarative behavior descriptors (ExportDocument.behaviors)
+  from the bindings.
+- The HTML printer writes them as generated data attributes.
+- A constant runtime of 3,651 bytes (1,100 gzipped) applies them. It contains no
+  document data.
+- Static pages get no script at all.
+
+Measured in Chromium against the editor's Preview, with real clicks and key presses:
+- 31 scenario steps. Target visibility and focus match after every step in both output
+  modes: 0 mismatches.
+- 8 interaction-state visual snapshots × 2 modes: 0 computed-style differences and
+  0 geometry differences. The in-flow page states are 99.9986–99.9989% pixel-similar.
+- Floating elements (modal, drawer, toast) are anchored identically in their windows.
+- The EXPORT-1.2 static visual parity was re-run: no regression (section X).
+
+==========================================================================================
+A. GIT BASELINE
+==========================================================================================
+- main @ e25728d "feat(export): add HTML/CSS export engine with shared canvas styling
+  and visual parity tests". The EXPORT-1.2 work was committed by the user before this
+  checkpoint.
+- Working tree clean at start.
+
+==========================================================================================
+B. EXISTING INTERACTION AUDIT
+==========================================================================================
+Document model (editor/types/interactions.ts, previewVisibility.ts, both schema-validated):
+- interactions[]: { id, trigger: "click", action: "show" | "hide" | "toggle",
+  targetId: <internal node id> }. Click is the only trigger.
+- initialPreviewVisibility: "visible" | "hidden".
+
+Preview executor (useEditorStore.executeInteractionsForNode):
+- applies the bindings in order to an ephemeral visibility map;
+- skips missing targets;
+- a hidden node is not rendered (it is unmounted).
+
+Click dispatch (CanvasInteractionBoundary, one window "click" listener):
+(1) Dismissal pass: each dismissible relationship (a click→toggle binding whose target
+    is authored-hidden and currently shown) is hidden when the click lands outside both
+    the trigger and the target.
+(2) The bindings of the NEAREST node element only (closest [data-node-id], selectable
+    tags) run. An ancestor's bindings never fire.
+
+Escape (window "keydown"):
+- hides the first open dismissible relationship (document order);
+- with none open, it exits Preview. That is editor-only.
+
+Dialog (DialogElement, Preview):
+- showModal() on mount;
+- a backdrop click (event.target === dialog) calls close();
+- its Escape keydown stops propagation and the native cancel closes it;
+- the native "close" marks it hidden.
+
+Compositions (editor/factories): see C. No component-specific state exists anywhere
+(no open/activeTab fields).
+
+==========================================================================================
+C. COMPONENT COVERAGE MATRIX (verified in the factories)
+==========================================================================================
+| Component         | Trigger → target                    | Initial         | Outside / Escape            | Focus                   | ARIA added                     |
+|-------------------|-------------------------------------|-----------------|-----------------------------|-------------------------|--------------------------------|
+| Dropdown Button   | button toggle → menu div            | hidden          | yes / yes (first open)      | Escape from inside →    | aria-controls, aria-expanded   |
+|                   |                                     |                 |                             | trigger                 |                                |
+| Popover           | button toggle → panel div (in flow) | hidden          | yes / yes                   | same                    | aria-controls, aria-expanded   |
+| Collapsible       | button toggle → content div         | VISIBLE         | no (not dismissible)        | –                       | aria-controls, aria-expanded   |
+| Basic Tabs        | 3 buttons, show own panel and hide  | panel 1 visible | no                          | –                       | aria-controls (no tab roles:   |
+|                   | the others                          |                 |                             |                         | no tab keyboard model exists)  |
+| Modal             | button show → dialog; inner Close   | closed          | backdrop click / native     | native modal focus;     | aria-controls, aria-haspopup   |
+|                   | hide                                |                 | Escape                      | returns to opener       | =dialog; dialog aria-label     |
+| Drawer            | as Modal; dialog fixed right,       | closed          | backdrop / native Escape    | native                  | as Modal                       |
+|                   | full height                         |                 |                             |                         |                                |
+| Dialog primitive  | none (no binding)                   | closed          | –                           | –                       | –. Stays closed, as in Preview.|
+|                   |                                     |                 |                             |                         | Opens modally at load if       |
+|                   |                                     |                 |                             |                         | authored visible.              |
+| Manual Toast      | button show → fixed toast; its own  | hidden          | no                          | falls to page (as       | aria-controls                  |
+|                   | Close hide                          |                 |                             | Canvas)                 |                                |
+| Dismissible Alert | its Dismiss button hide → alert     | visible         | no                          | falls to page (as       | aria-controls                  |
+|                   | root                                |                 |                             | Canvas)                 |                                |
+
+All instances are independent:
+- tokens are per target;
+- the runtime state is keyed by token;
+- there are no global names.
+
+==========================================================================================
+D. RUNTIME ARCHITECTURE
+==========================================================================================
+Export IR ─ buildExportBehaviors ─► ExportDocument.behaviors (descriptors)
+  └─ printExportHtml / exportBehaviorAttributes ─► data-ly-* + aria-* on elements
+  └─ EXPORT_INTERACTION_RUNTIME (constant) ─► <script> (standalone) | script.js (separate)
+
+Runtime design:
+- An IIFE in strict mode.
+- One window click listener and one window keydown listener (delegation, no per-node
+  click handlers).
+- Per dialog target: click, keydown and close listeners. These mirror DialogElement.
+- Init does one querySelectorAll per attribute kind.
+- Behavior is selected by needsInteractionRuntime: there must be any trigger, or a
+  dialog that is open at load.
+
+==========================================================================================
+E. BEHAVIOR DESCRIPTOR DESIGN (types/exportBehavior.ts)
+==========================================================================================
+ExportBehaviors {
+  triggers:            [{ nodeId, actions: [{ action, targetToken }],
+                          dismissibleTargetTokens, expandsTargetToken?, opensDialog }]
+  targets:             [{ token, nodeId, kind: "element" | "dialog", initiallyVisible,
+                          domId?, generatedDomId }]
+  nodesInsideTriggers: [nodeId…]  (click boundaries for the nearest-node rule)
+}
+
+- Tokens are document-order integers. There are no executable strings, authored
+  selectors or authored text.
+- Bindings to missing nodes are dropped, as Preview's executor drops them.
+- Triggers on the page root or legacy body are dropped with unsupported-trigger
+  (Preview never resolves clicks to them).
+- Non-keyboard triggers (div etc.) are flagged with non-operable-trigger.
+- domId is the authored id if valid and unique; otherwise the generated
+  "ly-target-<token>". It is omitted when the authored id is duplicated.
+- The raw ExportDocument.interactions list is kept, for API compatibility.
+
+==========================================================================================
+F–N. COMPONENT BEHAVIOR (exported = Preview)
+==========================================================================================
+F. Dialog
+   - Closed at load: no `open`. It stays closed unless a binding opens it.
+   - Authored visible: the static `open` is a no-script fallback; the runtime removes it
+     and calls showModal() at load, as Preview does.
+   - Close, backdrop and Escape: native. Focus moves in and is restored natively.
+   - Multiple dialogs are independent targets.
+G. Modal
+   - Open → showModal(); Close → close().
+   - Backdrop click closes. Escape closes natively and never reaches the page.
+   - The background is inert (native modal). Focus returns to the opener (verified with
+     the keyboard).
+H. Drawer
+   - Identical runtime path to Modal.
+   - Its authored fixed placement (right 0, top 0, bottom 0, 360px) is kept: it sits on
+     the right edge at full window height on both sides.
+   - No animations were added; the authored transition, if any, is untouched.
+I. Dropdown
+   - The trigger toggles the menu and aria-expanded follows.
+   - Opening another dropdown closes it (outside-click rule). A click inside the menu
+     keeps it open. An outside click closes it.
+   - Escape closes the first open one and returns focus to the trigger if focus was in
+     the menu.
+   - No menu roles (there is no arrow-key menu model in the editor). Items are links;
+     Tab reaches them.
+J. Collapsible
+   - Starts expanded (authored). Toggle collapses and expands; aria-expanded follows.
+   - Not dismissible, exactly as in Preview.
+K. Tabs
+   - Each tab shows its panel and hides the others, within its own group only.
+   - Panel content is preserved, since it is only hidden.
+   - No tab roles or arrow keys, because the editor implements neither. This is
+     documented, not invented.
+L. Popover
+   - An in-flow panel toggle with outside-click and Escape dismissal.
+   - The Popover API is not used: the panel is in flow in the editor, and the top layer
+     would change its layout.
+M. Toast
+   - Show appears at fixed bottom-right (24/24). Its own Close hides only that toast.
+   - Two toasts never cross-interfere.
+   - No auto-timeout and no live region, because the editor defines neither.
+N. Dismissible Alert
+   - Its Dismiss button (a native button, keyboard-operable) hides only its own alert.
+
+==========================================================================================
+O. MULTIPLE INSTANCES AND NESTING
+==========================================================================================
+Tested in the browser (spec) and in jsdom (unit):
+- two dropdowns; two collapsibles; two tab groups; two modals;
+- a dropdown inside modal B (Escape closes the modal, not the dropdown, which is still
+  open on reopen — matches Preview);
+- a popover inside a container; two alerts; two toasts;
+- a trigger nested 95 levels deep;
+- a container trigger with nested nodes (a click on a nested node doesn't fire it).
+Generated ids are unique, and every aria-controls resolves (asserted).
+
+==========================================================================================
+P. INITIAL STATE FIDELITY
+==========================================================================================
+Initial states are printed statically, so the runtime only takes over afterwards and
+nothing flashes before it runs:
+- `hidden` for authored-hidden nodes;
+- no `open` for closed dialogs;
+- aria-expanded from the initial visibility.
+
+The initial visibility of all 20 targets equals the Canvas in both modes (asserted
+before step 1).
+
+==========================================================================================
+Q. ACCESSIBILITY
+==========================================================================================
+Verified with Playwright keyboard tests on the exported page:
+- Enter opens a dropdown; Tab reaches the menu; Escape closes it, returns focus to the
+  trigger and resets aria-expanded.
+- Space toggles a collapsible.
+- Keyboard-opened modal: focus moves inside; Escape closes it and focus returns to the
+  opener.
+- aria-haspopup="dialog" is present on the opener.
+- All ids are unique and every aria-controls resolves.
+- No tab roles are present.
+
+axe (wcag2a/aa, 21a/aa) on the exported interactive page: 0 violations, closed and with
+a dropdown and popover open.
+
+==========================================================================================
+R. RUNTIME SECURITY
+==========================================================================================
+- The runtime is a constant string. A test asserts it has no eval(, Function(,
+  innerHTML, outerHTML, insertAdjacentHTML, document.write, timers, </script or <!--.
+- The printer refuses to embed a script containing </script or <!--.
+- Data reaches the runtime only via data-ly-* values that the printer writes from
+  integers and the keywords show/hide/toggle. The runtime also ignores non-digit tokens
+  and never builds selectors from data.
+- Hostile document (script in text, attribute-breaking ids, a class mimicking
+  data-ly-on-click, a hostile target id):
+  - every data-ly-* value matches its strict grammar;
+  - no on* attributes;
+  - exactly one <script>, containing no document text;
+  - the authored id is escaped and referenced verbatim.
+- Invalid behavior metadata (an unknown action or trigger, or a selector-like targetId)
+  is refused by the project schema as invalid-document.
+- Cross-component targeting cannot happen: the token is the only handle.
+- Duplicate ids: no aria-controls for that target; behavior is unaffected.
+- Authored ids may no longer use the reserved "ly-" prefix (invalid-html-id), so
+  generated ids cannot collide.
+
+==========================================================================================
+S. STANDALONE OUTPUT
+==========================================================================================
+index.html with CSS in <style>, and the runtime in one <script> at the end of <body>
+(after every element it reads). It needs 'unsafe-inline' (or the script hash) under a
+strict CSP. A static page has no <script> (asserted).
+
+==========================================================================================
+T. SEPARATE-FILE OUTPUT
+==========================================================================================
+- Static pages: index.html + styles.css (unchanged from EXPORT-1.2).
+- Interactive pages: index.html + styles.css + script.js
+  (text/javascript; charset=utf-8), linked as <script src="script.js"> at the end of
+  <body>. This works under script-src 'self'.
+- script.js is byte-identical to the standalone inline script. The HTML is identical
+  apart from how the CSS and JS are attached (asserted).
+
+==========================================================================================
+U. OFFLINE COMPATIBILITY
+==========================================================================================
+- Both modes were written to a Playwright temporary output directory (test-results,
+  never user folders) and opened over file://.
+- Every non-file:/data: request was aborted and recorded: 0 requests.
+- A dropdown and a modal were exercised with the keyboard and mouse.
+- No Node.js, Electron, preload or privileged API is used.
+
+==========================================================================================
+V. BEHAVIORAL PARITY TESTS (e2e/export-interactions.spec.ts)
+==========================================================================================
+- The same document (test/fixtures/export/exportInteractionDocument.ts, all components
+  with the multi-instance and nesting cases) is imported into the editor via project
+  import, with the editor panels hidden and Preview entered.
+- The same document is exported and opened in both modes, with the same window height.
+- 31 steps of real Playwright clicks, Escape presses and backdrop clicks.
+- After each step: visibility of all 20 targets (dialogs count only when :modal) and
+  the focused node, compared.
+- Result: 0 mismatches in both modes.
+- First run: the focus differed after a self-hiding button in separate mode. That was
+  observation timing (the Canvas removes the node; export's hidden element loses focus
+  at the next frame). The comparison now waits one frame, and the result is identical.
+
+==========================================================================================
+W. VISUAL PARITY RESULTS (after interaction)
+==========================================================================================
+| State                           | Compared         | Size     | Style/geo diffs | Exact   | ≤8/255   | Anchoring         |
+|---------------------------------|------------------|----------|-----------------|---------|----------|-------------------|
+| dropdown A open                 | whole page       | 800×1981 | 0 / 5,251 checks| 99.982% | 99.9986% | –                 |
+| collapsible A collapsed         | whole page       | 800×1815 | 0 / 4,717       | 99.985% | 99.9986% | –                 |
+| tab 2 selected                  | whole page       | 800×1875 | 0 / 4,895       | 99.978% | 99.9987% | –                 |
+| popover open                    | whole page       | 800×1969 | 0 / 5,162       | 99.966% | 99.9988% | –                 |
+| alert A dismissed               | whole page       | 800×1791 | 0 / 4,450       | 99.954% | 99.9989% | –                 |
+| toast B visible                 | the toast        | 343×136  | 0 / 437         | 99.546% | 99.603%  | right 24, bottom  |
+|                                 |                  |          |                 |         |          | 24, both          |
+| modal A open                    | the dialog       | 234×175  | 0 / 437         | 99.248% | 99.311%  | centered (0,0),   |
+|                                 |                  |          |                 |         |          | both              |
+| drawer open                     | the dialog       | 360×2575 | 0 / 437         | 99.991% | 99.9998% | right 0, top 0,   |
+|                                 |                  |          |                 |         |          | full height, both |
+
+The standalone and separate results are identical.
+
+Floating-element residue (modal, toast): the 1px anti-aliased edge and the rounded
+corners, where the content *behind* the element shows through. Behind the modal is a
+backdrop over different page content in the editor window; behind the toast is a
+different window. This was inspected on the diff images and is not an element
+difference.
+
+Floating comparison method:
+- The rects are re-based to the element.
+- Its window-relative resolved insets and auto margins are compared via anchoring,
+  because the editor window (wider) differs from the export window.
+- The editor's side panels and status bar were hidden. On the Canvas, the document sits
+  in an isolated stacking context, so editor chrome paints over fixed content near the
+  window edge (observed: the Inspector covered the toast). That is an editor
+  presentation limit, documented.
+
+Dialog/top-layer visual parity — the open item from EXPORT-1.2 — is now covered.
+
+==========================================================================================
+X. EXPORT-1.2 REGRESSION RESULTS
+==========================================================================================
+e2e/export-visual-parity.spec.ts was re-run on the shared harness (moved to
+e2e/support/exportHarness.ts, behavior unchanged): 8/8 fixtures pass.
+- 0 style or geometry differences.
+- The pixel similarity is unchanged from the EXPORT-1.2 baseline.
+
+The catalog fixture now loads the runtime; it causes no visual change at load.
+The jsdom Canvas/export parity (8 documents, node by node) passes unchanged.
+
+==========================================================================================
+Y. PERFORMANCE AND RUNTIME SIZE
+==========================================================================================
+- Runtime: 3,651 bytes (1,100 bytes gzipped), identical for every export.
+- Export time (Node): interaction fixture 28.7 ms (43.6 KiB); 500 interactive
+  components 173 ms (1.2 MiB).
+- In-browser, 500 components (800 triggers, 700 targets), Chromium, three isolated runs:
+  - initialization 3.8–4.3 ms;
+  - first click 0.6–1.4 ms;
+  - click median 0.2 ms, p95 0.3–0.4 ms, max 0.7–1.4 ms.
+  The click cost is linear in the number of dismissible triggers (one attribute read per
+  trigger).
+- Under parallel load (full suite): init 12.6–21 ms, p95 2.5 ms, max 3.9 ms; one
+  earlier contended run had a single 83 ms outlier. The test asserts p95 < 16 ms and
+  reports the max.
+
+==========================================================================================
+Z. FILES ADDED AND MODIFIED
+==========================================================================================
+Added:
+- src/features/export/types/exportBehavior.ts
+- src/features/export/utils/buildExportBehaviors.ts (+ .test.ts)
+- src/features/export/utils/exportBehaviorAttributes.ts
+- src/features/export/utils/exportInteractionRuntime.ts (+ .test.ts)
+- test/fixtures/export/exportInteractionDocument.ts
+- e2e/export-interactions.spec.ts
+- e2e/support/exportHarness.ts
+- docs/decisions/ADR-0009-export-interaction-runtime.md
+- docs/reports/export-1.3-interaction-runtime.txt (this report)
+- changelogs/2026-10-27-interaction-runtime-checkpoint-EXPORT-1.3.txt (gitignored
+  folder)
+
+Modified:
+- src/features/export/index.ts — exports EXPORT_SCRIPT_PATH and the behavior types.
+- src/features/export/types/exportIr.ts — behaviors.
+- src/features/export/types/exportDiagnostic.ts — +unsupported-trigger and
+  +non-operable-trigger; removed the obsolete interaction-requires-runtime and
+  dialog-requires-runtime.
+- src/features/export/utils/buildExportDocument.ts — behaviors, the reserved ly- id
+  prefix, the runtime warnings removed.
+- src/features/export/utils/printExportHtml.ts — behavior attributes, script placement.
+- src/features/export/utils/exportHtmlCss.ts — script.js and the inline script
+  contract.
+- src/features/export/utils/buildExportDocument.test.ts and exportHtmlCss.test.ts — the
+  new contract.
+- e2e/export-visual-parity.spec.ts — uses the shared harness.
+- docs/architecture/export-engine.md, docs/architecture/README.md,
+  docs/decisions/README.md, docs/roadmap/milestones.md.
+
+No editor, canvas, schema, factory or inspector source changed.
+
+==========================================================================================
+AA. DEPENDENCIES — none added. The tests use the existing Playwright, @axe-core/playwright
+    and Vitest/jsdom. @types/jsdom was not added: the runtime tests use iframes inside
+    Vitest's own jsdom instead.
+AB. DOCUMENTATION — export-engine.md covers:
+    - the new "Interaction runtime" section: architecture, descriptor format, the rules
+      table, accessibility, security, CSP, offline and browsers;
+    - the file-contract table;
+    - parity level 4;
+    - limitations;
+    - React/Vue integration.
+    ADR-0009, plus the index and roadmap updates.
+==========================================================================================
+AC. TYPESCRIPT — npm run typecheck: pass (no output).
+AD. ESLINT — npm run lint: pass (0 problems).
+AE. VITEST — npx vitest run: 332 files passed; 4,972 tests passed, 1 skipped.
+    The EXPORT-1.2 baseline was 330 / 4,946 / 1; that is +2 files and +26 tests.
+AF. BROWSER PLAYWRIGHT — npx playwright test (44 tests: the 39 existing plus 5 new in
+    export-interactions).
+    - Full run 1: 40 passed, 4 FAILED. The failures were three existing
+      project-recovery specs (recovery-status timing assertions) and the new
+      step-by-step interaction spec (a wait for the editor's page root). All were
+      timeouts under full parallel load.
+    - Rerun of those 4 alone (--last-failed): 4 passed.
+    - Full run 2: 44 passed, 0 failed.
+    Conclusion: the suite now carries more concurrent heavy specs, and timing-sensitive
+    tests can time out under load. This is not a functional defect, but it is reported
+    rather than hidden. It could be reduced in a later checkpoint by running the export
+    parity specs serially (a test.describe.configure setting).
+    Also: npm run build (Next.js production) passed. It compiled, the TypeScript step
+    passed, and the routes are static.
+AG. ELECTRON PLAYWRIGHT — NOT RUN.
+    - No code the application ships changed in this checkpoint. The export feature is
+      not imported by the app yet, and no editor, canvas or desktop source was touched.
+    - The suite opens many visible app windows; the user stopped such a run once before.
+    - Awaiting the user's go-ahead.
+AH. PACKAGED WINDOWS — NOT RUN, for the same reason. Awaiting the user's go-ahead.
+
+==========================================================================================
+AI. KNOWN LIMITATIONS
+==========================================================================================
+- Hidden vs removed: identical look and layout. Form input typed inside a hidden-then-
+  shown panel is kept in export, but reset by the Canvas's re-mount.
+- Links inside components navigate in the export (the Canvas suppresses navigation while
+  editing).
+- No behavior beyond what the editor defines:
+  - Tabs have no arrow-key or tab roles;
+  - Dropdown has no menu roles or arrow keys;
+  - Toast has no live region or timeout;
+  - the Popover API is not used.
+- Focus after a control hides its own container falls to the page (as on the Canvas).
+- Standalone mode needs 'unsafe-inline' (or a hash) under a strict CSP; separate mode
+  doesn't.
+- Fixed elements on the Canvas can be painted under editor panels near the window edge
+  (Canvas presentation, not export).
+- The runtime needs <dialog>.showModal() (all current evergreen browsers); there is no
+  polyfill.
+
+==========================================================================================
+AJ. UNRESOLVED ISSUES
+==========================================================================================
+No behavior or style mismatch is unresolved.
+
+Residual pixel differences on floating elements are background showing through corners
+and edges (W).
+
+Product questions, not defects:
+(1) Should the editor gain tab and menu keyboard models? That would extend both the
+    Canvas and the export.
+(2) The Design-only chrome question from EXPORT-1.2 still stands.
+
+==========================================================================================
+AK. NEXT CHECKPOINT RECOMMENDATION
+==========================================================================================
+EXPORT-1.4 — Export UI, Downloads & Desktop Integration:
+- an Export command (File menu / header) with a dialog: mode choice, diagnostics list,
+  read-only code preview;
+- browser download (reuse downloadTextFile; multi-file separate mode needs either
+  per-file downloads or approved ZIP packaging);
+- an Electron save path through a new validated IPC channel (security review like
+  PROJECT-1.3);
+- the ExportEntitlements port with an unrestricted implementation;
+- a worker for very large exports, only if measured necessary;
+- verifying the code-preview iframe under the desktop CSP (open since EXPORT-1.1).
+
+==========================================================================================
+DIRECT ANSWERS
+==========================================================================================
+ 1. Do all nine targeted components have functioning exported interactions? Yes. The
+    Dialog primitive has no binding, so it stays closed, exactly as in Preview.
+ 2. Does each match the Canvas? Yes: 31 steps, 0 visibility or focus mismatches, both
+    modes.
+ 3. Is the runtime independent of React and Layoutry? Yes: a constant vanilla script
+    with no dependencies.
+ 4. Does standalone HTML include the required JavaScript? Yes: an inline <script> at the
+    end of <body>, only when needed.
+ 5. Does separate mode produce script.js when necessary? Yes. Static pages stay two
+    files.
+ 6. Do static documents remain JavaScript-free? Yes (asserted, both modes).
+ 7. Are multiple instances isolated? Yes: per-target tokens (O).
+ 8. Are nested interactions supported? Yes: a dropdown in a modal, a popover in a
+    container, deep nesting, and nested-node click boundaries.
+ 9. Does Escape dismissal work where appropriate? Yes: the first open dismissible, and
+    dialogs natively.
+10. Is focus correctly managed? Yes: native modal focus in and out, and focus returned
+    to the trigger on Escape from inside. Otherwise it matches the Canvas.
+11. Are keyboard interactions accessible? Yes, for button triggers (all catalog
+    triggers). Non-button triggers are flagged.
+12. Are ARIA states updated correctly? Yes: aria-expanded is kept in sync, and
+    aria-controls/aria-haspopup are valid. axe reports 0 violations.
+13. Are initial visual states preserved? Yes: static hidden/open/aria-expanded, so no
+    flash.
+14. Does interaction-specific CSS preserve authored styling? There is none: no
+    interaction CSS was added. The Preflight [hidden] rule from EXPORT-1.2 suffices.
+15. Are unsafe document values prevented from becoming code? Yes (R).
+16. Is output deterministic? Yes, including interactive pages (asserted).
+17. Do generated pages work offline? Yes, from file:// in both modes with 0 network
+    requests.
+18. Are browser-native dialogs supported correctly? Yes: showModal, backdrop, Escape,
+    close event, focus.
+19. Are popovers supported correctly? Yes, as the editor defines them: an in-flow
+    toggle with dismissal. The native Popover API is deliberately not used.
+20. Does tab switching preserve panel content? Yes (only hidden; asserted).
+21. Are toasts and alerts dismissible as intended? Yes, each by its own control, with
+    no cross-effects.
+22. Are behavior descriptors reusable for React and Vue? Yes. They are declarative,
+    token-based and code-free (the mapping is in export-engine.md).
+23. Are visual parity tests passing after interactions? Yes: 8 states × 2 modes, 0
+    style or geometry differences.
+24. Did EXPORT-1.2 static visual parity regress? No (X).
+25. What is the generated runtime size? 3,651 bytes, 1,100 gzipped.
+26. What is the measured interaction latency? Median 0.2 ms and max ≤ 1.4 ms per click
+    on 500 components; init about 4 ms.
+27. What are the test results?
+    - typecheck and lint pass.
+    - Vitest: 4,972 passed, 1 skipped.
+    - Browser Playwright: 44/44 on the second full run. The first full run had 4
+      load-related timeouts, all of which pass on rerun (AF).
+    - Next build passes.
+    - Electron and packaged suites: not run (AG, AH).
+28. Are any significant behavior differences unresolved? No (AI lists the intentional
+    and editor-side limits).
+29. Is the runtime ready for user-facing Export UI integration? Yes. The API is
+    unchanged except for the added script.js file.
+30. What should EXPORT-1.4 implement? See AK.
+
+Recommended commit message:
+  feat(export): add dependency-free interaction runtime with behavioral parity tests
+
+STOP: EXPORT-1.4 is not started. It awaits review and approval.

@@ -46,3 +46,5 @@ Each ADR is a numbered Markdown file, `ADR-NNNN-short-title.md`, containing:
   stabilization: snapshot worker and migration chain — Accepted
 - [ADR-0008](./ADR-0008-export-shared-styling-and-ir.md) — Export shares
   the Canvas's styling rules through one IR — Accepted
+- [ADR-0009](./ADR-0009-export-interaction-runtime.md) — Exported
+  interactions replay Preview's generic executor — Accepted

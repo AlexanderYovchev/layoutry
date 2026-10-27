@@ -105,10 +105,12 @@ describe("buildExportDocument — Preview semantics and editor-only state", () =
     expect(attributeMap(find(document.root, "dialog-1"))).not.toHaveProperty("open");
     expect(attributeMap(find(document.root, "dialog-1"))).not.toHaveProperty("hidden");
     expect(attributeMap(find(document.root, "dialog-2"))).toMatchObject({ open: true });
-    expect(document.diagnostics.filter((diagnostic) => diagnostic.code === "dialog-requires-runtime")).toHaveLength(2);
+    // Only the dialog that opens at load needs the runtime (to re-open it modally).
+    expect(document.behaviors.targets).toEqual([{ token: 1, nodeId: "dialog-2", kind: "dialog", initiallyVisible: true, domId: "ly-target-1", generatedDomId: true }]);
+    expect(document.diagnostics).toEqual([]);
   });
 
-  it("records interactions for the runtime milestone and flags them instead of claiming they work", () => {
+  it("records interactions and their runtime behavior, skipping bindings to missing nodes", () => {
     const document = build(
       page([
         { id: "button-1", tag: "button", text: "Toggle", interactions: [{ id: "i-1", trigger: "click", action: "toggle", targetId: "panel-1" }, { id: "i-2", trigger: "click", action: "show", targetId: "gone-1" }] },
@@ -116,7 +118,8 @@ describe("buildExportDocument — Preview semantics and editor-only state", () =
       ]),
     );
     expect(document.interactions).toEqual([{ triggerNodeId: "button-1", targetNodeId: "panel-1", trigger: "click", action: "toggle" }]);
-    expect(document.diagnostics).toContainEqual(expect.objectContaining({ code: "interaction-requires-runtime", severity: "warning", nodeId: "button-1" }));
+    expect(document.behaviors.triggers).toEqual([{ nodeId: "button-1", actions: [{ action: "toggle", targetToken: 1 }], dismissibleTargetTokens: [], expandsTargetToken: 1, opensDialog: false }]);
+    expect(document.diagnostics).toEqual([]);
   });
 
   it("drops editor-only fields and children the Canvas does not render", () => {
@@ -201,11 +204,11 @@ describe("buildExportDocument — coverage", () => {
     expect(document.diagnostics.filter((diagnostic) => diagnostic.code === "unsupported-element")).toEqual([]);
   });
 
-  it("exports all 81 catalog entries, flagging only runtime behavior and source-less images", () => {
+  it("exports all 81 catalog entries, flagging only source-less images", () => {
     expect(INSERTABLE_ELEMENT_TYPES).toHaveLength(81);
     const document = build(catalogDocument());
     const codes = new Set(document.diagnostics.map((diagnostic) => diagnostic.code));
-    expect([...codes].sort()).toEqual(["dialog-requires-runtime", "interaction-requires-runtime", "missing-media-source"]);
+    expect([...codes].sort()).toEqual(["missing-media-source"]);
     // Only image cards whose factory leaves the image empty for the user to fill in.
     for (const diagnostic of document.diagnostics.filter((entry) => entry.code === "missing-media-source")) expect(diagnostic.nodeId).toMatch(/^img-/);
   });

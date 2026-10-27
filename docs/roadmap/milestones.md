@@ -14,7 +14,7 @@ within a milestone are scoped and approved when that milestone starts.
 | M5        | Element insertion and manipulation                                     | Planned                        |
 | M6        | CSS inspector                                                          | Planned                        |
 | M7        | Component library                                                      | Planned                        |
-| M8        | HTML/CSS export                                                        | In progress (EXPORT-1.2)       |
+| M8        | HTML/CSS export                                                        | In progress (EXPORT-1.3)       |
 | M9        | Local project persistence                                              | Planned                        |
 | M10       | Authentication and cloud projects                                      | Planned                        |
 | M11       | Subscription and billing                                               | Planned                        |
@@ -44,9 +44,10 @@ within a milestone are scoped and approved when that milestone starts.
   ([report](../reports/export-1.1-architecture-audit.txt)); EXPORT-1.2
   delivered the pure HTML/CSS engine, its IR and visual parity tests
   ([export-engine.md](../architecture/export-engine.md),
-  [report](../reports/export-1.2-html-css-export-foundation.txt)). The
-  interaction runtime (EXPORT-1.3), export UI, Tailwind, React and Vue
-  follow, each after review.
+  [report](../reports/export-1.2-html-css-export-foundation.txt));
+  EXPORT-1.3 added the interaction runtime
+  ([report](../reports/export-1.3-interaction-runtime.txt)). The export
+  UI, Tailwind, React and Vue follow, each after review.
 
 This file should be updated as milestones complete or scope is approved —
 not used to pre-commit to unapproved implementation details.
