@@ -51,7 +51,11 @@ export type ProjectLoadErrorCode =
   | "invalid-structure"
   | "integrity"
   /** The file itself couldn't be read (PROJECT-1.2 browser import). */
-  | "unreadable";
+  | "unreadable"
+  /** The file isn't UTF-8 text, so it can't be a project (PROJECT-1.5). */
+  | "invalid-encoding"
+  /** An older format couldn't be upgraded to the current one (PROJECT-1.5). */
+  | "migration-failed";
 
 export interface ProjectLoadError {
   code: ProjectLoadErrorCode;

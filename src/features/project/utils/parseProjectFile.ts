@@ -5,12 +5,12 @@ import {
 } from "@/features/project/rules/projectLimits";
 import { projectFileV1Schema } from "@/features/project/schemas/projectFileSchema";
 import {
-  CURRENT_PROJECT_FORMAT_VERSION,
   PROJECT_FILE_FORMAT,
   type ProjectLoadError,
   type ProjectLoadResult,
 } from "@/features/project/types/projectFile";
 import { checkDocumentIntegrity } from "@/features/project/utils/checkDocumentIntegrity";
+import { migrateProjectFile } from "@/features/project/utils/projectFormatMigrations";
 import { scanJsonStructure } from "@/features/project/utils/scanJsonStructure";
 
 /**
@@ -64,7 +64,7 @@ export function parseProjectFile(
     });
   }
 
-  const migrated = migrateToCurrentVersion(raw);
+  const migrated = migrateProjectFile(raw);
   if (!migrated.ok) return fail(migrated.error);
 
   const parsed = projectFileV1Schema.safeParse(migrated.value);
@@ -77,57 +77,6 @@ export function parseProjectFile(
     ok: true,
     project: { metadata: parsed.data.project, document: parsed.data.document },
   };
-}
-
-/**
- * The version dispatcher. Format versions are integers; each future
- * version adds a case that upgrades the previous version's raw object one
- * step (v1 → v2 → …) and must carry every authored field forward — a
- * migration may never drop content it does not understand. Files newer
- * than this build are refused (never "best-effort" loaded), because
- * silently ignoring their new fields would lose data on the next save.
- */
-function migrateToCurrentVersion(
-  raw: object,
-): { ok: true; value: unknown } | { ok: false; error: ProjectLoadError } {
-  const version: unknown = Reflect.get(raw, "formatVersion");
-  if (
-    typeof version !== "number" ||
-    !Number.isInteger(version) ||
-    version < 1
-  ) {
-    return {
-      ok: false,
-      error: {
-        code: "not-a-project",
-        message: "The project file has no valid format version.",
-        path: "formatVersion",
-      },
-    };
-  }
-  if (version > CURRENT_PROJECT_FORMAT_VERSION) {
-    return {
-      ok: false,
-      error: {
-        code: "unsupported-version",
-        message: `This project was saved by a newer version of Layoutry (format ${version}). Update Layoutry to open it.`,
-        path: "formatVersion",
-      },
-    };
-  }
-  switch (version) {
-    case 1:
-      return { ok: true, value: raw };
-    default:
-      return {
-        ok: false,
-        error: {
-          code: "unsupported-version",
-          message: `Project format ${version} is no longer supported.`,
-          path: "formatVersion",
-        },
-      };
-  }
 }
 
 function describeSchemaError(error: z.ZodError): ProjectLoadError {

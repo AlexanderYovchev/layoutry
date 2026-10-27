@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -30,6 +30,14 @@ import { resolveDragEndMove } from "@/features/editor/utils/resolveDragEndMove";
 interface ActiveDragPreview {
   label: string;
 }
+
+/**
+ * One object for the component's lifetime: useSensor memoizes on it, and a
+ * new object every render gave dnd-kit new activators, a new internal
+ * context and a re-render of every draggable Canvas node whenever this
+ * component re-rendered (found in PROJECT-1.5's recovery profiling).
+ */
+const POINTER_SENSOR_OPTIONS = { activationConstraint: { distance: 4 } };
 
 interface EditorAppProps {
   /**
@@ -72,9 +80,15 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
 
   useEditorKeyboardShortcuts();
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-  );
+  // The panels take no props and subscribe to the stores themselves, so the
+  // same element objects let React skip them when only this component's
+  // props change — the project header's save and recovery status flips
+  // (PROJECT-1.5) no longer re-render a large Canvas and Structure tree.
+  const workspaceContent = useMemo(() => <DocumentCanvas />, []);
+  const inspectorContent = useMemo(() => <InspectorContent selectedElement={null} />, []);
+  const structureContent = useMemo(() => <StructurePanel />, []);
+
+  const sensors = useSensors(useSensor(PointerSensor, POINTER_SENSOR_OPTIONS));
 
   // Cut/Copy/Duplicate stay single-target (primary-only) operations this
   // checkpoint (Checkpoint 1.15.2 explicitly deferred multi-node clipboard/
@@ -151,9 +165,9 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
       onDragCancel={() => setActiveDrag(null)}
     >
       <AppShell
-        workspaceContent={<DocumentCanvas />}
-        inspectorContent={<InspectorContent selectedElement={null} />}
-        structureContent={<StructurePanel />}
+        workspaceContent={workspaceContent}
+        inspectorContent={inspectorContent}
+        structureContent={structureContent}
         onActivateCatalogCard={handleActivateCard}
         editMenuCommands={editMenuCommands}
         previewControl={previewControl}

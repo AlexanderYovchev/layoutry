@@ -191,7 +191,9 @@ and Cancel.
   shortcut; when it is committed afterwards, the project shows as unsaved
   again.
 - They are ignored while any modal dialog is open, and on key repeat.
-- The default browser action is prevented only for a handled shortcut.
+- The default browser action is prevented only for a handled shortcut,
+  and for Ctrl+S / Ctrl+Shift+S while a dialog is open, so the browser's
+  "Save page as" never opens over a Layoutry dialog (PROJECT-1.5).
 - **Ctrl+N works in the desktop app only.** Browsers keep it for a new
   window and never deliver it to the page, so the menu shows no shortcut
   for New Project.

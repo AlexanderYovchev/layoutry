@@ -421,5 +421,8 @@ test("snapshot latency and main-thread blocking for representative project sizes
       `[recovery perf] ${size.label}: ${(text.length / 1024 / 1024).toFixed(2)} MB project → snapshot protected in ${measured.elapsedMs} ms, longest main-thread task ${measured.longestTaskMs} ms, record ${(bytes / 1024 / 1024).toFixed(2)} MB`,
     );
     expect(measured.elapsedMs).toBeLessThan(10_000);
+    // PROJECT-1.5: the snapshot was prepared by the real worker, not by
+    // the on-page fallback.
+    expect(page.workers().length).toBeGreaterThanOrEqual(1);
   }
 });

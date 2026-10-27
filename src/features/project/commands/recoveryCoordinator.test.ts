@@ -84,6 +84,7 @@ function memoryStorage() {
   const failures: RecoveryStorageError[] = [];
   let inFlight = 0;
   let maxInFlight = 0;
+  let removeFailures = 0;
 
   const storage: RecoveryStorage = {
     beginSession: async () => OWN,
@@ -129,6 +130,10 @@ function memoryStorage() {
       return { ...record, file: null, matchesOriginal: false };
     },
     async remove(recordIds) {
+      if (removeFailures > 0) {
+        removeFailures -= 1;
+        throw new RecoveryStorageError("failed", "remove failed");
+      }
       for (const id of recordIds) {
         records.delete(id);
         removed.push(id);
@@ -156,6 +161,9 @@ function memoryStorage() {
     },
     failNext(code: RecoveryStorageError["code"], message = "storage failed") {
       failures.push(new RecoveryStorageError(code, message));
+    },
+    failNextRemove() {
+      removeFailures += 1;
     },
     ownIds() {
       return [...records.keys()].filter((id) => id.startsWith(OWN)).sort();
@@ -639,5 +647,131 @@ describe("finding recovered work", () => {
     context.failNext("quota-exceeded");
     await context.coordinator.adopt(group, []);
     expect(context.records.has(recoveryRecordId(CRASHED, 1))).toBe(true);
+  });
+});
+
+describe("PROJECT-1.5 hardening", () => {
+  it("writes exactly what the injected preparer (the snapshot worker) produced", async () => {
+    const prepared: Parameters<typeof serializeProject>[0][] = [];
+    const context = setup({
+      prepareSnapshot: async (project) => {
+        prepared.push(project);
+        const text = serializeProject(project);
+        return { text, sha256: await sha256Hex(text) };
+      },
+    });
+    await context.coordinator.start();
+    edit();
+    context.advance(2_000);
+    await context.coordinator.settle();
+    expect(prepared).toHaveLength(1);
+    expect(prepared[0].document).toBe(editor().document);
+    expect(prepared[0].metadata).toBe(session().metadata);
+    expect(context.writes[0].text).toBe(serializeProject(prepared[0]));
+  });
+
+  it("starts no write once the window began closing while a snapshot was being prepared", async () => {
+    let entered = false;
+    let finish: () => void = () => undefined;
+    const context = setup({
+      prepareSnapshot: async (project) => {
+        entered = true;
+        await new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        const text = serializeProject(project);
+        return { text, sha256: await sha256Hex(text) };
+      },
+    });
+    await context.coordinator.start();
+    edit();
+    window.dispatchEvent(new Event("blur"));
+    await vi.waitFor(() => expect(entered).toBe(true));
+    const closing = context.coordinator.shutdown({ discard: false });
+    finish();
+    await closing;
+    expect(context.writes).toHaveLength(0);
+  });
+
+  it("a snapshot that can't be prepared reports recovery unavailable and keeps the work unsaved", async () => {
+    const context = setup({
+      prepareSnapshot: () =>
+        Promise.reject(new Error("worker and page failed")),
+    });
+    await context.coordinator.start();
+    edit();
+    context.advance(2_000);
+    await context.coordinator.settle();
+    expect(context.writes).toHaveLength(0);
+    expect(useRecoveryStore.getState().status).toBe("unavailable");
+    expect(isDirty()).toBe(true);
+  });
+
+  it("retries a Don't Save discard that failed, even while newer work is unsaved", async () => {
+    const context = setup();
+    await context.coordinator.start();
+    edit();
+    context.advance(2_000);
+    await context.coordinator.settle();
+    const boundary = context.coordinator.boundary();
+    context.failNextRemove();
+    await context.coordinator.discardThrough(boundary);
+    expect(context.ownIds()).toEqual([recoveryRecordId(OWN, 1)]);
+    // The next project has unsaved work of its own; the discarded copy
+    // goes once the retry delay has passed, the new work is kept.
+    context.advance(30_000);
+    edit();
+    context.advance(2_000);
+    await context.coordinator.settle();
+    await context.coordinator.settle();
+    expect(context.ownIds()).toEqual([recoveryRecordId(OWN, 2)]);
+  });
+
+  it("says the library copy is unavailable, not missing, when the library can't be read", async () => {
+    const crashed = {
+      metadata: createProjectMetadata({ id: "crashed-2", name: "Crashed" }),
+      document: pageWith({ id: "h", tag: "h1", text: "Unsaved" }),
+    };
+    const context = setup({
+      findLibraryProject: () =>
+        Promise.reject(new Error("library unavailable")),
+    });
+    await context.coordinator.start();
+    await context.plant(1, crashed, {
+      source: { kind: "library", revision: "2026-10-28T09:00:00.000Z" },
+    });
+    const [group] = await context.coordinator.findRecoverable();
+    expect(group.original).toBe("unavailable");
+    expect(group.restorable).toBe(true);
+    expect(context.records.size).toBe(1);
+  });
+});
+
+describe("a save that finishes while a snapshot is still being prepared (PROJECT-1.5)", () => {
+  it("removes the snapshot that commits afterwards: it holds work that is now saved", async () => {
+    let entered = false;
+    let finish: () => void = () => undefined;
+    const context = setup({
+      prepareSnapshot: async (project) => {
+        entered = true;
+        await new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        const text = serializeProject(project);
+        return { text, sha256: await sha256Hex(text) };
+      },
+    });
+    await context.coordinator.start();
+    edit();
+    window.dispatchEvent(new Event("blur"));
+    await vi.waitFor(() => expect(entered).toBe(true));
+    // The save completes first.
+    editor().markDocumentPersisted(editor().document);
+    finish();
+    await context.coordinator.settle();
+    await context.coordinator.settle();
+    expect(context.writes).toHaveLength(1);
+    expect(context.ownIds()).toEqual([]);
+    expect(useRecoveryStore.getState().status).toBe("idle");
   });
 });

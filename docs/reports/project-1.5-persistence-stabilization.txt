@@ -1,0 +1,502 @@
+LAYOUTRY — PROJECT-1.5 — PERSISTENCE STABILIZATION, MIGRATION READINESS & FINAL REGRESSION
+Checkpoint report · 2026-10-27 · base 5489ae3 (PROJECT-1.4) · all changes uncommitted
+
+Environment for every measurement and test below: Windows 10 Pro 19045 x64, one monitor at 100 %
+scaling, standard (non-admin) user without Developer Mode, Node 24.14, Electron 44.9.0, Chromium
+(Playwright 1.61), Next.js 16.2.10 (Turbopack). One machine; numbers are not representative of
+every user machine.
+
+======================================================================================
+A. BASELINE AND GIT STATE
+======================================================================================
+- Branch main, HEAD 5489ae3 "feat(project): add automatic recovery snapshots and crash
+  restoration" (PROJECT-1.4, committed by the user). Working tree clean at start.
+- Now: 29 files modified, 13 new paths (some are folders), nothing committed, nothing pushed.
+- Temporary worktrees used for measurements (PROJECT-1.1 fixture generation, PROJECT-1.4
+  baseline build) were removed; `git worktree list` shows only the main checkout.
+
+======================================================================================
+B. ARCHITECTURE AUDIT (map)
+======================================================================================
+Renderer (src/features/project):
+  stores/useProjectStore ........ identity, name, saved name, location {unsaved|library|file}
+  editor store .................. document + persistedDocument (dirty = reference inequality)
+  commands/projectCommands ...... one-at-a-time queue: New/Save/Save As/Open/Import/Delete/
+                                  file Save/Open/Restore; snapshot-exact baselines
+  commands/projectWorkflow ...... prompts (Save/Don't Save/Cancel), dialogs, startup, close
+  commands/recoveryCoordinator .. scheduling, capture, ordering, dedup, cleanup, discovery
+  workers/ (NEW) ................ recovery snapshot worker + page-side client with fallback
+  storage/ ...................... IndexedDB library (layoutry-projects v1), IndexedDB recovery
+                                  (layoutry-recovery v1) + Web Locks
+  desktop/ ...................... Zod-validated wrappers over window.layoutryDesktop
+Desktop (desktop/):
+  preload ....................... 14 functions + apiVersion 2, argument checks
+  ipc ........................... 12 fixed channels, strict payloads
+  files ......................... capability tokens per window, atomic temp+fsync+rename+read-back,
+                                  SHA-256 fingerprints, link/junction refusal
+  recovery ...................... sessions per window, <userData>\Recovery records, retention
+  main .......................... close coordination, renderer-crash fallback dialog
+Verified against the code (not only the earlier reports): every item listed for PROJECT-1.1 to
+1.4 in the brief is implemented as described.
+
+======================================================================================
+C. RISK REGISTER (as found at the start, with outcome)
+======================================================================================
+R1  Recovery snapshots cause 160–490 ms main-thread stalls on large projects ...... FIXED (F1, F2)
+R2  Save steps re-render the whole Canvas (290–1,087 ms stalls on large saves) .... FIXED (F1)
+R3  Check-to-replace window spans the whole temp write+flush ....................... NARROWED (F3)
+R4  Invalid UTF-8 silently replaced by U+FFFD on open (changes file on next save) .. FIXED (F4)
+R5  BOM accepted by browser import but rejected by desktop open ................... FIXED (F4)
+R6  Recovery copy left behind after a failed cleanup resurfaces after a clean close FIXED (F5)
+R7  Failed Don't Save discard retried only once the project is clean .............. FIXED (F5)
+R8  Library unreadable at startup shown as "copy missing" .......................... FIXED (F6)
+R9  Version dispatcher has no migration contract/tests ............................. FIXED (F7)
+R10 No byte-exact legacy fixtures; compatibility only implied ...................... FIXED (F8)
+R11 Ctrl+S with a dialog open opens the browser's "Save page as" ................... FIXED (F9)
+R12 Tester README claims saving doesn't exist ..................................... FIXED (F10)
+R13 (found during validation) Save right after Restore leaves the crashed session's
+    copies, offered again next start ............................................... FIXED (F11)
+R14 (found during validation) A snapshot committing after a save stays behind ...... FIXED (F11)
+R15 File-symlink test needs admin/Developer Mode ................................... STILL UNVERIFIED ON THIS MACHINE
+
+======================================================================================
+D. PROJECT OPERATIONS AUDIT
+======================================================================================
+Each checked for identity, content, metadata, dirty state, cancellation, errors, duplicates,
+overwrite and conflict detection (code review + existing/new tests):
+- New Project ............. new id, unsaved; prompts when dirty. OK
+- Save (library) .......... revision check; exact snapshot marked; failed = no change. OK
+- Save As (library) ....... new id, original untouched. OK (a rename typed during the write is
+                            replaced by the Save As name — P3, cosmetic)
+- Open / Open Recent ...... validated before replacing; id must match record. OK
+- Rename / Delete ......... rename = unsaved metadata; deleting the active project detaches it.
+                            OK (another tab's later save re-creates a deleted project — P3,
+                            no data loss)
+- Import / Download ....... strict UTF-8 now; collisions → copy/replace prompt. OK
+- Native Open/Save/Save As  tokens, fingerprints, re-check before replace. OK
+- Open from Desktop Library / Explorer / command line / second instance ... OK (tests exist)
+- Recovery Restore / Keep for Later / Discard ... OK after F11
+- Close with unsaved changes ... OK (Save must succeed, Cancel keeps open, Don't Save discards)
+No duplicate records, silent overwrites or bypassed conflicts found.
+
+======================================================================================
+E. DATA-LOSS SCENARIO MATRIX
+======================================================================================
+(Exp = expected, Act = actual, Cov = coverage; "real" = real browser/Electron/filesystem.)
+ 1 Save succeeds ........... Exp/Act: exact snapshot saved, clean. Cov: unit + e2e + soak. Risk: none known
+ 2 Save fails .............. nothing changes, stays unsaved, copies kept. Cov: unit (quota, write errors), e2e. none
+ 3 Save cancelled .......... nothing changes. Cov: unit + e2e. none
+ 4 Save As fails ........... previous association kept. Cov: unit. none
+ 5 Open fails .............. editor unchanged, error shown. Cov: unit + e2e. none
+ 6 Import fails ............ editor unchanged; now also invalid UTF-8. Cov: unit. none
+ 7 File corrupted .......... refused with path to the problem. Cov: unit + e2e. none
+ 8 File modified outside ... conflict dialog; Overwrite/Save As/Cancel. Cov: unit, real fs, e2e, soak (481 conflicts). Residual race (I)
+ 9 File deleted outside .... "File Moved or Deleted". Cov: unit (now also mid-write), e2e. none
+10 Browser tab crash ....... copies offered next time. Cov: e2e via abrupt close (headless Chromium can't crash one tab). Partially simulated
+11 Browser process killed .. offered, restored, cleaned by Save. Cov: e2e REAL kill. none
+12 Electron renderer crash . offered next start. Cov: e2e + packaged REAL crash. none
+13 Electron main killed .... offered next start. Cov: e2e + packaged + soak REAL kill (120+40 kills). none
+14 Windows restart ......... same as 13 (process tree killed); no real OS restart performed. Simulated
+15 Edit during Save ........ edits stay unsaved. Cov: unit. none
+16 Edit during snapshot .... captured by the next snapshot. Cov: unit. none
+17 Close during Save ....... waits for the save, then decides. Cov: unit. none
+18 Close during snapshot ... no write starts after closing began (now also mid-preparation). Cov: unit (new). none
+19 Switch during Save ...... save completes with its snapshot; switch waits. Cov: unit (NEW workflow test). none
+20 Switch during recovery .. Don't Save boundary respected. Cov: unit. none
+21 Two tabs, same project .. separate recovery records; revision conflict on save. Cov: unit + e2e. none
+22 Two tabs conflicting saves "Project changed elsewhere". Cov: unit. none
+23 Disk full ............... original intact, temp removed. Cov: unit (ENOSPC injection). none
+24 IndexedDB quota ......... nothing written, reported. Cov: unit. none
+25 Native file locked ...... retried, then "in use", original intact. Cov: real Windows lock test. none
+26 Replacement fails ....... original intact. Cov: unit (EBUSY/EPERM). none
+27 Recovery record corrupt . marked damaged, older version offered. Cov: unit + e2e. none
+28 Recovery cleanup fails .. kept, retried; clean close removes leftovers (NEW). Cov: unit (new). none
+29 Save while newer snapshot pending ... newer copy kept; copy committing after a clean save removed (NEW). Cov: unit (new). none
+30 Don't Save .............. this session's copies deleted, others untouched. Cov: unit + e2e + packaged. none
+No confirmed P0/P1 data-loss defect remains.
+
+======================================================================================
+F. RECOVERY PERFORMANCE ANALYSIS
+======================================================================================
+Measured first: CPU profiles of a snapshot in the real Electron app (5,000 elements and
+9.7 MB) showed TWO long tasks per snapshot:
+  1) serialization's loader self-check (Zod ≈ 60 % of it) + TextEncoder for the hash;
+  2) a full React re-render of every Canvas node, triggered by the recovery status change.
+     Root cause: EditorApp passed a new options object to dnd-kit's useSensor on every render,
+     giving dnd-kit new activators and a new internal context, which re-renders every
+     draggable node. The same happened on every save step (operation, library, baseline).
+Changes: (F1) constant sensor options + stable panel elements; (F2) snapshot preparation in a
+Web Worker (same prepareRecoverySnapshot code; page fallback). Validation strength unchanged,
+canonical format unchanged, generations/ordering still owned by the coordinator; stale worker
+answers can't overtake (matched by id, written in the same queued task).
+Result (identical harness, before = 5489ae3 build, two runs each):
+  snapshot longest task: 5k 162–179 ms → none; 9.7 MB 175–186 ms → none; 20k 460–492 ms → none.
+Not done: incremental hashing (the cost is validation, which can't be incremental without
+weakening it).
+
+======================================================================================
+G. RECOVERY RETENTION AUDIT
+======================================================================================
+Verified (existing tests + review): 5 per project/session; 100 records; 128 Mi chars browser /
+256 MiB desktop; oldest-first by rank; never the newest of a group, never another live
+session's, never the record being written; interrupted writes cleaned at start; damaged
+records never auto-deleted; Save As / Don't Save / restore / clean close cleanup correct.
+Fixed: F5 (leftovers after failed cleanup), F11 (copies left after save-during-snapshot and
+after save-right-after-restore). Never deletes the only valid copy before its replacement
+commits: adopt removes crashed copies only after a committed snapshot or a completed save.
+Storage pressure: quota/disk-full tests (unit) + 10 MB records under retention (Vitest real disk).
+
+======================================================================================
+H. MULTI-TAB / SESSION AUDIT
+======================================================================================
+Covered: different/same project in two tabs (separate records, revision conflicts), crash vs
+normal close, one tab saving while another edits, restoring a crashed session, two tabs
+racing to adopt (exactly one offered — e2e), stale session after browser restart (real kill),
+IndexedDB upgrade with another tab open (blocked → reported).
+Limitation observed: one browser e2e run (out of 4 full runs + 18 isolated) failed to show the
+recovery dialog right after an abrupt tab close under full parallel load. Suspected cause:
+Chromium releases the closed tab's Web Lock asynchronously, so a tab opened in the same instant
+can still see that session as live. Work is not lost (offered via File › Recover Unsaved
+Work… or next start). Not reproduced in isolation; P3, documented.
+
+======================================================================================
+I. NATIVE FILESYSTEM RELIABILITY
+======================================================================================
+Verified: exclusive-create temp in the destination folder; write + fsync + close before
+replace; original never deleted first; failures remove the temp; SHA-256 read-back;
+content-based change detection (same size, same mtime detected); locked/permission/disk-full
+mapped and tested.
+Check-to-replace race: NARROWED, NOT ELIMINATED. A second destination check now runs after the
+temp file is durable, immediately before the rename (tested with changes and deletions made
+during the write). Remaining window: one read+hash plus the rename call. Windows offers no
+compare-and-swap rename; documented in desktop-files.md and ADR-0007.
+Network / FAT drives: no atomic-replace guarantee; documented.
+
+======================================================================================
+J. FILESYSTEM SECURITY
+======================================================================================
+- Junctions (real, no admin needed): refused for project files and recovery records/folder.
+- File symlinks: the REAL test is still skipped on this machine (EPERM: no admin, no Developer
+  Mode). Reported as UNVERIFIED on real Windows here; it will run on any machine/CI runner with
+  the privilege. NEW: a simulated variant (lstat reports a link) always runs; listing uses the
+  same Dirent path as the real junction test.
+- NEW real test: a planted hard link to an outside file is never read as a record, and removing
+  it leaves the outside file intact.
+- Token expiry/revocation, foreign-window tokens, malformed payloads, unexpected keys,
+  navigation/frame restrictions, renderer without Node.js: existing tests, all passing.
+- No security setting was weakened. Fuses unchanged (see Q).
+
+======================================================================================
+K. PROJECT FORMAT COMPATIBILITY
+======================================================================================
+- v1 unchanged; canonical bytes stable since PROJECT-1.1 (a file written by the 1.1 code
+  re-serializes byte-identically today — new test).
+- Strict schema, unknown fields rejected, future versions refused, corruption, duplicate ids,
+  invalid references, nesting, size, prototype keys, nonfinite numbers: existing tests pass.
+- NEW: BOM skipped; invalid UTF-8 refused (both runtimes); astral characters and escaped lone
+  surrogates round-trip.
+- Finding (P3, no change): PROJECT-1.2 tightened names (no control characters); a hand-edited
+  1.1 file with one would no longer open. 1.1 had no rename UI, so no real file is affected.
+- No schema change, no format version bump.
+
+======================================================================================
+L. MIGRATION READINESS
+======================================================================================
+- migrateProjectFile (utils/projectFormatMigrations.ts): step chain with a written contract;
+  empty migration list (no speculative v2).
+- Harness tests with synthetic versions: chaining from any version, caller's object never
+  modified, throwing/sloppy migration → migration-failed with no partial result, gaps refused,
+  newer/older-than-supported refused, invalid versions refused.
+- Rollback: loading never writes, so a failed migration can't touch the original.
+- IndexedDB and recovery-record versioning reviewed and documented (project-format.md table).
+- Open item for format 2 (documented): how the first save of a migrated native file is confirmed.
+
+======================================================================================
+M. LEGACY PROJECT COMPATIBILITY
+======================================================================================
+Frozen byte-exact fixtures (test/fixtures/persistence, protected by .gitattributes -text and
+.prettierignore), each tested:
+- project-1.1-every-element.layoutry — generated by the actual PROJECT-1.1 code (04ad3d8) in a
+  temporary worktree: opens, re-serializes identically, opens with a BOM added.
+- indexeddb-library-1.2.json — raw object stores written by the 1.2 repository: listed, opened,
+  saved again with the old revision.
+- indexeddb-recovery-1.4.json and a desktop .layoutry-recovery file written by 1.4: offered,
+  validated, restorable; reading never rewrites them.
+- native-site-original-1.3.layoutry: opens via main-process read and browser import.
+- Desktop library → native file (Save As): existing test passes.
+No automatic or destructive migration exists.
+
+======================================================================================
+N. DIRTY-STATE AUDIT
+======================================================================================
+Edit→Save, Edit→Undo, Edit→Save→Undo(→Redo), Rename→Save/Cancel, Save As→Edit, edit during
+pending write, snapshot→continue, Restore→Save/Save As, failed Save→continue, project switch:
+all covered by existing editor-store and project tests; all pass. Selection, theme, preview,
+snapshot-toggle and in-progress drags never mark dirty (tested). Recovery never clears dirty
+state (tested). No inconsistency found.
+
+======================================================================================
+O. CLOSE / SHUTDOWN AUDIT
+======================================================================================
+beforeunload (browser), close event + renderer prompt + native fallback (desktop), pending
+Save (waits), pending snapshot (no write starts after closing, now also mid-preparation),
+cancel/failed Save keep the window open, Don't Save removes only this session's copies, no
+duplicate dialogs (tested), no deadlock: the worker can't hold the queue (60 s timeout → page
+fallback). NEW: a clean close also removes leftover copies of this session. Verified in the
+soak: 160 clean closes followed by restarts never offered anything.
+
+======================================================================================
+P. UI/UX FINDINGS
+======================================================================================
+- Ctrl+S / Ctrl+Shift+S with a Layoutry dialog open opened the browser's "Save page as". FIXED.
+- Tester README said saving doesn't exist. FIXED; added where data lives + backup advice.
+- Recovery dialog: "unavailable" original state now used correctly (F6).
+- No redesign. Dialog focus/keyboard behaviour unchanged and still covered by the existing
+  accessibility e2e. Error messages name files, never full paths (tested).
+
+======================================================================================
+Q. PORTABLE WINDOWS VALIDATION
+======================================================================================
+- ZIP: release\Layoutry-0.1.0-alpha.1-win-x64.zip, 147.1 MB (154,215,474 bytes);
+  app.asar 2.3 MB, 64 files (was 58: the worker and its chunks).
+- Fuses: RunAsNode=off, EnableCookieEncryption=on, NodeOptions env=off, Node CLI inspect=off,
+  EmbeddedAsarIntegrityValidation=on, OnlyLoadAppFromAsar=on, LoadBrowserProcessSpecificV8Snapshot=off,
+  GrantFileProtocolExtraPrivileges=off, WasmTrapHandlers=on (unchanged).
+- The packaging guard caught two Turbopack worker byproducts (an empty .map and the worker's
+  .ts source copy); they are now filtered when staging (never loaded at runtime). Guard unchanged.
+- Packaged suite (extracted to a temp path with spaces/non-ASCII, isolated profiles): launch
+  without install/Node/dev server, native Save/Open with the real Windows dialog, desktop
+  library, recovery (real kill, real renderer crash + native fallback), file-open forwarding,
+  second instance, userData location, no data in the extraction folder, no renderer Node.js,
+  fuses — 49/49 twice. NEW assertion: the real snapshot worker runs in the packaged app.
+- Documents folder: 0 .layoutry files before and after.
+
+======================================================================================
+R. PERFORMANCE BENCHMARKS (e2e/desktop/persistence-benchmark.spec.ts, opt-in)
+======================================================================================
+Methodology: real Electron, synthetic paragraph documents written to a temp folder, scripted
+native dialogs; in-page timers from keypress/blur to the UI condition; PerformanceObserver
+long tasks (>50 ms); heap via CDP after forced GC; Recovery folder size on disk. Before =
+PROJECT-1.4 built by the same harness. Two runs each; ranges shown.
+
+Size (MB)            | Open (longest)     | Snapshot before → after      | Save before → after
+20 el (0.00)         | 24–454 ms (≤75)    | 55–65 → 87–239 ms, none      | 32–38 → 32–33 ms, none
+500 el (0.03)        | 88–94 ms (68–74)   | 52–58 → 30–42 ms, none       | 79–87 → 46–83 ms, none
+5,000 el (0.29)      | 1.19–1.30 s (1.1–1.2 s, Canvas render) | 279–300 ms (162–179) → 111–123 ms (none) | 518–530 ms (290–295) → 139–158 ms (86–101)
+9.73 MB              | 0.85–1.0 s (0.48–0.52 s) | 417–433 ms (175–186) → 351–356 ms (none) | 568–588 ms (279–292) → 313–323 ms (167–175)
+19,999 el (1.14)     | 12.3–12.7 s (Canvas render) | 835–896 ms (460–492) → 370–386 ms (none) | 1.83–1.95 s (1.02–1.09 s) → 432–452 ms (334–360)
+(small-project "after" snapshot latency includes the one-time worker start-up; still no long task)
+Restore 10 MB after hard kill: 2.27–2.31 s (longest 1.64–1.66 s) → 1.90–1.92 s (1.30–1.32 s, Canvas render).
+Startup: recovery dialog 0.82–0.94 s after launch, ~0.5 s after DOM ready.
+Heap after GC: 5k 98.6 → 92.5 MB; node limit 366.6 → 343.5 MB.
+Disk: one recovery record = project text + ~0.6 KB header (9.94 MB for 9.73 MB).
+Browser (dev server, 5,000 el): snapshot 162 ms, no long task; worker confirmed.
+Browser IndexedDB usage: navigator.storage.estimate() under-reported (0.02 MB for a 0.29 MB
+record — Chromium updates it lazily), so it is not reported; the stored record size equals the
+project text length.
+
+======================================================================================
+S. LONG-RUN STABILITY (e2e/desktop/persistence-soak.spec.ts)
+======================================================================================
+Cycle: edit + snapshot + save in place; rename + Save As new file; open the first file;
+outside change → conflict → Overwrite; every 4 cycles clean close + relaunch (must offer
+nothing) and hard kill while unsaved + relaunch (must offer; Discard).
+Run 1 (15 min): 398 cycles / 4,374 ops / 99 restarts / 99 kills. Failed its own listener guard:
+window keydown listeners +1 per cycle across restarts. Investigated with per-listener
+histograms: the Canvas resize hook registers one window keydown listener per resizable node,
+and the soak's edit inserted a Container each cycle (saved, so the document grew). Not a leak;
+the test was wrong. Soak edit changed to insert+delete (size-neutral).
+Run 2 (15 min): 481 cycles / 5,289 ops / 120 clean restarts / 120 kills — PASSED. Heap after GC
+10.4–11.1 MB; window listeners constant 35; main-process active handles: one PipeWrap only (no
+file handles); no temp files and no recovery records after any cycle; never offered work after
+a clean close; save 49 ms (first 5) → 27 ms (last 5).
+Run 3 (5 min, final code after F11): 162 cycles / 1,778 ops / 40 / 40 — PASSED, same flat profile.
+Not measured: timers (no reliable external counter; unit tests use controlled clocks), Web
+Locks in Electron (desktop uses main-process sessions). IPC tokens: bounded by design (32 per
+window) and released on every path (unit tests).
+
+======================================================================================
+T. BUGS FOUND AND FIXED
+======================================================================================
+F1  P2 perf  Every EditorApp render re-rendered every Canvas node (dnd-kit sensor options) —
+             recovery status flips and each save step stalled large projects.
+F2  P2 perf  Snapshot serialization/validation/hash on the main thread → worker.
+F3  P2       Check-to-replace window spanned temp write+flush → re-check before rename.
+F4  P2       Invalid UTF-8 silently replaced on open (content changed on next save); BOM
+             inconsistency between browser and desktop.
+F5  P3       Leftover copies after a failed cleanup resurfaced after a clean close; failed
+             Don't Save discard only retried when clean.
+F6  P3       Unreadable library at startup shown as "missing".
+F7  P3       No migration contract/harness.
+F8  P3       No legacy fixtures.
+F9  P3       Ctrl+S under a dialog opened "Save page as".
+F10 P3       Tester README said saving doesn't exist.
+F11 P2       (found by the Electron suite after F2) Saving right after Restore left the crashed
+             session's copies (offered again next start); a snapshot committing after a save
+             stayed behind. Fixed in the coordinator; unit + workflow tests reproduce both.
+Packaging: worker byproducts excluded from the package (guard caught them).
+
+======================================================================================
+U. REMAINING RISKS
+======================================================================================
+- Edits in the last 2–30 s before a crash can be lost (by design).
+- Native write race narrowed, not closed; power loss may keep the previous version; FAT/exFAT
+  and network drives don't guarantee atomic replace.
+- Real file-symlink test unverified on this machine.
+- Headless Chromium can't crash a single tab; tab-level crash is simulated by abrupt close.
+- Suspected Web Lock release lag after an abrupt tab close may delay a recovery offer (P3).
+- Saves still serialize on the main thread (86–360 ms on very large projects, user-initiated).
+- Opening/restoring very large projects is dominated by Canvas rendering (1.2 s at 5k elements,
+  12 s at the node limit) — editor performance, outside persistence.
+- One window keydown listener per resizable Canvas node (efficiency, not a leak; Canvas-owned).
+- Retention logic duplicated in desktop/ and src/ (both tested).
+- Recovery copies are local and unencrypted.
+- Format 2 must define how the first save of a migrated native file is confirmed.
+- Convention question for review: CLAUDE.md's file-placement table has no entry for feature
+  `workers/`; this checkpoint added src/features/project/workers/. CLAUDE.md not changed.
+
+======================================================================================
+V. FILES ADDED
+======================================================================================
+src/features/project/workers/recoverySnapshot.worker.ts
+src/features/project/workers/snapshotWorkerProtocol.ts (+ .test.ts)
+src/features/project/workers/createWorkerSnapshotPreparer.ts (+ .test.ts)
+src/features/project/utils/prepareRecoverySnapshot.ts
+src/features/project/utils/projectFormatMigrations.ts (+ .test.ts)
+src/features/project/utils/legacyProjectFiles.test.ts
+src/features/project/storage/legacyStorageRecords.test.ts
+desktop/recovery/legacyRecoveryRecord.test.ts
+test/fixtures/persistence/ (README.md + 5 fixtures)
+e2e/desktop/persistence-benchmark.spec.ts, e2e/desktop/persistence-soak.spec.ts
+docs/architecture/project-persistence.md, docs/decisions/ADR-0007-persistence-stabilization.md
+.gitattributes
+docs/reports/project-1.5-persistence-stabilization.txt (this file)
+changelogs/2026-10-27-persistence-stabilization-checkpoint-PROJECT-1.5.txt
+
+======================================================================================
+W. FILES MODIFIED
+======================================================================================
+src: editor/components/EditorApp.tsx; project/commands/recoveryCoordinator.ts, projectWorkflow.ts;
+  project/components/ProjectWorkspace.tsx; project/hooks/useProjectKeyboardShortcuts.ts;
+  project/types/projectFile.ts; project/utils/loadProjectFromFile.ts, parseProjectFile.ts;
+  tests: recoveryCoordinator, projectRecoveryWorkflow, projectWorkflow, useProjectKeyboardShortcuts,
+  loadProjectFromFile.
+desktop: files/projectFileSystem.ts (+ test), recovery/recoveryStore.test.ts,
+  scripts/package-windows.mjs, packaging/README-alpha.txt.
+e2e: project-recovery.spec.ts, desktop/recovery.spec.ts, packaged/recovery.spec.ts.
+docs: architecture/README.md, desktop-files.md, project-format.md, project-recovery.md,
+  project-storage.md, testing-strategy.md; decisions/README.md.
+config: .prettierignore.
+Moved: none. Deleted: none (scratch files created during the work were removed).
+
+======================================================================================
+X. DEPENDENCIES
+======================================================================================
+None added, removed or upgraded.
+
+======================================================================================
+Y. DOCUMENTATION
+======================================================================================
+New: project-persistence.md (architecture, guarantees, limits, dirty state, security, alpha
+guidance), ADR-0007. Updated: project-format.md (migration contract, rollback, versioned data,
+fixtures, decoding), desktop-files.md (decoding, re-check step, honest race statement),
+project-recovery.md (worker, cleanup cases, before/after performance, tests), project-storage.md
+(shortcut), testing-strategy.md (fixtures), both indexes, tester README. CLAUDE.md unchanged.
+
+======================================================================================
+Z–AG. VALIDATION (final runs, exact commands)
+======================================================================================
+Z  npm run typecheck ............................ pass (0 errors)
+   npx tsc --noEmit -p desktop/tsconfig.json .... pass
+AA npm run lint ................................. pass (0 problems)
+AB npx vitest run ............................... 322 files, 4,800 passed, 1 skipped
+   (skipped: desktop/recovery/recoveryStore.test.ts "never follows a link planted in the
+   folder" — real file symlink, needs admin/Developer Mode)
+AC npx playwright test (Chromium, dev server) ... 31/31 passed (final run). Earlier in this
+   checkpoint one full run had 1 failure (H); 3 later full runs + 18 isolated runs passed.
+AD npm run build ................................ pass
+AE npm run desktop:build ........................ pass (part of desktop:test)
+AF npm run desktop:test (real Electron) ......... 53 passed, 2 skipped (the opt-in benchmark).
+   Before F11 the suite failed 1 test ("renderer crash and a restart … Save cleans up"); that
+   failure exposed F11.
+   Opt-in: LAYOUTRY_PERSISTENCE_BENCH=1 … persistence-benchmark ... 2/2;
+           LAYOUTRY_PERSISTENCE_SOAK_MINUTES=15/5 … persistence-soak ... passed (S).
+AG npm run desktop:package ...................... pass (Q)
+   npm run desktop:test:packaged ................ 49/49, twice
+
+======================================================================================
+AH. P0/P1/P2/P3 CLASSIFICATION
+======================================================================================
+P0: none found. P1: none found.
+P2 fixed: F1, F2, F3, F4, F11. P2 open: none.
+P3 fixed: F5–F10. P3 open: Web Lock release lag after abrupt tab close (suspected), Save As
+discards a rename typed during its write, a deleted library project is re-created by another
+tab's save, 1.2 name tightening, one keydown listener per resizable node (Canvas).
+
+======================================================================================
+AI. RELEASE RECOMMENDATION
+======================================================================================
+GO for broader alpha testing of the persistence subsystem (this closes the persistence phase,
+not Layoutry 1.0). Conditions to communicate to testers: recovery covers changes up to a few
+seconds before a crash and is not a backup; keep copies of .layoutry files.
+
+======================================================================================
+AJ. NEXT PHASE RECOMMENDATION
+======================================================================================
+1) Run the real file-symlink test once on a machine/CI runner with Developer Mode or admin.
+2) Editor performance for large documents (Canvas render of 5k–20k nodes; per-node window
+   listeners) — the dominant cost now, outside persistence.
+3) Then the next product milestone per docs/roadmap (e.g. export), only after this review.
+
+======================================================================================
+DIRECT QUESTIONS
+======================================================================================
+1  All project operations functioning? Yes (D).
+2  Failed Saves non-destructive? Yes.
+3  Failed Opens non-destructive? Yes.
+4  Concurrent Saves safe? Yes — one queue; revision/fingerprint checks across tabs/programs.
+5  Edits during Save preserved? Yes (stay unsaved and protected).
+6  Recovery snapshots reliable? Yes; two cleanup races found and fixed (F11).
+7  Recovery records validated? Yes (size, SHA-256, loader, id).
+8  Retention limits enforced? Yes.
+9  Cleanup delete another session's snapshots? No (only ended, claimed sessions on explicit
+   user action or redundancy).
+10 Cleanup delete the only valid copy? No.
+11 Multi-tab conflicts detected? Yes.
+12 Stale recovery sessions handled? Yes (locks/main-process sessions; see H for a timing caveat).
+13 Native writes safely replaced? Yes.
+14 External modifications detected? Yes, by content.
+15 Originals preserved on write failure? Yes.
+16 Check-to-replace race documented? Yes — narrowed, not eliminated.
+17 IPC tokens secure? Yes (random, per window, revoked on close/crash, bounded).
+18 Symlink/junction protections tested? Junctions and hard links for real; file symlinks
+   simulated only — the real test is unverified on this machine.
+19 v1 files compatible? Yes (including a file written by PROJECT-1.1).
+20 Unsupported versions rejected? Yes.
+21 Migration failures non-destructive? Yes (loading never writes; tested).
+22 Legacy IndexedDB projects available? Yes (frozen 1.2 records).
+23 Existing native files compatible? Yes.
+24 Dirty-state tracking correct? Yes.
+25 Save/Don't Save/Cancel reliable? Yes.
+26 Recovery survives actual crashes? Yes (real browser kill, renderer crash, app kills).
+27 Recovery performance acceptable? Yes — no long tasks during snapshots up to the node limit.
+28 Large-project stalls reduced? Yes (R/F).
+29 Portable ZIP works? Yes (49/49 twice).
+30 Electron security settings preserved? Yes.
+31 Test files isolated from real user folders? Yes (Documents checked: 0 .layoutry files).
+32 Long-run stress tests completed? Yes (15 + 15 + 5 minutes).
+33 Memory/resource leaks found? No (one false alarm investigated and explained).
+34 Unresolved P0? No.  35 Unresolved P1? No.  36 Unresolved P2? No.
+37 TypeScript passed? Yes.  38 ESLint passed? Yes.  39 Vitest passed? Yes (4,800 + 1 skipped).
+40 Browser Playwright passed? Yes (31/31 final; one earlier load-related failure, see H).
+41 Electron Playwright passed? Yes (53 + 2 opt-in skipped).
+42 Packaged tests passed? Yes (49/49 twice).
+43 Ready for broader alpha? Yes, for the persistence subsystem.
+44 Before Layoutry 1.0: export (HTML/CSS), large-document editor performance, installer/
+   code signing/updates, cross-machine Windows validation (Win11, scaling, multi-monitor),
+   the remaining product milestones, and the format-2 migration-save policy when it arrives.
+
+Recommended commit message:
+  fix(project): stabilize persistence with off-thread recovery snapshots, migration readiness and legacy fixtures
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

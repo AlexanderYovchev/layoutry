@@ -1,0 +1,26 @@
+{
+  "format": "layoutry-project",
+  "formatVersion": 1,
+  "project": {
+    "createdAt": "2026-10-26T09:00:00.000Z",
+    "id": "8a7b6c5d-4e3f-4a1b-9c2d-0e1f2a3b4c5d",
+    "name": "Native Site",
+    "updatedAt": "2026-10-26T10:30:00.000Z"
+  },
+  "document": {
+    "children": [
+      {
+        "id": "heading-lib",
+        "tag": "h1",
+        "text": "Saved in the 1.2 library"
+      },
+      {
+        "id": "para-lib",
+        "tag": "p",
+        "text": "Ünïcödé — 😀"
+      }
+    ],
+    "id": "page-root",
+    "tag": "page"
+  }
+}

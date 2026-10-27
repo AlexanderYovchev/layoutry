@@ -31,7 +31,11 @@ import {
   type RecoveryRecordSummary,
 } from "@/features/project/types/recoveryRecord";
 import { parseProjectFile } from "@/features/project/utils/parseProjectFile";
-import { serializeProject } from "@/features/project/utils/serializeProject";
+import {
+  prepareRecoverySnapshot,
+  type PreparedSnapshot,
+  type SnapshotPreparer,
+} from "@/features/project/utils/prepareRecoverySnapshot";
 import { sha256Hex } from "@/features/project/utils/sha256Hex";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -55,10 +59,18 @@ export interface RecoveryCoordinatorOptions {
   timing?: Partial<RecoveryTiming>;
   clock?: RecoveryClock;
   hashText?: (text: string) => Promise<string>;
+  /**
+   * Serializes, self-checks and hashes a captured project. Defaults to
+   * doing it on the page; the workspace passes the snapshot worker
+   * (PROJECT-1.5), which keeps that work off the main thread.
+   */
+  prepareSnapshot?: SnapshotPreparer;
   limits?: ProjectLimits;
   /**
    * The library's stored copy of a project, used to recognize recovered
    * work that was in fact saved (a crash after Save, before cleanup).
+   * Resolves null when the project isn't in the library; rejects when the
+   * library can't be read.
    */
   findLibraryProject?: (
     id: string,
@@ -157,6 +169,10 @@ export function createRecoveryCoordinator(options: RecoveryCoordinatorOptions) {
   };
   const clock = options.clock ?? realClock;
   const hashText = options.hashText ?? sha256Hex;
+  const prepareSnapshot: SnapshotPreparer =
+    options.prepareSnapshot ??
+    ((project, projectLimits) =>
+      prepareRecoverySnapshot(project, projectLimits, hashText));
   const limits = options.limits ?? DEFAULT_PROJECT_LIMITS;
   const editor = () => useEditorStore.getState();
   const session = () => useProjectStore.getState();
@@ -179,6 +195,10 @@ export function createRecoveryCoordinator(options: RecoveryCoordinatorOptions) {
   let closed = false;
   let cleaning = false;
   let lastCleanupFailureAt = -Infinity;
+  /** The highest boundary the user discarded through (Don't Save). */
+  let discardedThrough = 0;
+  /** Snapshots committed (or found identical to the last one) so far. */
+  let commits = 0;
   let queue: Promise<unknown> = Promise.resolve();
 
   /** One recovery operation at a time, in order. */
@@ -243,26 +263,31 @@ export function createRecoveryCoordinator(options: RecoveryCoordinatorOptions) {
     void snapshotNow();
   }
 
+  /** Removes this session's snapshots up to `boundary`, unless it failed just now. */
+  function cleanupIfDue(boundary: number): void {
+    if (cleaning || clock.now() - lastCleanupFailureAt < timing.retryMs) return;
+    if (![...ownRecords].some((g) => g <= boundary)) return;
+    cleaning = true;
+    void cleanup(boundary).finally(() => {
+      cleaning = false;
+    });
+  }
+
   function onChange(): void {
     if (!sessionId || closed) return;
     if (!isDirty()) {
       clearTimer();
       firstPendingAt = null;
-      if (
-        ownRecords.size > 0 &&
-        !cleaning &&
-        clock.now() - lastCleanupFailureAt >= timing.retryMs
-      ) {
-        cleaning = true;
-        void cleanup(generation).finally(() => {
-          cleaning = false;
-        });
+      cleanupIfDue(generation);
+    } else {
+      // Work the user discarded (Don't Save) whose removal failed earlier.
+      if (discardedThrough > 0) cleanupIfDue(discardedThrough);
+      if (isCaptured()) {
+        clearTimer();
+        firstPendingAt = null;
+      } else if (!failure || cancelTimer === null) {
+        schedule();
       }
-    } else if (isCaptured()) {
-      clearTimer();
-      firstPendingAt = null;
-    } else if (!failure || cancelTimer === null) {
-      schedule();
     }
     refreshStatus();
   }
@@ -287,9 +312,9 @@ export function createRecoveryCoordinator(options: RecoveryCoordinatorOptions) {
       generation += 1;
       const snapshotGeneration = generation;
 
-      let text: string;
+      let prepared: PreparedSnapshot;
       try {
-        text = serializeProject(
+        prepared = await prepareSnapshot(
           { metadata: state.metadata, document: state.document },
           limits,
         );
@@ -299,12 +324,16 @@ export function createRecoveryCoordinator(options: RecoveryCoordinatorOptions) {
         refreshStatus();
         return false;
       }
+      // The window began closing while the snapshot was prepared: no
+      // write may start any more.
+      if (closed) return false;
+      const { text, sha256 } = prepared;
       const source = sourceOf(state.location);
-      const sha256 = await hashText(text);
       const key = `${sha256}|${JSON.stringify(source)}`;
       if (key === capturedKey) {
         // Identical content (e.g. a change and its reversal): nothing new to keep.
         captured = state;
+        commits += 1;
         refreshStatus();
         return isCaptured();
       }
@@ -327,9 +356,14 @@ export function createRecoveryCoordinator(options: RecoveryCoordinatorOptions) {
         return false;
       }
       ownRecords.add(snapshotGeneration);
+      commits += 1;
       captured = state;
       capturedKey = key;
       failure = null;
+      // Saved (or otherwise made clean) while this snapshot was being
+      // prepared or written: it only holds saved work now, and no later
+      // change will come along to clean it up.
+      if (!isDirty()) cleanupIfDue(snapshotGeneration);
       refreshStatus();
       return isCaptured();
     });
@@ -487,9 +521,10 @@ export function createRecoveryCoordinator(options: RecoveryCoordinatorOptions) {
 
     /**
      * The desktop window is about to close. No snapshot starts after this
-     * (one already queued is skipped). `discard`: the user chose Don't
-     * Save, so every snapshot of this session goes too; otherwise they are
-     * left exactly as they are. Resolves once storage is settled.
+     * (one already queued is skipped). `discard`: every snapshot of this
+     * session goes too — the user chose Don't Save, or nothing is unsaved
+     * so they are all redundant; otherwise they are left exactly as they
+     * are. Resolves once storage is settled.
      */
     shutdown(options: { discard: boolean }): Promise<void> {
       closed = true;
@@ -509,8 +544,12 @@ export function createRecoveryCoordinator(options: RecoveryCoordinatorOptions) {
     /** The newest generation so far: the boundary for discardThrough. */
     boundary: () => generation,
 
-    /** Explicit Don't Save: drops this session's snapshots up to `boundary`. */
+    /**
+     * Explicit Don't Save: drops this session's snapshots up to `boundary`.
+     * If that fails, it is retried later even while newer work is unsaved.
+     */
     discardThrough(boundary: number): Promise<void> {
+      discardedThrough = Math.max(discardedThrough, boundary);
       return cleanup(boundary);
     },
 
@@ -565,16 +604,25 @@ export function createRecoveryCoordinator(options: RecoveryCoordinatorOptions) {
         if (newestValid && head) {
           let redundant = newestValid.matchesOriginal;
           if (head.source.kind === "library" && options.findLibraryProject) {
-            const stored = await options
+            const revision = head.source.revision;
+            const lookup = await options
               .findLibraryProject(head.projectId)
-              .catch(() => null);
-            original = !stored
-              ? "missing"
-              : stored.updatedAt === head.source.revision
-                ? "unchanged"
-                : "modified";
+              .then(
+                (stored) => ({ ok: true as const, stored }),
+                () => ({ ok: false as const }),
+              );
+            // A library that can't be read says nothing about the project.
+            original = !lookup.ok
+              ? "unavailable"
+              : !lookup.stored
+                ? "missing"
+                : lookup.stored.updatedAt === revision
+                  ? "unchanged"
+                  : "modified";
             redundant =
-              stored !== null && sameContent(stored.text, newestValid.text);
+              lookup.ok &&
+              lookup.stored !== null &&
+              sameContent(lookup.stored.text, newestValid.text);
           }
           if (redundant) {
             // Saved after all (a crash between Save and cleanup).
@@ -659,10 +707,17 @@ export function createRecoveryCoordinator(options: RecoveryCoordinatorOptions) {
       group: RecoveryGroup,
       stillOffered: readonly RecoveryGroup[],
     ): Promise<void> {
+      const commitsBefore = commits;
       const protectedNow = snapshotNow();
       // Queued behind that snapshot, so settle() covers the whole hand-over.
       return enqueue(async () => {
-        if (await protectedNow)
+        // The restored work is safe once a snapshot of it has committed
+        // (even if the user has changed it since), or once nothing is
+        // unsaved any more — e.g. it was saved before that snapshot
+        // finished (PROJECT-1.5). A failed snapshot keeps the copies.
+        const safe =
+          (await protectedNow) || commits > commitsBefore || !isDirty();
+        if (safe)
           await storage
             .remove(group.versions.map((version) => version.recordId))
             .catch(() => undefined);

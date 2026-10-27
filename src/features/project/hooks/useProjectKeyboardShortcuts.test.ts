@@ -107,6 +107,19 @@ describe("useProjectKeyboardShortcuts", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  it("keeps the browser's Save page dialog away while a modal dialog is open", () => {
+    const { handlers } = mountHandlers();
+    const dialog = document.createElement("dialog");
+    dialog.setAttribute("open", "");
+    document.body.append(dialog);
+    const save = key({ key: "s", ctrlKey: true });
+    const saveAs = key({ key: "S", ctrlKey: true, shiftKey: true });
+    expect(handlers.onSave).not.toHaveBeenCalled();
+    expect(handlers.onSaveAs).not.toHaveBeenCalled();
+    expect(save.defaultPrevented).toBe(true);
+    expect(saveAs.defaultPrevented).toBe(true);
+  });
+
   it("registers one listener and removes it on unmount", () => {
     const { handlers, hook } = mountHandlers();
     hook.rerender();

@@ -6,7 +6,8 @@ Layoutry is a visual HTML and CSS editor. You build a web page by
 dragging elements onto a canvas, arranging them, and styling them with the
 Inspector panel on the right, without writing code. This is an early,
 private alpha. It is not a finished product, and some features you might
-expect, such as saving, are not there yet. Thank you for testing it.
+expect, such as exporting the code, are not there yet. Thank you for
+testing it.
 
 
 WHAT YOU NEED
@@ -72,6 +73,19 @@ To open a .layoutry file from Explorer, right-click it and choose
 Open with > Choose another app, then browse to Layoutry.exe. You can also
 drag a .layoutry file onto Layoutry.exe. (This alpha doesn't install
 itself, so it can't register .layoutry files for double-click on its own.)
+
+WHERE YOUR WORK IS KEPT, AND HOW TO BACK IT UP
+- Your projects: the .layoutry files you saved, wherever you chose.
+  They are ordinary files: copy them anywhere.
+- Recovery copies of unsaved work: inside your Layoutry profile folder
+  (%APPDATA%\Layoutry\Recovery). Layoutry manages and cleans them up
+  itself. Don't edit them, and don't rely on them as backups.
+- Nothing is ever stored in the folder you extracted Layoutry into, so
+  deleting or replacing that folder for a new version keeps your work.
+- To back up: copy your .layoutry files to another drive, a USB stick or
+  a synced folder (OneDrive, Dropbox, ...) from time to time. Saving
+  straight into a synced folder works, but if two computers edit the same
+  file, Layoutry will ask before replacing the other version.
 
 Reload shortcuts (F5, Ctrl+R) are disabled so they cannot erase your work
 by accident. Starting Layoutry a second time just brings the open window

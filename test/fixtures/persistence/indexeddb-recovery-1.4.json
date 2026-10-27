@@ -1,0 +1,30 @@
+{
+  "database": "layoutry-recovery",
+  "version": 1,
+  "stores": {
+    "summaries": [
+      {
+        "format": "layoutry-recovery",
+        "recoveryVersion": 1,
+        "recordId": "11111111111111111111111111111111-3",
+        "sessionId": "11111111111111111111111111111111",
+        "generation": 3,
+        "projectId": "5d0c2f7e-91a4-4b6b-8c3d-1e2f3a4b5c6d",
+        "projectName": "Library Site (unsaved edits)",
+        "savedAt": "2026-10-26T11:00:00.000Z",
+        "source": {
+          "kind": "library",
+          "revision": "2026-10-26T10:30:00.000Z"
+        },
+        "size": 659,
+        "sha256": "adb769c91b736eb373f6518ae433ef72f6344a3cb41500683a1998b64daa58a3"
+      }
+    ],
+    "texts": [
+      {
+        "recordId": "11111111111111111111111111111111-3",
+        "text": "{\n  \"format\": \"layoutry-project\",\n  \"formatVersion\": 1,\n  \"project\": {\n    \"createdAt\": \"2026-10-26T09:00:00.000Z\",\n    \"id\": \"5d0c2f7e-91a4-4b6b-8c3d-1e2f3a4b5c6d\",\n    \"name\": \"Library Site (unsaved edits)\",\n    \"updatedAt\": \"2026-10-26T10:30:00.000Z\"\n  },\n  \"document\": {\n    \"children\": [\n      {\n        \"id\": \"heading-lib\",\n        \"tag\": \"h1\",\n        \"text\": \"Saved in the 1.2 library\"\n      },\n      {\n        \"id\": \"para-lib\",\n        \"tag\": \"p\",\n        \"text\": \"Ünïcödé — 😀\"\n      },\n      {\n        \"id\": \"para-new\",\n        \"tag\": \"p\",\n        \"text\": \"Typed just before the crash\"\n      }\n    ],\n    \"id\": \"page-root\",\n    \"tag\": \"page\"\n  }\n}\n"
+      }
+    ]
+  }
+}

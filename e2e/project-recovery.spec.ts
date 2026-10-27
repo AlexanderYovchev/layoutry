@@ -299,3 +299,69 @@ test("saving before the snapshot is due leaves no recovery copy behind", async (
   await reopened.waitForTimeout(1000);
   await expect(recoveryDialog(reopened)).toBeHidden();
 });
+
+test("a large project's recovery copy is prepared in a worker, without blocking the page (PROJECT-1.5)", async ({
+  context,
+}) => {
+  const page = await openEditor(context);
+  const children = Array.from({ length: 5_000 }, (_, index) => ({
+    id: `p-${index.toString(16).padStart(8, "0")}`,
+    tag: "p",
+    text: `${index} `.padEnd(20, "x"),
+  }));
+  const text = `${JSON.stringify({
+    format: "layoutry-project",
+    formatVersion: 1,
+    project: {
+      id: "browser-large",
+      name: "Large",
+      createdAt: "2026-10-28T08:00:00.000Z",
+      updatedAt: "2026-10-28T08:00:00.000Z",
+    },
+    document: { id: "page-root", tag: "page", children },
+  })}\n`;
+  await page.getByTestId("project-import-input").setInputFiles({
+    name: "Large.layoutry",
+    mimeType: "application/json",
+    buffer: Buffer.from(text),
+  });
+  await expect(projectStatus(page)).toHaveText("Saved", { timeout: 30_000 });
+  await page.getByRole("button", { name: /Rename project/ }).click();
+  await page
+    .getByRole("textbox", { name: "Project name" })
+    .fill("Large, edited");
+  await page.keyboard.press("Enter");
+  await expect(projectStatus(page)).toHaveText("Unsaved changes");
+
+  const measured = await page.evaluate(async () => {
+    const longTasks: number[] = [];
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) longTasks.push(entry.duration);
+    });
+    observer.observe({ type: "longtask" });
+    const start = performance.now();
+    window.dispatchEvent(new Event("blur"));
+    await new Promise<void>((resolve) => {
+      const check = () =>
+        document.querySelector('[data-recovery-status="protected"]')
+          ? resolve()
+          : requestAnimationFrame(check);
+      check();
+    });
+    const elapsed = performance.now() - start;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    observer.disconnect();
+    return {
+      ms: Math.round(elapsed),
+      longestTaskMs: Math.round(Math.max(0, ...longTasks)),
+    };
+  });
+  console.log(
+    `[browser recovery perf] 5,000 elements (${(text.length / 1024 / 1024).toFixed(2)} MB of project text per snapshot in IndexedDB): ${JSON.stringify(measured)}`,
+  );
+  expect(page.workers().length).toBeGreaterThanOrEqual(1);
+  expect(measured.longestTaskMs).toBeLessThan(100);
+  expect(
+    (await recoveryRecords(page)).map((record) => record.projectName),
+  ).toEqual(["Large, edited"]);
+});

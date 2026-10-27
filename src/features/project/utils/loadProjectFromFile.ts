@@ -16,6 +16,11 @@ const MAX_UTF8_BYTES_PER_CHARACTER = 3;
  * Reads a user-chosen `.layoutry` file (browser File API) and validates
  * it with parseProjectFile. Never evaluates content and never touches
  * editor state; resolves to a result, never rejects.
+ *
+ * Decoding is strict UTF-8, like the desktop app's (PROJECT-1.5): a byte
+ * order mark is skipped, but bytes that aren't UTF-8 are refused rather
+ * than silently replaced with U+FFFD — loading those would change the
+ * text the moment the project is saved again.
  */
 export async function loadProjectFromFile(
   file: Blob,
@@ -29,9 +34,9 @@ export async function loadProjectFromFile(
         message: "This file is too large to be a Layoutry project.",
       },
     };
-  let text: string;
+  let bytes: ArrayBuffer;
   try {
-    text = await file.text();
+    bytes = await file.arrayBuffer();
   } catch {
     return {
       ok: false,
@@ -39,6 +44,19 @@ export async function loadProjectFromFile(
         code: "unreadable",
         message:
           "The file couldn't be read. It may have been moved or deleted.",
+      },
+    };
+  }
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return {
+      ok: false,
+      error: {
+        code: "invalid-encoding",
+        message:
+          "The file isn't a Layoutry project: it isn't UTF-8 text. It may be damaged or be another kind of file.",
       },
     };
   }

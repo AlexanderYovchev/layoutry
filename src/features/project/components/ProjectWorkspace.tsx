@@ -42,7 +42,10 @@ import {
 import { useUnsavedChangesWarning } from "@/features/project/hooks/useUnsavedChangesWarning";
 import { createIndexedDbProjectRepository } from "@/features/project/storage/indexedDbProjectRepository";
 import { createBrowserRecoveryStorage } from "@/features/project/storage/indexedDbRecoveryStorage";
-import type { ProjectRepository } from "@/features/project/storage/projectRepository";
+import {
+  ProjectStorageError,
+  type ProjectRepository,
+} from "@/features/project/storage/projectRepository";
 import type { RecoveryStorage } from "@/features/project/storage/recoveryStorage";
 import { useProjectDialogStore } from "@/features/project/stores/useProjectDialogStore";
 import { useProjectStore } from "@/features/project/stores/useProjectStore";
@@ -52,6 +55,10 @@ import {
   PROJECT_FILE_MEDIA_TYPE,
 } from "@/features/project/types/projectFile";
 import { downloadTextFile } from "@/features/project/utils/downloadTextFile";
+import {
+  createWorkerSnapshotPreparer,
+  type WorkerSnapshotPreparer,
+} from "@/features/project/workers/createWorkerSnapshotPreparer";
 
 const RECENT_PROJECT_COUNT = 5;
 
@@ -71,6 +78,11 @@ interface ProjectWorkspaceProps {
   createRecoveryStorage?: (desktop: boolean) => RecoveryStorage | null;
   /** Tests shorten the recovery timers. */
   recoveryTiming?: RecoveryCoordinatorOptions["timing"];
+  /**
+   * Prepares recovery snapshots in a worker where one is available
+   * (PROJECT-1.5), on the page otherwise.
+   */
+  createSnapshotPreparer?: () => WorkerSnapshotPreparer;
 }
 
 function defaultRecoveryStorage(desktop: boolean): RecoveryStorage | null {
@@ -99,22 +111,32 @@ export function ProjectWorkspace({
   createDesktopFiles = getDesktopProjectFiles,
   createRecoveryStorage = defaultRecoveryStorage,
   recoveryTiming,
+  createSnapshotPreparer = createWorkerSnapshotPreparer,
 }: ProjectWorkspaceProps) {
   const [{ workflow, desktop, recovery }] = useState(() => {
     const desktopFiles = createDesktopFiles();
     const repository = createRepository();
     const recoveryStorage = createRecoveryStorage(desktopFiles !== null);
+    const snapshotPreparer = recoveryStorage ? createSnapshotPreparer() : null;
     const recoveryCoordinator = recoveryStorage
       ? createRecoveryCoordinator({
           storage: recoveryStorage,
           timing: recoveryTiming,
+          prepareSnapshot: snapshotPreparer?.prepare,
           findLibraryProject: (id) =>
             repository.read(id).then(
               (stored) => ({
                 updatedAt: stored.metadata.updatedAt,
                 text: stored.text,
               }),
-              () => null,
+              (error: unknown) => {
+                if (
+                  error instanceof ProjectStorageError &&
+                  error.code === "not-found"
+                )
+                  return null;
+                throw error;
+              },
             ),
           releaseFile: (token) => desktopFiles?.releaseProjectFile(token),
         })

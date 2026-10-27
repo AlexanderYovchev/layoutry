@@ -109,6 +109,9 @@ test("after the app is killed, its work comes back from the profile — never th
   });
   const nodes = await unsavedProtectedWork(layoutry.page);
   expect(await recoveryFiles()).toHaveLength(1);
+  // PROJECT-1.5: in the packaged app (app://, asar, fuses, CSP) the
+  // snapshot was prepared by the real worker, not the on-page fallback.
+  expect(layoutry.page.workers().length).toBeGreaterThanOrEqual(1);
 
   // Hard failure: the whole process tree dies at once.
   killProcessTree(layoutry.pid);

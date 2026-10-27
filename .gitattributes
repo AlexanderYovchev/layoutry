@@ -1,0 +1,4 @@
+# PROJECT-1.5: frozen persistence fixtures are compared byte for byte
+# (sizes and SHA-256 hashes are part of them), so Git must never convert
+# their line endings.
+test/fixtures/** -text

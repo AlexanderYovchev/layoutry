@@ -96,6 +96,12 @@ Editor ─► project workflow / commands ─► serializeProject / parseProject
   changes nothing.
 - **Applying:** the document is replaced atomically (`replaceDocument`),
   history and transient state are reset, and the project is clean.
+- **Text decoding (PROJECT-1.5):** strict UTF-8, the same as the browser
+  import. A byte order mark (e.g. after re-saving in an old Notepad) is
+  skipped. Bytes that aren't UTF-8 are refused ("isn't UTF-8 text")
+  instead of being silently replaced with U+FFFD, which would have
+  changed the file on its next save. The fingerprint is always of the
+  bytes on disk.
 
 ## Atomic write strategy
 
@@ -110,16 +116,22 @@ Editor ─► project workflow / commands ─► serializeProject / parseProject
    (`wx`), so it never reuses or follows an existing entry.
 3. **Write all bytes**, then `fsync` the file (FlushFileBuffers), then
    close it.
-4. **Replace the destination with `rename`.** On Windows this is
+4. **Check the destination again (PROJECT-1.5)**, now that the new
+   content is durable, immediately before the replace. A change or
+   deletion made while the temporary file was being written and flushed is
+   caught here: the temporary file is removed and the conflict reported.
+5. **Replace the destination with `rename`.** On Windows this is
    `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING`, which is atomic within
    one NTFS volume. `EPERM`/`EACCES`/`EBUSY` are retried 5 times (50 to
    800 ms) because antivirus scanners and indexers briefly hold new files.
    The original is **never deleted first**.
-5. **On any failure**, the temporary file is removed and the destination
+6. **On any failure**, the temporary file is removed and the destination
    keeps its previous bytes.
-6. **Read the file back** and compare its hash. A mismatch is reported
-   instead of a success.
-7. **Only then** does the renderer mark the exact snapshot it serialized as
+7. **Read the file back** and compare its hash. A mismatch is reported
+   instead of a success. The window keeps the version it knew before, so
+   the next Save asks about an outside change rather than trusting a file
+   it couldn't verify.
+8. **Only then** does the renderer mark the exact snapshot it serialized as
    saved.
 
 Failure-injection tests cover each stage:
@@ -144,9 +156,16 @@ byte-identical and that no temp file is left behind.
 - **Other file systems:** FAT/exFAT USB drives and network shares don't
   guarantee atomic replace. A failure there can still leave the temp file
   next to the project, which is harmless and removable.
-- **Race window:** the content check and the rename are separate steps, so
-  another program writing in the milliseconds between them can't be
-  detected.
+- **Race window (narrowed, not closed):** before PROJECT-1.5 the window
+  between the content check and the rename spanned the whole temporary
+  write and flush (up to hundreds of milliseconds for a large project).
+  The second check now runs right before the rename, so the window is the
+  rename call itself plus the time to read and hash the destination once.
+  It can't be eliminated: Windows has no compare-and-swap rename, and Node
+  can't hold the destination open with a sharing mode that blocks other
+  writers while still allowing the replace. A program that writes in that
+  instant is not detected, and its change is replaced. Tested: changes and
+  deletions made during the temporary write.
 - **No backup copies:** there is no `.bak` and no autosave. PROJECT-1.4
   adds recovery snapshots of unsaved work, kept in the profile's Recovery
   folder and never written to the user's file; see

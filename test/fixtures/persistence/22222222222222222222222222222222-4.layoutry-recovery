@@ -1,0 +1,32 @@
+{"format":"layoutry-recovery","recoveryVersion":1,"recordId":"22222222222222222222222222222222-4","sessionId":"22222222222222222222222222222222","generation":4,"projectId":"8a7b6c5d-4e3f-4a1b-9c2d-0e1f2a3b4c5d","projectName":"Native Site","savedAt":"2026-10-26T11:05:00.000Z","source":{"kind":"file","fileName":"Native Site.layoutry"},"textBytes":650,"sha256":"2260aedf06b410c3d871a0cf379e6e2b4ea0d2f9db2bcf657bdf78dea14245a1","association":{"path":"C:\\Users\\Tester\\Documents\\Native Site.layoutry","size":541,"sha256":"36e8f2d5854cfab5bab681df04d1bebc45201cc72e68f8ccfc2da384a28286ac"}}
+{
+  "format": "layoutry-project",
+  "formatVersion": 1,
+  "project": {
+    "createdAt": "2026-10-26T09:00:00.000Z",
+    "id": "8a7b6c5d-4e3f-4a1b-9c2d-0e1f2a3b4c5d",
+    "name": "Native Site",
+    "updatedAt": "2026-10-26T10:30:00.000Z"
+  },
+  "document": {
+    "children": [
+      {
+        "id": "heading-lib",
+        "tag": "h1",
+        "text": "Saved in the 1.2 library"
+      },
+      {
+        "id": "para-lib",
+        "tag": "p",
+        "text": "Ünïcödé — 😀"
+      },
+      {
+        "id": "para-new",
+        "tag": "p",
+        "text": "Typed just before the crash"
+      }
+    ],
+    "id": "page-root",
+    "tag": "page"
+  }
+}

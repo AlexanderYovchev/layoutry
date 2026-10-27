@@ -250,3 +250,56 @@ describe("Delete", () => {
     expect(session().toast?.message).toBe("Deleted “Doomed”");
   });
 });
+
+describe("switching projects while a save is in flight (PROJECT-1.5)", () => {
+  it("the save completes with exactly what was saved; the switch waits for it and nothing is mixed up", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const factory = new IDBFactory();
+    const base = createIndexedDbProjectRepository({
+      getFactory: () => factory,
+    });
+    const commands = createProjectCommands({
+      repository: {
+        ...base,
+        write: async (project, expectation) => {
+          await gate;
+          return base.write(project, expectation);
+        },
+      },
+      saveFile: vi.fn(),
+    });
+    const workflow = createProjectWorkflow(commands);
+
+    edit();
+    const savedDocument = editor().document;
+    const saving = workflow.submitName("first-save", "Saved first");
+    // The user edits more, then asks for a new project while it writes.
+    edit();
+    expect(await workflow.newProject()).toBe(false);
+    expect(ui().dialog).toMatchObject({ kind: "discard" });
+    const switching = workflow.resolveDiscard("discard");
+    release();
+    expect(await saving).toBe(true);
+    expect(await switching).toBe(true);
+
+    // The library holds the saved snapshot — not the later edit.
+    const [entry] = await base.list();
+    if (entry?.status !== "ok") throw new Error("not saved");
+    const stored = await base.read(entry.summary.id);
+    expect(stored.text).toBe(
+      serializeProject({
+        metadata: { ...entry.summary },
+        document: savedDocument,
+      }),
+    );
+    // The new project is active, clean and unrelated to the saved one.
+    expect(session().metadata.id).not.toBe(entry.summary.id);
+    expect(session().location).toEqual({ kind: "unsaved" });
+    expect(editor().document.children?.length ?? 0).toBeLessThan(
+      savedDocument.children?.length ?? 0,
+    );
+  });
+});

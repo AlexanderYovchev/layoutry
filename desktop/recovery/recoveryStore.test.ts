@@ -212,6 +212,48 @@ describe("recovery store", () => {
     },
   );
 
+  it("reading never follows a file link (link reported by lstat, as Windows does)", async () => {
+    // PROJECT-1.5: the real-symlink variant above needs Developer Mode or
+    // admin rights; this one runs everywhere. A valid record behind the
+    // "link" proves the refusal comes from the link check, not from bad
+    // content. (Listing skips links by Dirent type, which the junction
+    // test below exercises for real: a junction and a file link are both
+    // non-file entries there.)
+    const text = projectText("behind a link");
+    const planted = path.join(dir, `${recordIdOf(OTHER, 1)}.layoutry-recovery`);
+    const store = await storeWith({
+      ...nodeProjectFileOps,
+      lstat: async (filePath) => {
+        const real = await nodeProjectFileOps.lstat(filePath);
+        return filePath === planted
+          ? { size: real.size, isFile: () => false, isSymbolicLink: () => true }
+          : real;
+      },
+    });
+    const plain = await storeWith();
+    await plain.write(headerFor(text, 1, { sessionId: OTHER }), text, {
+      liveSessionIds: new Set([OTHER]),
+    });
+    expect(await plain.read(recordIdOf(OTHER, 1))).toMatchObject({ text });
+    expect(await codeOf(store.read(recordIdOf(OTHER, 1)))).toBe("damaged");
+  });
+
+  it("a planted hard link to an outside file is never read as a record, and removing it leaves the file", async () => {
+    // Hard links need no special rights on NTFS, so this runs for real.
+    const store = await storeWith();
+    const outside = path.join(root, "outside-secret.txt");
+    await fs.writeFile(outside, "secret");
+    await fs.link(
+      outside,
+      path.join(dir, `${recordIdOf(OTHER, 1)}.layoutry-recovery`),
+    );
+    const listed = await store.list();
+    expect(JSON.stringify(listed)).not.toContain("secret");
+    expect(await codeOf(store.read(recordIdOf(OTHER, 1)))).toBe("damaged");
+    await store.remove([recordIdOf(OTHER, 1)]);
+    expect(await fs.readFile(outside, "utf8")).toBe("secret");
+  });
+
   it("never follows a junction named like a record", async () => {
     const store = await storeWith();
     const outside = path.join(root, "outside");

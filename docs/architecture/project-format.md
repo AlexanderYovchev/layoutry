@@ -65,7 +65,11 @@ serves browser storage (PROJECT-1.2, see
 Pure and total. It never throws on bad input, never touches editor
 state, and returns either `{ ok: true, project }` or
 `{ ok: false, error: { code, message, path? } }`. It never returns a
-partially valid document. The pipeline runs in this order:
+partially valid document. Callers that read bytes (the browser import and
+the desktop main process) decode them as strict UTF-8 first: a byte order
+mark is skipped, and bytes that aren't UTF-8 are refused
+(`invalid-encoding`) rather than silently replaced (PROJECT-1.5). The
+pipeline then runs in this order:
 
 1. **Size limit** on the raw text, checked before parsing.
 2. **`JSON.parse`.** Invalid JSON gives `invalid-json`.
@@ -117,27 +121,93 @@ and that 100,000-level nested JSON is rejected without a stack overflow.
 
 ## Versioning and migration policy
 
-- `formatVersion` is an integer. Version 1 is current.
+- `formatVersion` is an integer. Version 1 is current, and the only
+  version so far; its canonical bytes have been stable since PROJECT-1.1
+  (pinned by a file written by the PROJECT-1.1 code, see "Compatibility
+  fixtures" below).
 - **Newer than this build:** refused with `unsupported-version`, and a
   message telling the user to update Layoutry. Loading it best-effort
   would silently drop its new fields on the next save.
 - **Missing, non-integer or below 1:** refused.
-- **Adding a version:**
-  1. Bump `CURRENT_PROJECT_FORMAT_VERSION`.
-  2. Add a `projectFileV{n}Schema`.
-  3. Add a dispatcher case in `migrateToCurrentVersion` that upgrades the
-     previous raw object by exactly one step (v1 → v2 → …), carrying every
-     authored field forward.
+- **Older than this build:** upgraded by `migrateProjectFile`
+  (`utils/projectFormatMigrations.ts`, PROJECT-1.5), one step at a time
+  (v1 → v2 → …), each step a `FormatMigration` in
+  `PROJECT_FORMAT_MIGRATIONS`. The list is empty today.
 
-  A migration may never drop content it does not understand. Dropping
-  support for an old version is an explicit case returning
-  `unsupported-version`.
+### Migration contract
 
-- Any new authored field in `EditorElementNode` requires a format version
-  bump, because the strict schema would otherwise reject documents
-  containing it. The schema's compile-time drift guards
-  (`assertSameType`) make `npm run typecheck` fail until the schema
-  matches the TypeScript model, which forces that decision.
+Every future migration must:
+
+- **carry every authored field forward**, never dropping content it
+  doesn't understand;
+- **be pure and deterministic:** no I/O, no clock, no random ids;
+- **throw** on input it can't upgrade rather than guess;
+- **set `formatVersion`** to its target version (checked).
+
+The dispatcher guarantees the rest, and tests pin it with synthetic
+versions (`projectFormatMigrations.test.ts`):
+
+- the caller's object is never modified (migrations run on a clone);
+- a throwing or sloppy migration fails the load with `migration-failed`
+  and no partial result;
+- a gap in the chain is `unsupported-version`, never a skipped step;
+- the result goes through the target version's strict schema and the
+  integrity check, exactly like a file written in that version.
+
+**Failure is non-destructive by construction.** Loading never writes:
+a failed migration leaves the file, library record or recovery record
+exactly as it was, and the open just reports the error.
+
+**Rollback.** Nothing is rewritten on load, so there is nothing to roll
+back. The original stays on disk until the user saves. A future format 2
+must decide one policy before shipping, because saving writes the new
+format, which older builds refuse ("made by a newer version"). The
+recommendation is that the first save of a migrated native file asks
+whether to update the file or use Save As to keep the old one.
+
+### Adding a version
+
+1. Bump `CURRENT_PROJECT_FORMAT_VERSION`.
+2. Add a `projectFileV{n}Schema` and switch `parseProjectFile` to it.
+3. Append `{ from: n - 1, migrate }` to `PROJECT_FORMAT_MIGRATIONS`.
+4. Add a frozen fixture written by the new version, and keep every
+   older fixture passing.
+
+Dropping support for an old version means raising
+`OLDEST_SUPPORTED_FORMAT_VERSION`; those files then get
+`unsupported-version`.
+
+Any new authored field in `EditorElementNode` requires a format version
+bump, because the strict schema would otherwise reject documents
+containing it. The schema's compile-time drift guards (`assertSameType`)
+make `npm run typecheck` fail until the schema matches the TypeScript
+model, which forces that decision.
+
+### Other versioned data
+
+| Data                         | Version                                                              | Newer version found                               |
+| ---------------------------- | -------------------------------------------------------------------- | ------------------------------------------------- |
+| Browser library (IndexedDB)  | `layoutry-projects` v1                                               | `VersionError` → "reload this page"; never opened |
+| Browser recovery (IndexedDB) | `layoutry-recovery` v1, separate from the library                    | same                                              |
+| Recovery records             | `recoveryVersion` 1 (record only; the text inside is a project file) | "made by a newer version of Layoutry", kept       |
+| Native files                 | the project format above, as UTF-8 bytes                             | refused, file untouched                           |
+
+IndexedDB upgrades only ever add stores (`onupgradeneeded` creates what is
+missing). A blocked upgrade (an old tab still open) is reported, never
+forced.
+
+### Compatibility fixtures
+
+`test/fixtures/persistence/` holds byte-exact data written by earlier
+checkpoints:
+
+- a PROJECT-1.1 `.layoutry` file with every element type;
+- PROJECT-1.2 library records;
+- PROJECT-1.4 browser and desktop recovery records.
+
+Tests check that each still opens, unchanged and without rewriting
+anything. See that folder's README. Never regenerate a fixture; add a new
+one.
 
 ## Applying a loaded project (restoration contract)
 
@@ -214,5 +284,8 @@ Storage is the caller's job:
   only the record, and the text inside is loaded (and migrated) by
   `parseProjectFile` like any file — see
   [project-recovery.md](./project-recovery.md#recovery-record).
+- PROJECT-1.2 tightened project names (no control characters). A file
+  hand-edited to put one in the name opens in PROJECT-1.1 and not later.
+  PROJECT-1.1 had no way to rename, so no file it wrote is affected.
 - Inline `data:` URLs count toward the 16 Mi limit. Very large embedded
   images will need asset storage later.

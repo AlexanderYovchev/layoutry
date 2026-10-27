@@ -49,7 +49,13 @@ const crashedProject: LayoutryProject = {
   document: pageWith({ id: "heading-c", tag: "h1", text: "Unsaved headline" }),
 };
 
-function setup(options: { desktop?: boolean } = {}) {
+function setup(
+  options: {
+    desktop?: boolean;
+    /** Snapshot preparation takes this long, like the worker on a big project. */
+    prepareDelayMs?: number;
+  } = {},
+) {
   const factory = new IDBFactory();
   const locks = createMemoryRecoveryLocks();
   const storageFor = (sessionId: string): RecoveryStorage =>
@@ -62,8 +68,29 @@ function setup(options: { desktop?: boolean } = {}) {
     getFactory: () => factory,
   });
   const desktop = options.desktop ? createFakeDesktopProjectFiles() : null;
+  const ownStorage = storageFor(OWN);
+  let removeFailures = 0;
   const recovery = createRecoveryCoordinator({
-    storage: storageFor(OWN),
+    prepareSnapshot:
+      options.prepareDelayMs === undefined
+        ? undefined
+        : async (project) => {
+            await new Promise((resolve) =>
+              setTimeout(resolve, options.prepareDelayMs),
+            );
+            const text = serializeProject(project);
+            return { text, sha256: await sha256Hex(text) };
+          },
+    storage: {
+      ...ownStorage,
+      remove(recordIds) {
+        if (removeFailures > 0) {
+          removeFailures -= 1;
+          return Promise.reject(new Error("remove failed"));
+        }
+        return ownStorage.remove(recordIds);
+      },
+    },
     findLibraryProject: (id) =>
       repository.read(id).then(
         (stored) => ({
@@ -135,6 +162,9 @@ function setup(options: { desktop?: boolean } = {}) {
     crashedTab,
     allRecordIds,
     locks,
+    failNextRemove() {
+      removeFailures += 1;
+    },
   };
 }
 
@@ -365,5 +395,55 @@ describe("desktop startup", () => {
 
     workflow.keepRecoveryForLater();
     await vi.waitFor(() => expect(session().metadata.id).toBe("file-1"));
+  });
+});
+
+describe("closing the desktop window (PROJECT-1.5)", () => {
+  it("a clean close removes this session's leftover copies, so they are never offered again", async () => {
+    const { workflow, recovery, desktop, allRecordIds, failNextRemove, locks } =
+      setup({ desktop: true });
+    if (!desktop) throw new Error("no desktop");
+    const ownLock = `${SESSION_LOCK_PREFIX}${OWN}`;
+    /** What a later session would be offered if this one ended now. */
+    async function leftForNextSession() {
+      locks.drop(ownLock);
+      const ids = await allRecordIds();
+      await locks.locks.tryHold(ownLock);
+      return ids;
+    }
+    await workflow.startup();
+    editor().insertElement("page-root", createElementNode("paragraph"));
+    await recovery.flush();
+    expect(await leftForNextSession()).toEqual([recoveryRecordId(OWN, 1)]);
+    // Saved, but removing the now-redundant copy fails this time.
+    failNextRemove();
+    editor().markDocumentPersisted(editor().document);
+    await recovery.settle();
+    expect(isDirty()).toBe(false);
+    expect(await leftForNextSession()).toEqual([recoveryRecordId(OWN, 1)]);
+
+    await workflow.requestClose();
+    expect(desktop.closeResponses).toEqual([true]);
+    expect(await leftForNextSession()).toEqual([]);
+  });
+});
+
+describe("saving restored work at once (PROJECT-1.5)", () => {
+  it("leaves no recovery copy behind when Save beats the protecting snapshot", async () => {
+    const { workflow, crashedTab, recovery, desktop, allRecordIds, locks } =
+      setup({ desktop: true, prepareDelayMs: 50 });
+    if (!desktop) throw new Error("no desktop");
+    await crashedTab(crashedProject);
+    await workflow.startup();
+    const group = recoveryDialog()!.groups[0];
+    await workflow.restoreRecovery(group.key, group.versions[0].recordId);
+    desktop.script.saveAs = "Recovered.layoutry";
+    expect(await workflow.save()).toBe(true);
+    expect(isDirty()).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await recovery.settle();
+    await recovery.settle();
+    locks.drop(`${SESSION_LOCK_PREFIX}${OWN}`);
+    expect(await allRecordIds()).toEqual([]);
   });
 });

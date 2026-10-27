@@ -501,7 +501,9 @@ export function createProjectWorkflow(
       const dialog = ui().dialog;
       if (dialog?.kind === "discard" && dialog.pending.kind === "close") return;
       if (!hasUnsavedChanges()) {
-        await recovery?.shutdown({ discard: false });
+        // Nothing is unsaved, so any copy this session still has (a
+        // cleanup that failed earlier) is redundant: never offer it again.
+        await recovery?.shutdown({ discard: true });
         desktop.respondToCloseRequest(true);
         return;
       }

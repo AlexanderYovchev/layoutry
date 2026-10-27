@@ -42,3 +42,5 @@ Each ADR is a numbered Markdown file, `ADR-NNNN-short-title.md`, containing:
   through capability-token IPC — Accepted
 - [ADR-0006](./ADR-0006-recovery-snapshots.md) — Recovery snapshots
   separate from saves — Accepted
+- [ADR-0007](./ADR-0007-persistence-stabilization.md) — Persistence
+  stabilization: snapshot worker and migration chain — Accepted

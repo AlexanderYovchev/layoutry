@@ -50,7 +50,12 @@ export function useProjectKeyboardShortcuts(
       if (event.defaultPrevented) return;
       const shortcut = matchProjectShortcut(event);
       if (!shortcut) return;
-      if (document.querySelector("dialog[open]")) return;
+      if (document.querySelector("dialog[open]")) {
+        // Not the browser's "Save page as" over a Layoutry dialog either.
+        if (shortcut === "onSave" || shortcut === "onSaveAs")
+          event.preventDefault();
+        return;
+      }
       event.preventDefault();
       handlers[shortcut]();
     }

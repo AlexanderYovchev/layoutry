@@ -36,6 +36,7 @@ export type ProjectFileErrorCode =
   | "not-a-file"
   | "symbolic-link"
   | "invalid-path"
+  | "invalid-encoding"
   | "modified-externally"
   | "missing"
   | "verification-failed"
@@ -116,6 +117,7 @@ function fileError(
     "not-a-file": `“${fileName}” isn't a regular file.`,
     "symbolic-link": `“${fileName}” is a shortcut link (symbolic link or junction). Open or save the real file instead.`,
     "invalid-path": `“${fileName}” isn't a valid Layoutry project file location.`,
+    "invalid-encoding": `“${fileName}” isn't a Layoutry project: it isn't UTF-8 text. It may be damaged or be another kind of file.`,
     "modified-externally": `“${fileName}” was changed outside Layoutry after you opened or saved it.`,
     missing: `“${fileName}” was moved or deleted outside Layoutry after you opened or saved it.`,
     "verification-failed": `“${fileName}” was saved, but reading it back didn't match. Save again, or use Save As to keep a separate copy.`,
@@ -240,7 +242,23 @@ export async function readProjectFile(
   // The file may have grown between lstat and read.
   if (bytes.length > MAX_PROJECT_FILE_BYTES)
     throw fileError("too-large", fileName);
-  return { text: bytes.toString("utf8"), fingerprint: fingerprintOf(bytes) };
+  return {
+    text: decodeProjectText(bytes, fileName),
+    fingerprint: fingerprintOf(bytes),
+  };
+}
+
+/**
+ * Strict UTF-8, the same as the browser import (PROJECT-1.5): a byte order
+ * mark is skipped, but bytes that aren't UTF-8 are refused rather than
+ * replaced with U+FFFD, which would change the file on its next save.
+ */
+function decodeProjectText(bytes: Buffer, fileName: string): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw fileError("invalid-encoding", fileName);
+  }
 }
 
 /**
@@ -281,18 +299,31 @@ export async function writeProjectFileAtomically(
   if (bytes.length > MAX_PROJECT_FILE_BYTES)
     throw fileError("too-large", fileName);
 
-  // 1. The destination must still be the version we expect.
-  const before = await currentState(filePath, ops);
-  if (expectation.kind === "unchanged") {
-    if (before.kind === "missing") throw fileError("missing", fileName);
-    if (before.fingerprint.sha256 !== expectation.fingerprint.sha256)
-      throw fileError("modified-externally", fileName);
-  }
+  // 1. The destination must still be the version we expect (and never a
+  //    link or a folder). Checked before any work, and again once the new
+  //    content is durable, immediately before the replace (PROJECT-1.5):
+  //    that second check shrinks the window in which an outside change
+  //    could slip in unnoticed from the whole temp-file write and flush to
+  //    one read. It can't close it: Windows offers no compare-and-swap
+  //    rename (see desktop-files.md).
+  const checkDestination = async () => {
+    const current = await currentState(filePath, ops);
+    if (expectation.kind === "unchanged") {
+      if (current.kind === "missing") throw fileError("missing", fileName);
+      if (current.fingerprint.sha256 !== expectation.fingerprint.sha256)
+        throw fileError("modified-externally", fileName);
+    }
+  };
+  await checkDestination();
 
   return replaceFileAtomically(
     filePath,
     bytes,
-    { tempExtension: ".layoutry-tmp", maxBytes: MAX_PROJECT_FILE_BYTES },
+    {
+      tempExtension: ".layoutry-tmp",
+      maxBytes: MAX_PROJECT_FILE_BYTES,
+      beforeReplace: checkDestination,
+    },
     ops,
     hooks,
   );
@@ -306,7 +337,12 @@ export async function writeProjectFileAtomically(
 export async function replaceFileAtomically(
   filePath: string,
   bytes: Buffer,
-  options: { tempExtension: string; maxBytes: number },
+  options: {
+    tempExtension: string;
+    maxBytes: number;
+    /** Runs once the temporary file is durable, right before the replace; throwing stops it. */
+    beforeReplace?: () => Promise<void>;
+  },
   ops: ProjectFileOps = nodeProjectFileOps,
   hooks: WriteHooks = {},
 ): Promise<FileFingerprint> {
@@ -346,6 +382,7 @@ export async function replaceFileAtomically(
     } catch (error) {
       throw fromErrno(error, fileName, "write");
     }
+    await options.beforeReplace?.();
 
     // 3. Replace. Retried briefly: antivirus and search indexers hold new
     //    files open for a moment. Never unlink-then-rename.

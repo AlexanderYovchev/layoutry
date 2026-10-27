@@ -22,10 +22,10 @@ describe("loadProjectFromFile", () => {
   it("refuses an oversized file before reading it", async () => {
     let read = false;
     const huge = new Blob(["x".repeat(400)]);
-    Object.defineProperty(huge, "text", {
+    Object.defineProperty(huge, "arrayBuffer", {
       value: () => {
         read = true;
-        return Promise.resolve("");
+        return Promise.resolve(new ArrayBuffer(0));
       },
     });
     const result = await loadProjectFromFile(huge, {
@@ -49,12 +49,44 @@ describe("loadProjectFromFile", () => {
 
   it("reports a file that can't be read", async () => {
     const broken = new Blob(["{}"]);
-    Object.defineProperty(broken, "text", {
+    Object.defineProperty(broken, "arrayBuffer", {
       value: () => Promise.reject(new DOMException("gone", "NotReadableError")),
     });
     const result = await loadProjectFromFile(broken);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("unreadable");
+  });
+
+  it("skips a UTF-8 byte order mark (a file re-saved by Notepad)", async () => {
+    const result = await loadProjectFromFile(
+      new Blob([new Uint8Array([0xef, 0xbb, 0xbf]), serializeProject(project)]),
+    );
+    expect(result).toEqual({ ok: true, project });
+  });
+
+  it("refuses bytes that aren't UTF-8 instead of silently replacing them", async () => {
+    const text = serializeProject(project);
+    const bytes = new TextEncoder().encode(text);
+    // "Hello" → "H" + 0xE9 + "llo": a Latin-1 é, invalid as UTF-8.
+    bytes[text.indexOf("Hello") + 1] = 0xe9;
+    const result = await loadProjectFromFile(new Blob([bytes]));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("invalid-encoding");
+  });
+
+  it("keeps astral characters and escaped lone surrogates intact", async () => {
+    const unusual = {
+      ...project,
+      document: pageWith({
+        id: "heading-1",
+        tag: "h1",
+        text: `😀 ${String.fromCharCode(0xd800)} é`,
+      }),
+    };
+    const result = await loadProjectFromFile(
+      new Blob([serializeProject(unusual)]),
+    );
+    expect(result).toEqual({ ok: true, project: unusual });
   });
 
   it.each([

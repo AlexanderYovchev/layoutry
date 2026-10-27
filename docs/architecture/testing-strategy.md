@@ -11,6 +11,10 @@
   `test/setup.ts`, the Vitest + jest-dom setup loaded via
   `vitest.config.ts`). Configuration that applies across the whole test
   suite belongs here, not duplicated per feature.
+- **Shared fixtures** used by both `src/` and `desktop/` tests live under
+  `test/fixtures/`. `test/fixtures/persistence/` holds byte-exact data
+  written by earlier checkpoints (PROJECT-1.5). It is never regenerated or
+  reformatted (`.gitattributes` and `.prettierignore` protect it).
 - **End-to-end tests** (Playwright) live under `e2e/`, never colocated with
   source. E2E specs exercise the built application through a real browser
   and belong together regardless of which feature they touch.

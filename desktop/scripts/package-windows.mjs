@@ -119,7 +119,14 @@ await cp(mainProcessRoot, path.join(STAGED_APP_DIR, "desktop-dist"), {
     !source.endsWith(".map") &&
     (path.extname(source) === "" || source.endsWith(".js")),
 });
-await cp(exportRoot, path.join(STAGED_APP_DIR, "out"), { recursive: true });
+// Turbopack also emits two unused byproducts for the recovery snapshot
+// worker (PROJECT-1.5): a copy of the worker's .ts source under
+// static/media, and an empty .map. The worker itself runs from compiled
+// chunks; neither file is ever loaded, and neither may ship.
+await cp(exportRoot, path.join(STAGED_APP_DIR, "out"), {
+  recursive: true,
+  filter: (source) => !/\.(map|tsx?)$/.test(source),
+});
 // Tester documents, shipped next to Layoutry.exe (outside app.asar), with
 // the version filled in and Windows line endings for Notepad.
 for (const { source, name } of TESTER_DOCUMENTS) {

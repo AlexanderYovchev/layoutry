@@ -30,6 +30,9 @@ the full authority order.
 - [project-recovery.md](./project-recovery.md) — automatic recovery
   snapshots: scheduling, browser and desktop storage, retention, the
   recovery dialog, Save integration and crash-recovery limits.
+- [project-persistence.md](./project-persistence.md) — the persistence
+  subsystem on one page (PROJECT-1.5): architecture, guarantees, known
+  limits, dirty state, security boundaries, alpha-tester guidance.
 
 ## Related documentation
 

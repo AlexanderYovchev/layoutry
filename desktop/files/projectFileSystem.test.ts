@@ -53,6 +53,28 @@ function errno(code: string): Error {
 }
 
 describe("readProjectFile", () => {
+  it("skips a UTF-8 byte order mark but fingerprints the bytes on disk", async () => {
+    const bytes = Buffer.concat([
+      Buffer.from([0xef, 0xbb, 0xbf]),
+      Buffer.from(ORIGINAL),
+    ]);
+    await fs.writeFile(file, bytes);
+    const read = await readProjectFile(file);
+    expect(read.text).toBe(ORIGINAL);
+    expect(read.fingerprint).toEqual(fingerprintOf(bytes));
+  });
+
+  it("refuses bytes that aren't UTF-8 instead of replacing them with U+FFFD", async () => {
+    const bytes = Buffer.from(
+      ORIGINAL.replace("original", "origénal"),
+      "latin1",
+    );
+    await fs.writeFile(file, bytes);
+    const error = await errorOf(readProjectFile(file));
+    expect(error.code).toBe("invalid-encoding");
+    expect(error.message).not.toContain(dir);
+  });
+
   it("reads the text and fingerprints the content", async () => {
     await fs.writeFile(file, ORIGINAL);
     const read = await readProjectFile(file);
@@ -159,6 +181,71 @@ describe("writeProjectFileAtomically", () => {
       }),
     );
     expect(error.code).toBe("modified-externally");
+  });
+
+  it("re-checks right before the replace: a change made while the new version was being written still wins", async () => {
+    // PROJECT-1.5: another program saves the file after the first check,
+    // while Layoutry is still writing and flushing its temporary file.
+    await fs.writeFile(file, ORIGINAL);
+    const ops: ProjectFileOps = {
+      ...nodeProjectFileOps,
+      createExclusive: async (tempPath) => {
+        const real = await nodeProjectFileOps.createExclusive(tempPath);
+        return {
+          ...real,
+          sync: async () => {
+            await real.sync();
+            await fs.writeFile(file, "saved by another program meanwhile");
+          },
+        };
+      },
+    };
+    const error = await errorOf(
+      writeProjectFileAtomically(
+        file,
+        UPDATED,
+        {
+          kind: "unchanged",
+          fingerprint: fingerprintOf(Buffer.from(ORIGINAL)),
+        },
+        ops,
+      ),
+    );
+    expect(error.code).toBe("modified-externally");
+    expect(await fs.readFile(file, "utf8")).toBe(
+      "saved by another program meanwhile",
+    );
+    await expectOnlyProjectFile();
+  });
+
+  it("re-checks right before the replace: a file deleted meanwhile is reported, not recreated", async () => {
+    await fs.writeFile(file, ORIGINAL);
+    const ops: ProjectFileOps = {
+      ...nodeProjectFileOps,
+      createExclusive: async (tempPath) => {
+        const real = await nodeProjectFileOps.createExclusive(tempPath);
+        return {
+          ...real,
+          close: async () => {
+            await real.close();
+            await fs.unlink(file);
+          },
+        };
+      },
+    };
+    const error = await errorOf(
+      writeProjectFileAtomically(
+        file,
+        UPDATED,
+        {
+          kind: "unchanged",
+          fingerprint: fingerprintOf(Buffer.from(ORIGINAL)),
+        },
+        ops,
+      ),
+    );
+    expect(error.code).toBe("missing");
+    expect(await fs.readdir(dir)).toEqual([]);
   });
 
   it("reports a file deleted outside Layoutry instead of recreating it silently", async () => {
