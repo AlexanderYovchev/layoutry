@@ -5,7 +5,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import {
   primaryButtonClass,
   secondaryButtonClass,
-} from "@/features/project/components/projectDialogButtons";
+} from "@/components/ui/dialogButtons";
 import type { ProjectLibraryState } from "@/features/project/stores/useProjectStore";
 
 const iconButtonClass =

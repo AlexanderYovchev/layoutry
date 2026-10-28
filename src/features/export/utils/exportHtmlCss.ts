@@ -25,7 +25,7 @@ const SCRIPT_MEDIA_TYPE = "text/javascript; charset=utf-8";
  */
 export function exportHtmlCss(document: EditorElementNode, options: HtmlCssExportOptions): HtmlCssExportResult {
   const built = buildExportDocument(document);
-  if (!built.ok) return { ok: false, files: [], diagnostics: built.diagnostics };
+  if (!built.ok) return { ok: false, files: [], diagnostics: built.diagnostics, assets: [] };
 
   const diagnostics = [...built.document.diagnostics];
   const css = printExportStylesheet(built.document);
@@ -55,5 +55,5 @@ export function exportHtmlCss(document: EditorElementNode, options: HtmlCssExpor
   }
 
   const ok = !diagnostics.some((diagnostic) => diagnostic.severity === "error");
-  return { ok, files: ok ? files : [], diagnostics };
+  return { ok, files: ok ? files : [], diagnostics, assets: ok ? built.document.assets : [] };
 }

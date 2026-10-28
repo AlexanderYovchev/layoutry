@@ -322,6 +322,7 @@ test("the recovery bridge only accepts its own validated calls", async () => {
     [
       "apiVersion",
       "beginRecoverySession",
+      "chooseExportDestination",
       "chooseSaveLocation",
       "discardRecovery",
       "listRecovery",
@@ -333,6 +334,7 @@ test("the recovery bridge only accepts its own validated calls", async () => {
       "respondToCloseRequest",
       "setUnsavedChanges",
       "takePendingProjectFile",
+      "writeExportFiles",
       "writeProjectFile",
       "writeRecoverySnapshot",
     ].sort(),

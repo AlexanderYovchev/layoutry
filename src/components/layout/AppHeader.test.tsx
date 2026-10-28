@@ -388,6 +388,43 @@ describe("AppHeader", () => {
       expect(within(menu).queryByRole("menuitem", { name: /Project Settings/ })).not.toBeInTheDocument();
     });
 
+    it("offers Export Code… apart from Save and Download Project, and the header's Export button opens the same thing (EXPORT-1.4)", async () => {
+      const user = userEvent.setup();
+      const onExportCode = vi.fn();
+      const commands = fileCommands({ onExportCode });
+      renderWithProject(commands);
+
+      await user.click(screen.getByRole("menuitem", { name: "File" }));
+      const menu = screen.getByRole("menu", { name: "File" });
+      const labels = within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent);
+      // Last, in its own group after the project's own Download Project.
+      expect(labels.at(-1)).toBe("Export Code…");
+      expect(labels.at(-2)).toBe("Download Project");
+      await user.click(within(menu).getByRole("menuitem", { name: "Export Code…" }));
+      expect(onExportCode).toHaveBeenCalledTimes(1);
+      expect(commands.onSave).not.toHaveBeenCalled();
+      expect(commands.onDownload).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("button", { name: "Export Code" }));
+      expect(onExportCode).toHaveBeenCalledTimes(2);
+    });
+
+    it("offers Export Code… in the desktop File menu too", async () => {
+      const user = userEvent.setup();
+      const onExportCode = vi.fn();
+      renderWithProject(fileCommands({ mode: "desktop", onExportCode }));
+      await user.click(screen.getByRole("menuitem", { name: "File" }));
+      await user.click(screen.getByRole("menuitem", { name: "Export Code…" }));
+      expect(onExportCode).toHaveBeenCalledTimes(1);
+    });
+
+    it("shows no Export button where export isn't wired in", () => {
+      renderWithProject(fileCommands());
+      expect(screen.queryByRole("button", { name: "Export Code" })).not.toBeInTheDocument();
+    });
+
     it("lists recent projects and opens the chosen one", async () => {
       const user = userEvent.setup();
       const commands = fileCommands({

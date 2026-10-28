@@ -61,6 +61,12 @@ export interface FileMenuCommands {
   onRename: () => void;
   onImport: () => void;
   onDownload: () => void;
+  /**
+   * EXPORT-1.4 — opens the code export dialog (HTML/CSS source, not the
+   * editable project). Absent where export isn't wired in: no menu item
+   * and no header button.
+   */
+  onExportCode?: () => void;
 }
 
 interface BuildApplicationMenusOptions {
@@ -74,6 +80,20 @@ interface BuildApplicationMenusOptions {
 
 function separator(id: string): MenuItem {
   return { type: "separator", id };
+}
+
+/** Kept in its own group, apart from Save and Download Project: it exports code, not the project. */
+function exportCodeItems(commands: FileMenuCommands | undefined): MenuItem[] {
+  if (!commands?.onExportCode) return [];
+  return [
+    separator("file-sep-export"),
+    {
+      type: "command",
+      id: "file-export-code",
+      label: "Export Code…",
+      onSelect: commands.onExportCode,
+    },
+  ];
 }
 
 function desktopFileMenu(commands: FileMenuCommands): TopLevelMenu {
@@ -135,6 +155,7 @@ function desktopFileMenu(commands: FileMenuCommands): TopLevelMenu {
         label: "Rename Project…",
         onSelect: commands.onRename,
       },
+      ...exportCodeItems(commands),
     ],
   };
 }
@@ -230,6 +251,7 @@ function fileMenu(commands: FileMenuCommands | undefined): TopLevelMenu {
         disabled: !commands,
         onSelect: commands?.onDownload,
       },
+      ...exportCodeItems(commands),
     ],
   };
 }

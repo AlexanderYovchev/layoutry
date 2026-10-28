@@ -45,6 +45,14 @@ function setup() {
     })),
     discard: vi.fn(async () => ({ status: "ok" as const, removed: 0 })),
   };
+  const exportFiles = {
+    chooseDestination: vi.fn(async () => ({ status: "cancelled" as const })),
+    write: vi.fn(async () => ({
+      status: "saved" as const,
+      label: "Site",
+      fileNames: ["index.html"],
+    })),
+  };
   registerDesktopIpc({
     ipcMain: {
       handle: (channel, handler) => void handlers.set(channel, handler),
@@ -53,6 +61,7 @@ function setup() {
     files,
     close,
     recovery,
+    exportFiles,
   });
   const trusted: DesktopIpcEvent = {
     sender: webContents,
@@ -72,6 +81,7 @@ function setup() {
     files,
     close,
     recovery,
+    exportFiles,
     trusted,
     call,
     webContents,
@@ -80,12 +90,44 @@ function setup() {
 }
 
 describe("desktop IPC surface", () => {
-  it("handles exactly the twelve allowlisted channels", () => {
+  it("handles exactly the fourteen allowlisted channels", () => {
     const { handlers } = setup();
     expect([...handlers.keys()].sort()).toEqual(
       Object.values(INVOKE_CHANNELS).sort(),
     );
-    expect(handlers.size).toBe(12);
+    expect(handlers.size).toBe(14);
+  });
+
+  it("routes export calls with the window id as the destination owner, from the top frame only", async () => {
+    const { call, trusted, exportFiles, webContents } = setup();
+    await call(INVOKE_CHANNELS.chooseExportDestination, trusted, {
+      mode: "separate",
+      suggestedName: "Site",
+    });
+    expect(exportFiles.chooseDestination).toHaveBeenCalledWith(3, {
+      mode: "separate",
+      suggestedName: "Site",
+    });
+    await call(INVOKE_CHANNELS.writeExportFiles, trusted, { token: "t" });
+    expect(exportFiles.write).toHaveBeenCalledWith(3, { token: "t" });
+
+    const subframe = { url: "app://layoutry/" };
+    for (const channel of [
+      INVOKE_CHANNELS.chooseExportDestination,
+      INVOKE_CHANNELS.writeExportFiles,
+    ])
+      await expect(
+        call(channel, { sender: webContents, senderFrame: subframe }, {}),
+      ).rejects.toThrow("not allowed");
+    const otherWindow = { id: 9, mainFrame: subframe };
+    await expect(
+      call(
+        INVOKE_CHANNELS.writeExportFiles,
+        { sender: otherWindow, senderFrame: subframe },
+        {},
+      ),
+    ).rejects.toThrow("not allowed");
+    expect(exportFiles.write).toHaveBeenCalledTimes(1);
   });
 
   it("routes recovery calls with the window id as the session owner", async () => {
@@ -255,6 +297,8 @@ describe("preload", () => {
         "listRecovery",
         "readRecovery",
         "discardRecovery",
+        "chooseExportDestination",
+        "writeExportFiles",
         "onCloseRequested",
         "onPendingProjectFile",
       ].sort(),
@@ -302,6 +346,24 @@ describe("preload", () => {
       text: "text",
       force: true,
     });
+
+    const writeExportFiles = Reflect.get(api, "writeExportFiles");
+    // Only {path, content} per file crosses; a path-like extra is dropped.
+    await writeExportFiles(
+      "t",
+      [{ path: "index.html", content: "<p>", folder: "C:\Windows" }],
+      false,
+    );
+    expect(invoke).toHaveBeenLastCalledWith(INVOKE_CHANNELS.writeExportFiles, {
+      token: "t",
+      files: [{ path: "index.html", content: "<p>" }],
+      overwrite: false,
+    });
+    expect(() => writeExportFiles("t", "index.html", false)).toThrow(TypeError);
+    expect(() => writeExportFiles("t", [{ path: 1, content: "" }], false)).toThrow(TypeError);
+    expect(() => writeExportFiles("t", [], "yes")).toThrow(TypeError);
+    const chooseExportDestination = Reflect.get(api, "chooseExportDestination");
+    expect(() => chooseExportDestination({ mode: "separate" }, "Site")).toThrow(TypeError);
     vi.doUnmock("electron");
   });
 });

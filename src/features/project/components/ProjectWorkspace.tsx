@@ -7,6 +7,7 @@ import {
   useState,
   useSyncExternalStore,
   type ChangeEvent,
+  type ReactNode,
 } from "react";
 import type { FileMenuCommands } from "@/components/layout/applicationMenus";
 import type { ProjectIdentityInfo } from "@/components/layout/ProjectIdentity";
@@ -54,7 +55,7 @@ import {
   PROJECT_FILE_EXTENSION,
   PROJECT_FILE_MEDIA_TYPE,
 } from "@/features/project/types/projectFile";
-import { downloadTextFile } from "@/features/project/utils/downloadTextFile";
+import { downloadTextFile } from "@/lib/downloadTextFile";
 import {
   createWorkerSnapshotPreparer,
   type WorkerSnapshotPreparer,
@@ -83,6 +84,18 @@ interface ProjectWorkspaceProps {
    * (PROJECT-1.5), on the page otherwise.
    */
   createSnapshotPreparer?: () => WorkerSnapshotPreparer;
+  /**
+   * EXPORT-1.4 — code export, composed by the app: the export feature
+   * already depends on this one (project limits), so this feature never
+   * imports it. Adds File › Export Code… and the header's Export button.
+   */
+  codeExport?: CodeExportIntegration;
+}
+
+export interface CodeExportIntegration {
+  onOpen: () => void;
+  /** Rendered with the project overlays; the project name becomes the exported page's title. */
+  renderDialog: (projectName: string) => ReactNode;
 }
 
 function defaultRecoveryStorage(desktop: boolean): RecoveryStorage | null {
@@ -112,6 +125,7 @@ export function ProjectWorkspace({
   createRecoveryStorage = defaultRecoveryStorage,
   recoveryTiming,
   createSnapshotPreparer = createWorkerSnapshotPreparer,
+  codeExport,
 }: ProjectWorkspaceProps) {
   const [{ workflow, desktop, recovery }] = useState(() => {
     const desktopFiles = createDesktopFiles();
@@ -240,6 +254,7 @@ export function ProjectWorkspace({
     onRename: () => workflow.rename(),
     onImport: chooseImportFile,
     onDownload: () => void workflow.download(),
+    onExportCode: codeExport?.onOpen,
   };
 
   const project: ProjectIdentityInfo = {
@@ -372,6 +387,7 @@ export function ProjectWorkspace({
         onClose={() => closeDialogOfKind("error")}
       />
       <ProjectToast />
+      {codeExport?.renderDialog(metadata.name)}
     </>
   );
 

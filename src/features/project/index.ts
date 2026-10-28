@@ -49,3 +49,4 @@ export {
   normalizeProjectName,
   MAX_PROJECT_NAME_LENGTH,
 } from "@/features/project/rules/projectName";
+export type { CodeExportIntegration } from "@/features/project/components/ProjectWorkspace";

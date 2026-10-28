@@ -12,6 +12,7 @@ import path from "node:path";
 import { FileCapabilityRegistry } from "../files/fileCapabilities";
 import { projectFilesFromArguments } from "../files/launchArguments";
 import { createProjectFileService } from "../files/projectFileService";
+import { createExportFileService } from "../export/exportFileService";
 import { EVENT_CHANNELS } from "../ipc/channels";
 import { registerDesktopIpc } from "../ipc/registerDesktopIpc";
 import { APP_ENTRY_URL } from "../protocol/appOrigin";
@@ -92,6 +93,34 @@ const projectFiles = createProjectFileService({
       properties: ["showOverwriteConfirmation"],
     });
     return result.canceled ? null : (result.filePath ?? null);
+  },
+});
+
+// EXPORT-1.4: generated HTML/CSS/JS, saved through native dialogs. Its own
+// service and tokens: nothing here can write a .layoutry project.
+const exportFiles = createExportFileService({
+  defaultFolder: () => app.getPath("documents"),
+  showSaveHtmlDialog: async (defaultPath) => {
+    const window = mainWindow;
+    if (!window) return null;
+    const result = await dialog.showSaveDialog(window, {
+      title: "Export HTML File",
+      defaultPath,
+      filters: [{ name: "HTML Page", extensions: ["html", "htm"] }],
+      properties: ["showOverwriteConfirmation"],
+    });
+    return result.canceled ? null : (result.filePath ?? null);
+  },
+  showFolderDialog: async (defaultFolder) => {
+    const window = mainWindow;
+    if (!window) return null;
+    const result = await dialog.showOpenDialog(window, {
+      title: "Choose Export Folder",
+      buttonLabel: "Export Here",
+      defaultPath: defaultFolder,
+      properties: ["openDirectory", "createDirectory"],
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
   },
 });
 
@@ -194,6 +223,7 @@ function createMainWindow(): BrowserWindow {
   window.webContents.on("render-process-gone", () => {
     coordinator.pageLost();
     fileCapabilities.revokeOwner(ownerId);
+    exportFiles.revokeOwner(ownerId);
     // Its recovery snapshots are now orphaned: offered at the next start.
     recoveryService?.endSession(ownerId);
   });
@@ -201,6 +231,7 @@ function createMainWindow(): BrowserWindow {
   window.on("session-end", closeGuard.allowClose);
   window.on("closed", () => {
     fileCapabilities.revokeOwner(ownerId);
+    exportFiles.revokeOwner(ownerId);
     recoveryService?.endSession(ownerId);
     if (mainWindow === window) mainWindow = null;
     if (closeCoordinator === coordinator) closeCoordinator = null;
@@ -276,6 +307,7 @@ function startLayoutry(): void {
           respond: (close) => closeCoordinator?.respond(close),
         },
         recovery,
+        exportFiles,
       });
       // Files named on Layoutry's own command line open once the editor asks.
       queueProjectFilesFrom(process.argv, process.cwd());

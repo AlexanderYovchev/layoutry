@@ -1,5 +1,5 @@
-import { ProjectWorkspace } from "@/features/project";
+import { LayoutryEditor } from "@/app/LayoutryEditor";
 
 export default function Home() {
-  return <ProjectWorkspace />;
+  return <LayoutryEditor />;
 }

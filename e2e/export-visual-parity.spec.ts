@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
-import { buildExportDocument } from "../src/features/export";
+import { buildExportDocument } from "../src/features/export/utils/buildExportDocument";
 import type { EditorElementNode } from "../src/features/editor/types/document";
 import { catalogDocument, VISUAL_PARITY_DOCUMENTS } from "../test/fixtures/export/exportFixtureDocuments";
 import { comparePngs, compareMeasurements, exportElementKeys, measureCanvas, measureExport } from "./support/exportParity";

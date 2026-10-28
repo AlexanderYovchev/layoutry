@@ -37,6 +37,10 @@ the full authority order.
   (EXPORT-1.2): shared Canvas styling API, export IR, HTML/CSS generation
   rules, defaults and reset policy, security policy, visual parity testing,
   the interaction runtime (EXPORT-1.3) and known limitations.
+- [export-ui.md](./export-ui.md) — the Export Code dialog (EXPORT-1.4):
+  snapshot and stale handling, diagnostics, code preview, copy, browser
+  downloads, native desktop saving and its security, entitlement boundary,
+  offline limits and large-document performance.
 
 ## Related documentation
 

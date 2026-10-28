@@ -1,4 +1,4 @@
-import { Eye, Redo2, SquarePen, Undo2, UserRound } from "lucide-react";
+import { CodeXml, Eye, Redo2, SquarePen, Undo2, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/Tooltip";
 
@@ -34,9 +34,15 @@ export interface HistoryControl {
 interface GlobalActionsProps {
   historyControl: HistoryControl;
   previewControl: PreviewControl;
+  /**
+   * EXPORT-1.4 — the same File › Export Code… callback (FileMenuCommands),
+   * so the header button and the menu item open one dialog. No button
+   * when absent.
+   */
+  onExportCode?: () => void;
 }
 
-export function GlobalActions({ historyControl, previewControl }: GlobalActionsProps) {
+export function GlobalActions({ historyControl, previewControl, onExportCode }: GlobalActionsProps) {
   const isPreview = previewControl.mode === "preview";
 
   return (
@@ -67,6 +73,20 @@ export function GlobalActions({ historyControl, previewControl }: GlobalActionsP
       </Tooltip>
 
       <span aria-hidden="true" className="mx-1.5 h-5 w-px bg-line" />
+
+      {onExportCode && (
+        <Tooltip label="Export HTML and CSS code">
+          <button
+            type="button"
+            onClick={onExportCode}
+            aria-label="Export Code"
+            className="mr-1 flex h-9 items-center gap-1.5 rounded-control border border-line bg-surface-panel px-3 text-sm font-semibold text-fg-primary transition-colors duration-150 ease-studio hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:bg-surface-selected max-lg:px-2.5"
+          >
+            <CodeXml aria-hidden="true" className="size-3.5" />
+            <span className="max-lg:sr-only">Export</span>
+          </button>
+        </Tooltip>
+      )}
 
       <Tooltip
         align="end"

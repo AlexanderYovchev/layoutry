@@ -48,3 +48,6 @@ Each ADR is a numbered Markdown file, `ADR-NNNN-short-title.md`, containing:
   the Canvas's styling rules through one IR — Accepted
 - [ADR-0009](./ADR-0009-export-interaction-runtime.md) — Exported
   interactions replay Preview's generic executor — Accepted
+- [ADR-0010](./ADR-0010-export-ui-and-native-save.md) — Export UI on the
+  existing engine, native saving through its own capability channel —
+  Accepted

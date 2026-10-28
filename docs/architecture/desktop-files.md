@@ -43,7 +43,9 @@ Editor ─► project workflow / commands ─► serializeProject / parseProject
   - Tokens are revoked when the window closes or its renderer crashes.
 - **The bridge is fixed.** `window.layoutryDesktop` is a frozen object of
   nine functions plus `apiVersion` (fourteen since PROJECT-1.4 added the
-  five recovery functions — see [project-recovery.md](./project-recovery.md)).
+  five recovery functions — see [project-recovery.md](./project-recovery.md);
+  sixteen since EXPORT-1.4 added the two code export functions, which use
+  their own tokens and service — see [export-ui.md](./export-ui.md#desktop-saving)).
   There is no `ipcRenderer`, no generic
   `invoke` and no Node.js.
 - **The preload is sandboxed:** `sandbox: true`, `contextIsolation: true`,

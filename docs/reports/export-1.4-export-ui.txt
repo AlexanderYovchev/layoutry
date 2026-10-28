@@ -1,0 +1,866 @@
+LAYOUTRY — EXPORT-1.4 — Export UI, Code Preview, Downloads & Desktop Integration
+Date: 2026-10-28        Branch: main        HEAD at start: a749d85 (see A)
+Status: implemented and validated (all suites green). NOT committed. EXPORT-1.5 is not
+started.
+
+==========================================================================================
+SUMMARY
+==========================================================================================
+Users can now export code from Layoutry. File › Export Code… (or the header's Export
+button) opens the Export Code dialog. It does the following:
+- generates HTML and CSS from the current design, including unsaved edits, with the
+  existing engine (exportHtmlCss, the function the parity suites validate);
+- shows each generated file as plain text, with the engine's diagnostics;
+- copies, downloads (browser) or saves natively (desktop) exactly the files on screen.
+
+Main properties:
+- Two output structures:
+  - Single HTML file: index.html with the CSS and any interaction script inside;
+  - Separate files: index.html + styles.css (+ script.js when the page has
+    interactions).
+- Stale previews: if the design or project name changes while the dialog is open, the
+  preview is marked stale and nothing can be copied, downloaded or saved until
+  Regenerate.
+- Diagnostics: severity, message, element and property for every finding. Errors block
+  export (no files exist to export); warnings don't.
+- Browser: Blob downloads, one per file, with per-file buttons; object URLs revoked.
+- Desktop: native Save dialog (one HTML file) or folder picker (separate files), through
+  two new IPC channels with their own tokens. The renderer never sends a path; only the
+  three fixed file names are accepted. Multi-file writes are staged to temporary files
+  and rolled back on failure.
+- Entitlement: an ExportEntitlement boundary asked when the dialog opens. The
+  development implementation allows everyone. No billing, accounts or paid badges.
+- Exporting never saves the project or changes its unsaved state.
+
+Results:
+- TypeScript, ESLint and the production build pass.
+- Vitest: 5,029 passed, 1 skipped (pre-existing).
+- Browser Playwright: 58/58, twice (44 existing + 14 new).
+- Electron Playwright: 57 passed, 2 skipped (the opt-in benchmark), 0 failed.
+- Packaged Layoutry.exe: 51/51 passed, with the genuine Windows Save dialog and folder
+  picker.
+
+==========================================================================================
+A. GIT BASELINE
+==========================================================================================
+- Branch main, HEAD a749d85 "feat(export): add dependency-free interaction runtime with
+  behavioral parity tests".
+- The brief asked to verify that the EXPORT-1.3 follow-up commit is present. It is NOT:
+  playwright.config.ts (workers: 4) and docs/reports/export-1.3-interaction-runtime.txt
+  (the timeout investigation) were still uncommitted at the start. The commit message
+  was still awaiting the user's decision: the requested message already exists on
+  a749d85.
+- These two files are preserved unchanged by EXPORT-1.4. EXPORT-1.4 relies on the
+  workers: 4 setting, which is present in the working tree. They should be committed
+  first, separately, e.g. "test(e2e): cap browser Playwright workers to stop
+  memory-contention timeouts".
+- No other unrelated changes were present.
+- Index changes: two files were moved with git mv (staged renames):
+  - src/features/project/utils/downloadTextFile.ts → src/lib/downloadTextFile.ts;
+  - src/features/project/components/projectDialogButtons.ts →
+    src/components/ui/dialogButtons.ts.
+  Nothing else is staged. Nothing was committed.
+
+==========================================================================================
+B. EXISTING EXPORT API INTEGRATION
+==========================================================================================
+- The dialog calls exportHtmlCss(document, { mode, title }) from the export feature. It
+  adds no alternative printer, no cache and no DOM scraping.
+- The engine is unchanged except for one additive field: HtmlCssExportResult.assets.
+  It holds the IR's existing asset list: every referenced URL, by kind remote, relative
+  or data. It is empty when the export is refused.
+  - Purpose: the UI can say which resources stay on the internet.
+  - The engine stays pure and deterministic. Existing engine tests pass unchanged.
+- The page title is the project name (options.title).
+- The public API (src/features/export/index.ts) now also exports:
+  - ExportCodeDialog, ExportCodeDialogHost and openExportCodeDialog;
+  - the desktop bridge wrapper;
+  - the entitlement types and the development entitlement.
+  The e2e specs now import the engine modules directly, so Node-side test code doesn't
+  load React UI.
+
+==========================================================================================
+C. UI ENTRY POINT
+==========================================================================================
+- File menu: "Export Code…", in its own group at the end, after the project commands
+  ("Download Project" in the browser, "Rename Project…" on the desktop).
+- Header: an "Export" button (code icon, accessible name "Export Code", tooltip "Export
+  HTML and CSS code"). It sits before Preview. It is icon-only below the lg breakpoint,
+  so the header still fits 900px.
+- Both entry points call the same callback, FileMenuCommands.onExportCode, and open the
+  same dialog. This follows the existing "one source of truth, two consumers" pattern
+  for Undo/Redo.
+- Save, Save As, Open, Download Project and their shortcuts are unchanged. A test checks
+  that Export Code… calls neither Save nor Download Project.
+- Composition: the export feature already imports the project feature
+  (projectLimits). To avoid a feature cycle, the project feature does not import
+  export:
+  - src/app/LayoutryEditor.tsx (new, the page's composition root) composes them;
+  - ProjectWorkspace gets an optional codeExport prop: a menu callback and a dialog to
+    render with the project name.
+
+==========================================================================================
+D. EXPORT DIALOG DESIGN
+==========================================================================================
+- It is built on the existing Dialog primitive (native modal <dialog>), with a new
+  size "xl":
+  - at most 64 rem wide and 1 rem from each window edge;
+  - at most the window height minus 2 rem;
+  - its body is a flex column, so the code preview takes the remaining height.
+  The primitive also got a closeDisabled prop, used while a save is running.
+- Layout:
+  - header: "Export Code" with a Close button;
+  - description: "Generate HTML and CSS from your Canvas design.";
+  - Format: "HTML + CSS" (the only format), with the note "Tailwind CSS, React and Vue
+    are planned." These are not shown as options;
+  - Output: two radio cards, "Single HTML file" and "Separate files";
+  - diagnostics, the external-resources note, and the "keep these files together"
+    note;
+  - the code preview;
+  - footer: status text, then Cancel, Copy code, and Download… / Save… (primary).
+- Styling uses only existing Bright Studio tokens and conventions:
+  - surface-panel, line, fg-*, accent, rounded-control;
+  - the dialog button classes shared with the project dialogs;
+  - the amber/red warning and error styling already used by the Inspector;
+  - the lucide icons already in use.
+  No new tokens, no new dependencies, and the shell is not redesigned.
+- Screenshots were checked at 1440×900, 1280×800, 1024×768 and 900×600, in light and
+  dark.
+
+==========================================================================================
+E. OUTPUT MODE SELECTION
+==========================================================================================
+- Single HTML file → index.html.
+- Separate files → index.html + styles.css, plus script.js only when the page has
+  interactions.
+- Switching regenerates from the current document. It is disabled while a save is
+  running.
+- Separate mode shows: "Keep index.html, styles.css and script.js together in one
+  folder: index.html links to the other files by name."
+
+==========================================================================================
+F. CODE PREVIEW
+==========================================================================================
+- One ARIA tab per generated file (name and size). Arrow keys, Home and End move between
+  them, with a roving tabindex.
+- The file is a <pre> holding a single text node, in monospace with whitespace: pre:
+  - indentation and line breaks are preserved;
+  - text is selectable;
+  - it is focusable and named, e.g. "index.html source code";
+  - long lines scroll inside the box.
+- Generated markup is never parsed: the <pre> has no child elements. A test document
+  whose text contains <img onerror> and <script> runs nothing in the editor (unit and
+  browser tests).
+- Bounded: a file over 400,000 characters shows its first lines, cut at a line
+  boundary, with "Showing the first N of M lines. Copy and download always use the
+  complete file."
+  - Measured <pre> layout in Chromium: 92 ms at 400k characters, 209 ms at 1 MB,
+    484 ms at 2 MB, 1,056 ms at 5 MB.
+- There is no syntax highlighting and no editor dependency.
+
+==========================================================================================
+G. DIAGNOSTICS UI
+==========================================================================================
+- Every engine diagnostic is listed, errors first, then warnings, then notes, keeping
+  engine order within a severity. Nothing is merged or dropped.
+- Each entry has:
+  - a severity icon and label (Error / Warning / Note);
+  - the engine's message;
+  - "Element: <Structure-panel name> (<tag>)" when the diagnostic has a node, or
+    "Page" for the root, or "An element that is no longer in the design";
+  - "Property: <css property or attribute>" when available.
+- The heading gives counts, e.g. "Export notes (1 error, 3 warnings, 1 note)". The list
+  is a named, focusable, scrollable list (max-height 7 rem). With no diagnostics it
+  says "No problems found. The code matches your design."
+- Fatal errors: when the engine refuses (ok: false), it produces no files. The dialog
+  shows "This design can't be exported until the errors below are fixed. No code was
+  generated." (role=alert), and Copy and Download/Save are disabled. Tested with the
+  real engine on a 101-level-deep document.
+- External resources: when the page references http(s) URLs, it says so. See N.
+
+==========================================================================================
+H. SNAPSHOT AND STALE-STATE HANDLING
+==========================================================================================
+- Snapshot = the exact document object from the editor store, plus the title. The store
+  replaces the document object on every edit, so identity is the revision. It is the
+  live, in-memory design, including unsaved edits. It is never an autosave, a recovery
+  snapshot, the last save or a cached export.
+- Stale = the store's document is no longer that object, or the project name changed.
+  - Shown: an amber banner, "The design changed after this code was generated.
+    Regenerate to export the current design.", with a Regenerate button.
+  - Copy, Download and Save are disabled while stale. The old code stays visible as it
+    was generated.
+- Desktop saves check again after the native dialog closes. If the design changed
+  meanwhile, nothing is written: "The design changed while you were choosing where to
+  save, so nothing was saved. Regenerate the code, then save again."
+- Exporting never calls a project command and never touches the project store. A
+  browser test checks that the status after editing, exporting and downloading is what
+  the edits made it, and that no save toast appeared.
+- Observed while testing: the editor's document shortcuts (Ctrl+Z…) still reach the
+  editor while a modal dialog is open. This is existing behaviour and was not changed.
+  The stale check is what keeps an export consistent in that case, and a browser test
+  relies on it: Ctrl+Z with the dialog open → stale → Regenerate.
+
+Generation states:
+- checking (entitlement);
+- generating ("Generating code…" with a spinner, painted before the synchronous
+  generation runs);
+- ready ("Code ready: N files, …" announced);
+- refused (error diagnostics);
+- failed (the engine threw: "Layoutry couldn't generate code for this design. Nothing
+  was exported. …" + Try again);
+- denied (entitlement message).
+Transfer states:
+- busy ("Saving…", "Copying…", "Choose a folder for the files…");
+- conflict (desktop);
+- done;
+- error (role=alert).
+Success is only reported after the platform accepted the operation. A single guard
+prevents a second copy, download or save while one is running.
+
+==========================================================================================
+I. COPY CODE
+==========================================================================================
+- Copy code copies the selected file's exact text with navigator.clipboard.writeText.
+- Fallback: a hidden read-only textarea, focused and selected, then
+  execCommand("copy"). It is placed inside the open modal, because content outside it
+  is inert. The textarea is removed afterwards and the previous focus restored.
+- Feedback: "Copied styles.css to the clipboard.", or "Layoutry couldn't copy … Select
+  the code in the preview and copy it with Ctrl+C." (role=alert).
+- Tests:
+  - unit: the exact string, the fallback, and failure;
+  - browser: the string Layoutry hands to writeText equals the engine's file byte for
+    byte.
+- Platform note: reading the clipboard back on Windows returns CRLF line endings.
+  Windows stores clipboard text that way; the text is otherwise identical.
+
+==========================================================================================
+J. BROWSER DOWNLOADS
+==========================================================================================
+- Single HTML file: the "Download index.html" button.
+- Separate files:
+  - "Download <selected file>" downloads one file;
+  - "Download all files" starts one download per file.
+  The message says the browser may ask to allow multiple downloads, and points to the
+  per-file button. No ZIP (EXPORT-1.8).
+- Mechanics: src/lib/downloadTextFile.ts, moved from the project feature because it now
+  has two consumers. A Blob with the file's media type, an <a download> click, then the
+  link is removed and the object URL revoked after 10 s. Unit-tested, including when
+  the click throws.
+- Messages say "Download … started"; the browser decides where it is saved. There is no
+  false "saved" claim, and no backend or upload.
+- Browser tests:
+  - the single and separate downloads equal the engine's files;
+  - the downloaded files open from disk with the browser offline;
+  - styles.css loads by relative path, and the toggle interaction works.
+
+==========================================================================================
+K. ELECTRON SAVE ARCHITECTURE
+==========================================================================================
+- Main process: desktop/export/exportFileService.ts. It is free of Electron and
+  unit-tested on a real disk with fault injection.
+- IPC: two new channels, added to the fixed allowlist:
+  - layoutry:export:choose-destination with {mode, suggestedName};
+  - layoutry:export:write with {token, files: [{path, content}], overwrite}.
+- Preload (apiVersion 3):
+  - chooseExportDestination(mode, suggestedName);
+  - writeExportFiles(token, files, overwrite).
+  Arguments are type-checked, and only {path, content} per file is copied across.
+- Renderer: src/features/export/desktop/desktopExportFiles.ts. Every result is
+  Zod-validated; malformed results become an honest error.
+- Single file: the native Save dialog.
+  - Title "Export HTML File", filter HTML (.html/.htm), default name index.html in the
+    last export folder or Documents, and Windows' replace confirmation.
+  - A name without .html/.htm gets .html added, but only if that file doesn't exist.
+- Separate files: the native folder picker ("Choose Export Folder", button "Export
+  Here", createDirectory allowed).
+- Tokens:
+  - random 128-bit, kept in their own registry, separate from project-file tokens;
+  - at most 4 per window, bound to the window;
+  - single-use on success;
+  - revoked when the window closes or its renderer crashes (wired in main.ts next to
+    the project tokens).
+- The service follows the project-file conventions:
+  - exact-key payloads and the token pattern;
+  - temporary file + flush + rename;
+  - transient-lock retries (50–800 ms);
+  - read-back verification;
+  - user-facing messages that never contain full paths.
+- Project-file writing is untouched; it reuses no write capability of the project
+  service.
+
+==========================================================================================
+L. DESKTOP FILE CONFLICT HANDLING
+==========================================================================================
+- Single file: Windows' own Save dialog confirms replacing an existing file. The service
+  records that file's hash when the dialog closes:
+  - if the file is unchanged at write time, it is replaced without asking again;
+  - if it changed or appeared in between, the result is a conflict and Layoutry asks.
+- Separate files: if any of the target names exist, Layoutry lists them and asks:
+  "index.html, styles.css already exist in “Site”. Replace them? Other files in the
+  folder are not touched." The answers are Keep existing files or Replace (an
+  alertdialog). Nothing is written before the answer.
+- Overwrite race: just before each rename, the target is checked again. A file that
+  appeared or changed since the conflict check stops the export, with rollback.
+  Remaining window: the instant between that check and the rename. Windows has no
+  compare-and-swap rename (same documented limit as project saves).
+- Partial writes:
+  1. Every file is first staged to .<name>.<random>.layoutry-export-tmp and flushed.
+     If staging fails (disk full, permission), the temporaries are removed and nothing
+     visible changed.
+  2. Then the renames, index.html last.
+  3. If a rename fails:
+     - files already replaced are restored to their previous bytes, atomically;
+     - newly created files are deleted only if they still hold exactly what this
+       export wrote;
+     - the user is told which files, if any, couldn't be put back.
+  Rollback never deletes unrelated files.
+- Errors handled with specific messages:
+  - permission denied / protected folder;
+  - file open in another program (EBUSY/EPERM after retries);
+  - disk full;
+  - folder missing;
+  - name is a folder;
+  - path too long;
+  - link destination;
+  - existing file too large to back up (>64 MiB);
+  - read-back mismatch.
+  Each says whether anything changed.
+- Limit: a hard crash between renames can leave a mix of old and new files, never a
+  partly written file. Temporary files are identifiable by their extension.
+
+==========================================================================================
+M. DESKTOP SECURITY
+==========================================================================================
+- No Node.js, no ipcRenderer and no filesystem access in the renderer. The bridge stays
+  a frozen object of functions; it now has 16 functions plus apiVersion.
+- Sender checks: the same isTrustedSender as every channel (the main window's
+  webContents, its top frame, app://layoutry/). Other frames and windows are refused.
+- Payloads:
+  - exactly the expected keys;
+  - mode ∈ {standalone, separate};
+  - a token matching [0-9a-f]{32};
+  - 1–3 files, names exactly index.html, styles.css or script.js (case-sensitive), no
+    duplicates;
+  - content a string of ≤ 16 Mi characters, ≤ 32 Mi in total;
+  - overwrite a boolean.
+  Single-file destinations accept exactly index.html; folders require index.html and
+  styles.css.
+- Paths: never accepted from the renderer. Fixed names are joined to the chosen folder,
+  and dirname(target) === folder is asserted. The suggested name is reduced to a bare
+  sanitized file name (the drive and folder parts are dropped).
+- Links:
+  - the folder itself and every target must not be a symbolic link or junction
+    (lstat);
+  - targets must be regular files;
+  - exclusive temp creation never follows an existing entry.
+- Token isolation: project tokens fail on the export channel, and export tokens fail on
+  the project channel. Tested in the real app.
+- CSP, fuses, sandbox, navigation and permission policies are unchanged.
+
+==========================================================================================
+N. OFFLINE BEHAVIOR
+==========================================================================================
+- Generation, preview, copy, downloads and desktop saving use no network, no backend
+  and no CDN.
+  - The desktop export spec confirms no http/https/ws request was made; the app's own
+    bundle loads from disk.
+- Exported pages work offline from disk. A browser test runs the downloaded files from
+  file:// with the network off:
+  - styles.css is applied;
+  - the toggle interaction works;
+  - zero non-file requests.
+- Not bundled, and the UI says so: resources referenced by http(s) URL (images, video,
+  media). The dialog shows: "This page loads N files (images, fonts or media) from the
+  internet. They are not included in the export, so viewing the page needs a
+  connection to show them."
+- Relative URLs get the engine's existing Note: the file must be published next to the
+  page.
+- data: URLs are embedded and need nothing.
+
+==========================================================================================
+O. ENTITLEMENT BOUNDARY
+==========================================================================================
+- The interface (types/exportEntitlement.ts):
+    interface ExportEntitlement { canExportCode(): Promise<ExportEntitlementDecision> }
+    type ExportEntitlementDecision = { allowed: true } | { allowed: false; message }
+- It is asked when the dialog opens, before generation. A denial shows its message and
+  generates nothing (tested). A rejected promise is treated as a denial with a retry
+  message.
+- developmentExportEntitlement allows everyone:
+  - no Stripe, accounts or authentication;
+  - no hard-coded "Pro" user;
+  - no paid badge.
+- The generator never sees it.
+- Documented (export-ui.md, ADR-0010): a client-side check is a product gate, not
+  enforcement. Production needs a trusted backend check once subscriptions exist.
+
+==========================================================================================
+P. LARGE-DOCUMENT PERFORMANCE
+==========================================================================================
+Measured in Chromium against the dev server on the reference machine (16 threads,
+7.9 GB). The document has the same shape as the engine's scale test.
+                                          2,000 elements    19,999 elements (maximum)
+  Click → "Generating…" painted               47 ms              155 ms
+  Generation (exportHtmlCss)                  41–70 ms           256–359 ms
+  Click → code visible                        133 ms             596 ms
+  Switch to styles.css (bounded preview)      78 ms              198 ms
+  Scroll the preview to the middle            32 ms              33 ms
+  Prepare all downloads (Blobs + URLs)        16 ms              42 ms
+  JS heap with the dialog open                +2 MB              +67 MB
+  Longest main-thread task                    98 ms              359 ms
+  Output                                      index 152 KB,      index 1.5 MB,
+                                              css 191 KB         css 1.9 MB
+- Worker assessment: not justified. At the project maximum the longest block is
+  ~0.36 s, after "Generating…" is visible. A worker would add a structured clone of the
+  document, plus protocol and fallback code (the project worker needs all three).
+  Re-evaluate if the element limit rises.
+- One fix from measuring: the open state moved from the composing component to a small
+  store (useExportDialogStore). Re-rendering the editor root re-renders every Canvas
+  node through the drag-and-drop context. This cut the first frame at 20,000 elements
+  from ~237 ms to ~155 ms. Most of the rest is the browser making the page inert for
+  the modal.
+- Not export: importing and rendering 20,000 elements on the Canvas took ~128 s in the
+  dev server, which already existed. The browser test therefore uses 4,500 elements.
+  It checks a styles.css over 400,000 characters, a bounded preview that is an exact
+  prefix of the file, a complete download, and generation under 2 s.
+
+==========================================================================================
+Q. ACCESSIBILITY
+==========================================================================================
+- Native modal <dialog>:
+  - the background is inert;
+  - focus starts on Cancel;
+  - Tab stays inside (a browser test does 24 Tabs: focus is only ever in the dialog or
+    on <body> while passing through browser UI);
+  - Escape and Close close it;
+  - focus returns to the opener (the header Export button, tested).
+- While saving, Escape, the backdrop and Close are disabled, as are the actions and the
+  output radios (tested).
+- Output is a native radio group (arrow keys, tested). Files are an ARIA tab list
+  (arrows, Home and End, tested). The code and diagnostics regions are focusable and
+  named.
+- Live regions:
+  - generation results ("Code ready: 3 files, 1 warning.") and transfer results
+    (polite);
+  - errors and refusals use role=alert;
+  - the overwrite question is an alertdialog.
+- Visible focus rings on every control (existing outline-accent convention). Disabled
+  states use the existing disabled styles.
+- Contrast (measured in both themes): code text ≥ 7:1, dialog text ≥ 4.5:1.
+
+==========================================================================================
+R. RESPONSIVE UI
+==========================================================================================
+- Browser tests at 1440×900, 1280×800, 1024×768 and 900×600 (the minimum window):
+  - Cancel, Copy code, Download index.html, Download all files and Close are fully in
+    the viewport;
+  - the dialog is inside the viewport with no horizontal overflow;
+  - no page overflow;
+  - the long-line preview scrolls inside its own box;
+  - the code area is at least 100 px tall;
+  - wheel over the backdrop scrolls nothing behind it.
+- Light and dark: dialog background luminance and contrast checked; screenshots
+  reviewed at all four sizes in both themes.
+- Found and fixed: at ≤1024 px wide the dialog touched the window edges. It now keeps a
+  1 rem margin.
+
+==========================================================================================
+S. VISUAL FIDELITY REGRESSION
+==========================================================================================
+- e2e/export-visual-parity.spec.ts (EXPORT-1.2) was re-run in the full browser suite:
+  passed, twice.
+- The UI uses the same exportHtmlCss. The engine's only change is the additive assets
+  field. Every engine and jsdom parity Vitest suite passes unchanged.
+
+==========================================================================================
+T. BEHAVIORAL FIDELITY REGRESSION
+==========================================================================================
+- e2e/export-interactions.spec.ts (EXPORT-1.3, all 5 tests) was re-run in the full
+  browser suite: passed, twice.
+- The runtime unit tests pass unchanged.
+- New check: the downloaded files from the real UI run the interaction offline from
+  disk (J).
+
+==========================================================================================
+U. BROWSER WORKFLOW TESTS — e2e/export-workflow.spec.ts (14 tests, real editor and engine)
+==========================================================================================
+1. Opens from File › Export Code… and the header; previews every file (equal to the
+   engine's output); switches output; Cancel and Escape; focus restored.
+2. Generated markup shown as inert text; the diagnostics list matches the engine
+   (count, severity, element, property).
+3. Copy code: the exact text handed to the clipboard, and read back.
+4. Single-file download equals the engine's file; it works offline from disk with zero
+   network requests.
+5. Separate downloads, one file and all three, equal the engine's files; they work
+   together offline.
+6. Unsaved edits exported; Ctrl+Z with the dialog open → stale; actions disabled;
+   Regenerate; the download reflects the current design; no save happened.
+7. Keyboard: Enter on the header button opens it; focus on Cancel; trapped through 24
+   Tabs; radios with arrows; tabs with arrows; Escape returns focus.
+8–9. Light and dark themes: background and contrast.
+10–13. 1440×900, 1280×800, 1024×768, 900×600: actions visible, no overflow, internal
+   scrolling, no background scroll.
+14. Large document (4,500 elements): bounded preview (exact prefix), complete download,
+   generation < 2 s.
+Generation failure and fatal refusal can't be produced through the real editor: the
+editor's own validation prevents an invalid or too-large document. They are covered in
+Vitest with the real engine on a too-deep document, and with an injected throwing
+exporter.
+
+Vitest (new):
+- ExportCodeDialog.test.tsx (19): generation, file switching and keyboard tabs,
+  diagnostics, remote assets, refusal, failure and retry, entitlement denial, stale
+  after an edit and after a rename, Regenerate, copy and copy failure, downloads (all
+  modes), Cancel/Escape, and desktop save:
+  - success with exactly the snapshot files;
+  - conflict → Replace;
+  - cancel and Keep existing;
+  - error;
+  - stale during the folder dialog;
+  - no double save, mode switch or close while saving.
+- exportPresentation.test.ts (5), copyTextToClipboard.test.ts (3),
+  desktopExportFiles.test.ts (3), downloadTextFile.test.ts (2).
+- AppHeader.test.tsx (+3): menu placement and order, header button, desktop menu, and
+  no button when not wired.
+
+==========================================================================================
+V. DESKTOP WORKFLOW TESTS — e2e/desktop/export.spec.ts (real Electron, scripted dialogs)
+==========================================================================================
+1. Single HTML file through the Save dialog:
+   - the file on disk equals the previewed code;
+   - the dialog options (title, HTML filter, default name) are checked;
+   - the project status is unchanged and no .layoutry was written;
+   - zero network requests.
+2. Separate files into a folder:
+   - an existing index.html gives a conflict prompt; Keep leaves the files unchanged;
+   - Replace writes all files equal to the preview;
+   - an unrelated notes.txt is untouched.
+3. A cancelled folder dialog saves nothing; a junction destination is refused with the
+   link message and nothing written.
+4. The real bridge refuses:
+   - a forged token;
+   - "..\evil.html", "C:\Windows\evil.html" and "evil.exe" (rejected);
+   - a project token on the export channel;
+   - an export token on the project channel.
+   Nothing is written anywhere.
+Results: section AG.
+
+==========================================================================================
+W. PACKAGED WINDOWS TESTS — e2e/packaged/export.spec.ts (Layoutry.exe, genuine dialogs)
+==========================================================================================
+1. Single HTML file through the real Windows Save dialog:
+   - Cancel → nothing written;
+   - save → equals the preview;
+   - saving onto it again → Windows' own replace confirmation; declining (then
+     cancelling) leaves it untouched, and confirming replaces it.
+2. Separate files through the real Windows folder picker → all three files equal the
+   preview. Saving again → Layoutry's in-app conflict prompt; Keep leaves them
+   unchanged.
+The helpers confirm a dialog only when it holds the exact temporary path; otherwise
+they cancel. So nothing can land in the real Documents, Desktop or Downloads folders
+(see AH).
+Results: section AH.
+
+==========================================================================================
+X. SECURITY TESTS
+==========================================================================================
+desktop/export/exportFileService.test.ts (21, real temp folders, injected faults):
+- results never contain the folder path;
+- the Save dialog's confirmed file is replaced, but one changed after the dialog is a
+  conflict;
+- a name typed without .html is suffixed, and won't silently replace an existing file;
+- tokens are single-use, valid only for their window, and revoked when it closes;
+  forged tokens fail;
+- 12 malicious names are refused: traversal, absolute, case, trailing space, ADS
+  ":stream", double extension, other names and extensions, empty;
+- malformed payloads are refused: duplicates, oversized files, wrong types, extra keys,
+  missing styles.css, a separate file list sent to a single-file destination, a bad
+  mode;
+- a junction folder at choose time, and a folder replaced by a junction after
+  choosing;
+- a junction sitting where an exported file goes;
+- a folder deleted after choosing;
+- disk full while staging: nothing changed, no temporary files;
+- locked on the last rename: replaced files restored, new files removed, unrelated
+  files kept;
+- a file appearing mid-export: stopped, nothing overwritten;
+- rollback never deletes a file the user changed after the export wrote it;
+- a transient lock is retried.
+desktop/ipc/registerDesktopIpc.test.ts (updated):
+- exactly 14 channels;
+- export calls are routed with the window id;
+- subframes and other windows are refused;
+- the preload copies only {path, content} and rejects non-arrays, non-strings and a
+  non-boolean overwrite;
+- the exact bridge key list.
+UI:
+- HTML/script injection in the preview (unit and browser);
+- clipboard receives plain text only;
+- object URL revocation (unit);
+- unexpected cancellation (cancel paths in unit, Electron and packaged tests).
+Real app: forged and cross-channel token tests and link refusal (V).
+
+==========================================================================================
+Y. FILES ADDED
+==========================================================================================
+src/app/LayoutryEditor.tsx
+src/features/export/components/ExportCodeDialog.tsx (+ .test.tsx)
+src/features/export/components/ExportCodeDialogHost.tsx
+src/features/export/components/ExportCodePreview.tsx
+src/features/export/components/ExportDiagnosticsList.tsx
+src/features/export/desktop/desktopExportFiles.ts (+ .test.ts)
+src/features/export/hooks/useExportCodeSession.ts
+src/features/export/stores/useExportDialogStore.ts
+src/features/export/types/exportEntitlement.ts
+src/features/export/utils/copyTextToClipboard.ts (+ .test.ts)
+src/features/export/utils/describeExportDiagnostics.ts
+src/features/export/utils/developmentExportEntitlement.ts
+src/features/export/utils/exportPresentation.test.ts
+src/features/export/utils/exportPreviewText.ts
+src/features/export/utils/joinFileNames.ts
+src/features/export/utils/summarizeExportAssets.ts
+src/lib/downloadTextFile.test.ts
+desktop/export/exportFileService.ts (+ .test.ts)
+e2e/export-workflow.spec.ts
+e2e/desktop/export.spec.ts
+e2e/packaged/export.spec.ts
+docs/architecture/export-ui.md
+docs/decisions/ADR-0010-export-ui-and-native-save.md
+docs/reports/export-1.4-export-ui.txt (this report)
+Moved (git mv):
+src/features/project/utils/downloadTextFile.ts → src/lib/downloadTextFile.ts
+src/features/project/components/projectDialogButtons.ts → src/components/ui/dialogButtons.ts
+Both now have two consumers (project and export), as CLAUDE.md's extraction rule
+requires.
+
+==========================================================================================
+Z. FILES MODIFIED
+==========================================================================================
+src/app/page.tsx — renders LayoutryEditor.
+src/components/ui/Dialog.tsx — size "xl", closeDisabled.
+src/components/ui/dialogButtons.ts — comment only (moved file).
+src/components/layout/applicationMenus.ts — FileMenuCommands.onExportCode, the Export
+  Code… group.
+src/components/layout/AppHeader.tsx, GlobalActions.tsx — the header Export button.
+src/components/layout/AppHeader.test.tsx — 3 tests.
+src/features/export/index.ts — the EXPORT-1.4 exports.
+src/features/export/types/exportResult.ts, utils/exportHtmlCss.ts — the assets field.
+src/features/project/components/ProjectWorkspace.tsx — the codeExport prop, the
+  downloadTextFile import.
+src/features/project/index.ts — exports the CodeExportIntegration type.
+src/features/project/components/ProjectConfirmDialogs.tsx, ProjectLibraryDialog.tsx,
+  ProjectNameDialog.tsx, RecoveryDialog.tsx — the dialogButtons import path only.
+src/lib/downloadTextFile.ts — comment only (moved file).
+desktop/ipc/channels.ts, desktop/preload/preload.ts, desktop/ipc/registerDesktopIpc.ts,
+  desktop/main/main.ts — the export channels, bridge functions, service wiring and token
+  revocation.
+desktop/ipc/registerDesktopIpc.test.ts — 14 channels, export routing and refusal, the
+  preload copy.
+e2e/desktop/files.spec.ts, e2e/desktop/recovery.spec.ts, e2e/packaged/files.spec.ts —
+  the bridge key list/count (+2 export functions).
+e2e/packaged/support/fileDialogs.ts — recognizes the folder picker; answerFolderDialog.
+e2e/export-interactions.spec.ts, e2e/export-visual-parity.spec.ts,
+  e2e/support/exportHarness.ts — import the engine modules directly.
+docs/architecture/export-engine.md, desktop-files.md, README.md;
+  docs/decisions/README.md; docs/roadmap/milestones.md.
+Not modified by EXPORT-1.4 (pre-existing uncommitted EXPORT-1.3 follow-up, see A):
+  playwright.config.ts, docs/reports/export-1.3-interaction-runtime.txt.
+
+==========================================================================================
+AA. DEPENDENCIES
+==========================================================================================
+None added or changed. The UI uses the existing React, Zustand, Zod, lucide-react and
+Tailwind. There is no code editor, syntax highlighter or ZIP library.
+
+==========================================================================================
+AB. DOCUMENTATION
+==========================================================================================
+- docs/architecture/export-ui.md (new). It covers:
+  - Export vs Save;
+  - snapshot and stale handling;
+  - diagnostics, preview and copy;
+  - browser downloads;
+  - desktop flow, security boundary, multi-file writes and rollback;
+  - entitlement;
+  - offline limits;
+  - accessibility and responsive layout;
+  - performance;
+  - future ZIP packaging.
+- ADR-0010: the export UI on the existing engine, and native saving through its own
+  capability channel.
+- export-engine.md: the intro, the large-export limitation, and future integration
+  points (UI done; the assets field).
+- desktop-files.md: the bridge count and a pointer to the export channels.
+- Indexes and roadmap updated.
+
+==========================================================================================
+AC. TYPESCRIPT
+==========================================================================================
+npx tsc --noEmit: pass (app, tests, e2e). npm run desktop:compile (desktop/tsconfig):
+pass. Production build (npm run build): pass, / prerendered static.
+
+==========================================================================================
+AD. ESLINT
+==========================================================================================
+npm run lint (eslint .): pass, 0 problems. The React Compiler rules flagged two hook
+issues during development: a ref written during render, and setState in an effect.
+Both were fixed by restructuring, not suppressed. One existing-style
+exhaustive-deps comment remains, on the open/close effect, explaining why.
+
+==========================================================================================
+AE. VITEST
+==========================================================================================
+npx vitest run: 338 files, 5,029 passed, 1 skipped, 0 failed.
+The skip is pre-existing: recoveryStore.test.ts needs file-symlink privileges this
+machine lacks.
+
+==========================================================================================
+AF. BROWSER PLAYWRIGHT
+==========================================================================================
+playwright.config.ts with workers: 4 (the EXPORT-1.3 follow-up setting), 2 full runs:
+- run 1: 58 passed, 0 failed, 0 flaky, 0 skipped (65 s);
+- run 2: 58 passed, 0 failed, 0 flaky, 0 skipped (59 s).
+58 = 44 existing (including both parity suites and the recovery specs) + 14 new.
+No flakiness observed.
+
+==========================================================================================
+AG. ELECTRON PLAYWRIGHT
+==========================================================================================
+npm run desktop:build, then playwright test -c playwright.desktop.config.ts (serial,
+1 worker, real Electron 44, isolated temporary profiles and folders).
+- First full run: 55 passed, 2 failed, 2 skipped. Both failures were expected:
+  files.spec.ts "the page gets a fixed bridge…" and recovery.spec.ts "the recovery
+  bridge only accepts its own validated calls" assert the exact list of bridge
+  functions, which now has the two export functions. The lists were updated
+  (+chooseExportDestination, +writeExportFiles); no behaviour changed.
+- Final full run, after packaging rebuilt out/: 57 passed, 0 failed, 2 skipped
+  (2.1 min).
+  - The 2 skips are persistence-benchmark.spec.ts, an opt-in benchmark
+    (LAYOUTRY_PERSISTENCE_BENCH=1). This is pre-existing.
+  - The 57 include the 4 new export tests (V), the security suite (navigation, popups,
+    permissions, no Node.js in the editor or iframes, CSP, no eval), files, recovery,
+    lifecycle and performance.
+- No flakiness observed.
+
+==========================================================================================
+AH. PACKAGED TEST RESULTS
+==========================================================================================
+npm run desktop:package produced:
+- release\Layoutry-0.1.0-alpha.1-win-x64.zip (147.1 MB);
+- win-unpacked (370.8 MB);
+- app.asar (2.4 MB, 65 files);
+- fuses unchanged: RunAsNode off, NodeOptions off, Inspect off, ASAR integrity on,
+  OnlyLoadAppFromAsar on.
+Then playwright test -c playwright.packaged.config.ts. The exe is extracted to a path
+with spaces and non-ASCII characters and driven through the DevTools port and Win32.
+- First run: 50 passed, 1 failed. The new folder-picker test failed because the test's
+  Win32 dialog driver didn't recognize the folder picker. It looked for the file name
+  box (Edit 1001 or ComboBox 1148); the folder picker's box is "Folder:" (Edit 1152),
+  found by enumerating the real dialog's controls. This was a test-harness limitation,
+  not an app defect: the single-file export through the real Save dialog passed.
+- Fix (test support only, e2e/packaged/support/fileDialogs.ts):
+  - recognize Edit 1152;
+  - add answerFolderDialog. Typing a folder path and pressing OK navigates into the
+    folder rather than choosing it. So the helper waits until the picker's address bar
+    shows exactly that folder, clears the box, and confirms. Anything else cancels the
+    dialog.
+- Final full run: 51 passed, 0 failed (2.8 min), including both new export tests (W),
+  files, hardening, security, lifecycle, recovery, windowing, workflows and
+  performance. The @soak stability session is excluded by configuration (it runs only
+  through npm run desktop:soak); it was not run.
+- Correction to W: export dialogs open in the last export folder or Documents, not the
+  seed's folder. Safety comes from the helpers: they only confirm once the box (or, for
+  the picker, the address bar) holds the exact temporary path. Nothing was written to
+  the real Documents, Desktop or Downloads folders.
+- The run rewrites release/packaged-test-results.json (generated output).
+
+==========================================================================================
+AI. KNOWN LIMITATIONS
+==========================================================================================
+- Browser multi-file download is one download per file. Browsers may ask permission
+  or block repeated downloads; the per-file buttons are the fallback. ZIP is
+  EXPORT-1.8.
+- A browser download only "starts": Layoutry can't know whether the user kept it.
+- Multi-file desktop writes aren't atomic as a set:
+  - a rename failure is rolled back;
+  - a hard crash between renames can leave a mix of old and new files, never a partly
+    written file;
+  - temporaries are recognizable by .layoutry-export-tmp;
+  - the check-then-rename instant can't be closed on Windows.
+- External http(s) resources are not bundled. Viewing them needs a connection, and the
+  dialog says so.
+- The preview shows the first ~400,000 characters of a very large file. Copy and
+  download use the full file.
+- Windows' clipboard stores CRLF line endings.
+- The code preview has no syntax highlighting.
+- The entitlement check is client-side only (development implementation).
+- Editor shortcuts (undo, delete…) still act on the document while modal dialogs are
+  open. This is existing behaviour; the stale check covers export.
+
+==========================================================================================
+AJ. UNRESOLVED ISSUES
+==========================================================================================
+- The EXPORT-1.3 follow-up (playwright.config.ts, the 1.3 report) is still uncommitted
+  (see A). It needs a decision on its commit message.
+- No unresolved security concerns are known; see M and X for what was verified.
+- Observation, not fixed (out of scope): document-editing shortcuts are not suppressed
+  while a modal dialog is open (H). This may deserve its own small fix, since it also
+  applies to the project dialogs.
+  Recorded in docs/roadmap/known-issues.md.
+
+==========================================================================================
+AK. NEXT CHECKPOINT RECOMMENDATION
+==========================================================================================
+EXPORT-1.5 — Tailwind CSS export, as planned:
+- a Tailwind printer over the same IR (map ExportElement.declarations to utilities;
+  defaultStyles already carry their classes);
+- a third Format option in this dialog (the format row is already in place);
+- parity tests reusing the existing harness.
+Before or alongside it, consider the small fix to suppress editor shortcuts under modal
+dialogs (AJ).
+
+==========================================================================================
+DIRECT QUESTIONS
+==========================================================================================
+1.  Open Export directly? Yes: File › Export Code… and the header's Export button.
+2.  Clearly separated from Save? Yes. It has its own menu group and wording, never
+    saves, and leaves the dirty state untouched (tested).
+3.  Standalone or separate? Yes, the Output radio group.
+4.  Inspect HTML? Yes.  5. CSS? Yes (embedded in single-file mode, styles.css tab in
+    separate mode).  6. JavaScript when present? Yes (embedded, or the script.js tab).
+7.  Copy source? Yes: the exact text of the selected file.
+8.  Download standalone HTML? Yes.  9. All separate files? Yes: all at once, or
+    each one.
+10. Native desktop save? Yes: Save dialog or folder picker (AG/AH).
+11. File conflicts safe? Yes. Windows confirms the single file; Layoutry asks for
+    folder files; files are re-checked before each replace.
+12. Partial multi-file failures handled? Yes: staged writes and rollback. Crash limit
+    in AI.
+13. Symlink/junction and traversal blocked? Yes (unit and real-app tests).
+14. IPC narrowly scoped? Yes: 2 fixed channels, own tokens, fixed names, sender
+    checks.
+15. Uses the existing generator? Yes, exportHtmlCss.
+16. Current unsaved document exported? Yes (tested).
+17. Stale previews detected? Yes.  18. Regenerated? Yes.
+19. Warnings and errors visible? Yes.  20. Fatal errors blocking? Yes.
+21. Independent of the dirty state? Yes.
+22. Works offline? Yes (generation, UI, saving, exported pages).
+23. External asset limits explained? Yes, in the dialog and in the docs.
+24. Entitlement ready for a backend? The boundary is ready; the backend check is
+    future work.
+25. Keyboard accessible? Yes.  26. Light and dark? Yes.  27. Fits supported sizes?
+    Yes: 1440×900 down to 900×600.
+28. Large-document export responsive? Yes: longest block ~0.36 s at 20,000 elements,
+    with a bounded preview.
+29. Static visual parity still passing? Yes.  30. Interaction parity? Yes.
+31. TypeScript? Pass.  32. ESLint? Pass.  33. Vitest? Pass (5,029/1 skipped).
+34. Browser Playwright? Pass, 58/58 ×2.
+35. Electron Playwright? Pass: 57 passed, 2 opt-in skips.  36. Packaged Windows tests?
+    Pass: 51/51.
+37. Skipped tests? Vitest: 1 (symlink privileges). Electron: 2 (the opt-in
+    persistence benchmark). Packaged: the @soak session, as configured.
+38. Unresolved security concerns? None known.
+39. Ready for hands-on user testing? Yes. Every suite is green. Committing the
+    EXPORT-1.3 follow-up first is recommended (A).
+40. EXPORT-1.5? Tailwind CSS export (AK).

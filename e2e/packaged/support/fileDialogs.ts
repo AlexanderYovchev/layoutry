@@ -6,7 +6,8 @@ import { powershell, psString } from "./windows";
  *
  * Plain Win32, never localized captions: the dialog is the process's
  * visible #32770 window holding the file-name Edit (control id 1001 in the
- * Save dialog, inside ComboBox 1148 in the Open dialog). The path is typed
+ * Save dialog, inside ComboBox 1148 in the Open dialog, Edit 1152 "Folder:"
+ * in the folder picker used by code export). The path is typed
  * as WM_CHAR messages (WM_SETTEXT alone doesn't update the dialog's own
  * model) and read back with WM_GETTEXT, then WM_COMMAND IDOK (1) or
  * IDCANCEL (2) is posted to the dialog. (UI Automation exposes these
@@ -49,7 +50,7 @@ public static class LayoutryDialogs {
       if (ClassOf(h) != "Edit") return true;
       int id = GetDlgCtrlID(h);
       int parentId = GetDlgCtrlID(GetParent(h));
-      if (id == 1001 || id == 1148 || parentId == 1001 || parentId == 1148) { result = h; return false; }
+      if (id == 1001 || id == 1148 || id == 1152 || parentId == 1001 || parentId == 1148) { result = h; return false; }
       return true;
     }, IntPtr.Zero);
     return result;
@@ -61,6 +62,15 @@ public static class LayoutryDialogs {
     foreach (char c in text) SendMessage(h, 0x0102, (IntPtr)c, IntPtr.Zero);
   }
   public static string GetText(IntPtr h) { var b = new StringBuilder(4096); SendMessage(h, 0x000D, (IntPtr)4096, b); return b.ToString(); }
+  /** The folder picker's breadcrumb, e.g. "Address: Site" (ToolbarWindow32 1001). */
+  public static string AddressText(IntPtr dialog) {
+    string result = "";
+    EnumChildWindows(dialog, (h, l) => {
+      if (ClassOf(h) == "ToolbarWindow32" && GetDlgCtrlID(h) == 1001) { result = Title(h); return false; }
+      return true;
+    }, IntPtr.Zero);
+    return result;
+  }
 }
 "@
 }
@@ -117,6 +127,69 @@ if ($path) {
   [void][LayoutryDialogs]::PostMessage($dialog, 0x0111, [IntPtr]1, [IntPtr]::Zero)
 } else {
   [void][LayoutryDialogs]::PostMessage($dialog, 0x0111, [IntPtr]2, [IntPtr]::Zero)
+}
+@{ found = $true; title = $title } | ConvertTo-Json -Compress`),
+  );
+  return { found: result.found === true, title: String(result.title) };
+}
+
+/**
+ * Chooses `folder` in the folder picker (IFileOpenDialog with
+ * FOS_PICKFOLDERS), or cancels it when `folder` is null. Typing a folder's
+ * path and pressing OK navigates into it rather than choosing it, so the
+ * folder is confirmed with a second OK — only once the picker's address bar
+ * shows that folder. Anything else cancels, so a test can't export into
+ * the user's real folders by accident.
+ */
+export function answerFolderDialog(
+  pid: number,
+  folder: string | null,
+  timeoutSeconds = 15,
+): FileDialogResult {
+  const folderName = folder === null ? "" : (folder.split(/[\\/]/).filter(Boolean).at(-1) ?? "");
+  const result = parse(
+    powershell(`${DIALOGS}
+$deadline = (Get-Date).AddSeconds(${timeoutSeconds})
+$dialog = [IntPtr]::Zero
+while ($dialog -eq [IntPtr]::Zero -and (Get-Date) -lt $deadline) {
+  $dialog = Find-FileDialog ${pid}
+  if ($dialog -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 200 }
+}
+if ($dialog -eq [IntPtr]::Zero) { @{ found = $false; title = '' } | ConvertTo-Json -Compress; exit }
+$title = [LayoutryDialogs]::Title($dialog)
+$path = ${folder === null ? "$null" : psString(folder)}
+if (-not $path) {
+  [void][LayoutryDialogs]::PostMessage($dialog, 0x0111, [IntPtr]2, [IntPtr]::Zero)
+  @{ found = $true; title = $title } | ConvertTo-Json -Compress; exit
+}
+$box = [LayoutryDialogs]::NameBox($dialog)
+[LayoutryDialogs]::TypeText($box, $path)
+$typed = [LayoutryDialogs]::GetText($box)
+if ($typed -ne $path) {
+  [void][LayoutryDialogs]::PostMessage($dialog, 0x0111, [IntPtr]2, [IntPtr]::Zero)
+  throw "Folder box holds '$typed', not the requested path; cancelled the dialog"
+}
+[void][LayoutryDialogs]::PostMessage($dialog, 0x0111, [IntPtr]1, [IntPtr]::Zero)
+$expected = 'Address: ' + ${psString(folderName)}
+$deadline = (Get-Date).AddSeconds(${timeoutSeconds})
+while ((Get-Date) -lt $deadline) {
+  Start-Sleep -Milliseconds 300
+  if (-not ([LayoutryDialogs]::Dialogs(${pid}) -contains $dialog)) { break }
+  $address = [LayoutryDialogs]::AddressText($dialog)
+  # The breadcrumb names the folder, or shows its full path once navigated by typing.
+  if ($address -eq $expected -or $address -eq ('Address: ' + $path)) {
+    # An empty box makes OK choose the folder shown (a path still typed there would navigate again).
+    [LayoutryDialogs]::TypeText($box, [string][char]8)
+    [void][LayoutryDialogs]::PostMessage($dialog, 0x0111, [IntPtr]1, [IntPtr]::Zero)
+    break
+  }
+}
+if ([LayoutryDialogs]::Dialogs(${pid}) -contains $dialog) {
+  Start-Sleep -Milliseconds 500
+  if ([LayoutryDialogs]::Dialogs(${pid}) -contains $dialog) {
+    [void][LayoutryDialogs]::PostMessage($dialog, 0x0111, [IntPtr]2, [IntPtr]::Zero)
+    throw "The folder picker didn't choose '$path' (address: '$([LayoutryDialogs]::AddressText($dialog))'); cancelled it"
+  }
 }
 @{ found = $true; title = $title } | ConvertTo-Json -Compress`),
   );

@@ -383,10 +383,12 @@ test("the page gets a fixed bridge: no paths, no ipcRenderer, forged tokens and 
   });
 
   expect(probe).not.toBeNull();
-  // PROJECT-1.4 added the five recovery functions (recovery.spec.ts).
+  // PROJECT-1.4 added the five recovery functions (recovery.spec.ts),
+  // EXPORT-1.4 the two code export functions (export.spec.ts).
   expect(probe?.keys).toEqual([
     "apiVersion",
     "beginRecoverySession",
+    "chooseExportDestination",
     "chooseSaveLocation",
     "discardRecovery",
     "listRecovery",
@@ -398,6 +400,7 @@ test("the page gets a fixed bridge: no paths, no ipcRenderer, forged tokens and 
     "respondToCloseRequest",
     "setUnsavedChanges",
     "takePendingProjectFile",
+    "writeExportFiles",
     "writeProjectFile",
     "writeRecoverySnapshot",
   ]);

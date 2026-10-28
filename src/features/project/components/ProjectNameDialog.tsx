@@ -6,7 +6,7 @@ import {
   dialogFooterClass,
   primaryButtonClass,
   secondaryButtonClass,
-} from "@/features/project/components/projectDialogButtons";
+} from "@/components/ui/dialogButtons";
 import { normalizeProjectName } from "@/features/project/rules/projectName";
 import type { ProjectNamePurpose } from "@/features/project/stores/useProjectDialogStore";
 

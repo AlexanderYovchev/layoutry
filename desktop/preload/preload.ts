@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 /**
- * The desktop bridge (PROJECT-1.3; recovery since PROJECT-1.4), exposed to the editor page as
+ * The desktop bridge (PROJECT-1.3; recovery since PROJECT-1.4; code export
+ * since EXPORT-1.4), exposed to the editor page as
  * `window.layoutryDesktop`. Sandboxed preload: it may only require
  * "electron", so it is self-contained — channel names repeat
  * desktop/ipc/channels.ts (kept in sync by a test).
@@ -24,6 +25,8 @@ const INVOKE = {
   listRecovery: "layoutry:recovery:list",
   readRecovery: "layoutry:recovery:read",
   discardRecovery: "layoutry:recovery:discard",
+  chooseExportDestination: "layoutry:export:choose-destination",
+  writeExportFiles: "layoutry:export:write",
 } as const;
 
 const EVENTS = {
@@ -61,6 +64,19 @@ function copySource(value: unknown): Record<string, string> {
   return copy;
 }
 
+/** Export files: a fresh array of fresh {path, content} objects, nothing else. */
+function copyExportFiles(value: unknown): { path: string; content: string }[] {
+  if (!Array.isArray(value)) throw new TypeError("files must be an array");
+  return value.map((file: unknown) => {
+    if (typeof file !== "object" || file === null)
+      throw new TypeError("file must be an object");
+    return {
+      path: requireString(Reflect.get(file, "path"), "path"),
+      content: requireString(Reflect.get(file, "content"), "content"),
+    };
+  });
+}
+
 function subscribe(channel: string, listener: unknown): () => void {
   if (typeof listener !== "function")
     throw new TypeError("listener must be a function");
@@ -76,7 +92,7 @@ function subscribe(channel: string, listener: unknown): () => void {
 contextBridge.exposeInMainWorld(
   "layoutryDesktop",
   Object.freeze({
-    apiVersion: 2,
+    apiVersion: 3,
     openProjectFile: () => ipcRenderer.invoke(INVOKE.openProjectFile),
     takePendingProjectFile: () =>
       ipcRenderer.invoke(INVOKE.takePendingProjectFile),
@@ -132,6 +148,18 @@ contextBridge.exposeInMainWorld(
         ),
       });
     },
+    // EXPORT-1.4: generated code, saved natively. Destinations are tokens.
+    chooseExportDestination: (mode: unknown, suggestedName: unknown) =>
+      ipcRenderer.invoke(INVOKE.chooseExportDestination, {
+        mode: requireString(mode, "mode"),
+        suggestedName: requireString(suggestedName, "suggestedName"),
+      }),
+    writeExportFiles: (token: unknown, files: unknown, overwrite: unknown) =>
+      ipcRenderer.invoke(INVOKE.writeExportFiles, {
+        token: requireString(token, "token"),
+        files: copyExportFiles(files),
+        overwrite: requireBoolean(overwrite, "overwrite"),
+      }),
     onCloseRequested: (listener: unknown) =>
       subscribe(EVENTS.closeRequested, listener),
     onPendingProjectFile: (listener: unknown) =>

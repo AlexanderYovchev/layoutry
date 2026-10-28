@@ -82,7 +82,11 @@ export function AppHeader({
 
         <ProjectIdentity project={project} />
 
-        <GlobalActions historyControl={historyControl} previewControl={previewControl} />
+        <GlobalActions
+          historyControl={historyControl}
+          previewControl={previewControl}
+          onExportCode={fileMenuCommands?.onExportCode}
+        />
       </header>
 
       <HelpDialogs

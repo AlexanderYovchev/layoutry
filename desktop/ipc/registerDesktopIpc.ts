@@ -1,3 +1,4 @@
+import type { ExportFileService } from "../export/exportFileService";
 import type { ProjectFileService } from "../files/projectFileService";
 import type { CloseCoordinator } from "../main/closeCoordinator";
 import type { RecoveryService } from "../recovery/recoveryService";
@@ -51,12 +52,14 @@ export interface DesktopIpcOptions {
     RecoveryService,
     "beginSession" | "write" | "list" | "read" | "discard"
   >;
+  /** EXPORT-1.4: native saving of generated code, with its own tokens. */
+  exportFiles: Pick<ExportFileService, "chooseDestination" | "write">;
 }
 
 /**
- * Registers the whole desktop IPC surface (PROJECT-1.3): twelve fixed
- * channels (five for recovery since PROJECT-1.4), each validating its
- * sender and payload. Payload errors reject
+ * Registers the whole desktop IPC surface (PROJECT-1.3): fourteen fixed
+ * channels (five for recovery since PROJECT-1.4, two for code export since
+ * EXPORT-1.4), each validating its sender and payload. Payload errors reject
  * the call; nothing reaches the filesystem without a valid capability.
  */
 export function registerDesktopIpc({
@@ -65,6 +68,7 @@ export function registerDesktopIpc({
   files,
   close,
   recovery,
+  exportFiles,
 }: DesktopIpcOptions): void {
   function handle(
     channel: string,
@@ -132,5 +136,11 @@ export function registerDesktopIpc({
   );
   handle(INVOKE_CHANNELS.discardRecovery, (owner, payload) =>
     recovery.discard(owner, payload),
+  );
+  handle(INVOKE_CHANNELS.chooseExportDestination, (owner, payload) =>
+    exportFiles.chooseDestination(owner, payload),
+  );
+  handle(INVOKE_CHANNELS.writeExportFiles, (owner, payload) =>
+    exportFiles.write(owner, payload),
   );
 }

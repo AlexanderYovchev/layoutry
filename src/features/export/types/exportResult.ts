@@ -1,4 +1,5 @@
 import type { ExportDiagnostic } from "@/features/export/types/exportDiagnostic";
+import type { ExportAsset } from "@/features/export/types/exportIr";
 
 export interface ExportFile {
   /** Relative path inside the export, e.g. "index.html". */
@@ -26,4 +27,10 @@ export interface HtmlCssExportResult {
   ok: boolean;
   files: ExportFile[];
   diagnostics: ExportDiagnostic[];
+  /**
+   * Every URL the exported page references (EXPORT-1.4), so the export UI
+   * can say which resources stay on the internet or must ship alongside.
+   * Empty when the export was refused.
+   */
+  assets: ExportAsset[];
 }

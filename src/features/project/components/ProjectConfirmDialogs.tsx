@@ -8,7 +8,7 @@ import {
   dialogFooterClass,
   primaryButtonClass,
   secondaryButtonClass,
-} from "@/features/project/components/projectDialogButtons";
+} from "@/components/ui/dialogButtons";
 import type {
   FileConflict,
   ProjectCommandError,

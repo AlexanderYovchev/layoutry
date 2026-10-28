@@ -5,7 +5,9 @@ reads the typed document model, never the rendered DOM. EXPORT-1.2 delivered
 the foundation: a pure HTML/CSS exporter and a target-independent
 intermediate representation (IR). EXPORT-1.3 added the
 [interaction runtime](#interaction-runtime-export-13), so interactive
-components work in the exported page. Tailwind, React and Vue will become
+components work in the exported page. EXPORT-1.4 put it in front of users:
+File › Export Code…, downloads and native desktop saving
+([export-ui.md](./export-ui.md)). Tailwind, React and Vue will become
 printers over that same IR. The decisions behind this design are in
 [ADR-0008](../decisions/ADR-0008-export-shared-styling-and-ir.md) and
 [ADR-0009](../decisions/ADR-0009-export-interaction-runtime.md).
@@ -396,9 +398,10 @@ panels, and the native top-layer popover would change their layout.
 - **Authored classes** are copied verbatim. On the Canvas, `tailwind-merge`
   can let an authored class that matches a Tailwind utility override a
   default. Export never does this.
-- **Large exports** (20,000 elements) take about 0.5 s and produce about
-  3.5 MB of output on the main thread. Move them to a worker if the export
-  UI ever needs it.
+- **Large exports** (20,000 elements) take about 0.3–0.5 s and produce
+  about 3.5 MB of output on the main thread. EXPORT-1.4 measured this in
+  the export dialog and kept it there (see
+  [export-ui.md](./export-ui.md#performance)).
 
 ## Future integration points
 
@@ -412,5 +415,7 @@ panels, and the native top-layer popover would change their layout.
   - outside-click and Escape effects from `dismissibleTargetTokens`;
   - a `ref` with `showModal()` for dialog targets.
   The same rules apply as in the HTML runtime.
-- **Export UI and delivery:** call `exportHtmlCss`. Entitlement checks
-  belong at the UI action, never inside the generator.
+- **Export UI and delivery (done, EXPORT-1.4):** the dialog calls
+  `exportHtmlCss`; the result's `assets` (every referenced URL, by kind)
+  tells the UI what stays on the internet. Entitlement checks sit at the UI
+  action, never inside the generator. See [export-ui.md](./export-ui.md).

@@ -1,5 +1,6 @@
-// Button styles shared by the project dialogs (PROJECT-1.2), built only
-// from the existing Bright Studio tokens used across the header.
+// Dialog button styles, built only from the existing Bright Studio tokens
+// used across the header. Introduced for the project dialogs (PROJECT-1.2);
+// shared with the code export dialog since EXPORT-1.4.
 const base =
   "inline-flex h-8 items-center justify-center gap-1.5 rounded-control px-3 text-sm font-medium transition-[background-color,border-color,filter] duration-150 ease-studio focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60";
 
