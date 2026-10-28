@@ -413,18 +413,52 @@ AF. BROWSER PLAYWRIGHT — npx playwright test (44 tests: the 39 existing plus 5
       timeouts under full parallel load.
     - Rerun of those 4 alone (--last-failed): 4 passed.
     - Full run 2: 44 passed, 0 failed.
-    Conclusion: the suite now carries more concurrent heavy specs, and timing-sensitive
-    tests can time out under load. This is not a functional defect, but it is reported
-    rather than hidden. It could be reduced in a later checkpoint by running the export
-    parity specs serially (a test.describe.configure setting).
+
+    Investigation of the timeouts (2026-10-28, post-review). Machine: 16 logical CPUs,
+    7.9 GB RAM. Playwright's default is 8 workers, each running Chromium, plus the Next
+    dev server. CPU and free memory were sampled once a second alongside each run.
+
+    | Run                                        | Result                      | Time      | Load                        |
+    |--------------------------------------------|-----------------------------|-----------|-----------------------------|
+    | Full suite, 8 workers, ×3                  | 44/44, 44/44, 43/44         | 126/105/  | –                           |
+    |                                            | (recovery :87 timed out)    | 78 s      |                             |
+    | Without the export specs, 8 workers        | 29/31: recovery :87 and     | 51 s      | free RAM min 244 MB         |
+    |                                            | :152 failed                 |           |                             |
+    | Full suite, 8 workers                      | 43/44: the interaction spec | 295 s     | free RAM min 4 MB; CPU ≥95% |
+    |                                            | hit its 240 s test timeout  |           | for 17 s                    |
+    | project-recovery spec alone, 8 workers, ×3 | 6/6 every time              | 18–23 s   | –                           |
+    | Full suite, --workers=4, ×3                | 44/44 every time            | 54–58 s   | –                           |
+    | Full suite, new config (4 workers), ×4     | 44/44 every time            | 56–67 s   | free RAM min 27 MB; CPU max |
+    |                                            |                             |           | 78%, never ≥95%             |
+
+    Findings:
+    - RESOURCE CONTENTION, not a functional regression. Every failing test passes in
+      isolation and in the full suite at 4 workers.
+    - The failures were timing assertions (the recovery status reaching "protected",
+      the editor page root appearing) during memory exhaustion. The slowdown to 295 s
+      shows paging.
+    - The recovery flakiness also occurs with the export specs removed, so it predates
+      EXPORT-1.3. The added heavy parity specs (each opening the editor plus two export
+      pages with large screenshots) made it more frequent.
+    - No EXPORT-1.3 code is involved: the recovery code is untouched, and the export
+      feature is not imported by the app.
+
+    Fix (scheduling only, no timeouts changed): playwright.config.ts sets workers: 4
+    (previously the default, half the logical CPUs = 8). The rationale is in a comment
+    there. The full suite is now stable and FASTER, because it no longer thrashes.
+    The desktop and packaged configs already run with workers: 1 and are untouched.
+
+    Final browser Playwright result: 44/44 on 4 of 4 full runs with the new config.
+
     Also: npm run build (Next.js production) passed. It compiled, the TypeScript step
     passed, and the routes are static.
-AG. ELECTRON PLAYWRIGHT — NOT RUN.
+AG. ELECTRON PLAYWRIGHT — INTENTIONALLY DEFERRED (not run).
     - No code the application ships changed in this checkpoint. The export feature is
       not imported by the app yet, and no editor, canvas or desktop source was touched.
-    - The suite opens many visible app windows; the user stopped such a run once before.
-    - Awaiting the user's go-ahead.
-AH. PACKAGED WINDOWS — NOT RUN, for the same reason. Awaiting the user's go-ahead.
+    - The suite opens many visible app windows. Deferred by user decision on 2026-10-28;
+      to be run when export is wired into the app (EXPORT-1.4).
+AH. PACKAGED WINDOWS — INTENTIONALLY DEFERRED (not run), for the same reason and by the
+    same decision.
 
 ==========================================================================================
 AI. KNOWN LIMITATIONS
@@ -524,10 +558,11 @@ DIRECT ANSWERS
 27. What are the test results?
     - typecheck and lint pass.
     - Vitest: 4,972 passed, 1 skipped.
-    - Browser Playwright: 44/44 on the second full run. The first full run had 4
-      load-related timeouts, all of which pass on rerun (AF).
+    - Browser Playwright: 44/44 on 4 of 4 full runs after the worker cap. The earlier
+      intermittent timeouts were traced to memory contention at 8 workers, not to a
+      functional regression (AF).
     - Next build passes.
-    - Electron and packaged suites: not run (AG, AH).
+    - Electron and packaged suites: intentionally deferred (AG, AH).
 28. Are any significant behavior differences unresolved? No (AI lists the intentional
     and editor-side limits).
 29. Is the runtime ready for user-facing Export UI integration? Yes. The API is
