@@ -1,0 +1,344 @@
+LAYOUTRY — BRAND-1.1 — APPLICATION ICON, IN-APP LOGO & BRAND IDENTITY
+Report date: 2026-10-28
+Status: complete, uncommitted, awaiting approval.
+
+======================================================================
+A. Git baseline
+======================================================================
+Branch main, clean working tree, HEAD 2b6fab2
+("feat(export): integrate code preview downloads and secure desktop
+saving"). Nothing has been committed, staged or pushed.
+
+======================================================================
+B. Approved source asset
+======================================================================
+design/branding/layoutry-icon-source.png did not exist. The user attached
+the approved artwork with the task. It was copied unmodified to that path:
+  1254 x 1254 px, 8-bit RGB PNG (no alpha), 1,454,893 bytes
+  SHA-256 b40dc7b8030b444fccf8bffd80b122840b284f3d4856a2627e91f5f07aa5867f
+The artwork is a rounded-square tile on a white backdrop with a soft drop
+shadow. It is never edited. Every other asset is derived from it.
+
+======================================================================
+C. Existing branding audit
+======================================================================
+- Header: src/components/layout/AppHeader.tsx rendered LayoutryLogoMark,
+  a generic mark of two crossed rounded bars in the --ly- accent
+  gradient, at size-6.5 (26 px), next to the "Layoutry" wordmark (an h1;
+  text-xl, bold, text-fg-primary).
+- Windows icon: desktop/packaging/generateIcon.mjs used Playwright Chromium
+  at package time to render that same crossed-bars SVG into a
+  16–256 px .ico. It was not committed.
+- Electron window: BrowserWindow had no `icon`. Packaged, it inherited the
+  exe icon (the crossed bars). Development showed the stock Electron icon.
+- Web: no favicon, no public/ directory, no icon metadata. The browser
+  showed its default icon. No starter-framework icons were present to
+  remove.
+- Metadata: title "Layoutry" and the product description in
+  src/app/layout.tsx. The exe has ProductName / FileDescription /
+  CompanyName "Layoutry". These were already consistent and are unchanged.
+- No About dialog with a logo exists. The Help dialogs are text only.
+- Packaged test: e2e/packaged/artifact.spec.ts only checked that the exe
+  icon differs from electron.exe's.
+
+======================================================================
+D. Windows icon generation
+======================================================================
+Pipeline: design/branding/brandIcons.mjs, run by
+design/branding/generate-brand-assets.mjs (`npm run brand:generate`). It
+uses sharp 0.34.5, already installed through Next.js and now pinned as an
+explicit devDependency. No external service or icon CDN is used.
+
+1. Backdrop removal. Starting from the image border, the generator flood-fills
+   light pixels (all channels > 150) to transparent, which removes the
+   white backdrop and gray shadow. The white page and glove inside the
+   tile are enclosed by blue, so the fill never reaches them. The tile's
+   outermost 1-px ring, which is blended with white, is kept at alpha 110
+   to avoid a light fringe on dark taskbars.
+2. The result is cropped square around the tile (1057 px master).
+3. Sizes 32 px and up use the master, resized with Lanczos3. Sizes 24 px
+   and below use the simplified variants (section E).
+4. Entries are packed as a real multi-image ICO: 32-bpp PNG-compressed
+   entries, with 256 stored as 0 in the directory. It is not a renamed
+   PNG. The unit test checks that readIco() rejects a renamed PNG.
+
+design/branding/layoutry.ico: 16, 20, 24, 32, 40, 48, 64, 128, 256 px
+(220,717 bytes). Every entry decodes to its declared size and has alpha
+(unit-tested). Output is deterministic: regenerating produced identical
+bytes.
+
+======================================================================
+E. Small-size variants
+======================================================================
+At 16 and 24 px the downscaled artwork is unreadable: no brush and no code
+symbol. This was checked on 6x-zoomed contact sheets on light and dark
+backgrounds. Two pixel-grid SVGs, drawn from the artwork with its colors,
+replace it at those sizes:
+  layoutry-icon-small-24.svg  -> 20 and 24 px
+  layoutry-icon-small-16.svg  -> 16 px
+Kept: the blue→indigo rounded tile (cyan top-right), the white webpage
+with its purple→blue hero band, the dark code window, and the
+paintbrush (blue handle, silver ferrule, orange→purple tip).
+Simplified (also listed in design/branding/README.md):
+  - The hand is dropped. The brush's white grip end stands in for the
+    glove.
+  - Page content is reduced to the hero band and two blocks. The browser
+    dots, mountains, "T" box and dashed placeholder are gone.
+  - The code window shows `</>` at 24 px and only `< >` at 16 px (the slash
+    does not fit in 4 px).
+  - The design→code arrow and one back page layer are kept at 24 px and
+    dropped at 16 px.
+The result is clearly the same identity at a glance: blue tile, white
+page, brush, code window.
+
+======================================================================
+F. Electron integration
+======================================================================
+- desktop/scripts/package-windows.mjs no longer renders an icon. It reads
+  the committed design/branding/layoutry.ico, checks with readIco() that
+  it holds exactly WINDOWS_ICON_SIZES, fails packaging otherwise, and
+  passes it to electron-builder as win.icon. The Playwright render step is
+  removed, along with desktop/packaging/generateIcon.mjs. Its buildIco()
+  and tests moved to design/branding/.
+- desktop/main/main.ts: development only (`!app.isPackaged`),
+  BrowserWindow gets `icon: design/branding/layoutry.ico`, resolved from
+  desktop-dist/main/. The packaged window keeps inheriting the exe's
+  embedded icon. Nothing is added to app.asar or resources/.
+- Not changed: app identifiers, AppUserModelID, productName,
+  executableName, user-data path, fuses, project file format, saved
+  projects and settings.
+
+======================================================================
+G. Packaged executable verification
+======================================================================
+`npm run desktop:package`: OK. It logged "icon: 16, 20, 24, 32, 40, 48, 64,
+128, 256 px (220717 bytes)", with fuses and asar verification unchanged.
+- Byte-exact embedding: every one of the 9 PNG entries of layoutry.ico is
+  present byte for byte in release/win-unpacked/Layoutry.exe, and none in
+  node_modules/electron/dist/electron.exe. This check is now a permanent
+  assertion in e2e/packaged/artifact.spec.ts, run against the exe
+  extracted from the release ZIP.
+- Live window (packaged Layoutry.exe launched, icons read via WM_GETICON
+  and GetClassLongPtr, taskbar captured with CopyFromScreen; passive, no
+  input simulated):
+    * ICON_BIG (Alt+Tab): identical to the 32 px entry.
+    * Taskbar button: the new artwork. Windows scales the 32 px icon to the
+      ~24 px button.
+    * ICON_SMALL (title bar): the new artwork, downscaled by
+      Electron/Chromium from the large icon (see W1).
+- Development window (`electron .`) with the explicit .ico: ICON_SMALL is
+  exactly the simplified 16 px variant, ICON_BIG is the 32 px entry, and
+  the taskbar shows the new artwork. The stock Electron icon is gone.
+- Icon cache: the release exe is new and was never pinned, so no stale
+  cache was involved. If a previously pinned or extracted Layoutry.exe
+  still shows the crossed bars, that is the Windows icon cache. The
+  embedded bytes above prove the packaging. Unpin and re-pin, or run
+  `ie4uinit.exe -show`, to refresh.
+
+======================================================================
+H. Header logo integration
+======================================================================
+LayoutryLogoMark.tsx now inlines the 24-px simplified variant as React
+SVG. It has the same export, the same `className` API, and the same caller
+(AppHeader, unchanged) at size-6.5. The full artwork at 26 px (1x) has the
+same legibility problem as the 24 px icon, so the simplified variant is
+used, as the brief allows. As inline SVG it is crisp at every DPR and
+needs no asset request (works over app://layoutry/ and the web build).
+Measured live (static export, Chromium, light/dark x 1x/2x, all four
+identical):
+  header 1440x52, h1 at (16,11.5) 116.8x28, mark (16,12.5) 26x26,
+  first menu trigger at x=148.8. No console errors.
+The mark's box is fixed by its unchanged className, so toolbar positions
+are unchanged.
+
+======================================================================
+I. Wordmark integration
+======================================================================
+The wordmark is unchanged: the h1 text "Layoutry", text-xl bold
+tracking-tight, text-fg-primary, gap-2 from the mark. It stays theme-aware
+and legible in both themes (screenshots checked).
+
+======================================================================
+J. Browser favicon
+======================================================================
+Uses the Next.js metadata file conventions in src/app, emitted
+automatically as <link> tags:
+  favicon.ico     16, 24, 32, 48 (16/24 simplified, 32/48 artwork)
+  icon.png        192x192 artwork, transparent
+  apple-icon.png  180x180 artwork, opaque (corners filled with the tile's
+                  #0a1d89 edge; iOS fills transparency with black)
+The static export (out/index.html) contains:
+  <link rel="icon" href="/favicon.ico?…" sizes="48x48" type="image/x-icon">
+  <link rel="icon" href="/icon.png?…" sizes="192x192" type="image/png">
+  <link rel="apple-touch-icon" href="/apple-icon.png?…" sizes="180x180">
+All three files are present in out/. `next build` lists /icon.png and
+/apple-icon.png as static routes. Not visually confirmed in a real browser
+tab strip: headless Chromium has no tab UI (see W3).
+
+======================================================================
+K. Next.js metadata
+======================================================================
+The title "Layoutry" and the description are already consistent and are
+unchanged. Icons come from the file conventions above. No `icons` field
+was added to `metadata`, to avoid duplicate links.
+
+======================================================================
+L. Light/dark theme verification
+======================================================================
+The mark uses fixed brand colors, like the app icon, so it looks
+identical in both themes. Its tile has its own background, so it never
+relies on chrome contrast. Screenshots at 1x and 2x in light and dark
+(colorScheme emulation): mark and wordmark clear in both. The packaged
+suite's "OS dark theme restyles the editor chrome" test passed.
+
+======================================================================
+M. Asset sizes and formats
+======================================================================
+Committed sources:
+  layoutry-icon-source.png    1,454,893 B  PNG RGB 1254² (approved, untouched)
+  layoutry-icon-small-24.svg      1,974 B  SVG
+  layoutry-icon-small-16.svg      1,260 B  SVG
+Committed derivatives:
+  design/branding/layoutry.ico  220,717 B  ICO, 9 PNG entries (exe only)
+  src/app/favicon.ico            13,309 B  ICO, 4 PNG entries
+  src/app/icon.png               15,969 B  PNG8 palette (from 87,858 B)
+  src/app/apple-icon.png         14,511 B  PNG8 palette (from 71,716 B)
+The web PNGs are palette-quantized, visually identical in a side-by-side
+check. The header mark is about 1.5 KB of inline SVG in the JS bundle,
+with no image request. The source PNG and layoutry.ico are not in the
+frontend bundle or app.asar.
+
+======================================================================
+N. Accessibility
+======================================================================
+The mark stays aria-hidden and focusable=false. The h1 text "Layoutry" is
+the accessible name, as before. The full web e2e suite, including the axe
+accessibility spec, passed.
+
+======================================================================
+O. TypeScript results
+======================================================================
+`npm run typecheck` (tsc --noEmit): 0 errors.
+`npm run desktop:compile` (inside desktop:build/package): 0 errors.
+
+======================================================================
+P. ESLint results
+======================================================================
+`npm run lint`: 0 errors, 0 warnings. Prettier --check on all changed
+and new files: clean.
+
+======================================================================
+Q. Unit tests
+======================================================================
+`npm test`: 338 files, 5035 passed, 1 skipped (pre-existing). New
+design/branding/brandIcons.test.ts has 8 tests: the 2 moved buildIco
+tests, readIco round-trip, rejection of a renamed PNG, Windows .ico sizes
+and alpha, favicon sizes, web PNG formats and sizes, and master
+transparency (corners transparent; tile, page and glove opaque).
+
+======================================================================
+R. Browser tests
+======================================================================
+`npm run test:e2e`: 58 passed.
+`npm run build` (default web build): succeeded.
+
+======================================================================
+S. Electron tests
+======================================================================
+`npm run desktop:test` (build + Electron suite): 57 passed, 2 skipped.
+The skips are the opt-in persistence benchmarks (pre-existing test.skip).
+
+======================================================================
+T. Packaged Windows tests
+======================================================================
+`npm run desktop:package`: OK.
+`npm run desktop:test:packaged`: 51 passed, including the strengthened
+icon assertion. The suite covers project open/save/recovery and export
+workflows, so persistence and export are unaffected (checklist items 9
+and 10).
+Process note: the first packaged run failed to load because Playwright
+transpiles .mjs to CommonJS and brandIcons.mjs used import.meta. It was
+fixed with a location-independent brandPaths(repoRoot), the same pattern
+as releaseInfo.mjs, then re-packaged and re-run green.
+
+======================================================================
+U. Files added
+======================================================================
+design/branding/layoutry-icon-source.png
+design/branding/layoutry-icon-small-24.svg
+design/branding/layoutry-icon-small-16.svg
+design/branding/layoutry.ico
+design/branding/brandIcons.mjs
+design/branding/brandIcons.test.ts   (moved from desktop/packaging/generateIcon.test.ts)
+design/branding/generate-brand-assets.mjs
+design/branding/README.md
+src/app/favicon.ico
+src/app/icon.png
+src/app/apple-icon.png
+docs/reports/brand-1.1-application-identity.txt
+
+Deleted: desktop/packaging/generateIcon.mjs (replaced by brandIcons.mjs)
+
+======================================================================
+V. Files modified
+======================================================================
+src/components/layout/LayoutryLogoMark.tsx  new mark (simplified identity)
+desktop/main/main.ts                        dev-only window icon
+desktop/scripts/package-windows.mjs         use and validate committed .ico
+e2e/packaged/artifact.spec.ts               byte-exact embedded-icon check
+vitest.config.ts                            include design/**/*.test.ts
+package.json / package-lock.json            sharp 0.34.5 devDependency (exact);
+                                            "brand:generate" script
+docs/architecture/desktop-shell.md          packaging step 3 updated
+
+Not touched: canvas, Inspector, export engine, component library, project
+format, editor architecture, app identifiers, user-data paths.
+
+======================================================================
+W. Known limitations
+======================================================================
+W1. In the packaged build, the 16 px title-bar icon is Electron's
+    downscale of the large icon, not the simplified 16 px variant.
+    Electron only picks exact .ico entries when BrowserWindow.icon is a
+    loose .ico file, and Windows' LoadImage cannot read inside app.asar.
+    Shipping a loose .ico would change the verified resources/ layout
+    (only app.asar), so it was left out of scope. Development runs do show
+    the simplified 16 px icon.
+W2. The taskbar button (~24 px at 100 %) shows the 32 px artwork scaled by
+    Windows, not the simplified 24 px variant, in both packaged and dev.
+    This is Windows behavior for window icons. Recognizable, but busier
+    than the 24 px variant. Explorer/file views of Layoutry.exe use the
+    exact 16/24 entries.
+W3. The tab favicon was verified by emitted links, served files and
+    decoded contents, not by viewing a real browser tab strip.
+W4. Only 100 % display scaling is available on this machine (Win10, one
+    monitor). The 20/40 px entries for 125 % scaling are present but not
+    seen live.
+W5. LayoutryLogoMark.tsx duplicates layoutry-icon-small-24.svg (noted in
+    both files). Changing one requires changing the other.
+W6. Derived icons are committed binaries, regenerated by
+    `npm run brand:generate`. They are not rebuilt automatically when the
+    source changes. Packaging validates the .ico's sizes but not its
+    freshness.
+
+======================================================================
+X. Unresolved issues
+======================================================================
+None blocking. W1/W2 need a decision if the simplified small icon is
+wanted on the packaged title bar/taskbar.
+
+======================================================================
+Y. Recommended commit message
+======================================================================
+feat(brand): adopt approved Layoutry icon across desktop, header and web
+
+- Add approved artwork as design/branding/layoutry-icon-source.png and a
+  sharp-based pipeline (npm run brand:generate) that removes its backdrop
+  and builds a real multi-size .ico, favicon, icon.png and apple-icon.png
+- Add simplified 16/24 px variants derived from the artwork for legibility
+- Package the committed, size-validated .ico into Layoutry.exe; set it as
+  the development window icon
+- Replace the generic header mark with the simplified brand mark
+- Assert byte-exact icon embedding in the packaged artifact test
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

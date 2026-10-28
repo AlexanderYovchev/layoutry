@@ -2,7 +2,7 @@
 // Run through `npm run desktop:package`, which first runs desktop:build.
 //
 // 1. Stage only the runtime files (package.json, desktop-dist/, out/).
-// 2. Generate the .ico from the existing logo mark.
+// 2. Validate the committed brand icon (design/branding, BRAND-1.1).
 // 3. electron-builder: app.asar + embedded ASAR integrity + ZIP target,
 //    with Layoutry's PACKAGED_FUSES flipped in the afterPack hook.
 // 4. Verify the final artifact (fuse wire, asar contents) and report sizes.
@@ -28,7 +28,11 @@ import {
 import { Arch, build, Platform } from "electron-builder";
 import { PACKAGED_FUSES } from "../fuses/layoutryFuses.ts";
 import { listAsarFiles } from "../packaging/asarListing.mjs";
-import { generateIcon } from "../packaging/generateIcon.mjs";
+import {
+  brandPaths,
+  readIco,
+  WINDOWS_ICON_SIZES,
+} from "../../design/branding/brandIcons.mjs";
 import {
   FORBIDDEN_ASAR_PATTERNS,
   RELEASE,
@@ -138,15 +142,19 @@ for (const { source, name } of TESTER_DOCUMENTS) {
   );
 }
 
-// --- 2. Icon from the existing logo mark --------------------------------
-const iconPath = path.join(STAGED_BUILD_RESOURCES_DIR, "icon.ico");
-const icon = await generateIcon({
-  exportRoot,
-  outFile: iconPath,
-  repoRoot: REPO_ROOT,
-});
+// --- 2. Brand icon ------------------------------------------------------
+// Generated from the approved artwork by `npm run brand:generate` and
+// committed; checked here so a broken or incomplete .ico never ships.
+const iconPath = brandPaths(REPO_ROOT).windowsIconPath;
+const iconBytes = await readFile(iconPath);
+const iconSizes = readIco(iconBytes).map((entry) => entry.size);
+if (iconSizes.join(",") !== WINDOWS_ICON_SIZES.join(",")) {
+  fail(
+    `${iconPath} has sizes ${iconSizes.join(", ")}; run "npm run brand:generate".`,
+  );
+}
 console.log(
-  `[desktop:package] icon: ${icon.sizes.join(", ")} px (${icon.bytes} bytes)`,
+  `[desktop:package] icon: ${iconSizes.join(", ")} px (${iconBytes.length} bytes)`,
 );
 
 // --- 3. electron-builder -------------------------------------------------

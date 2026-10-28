@@ -66,10 +66,12 @@ the archive, so no packaged-specific code path exists.
 2. **Stage** `release/.staging/app/` with only the runtime files: a minimal
    `package.json` (no dependencies, so no `node_modules` are packed),
    `desktop-dist/` (`.js` only) and `out/`.
-3. **Icon:** `desktop/packaging/generateIcon.mjs` renders the existing
-   `LayoutryLogoMark` from the built app, with its theme gradient resolved,
-   at 16–256 px into a multi-resolution `.ico`. The source component is
-   untouched; this is a build-time step using Playwright's Chromium.
+3. **Icon:** the committed brand icon `design/branding/layoutry.ico`
+   (BRAND-1.1) is read back and must hold every size in
+   `WINDOWS_ICON_SIZES` (16–256 px), or packaging fails. It is generated
+   from the approved artwork by `npm run brand:generate`, not at package
+   time. Development runs (`desktop:start`, the desktop suite) set the same
+   `.ico` as the window icon; the packaged window inherits it from the exe.
 4. **electron-builder** (`26.15.3`, target `zip`, `win-x64`) packs
    `app.asar` from the development Electron runtime in `node_modules`
    (copied, never modified). It embeds the ASAR integrity hash into the

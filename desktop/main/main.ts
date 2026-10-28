@@ -56,6 +56,15 @@ const DEFAULT_WINDOW_SIZE = { width: 1440, height: 900 };
 // viewport" notice instead of the editor below 900px wide). Applied to the
 // window's content area — see outerMinimumForContent.
 const MIN_CONTENT_SIZE = { width: 900, height: 600 };
+// Resolved from the compiled desktop-dist/main/ to the repository's copy.
+const DEVELOPMENT_WINDOW_ICON = path.join(
+  __dirname,
+  "..",
+  "..",
+  "design",
+  "branding",
+  "layoutry.ico",
+);
 
 const devToolsEnabled = process.env.LAYOUTRY_DESKTOP_DEVTOOLS === "1";
 const exportRoot = path.join(app.getAppPath(), "out");
@@ -172,6 +181,10 @@ function createMainWindow(): BrowserWindow {
     width: Math.min(DEFAULT_WINDOW_SIZE.width, workArea.width),
     height: Math.min(DEFAULT_WINDOW_SIZE.height, workArea.height),
     show: false,
+    // Packaged, Windows takes the window, taskbar and Alt+Tab icon from
+    // Layoutry.exe's embedded icon. Development runs the stock electron.exe,
+    // so point it at the same brand icon (not shipped in app.asar).
+    ...(app.isPackaged ? {} : { icon: DEVELOPMENT_WINDOW_ICON }),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

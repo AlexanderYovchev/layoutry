@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { PACKAGED_FUSES } from "../../desktop/fuses/layoutryFuses";
+import { brandPaths, readIco } from "../../design/branding/brandIcons.mjs";
 import { listAsarFiles } from "../../desktop/packaging/asarListing.mjs";
 import {
   FORBIDDEN_ASAR_PATTERNS,
@@ -12,7 +13,7 @@ import {
   TESTER_DOCUMENTS,
   ZIP_NAME,
 } from "../../desktop/packaging/releaseInfo.mjs";
-import { electronBinary } from "../desktop/support/layoutryApp";
+import { electronBinary, REPO_ROOT } from "../desktop/support/layoutryApp";
 import {
   extractedAppDir,
   extractedExe,
@@ -166,6 +167,14 @@ test("the executable has Layoutry metadata, the Layoutry icon, and is (honestly)
   expect(associatedIconHash(extractedExe())).not.toBe(
     associatedIconHash(electronBinary()),
   );
+  // The brand icon (BRAND-1.1), byte for byte: icon resources are stored
+  // verbatim in the exe, so every size of layoutry.ico must appear in it.
+  const exeBytes = await readFile(extractedExe());
+  for (const { size, png } of readIco(
+    await readFile(brandPaths(REPO_ROOT).windowsIconPath),
+  )) {
+    expect(exeBytes.includes(png), `${size} px icon embedded`).toBe(true);
+  }
   expect(
     existsSync(path.join(extractedAppDir(), "resources", "default_app.asar")),
   ).toBe(false);

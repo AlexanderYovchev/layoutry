@@ -11,6 +11,7 @@ export default defineConfig({
       "src/**/*.test.{ts,tsx}",
       "test/**/*.test.{ts,tsx}",
       "desktop/**/*.test.ts",
+      "design/**/*.test.ts",
       "next.config.test.ts",
     ],
   },
