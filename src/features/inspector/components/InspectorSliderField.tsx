@@ -89,6 +89,12 @@ export function InspectorSliderField({ label, value, min, max, step = 1, unit, d
 
   const [draft, setDraft] = useState(isMixed ? "" : String(displayValue));
   const [touched, setTouched] = useState(false);
+  // BC-01.2: the exact-value box's Enter/Escape call .blur(), whose real
+  // blur event runs the CURRENT render's commitNumericDraft() — `touched`
+  // still true and the typed draft still in its closure — so Enter
+  // committed twice and Escape committed the value it meant to discard.
+  // Same fix InspectorNumericValueControl got in Checkpoint 5.5.
+  const suppressNextBlurCommitRef = useRef(false);
   const [lastSyncedValue, setLastSyncedValue] = useState(value);
   if (value !== lastSyncedValue) {
     setLastSyncedValue(value);
@@ -157,15 +163,31 @@ export function InspectorSliderField({ label, value, min, max, step = 1, unit, d
     }
   }
 
+  function handleNumericBlur() {
+    if (suppressNextBlurCommitRef.current) {
+      suppressNextBlurCommitRef.current = false;
+      return;
+    }
+    commitNumericDraft();
+  }
+
+  // Only arms the suppression when .blur() will genuinely dispatch a blur
+  // event (the input is focused) — otherwise the flag would linger and
+  // swallow the next, unrelated blur.
+  function releaseNumericFocus(input: HTMLInputElement) {
+    if (document.activeElement === input) suppressNextBlurCommitRef.current = true;
+    input.blur();
+  }
+
   function handleNumericKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
       commitNumericDraft();
-      event.currentTarget.blur();
+      releaseNumericFocus(event.currentTarget);
     } else if (event.key === "Escape") {
       event.preventDefault();
       setDraft(isMixed ? "" : String(displayValue));
       setTouched(false);
-      event.currentTarget.blur();
+      releaseNumericFocus(event.currentTarget);
     }
   }
 
@@ -204,7 +226,7 @@ export function InspectorSliderField({ label, value, min, max, step = 1, unit, d
             setDraft(event.target.value);
             setTouched(true);
           }}
-          onBlur={commitNumericDraft}
+          onBlur={handleNumericBlur}
           onKeyDown={handleNumericKeyDown}
           className={cn(inspectorFieldClassName, "w-14 shrink-0 px-2 text-right")}
         />

@@ -106,6 +106,7 @@ export function InspectorColorFieldShell({
   const isEditable = onCommit !== undefined;
 
   const [draft, setDraft] = useState(value ?? "");
+  const [touched, setTouched] = useState(false);
   // Adjusts the draft when the external value changes (Undo/Redo, another
   // control affecting the same node, or a color picked visually — see
   // this component's own doc comment) — same reset-during-render pattern
@@ -114,7 +115,18 @@ export function InspectorColorFieldShell({
   if (value !== lastSyncedValue) {
     setLastSyncedValue(value);
     setDraft(value ?? "");
+    setTouched(false);
   }
+
+  // BC-01.2: the same two guards InspectorNumericValueControl got in
+  // Checkpoints 5.5/5.6, which this text field never received. `touched`
+  // (set only by a real onChange) keeps a focus-then-blur with no edit
+  // from committing; suppressNextBlurCommitRef swallows the one real blur
+  // event that Enter/Escape's own .blur() dispatches synchronously. Without
+  // it, that blur ran the CURRENT render's commit(), whose closure still
+  // held the typed draft, so Enter committed twice and Escape committed
+  // the very value it was meant to discard.
+  const suppressNextBlurCommitRef = useRef(false);
 
   const colorInputRef = useRef<HTMLInputElement>(null);
   const representableHex = toNativeColorInputValue(value);
@@ -145,23 +157,44 @@ export function InspectorColorFieldShell({
   }, [onCommit]);
 
   function commit() {
-    if (!onCommit) return;
+    if (!onCommit || !touched) return;
+    setTouched(false);
     const trimmed = draft.trim();
-    if (trimmed === "") {
+    // Retyping the exact stored string is a no-op, not an edit worth a
+    // history entry — unlike a numeric field, `value` here is always the
+    // authored string itself (null when unset), never a displayed default.
+    if (trimmed === "" || trimmed === value) {
       setDraft(value ?? "");
       return;
     }
     onCommit(trimmed);
   }
 
+  function handleBlur() {
+    if (suppressNextBlurCommitRef.current) {
+      suppressNextBlurCommitRef.current = false;
+      return;
+    }
+    commit();
+  }
+
+  // Only arms the suppression when .blur() will genuinely dispatch a blur
+  // event (the input is focused) — otherwise the flag would linger and
+  // swallow the next, unrelated blur.
+  function releaseFocus(input: HTMLInputElement) {
+    if (document.activeElement === input) suppressNextBlurCommitRef.current = true;
+    input.blur();
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
       commit();
-      event.currentTarget.blur();
+      releaseFocus(event.currentTarget);
     } else if (event.key === "Escape") {
       event.preventDefault();
       setDraft(value ?? "");
-      event.currentTarget.blur();
+      setTouched(false);
+      releaseFocus(event.currentTarget);
     }
   }
 
@@ -227,8 +260,15 @@ export function InspectorColorFieldShell({
         aria-label={label}
         aria-invalid={error ? true : undefined}
         value={isEditable ? draft : (value ?? "")}
-        onChange={isEditable ? (event) => setDraft(event.target.value) : undefined}
-        onBlur={isEditable ? commit : undefined}
+        onChange={
+          isEditable
+            ? (event) => {
+                setDraft(event.target.value);
+                setTouched(true);
+              }
+            : undefined
+        }
+        onBlur={isEditable ? handleBlur : undefined}
         onKeyDown={isEditable ? handleKeyDown : undefined}
         placeholder="Unset"
         disabled={disabled}

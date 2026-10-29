@@ -1,0 +1,469 @@
+LAYOUTRY — BC-01.1: LIVE CSS INSPECTOR INVESTIGATION
+=====================================================
+Date: 2026-10-29
+Mode: Read-only investigation. No source, test, config or dependency
+changes were made. The only files written are this report and its
+changelog summary.
+
+Classification used throughout:
+  CONFIRMED     reproduced in a real browser (Chromium via Playwright,
+                against `next dev`), or a direct, unambiguous code fact
+                (marked "code fact")
+  LIKELY        strongly supported by code reading, not reproduced
+  NOT VERIFIED  plausible, not checked
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+The user's report is correct and the problem is global. Almost every
+typed field in the CSS Inspector uses a "draft / commit" pattern: while
+you type, the text lives only in the field's local React state, and
+nothing reaches the document model (or the Canvas) until the field loses
+focus or Enter is pressed. This is deliberate in the code (each
+component's doc comment says "blur/Enter commits"), not a rendering bug.
+The Canvas itself has no delay: it re-renders on the same frame the store
+changes.
+
+Reproduced live: typing in Font size, Width, Padding (linked and
+per-side), Text color and Opacity's number box left the Canvas unchanged
+until blur or Enter. This held for Heading, Paragraph, Image, Section,
+Button and Navbar alike.
+
+Controls that already update immediately: Arrow Up/Down in numeric
+fields, sliders (Opacity, Gap), segmented buttons, selects, unit
+selectors, the native color picker, the font-family picker, gradient-stop
+drag, and box-shadow reorder drag.
+
+The investigation also found four real defects in the two shared
+controls that never got the Checkpoint 5.5/5.6 fixes
+(InspectorColorFieldShell and the number box inside InspectorSliderField):
+  - Escape COMMITS the typed value instead of reverting it (CONFIRMED)
+  - Enter creates TWO undo entries instead of one (CONFIRMED)
+  - Focusing and leaving a set color field with no edit adds an empty
+    undo entry (CONFIRMED for color)
+  - Their unit tests never focus the input, so none of these are caught.
+And one adjacent defect: Typography shows "16" for an unset font size
+even when the element renders larger (an H1 renders at 30px), so Arrow Up
+on an unset H1 jumps it from 30px to 17px (CONFIRMED).
+
+Live updating is achievable with the existing store machinery
+(beginTransaction / commitTransaction / cancelTransaction, already used
+by sliders and drags). Three things need care: most style setters have no
+history-free "Live" variant, `type="number"` inputs report "" for partial
+input like "-" or "1.", and Escape must restore the document snapshot.
+
+
+2. RELEVANT FILES AND ARCHITECTURE
+----------------------------------
+Data flow (code fact):
+
+  Inspector field (local draft state)
+     | blur / Enter -> onCommit(value)
+     v
+  Section component (e.g. InspectorTypographySection)
+     | validates (isValidFontSize, isValidCssColor, ...), builds the
+     | next settings object (withTypographyField ...)
+     v
+  useEditorStore action (e.g. setElementTypography)
+     | guardedStyleMutation(): style-protection check -> pure command
+     | (editor/commands/*.ts) -> pushHistory() -> new `document`
+     v
+  Zustand `document`
+     |-> DocumentCanvas  useEditorStore(s => s.document)  -> re-render
+     |-> Structure tree, overlays, Inspector sections (re-sync drafts)
+     |-> Export: useExportCodeSession reads the store document when the
+         export dialog generates
+     |-> Save: project persistence serializes the store document
+
+Shared input controls (src/features/inspector/components/):
+  InspectorNumericValueControl.tsx  main numeric control: units, auto,
+                                    clamp, arrows. Used by Size, Spacing,
+                                    Typography, Border, Border Radius,
+                                    Box Shadow, Filters, Gradient,
+                                    Position, Transform, Transition,
+                                    Media, Aspect Ratio, Background image.
+  InspectorNumberFieldRow.tsx       simpler numeric row. Used by Layout
+                                    (flex/grid container), Flex child,
+                                    Grid child, Free geometry X/Y/W/H,
+                                    List, Table, SVG, Progress, Vector.
+  InspectorBulkNumberField.tsx      multi-selection numeric (all Bulk*
+                                    sections).
+  InspectorBulkTextField.tsx        multi-selection text (bulk colors).
+  InspectorColorFieldShell.tsx      color swatch (native picker) + hex/rgb
+                                    text. Used by Typography, Background,
+                                    Border, Box Shadow, Gradient, SVG,
+                                    Vector.
+  InspectorSliderField.tsx          range + exact-number box. Used by
+                                    Filters (Opacity) and Layout (Gap).
+  InspectorSegmentedRow.tsx         button groups (weight, align, display,
+                                    ...).
+  InspectorUnitSelect.tsx           native <select> for units.
+  InspectorFontFamilyField.tsx      font combobox.
+
+Store / history (src/features/editor/stores/useEditorStore.ts):
+  pushHistory()            line 693: appends a full {document, selection}
+                           snapshot to `past`, clears `future`. No size
+                           limit, no merging of consecutive entries.
+  guardedStyleMutation()   line 713: every style setter goes through it.
+                           Skips history only if the command returns the
+                           SAME document reference.
+  beginTransaction /       line 1447+: one global transactionSnapshot.
+  commitTransaction /      Live setters write without history in between;
+  cancelTransaction        commit pushes one entry.
+  *Live setters            exist ONLY for: background, box shadow,
+                           filters, flex container, grid container, free
+                           geometry, SVG objects. No Live variant exists
+                           for typography, size, spacing, border, border
+                           radius, transform, position, flex/grid child,
+                           and others.
+
+Canvas: src/features/canvas/components/DocumentCanvas.tsx subscribes to
+the whole document; DocumentNodeRenderer resolves styles via
+canvas/utils/resolve*Style.ts. No memo or cache sits between store and
+DOM (no React.memo or useMemo in canvas components).
+
+Export: src/features/export/utils/buildExportDocument.ts imports the
+same style recipes from the canvas public API (@/features/canvas), so
+Canvas and Export share one style resolution.
+
+Composition: InspectorNodeSummary.tsx renders sections WITHOUT a
+key={node.id}. Section and field component instances (and their local
+drafts) survive selection changes; drafts are re-synced by the
+"last-seen value" comparison during render.
+
+
+3. INPUT BEHAVIOR FINDINGS BY CSS CATEGORY
+------------------------------------------
+"Commit trigger" = when the value reaches the document and Canvas.
+
+Width / Height / Min / Max (Size)
+  NumericValueControl. Typed: blur/Enter. Arrows: immediate.
+  CONFIRMED live: Button Width typed 300 -> Canvas stayed 104px until
+  blur, then 300px.
+
+Margin / Padding (Spacing)
+  NumericValueControl (linked "all sides" and per-side). Typed:
+  blur/Enter.
+  CONFIRMED live for padding on Heading, Paragraph, Image, Section,
+  Button (linked) and Navbar (per-side "Top"): value unchanged while
+  typing, applied on blur.
+
+Typography
+  Font size, line height, letter spacing: NumericValueControl, blur/Enter.
+  CONFIRMED live (Font size 57: 30px while typing, 57px after blur).
+  Weight / style / decoration / align: segmented buttons, immediate (code
+  fact).
+  Font family: combobox, commits on option pick, immediate (code fact).
+  Unit selects: immediate (code fact).
+  Text color: ColorFieldShell text, blur/Enter. Native picker commits on
+  the native `change` event, i.e. when the picker is finalized, not while
+  dragging inside the OS dialog (code fact; deliberate, see its doc
+  comment).
+
+Colors / Backgrounds
+  Background color: ColorFieldShell, same as text color (blur/Enter).
+  Gradient: stops dragged live inside a transaction (immediate); numeric
+  angle/position fields use NumericValueControl (blur/Enter).
+  Background image URL: own draft field, blur/Enter.
+
+Borders / Border radius
+  Width/radius: NumericValueControl (blur/Enter). Border color:
+  ColorFieldShell (blur/Enter). Style: segmented, immediate. (Code fact,
+  not separately reproduced; same shared controls as reproduced above:
+  LIKELY identical behavior.)
+
+Flexbox / Grid
+  Container (Layout section): gap slider live (immediate, one undo entry
+  per drag); all other numeric rows (columns, rows, etc.) use
+  NumberFieldRow (blur/Enter). Justify/align/direction: segmented,
+  immediate.
+  Flex child / Grid child: NumberFieldRow (blur/Enter); segmented
+  immediate.
+
+Positioning / Transforms
+  Offsets, z-index, translate, rotate, scale: NumericValueControl
+  (blur/Enter). Position mode: segmented, immediate.
+
+Shadows / Effects
+  Box shadow offsets/blur/spread: NumericValueControl (blur/Enter); color:
+  ColorFieldShell; layer reorder drag: live transaction.
+  Filters: Opacity slider immediate; Opacity exact box (SliderField
+  number), blur/Enter (CONFIRMED live: 1 while typing 40, 0.4 after
+  Enter); other filters NumericValueControl (blur/Enter).
+  Transition: numeric (blur/Enter), timing <select> immediate.
+
+Other (non-CSS but same pattern): ID / class, link href, media src/alt,
+option text, form-control fields: draft text, blur/Enter.
+
+Multi-selection (Bulk* sections): BulkNumberField / BulkTextField,
+blur/Enter.
+
+
+4. ROOT CAUSES (WITH REFERENCES)
+--------------------------------
+RC-1  Commit-on-blur/Enter by design. CONFIRMED (code fact + live).
+  InspectorNumericValueControl.tsx: onChange only calls setDraft +
+  setTouched (lines ~214-217); commit() (line 150) runs only from
+  handleBlur (line 177) and Enter in handleKeyDown (line 185).
+  The same pattern applies in InspectorNumberFieldRow.tsx (commit/
+  handleBlur), InspectorBulkNumberField.tsx, InspectorBulkTextField.tsx,
+  InspectorColorFieldShell.tsx (commit line 147, onBlur line 231) and
+  InspectorSliderField.tsx (commitNumericDraft line 148, onBlur line 207).
+  This is the whole cause of "I have to click outside". There is no
+  separate rendering delay.
+
+RC-2  No per-keystroke history grouping exists for typed fields. CONFIRMED
+  (code fact). Every style setter calls guardedStyleMutation() ->
+  pushHistory(), one entry per call. Committing on every keystroke with
+  today's setters would therefore create one undo entry per character.
+  This is very likely why commit-on-blur was chosen.
+
+RC-3  Escape commits instead of reverting in two controls. CONFIRMED live.
+  InspectorColorFieldShell.handleKeyDown (line 157) and
+  InspectorSliderField.handleNumericKeyDown (line 160) call setDraft(...)
+  and then event.currentTarget.blur(). The real blur event fires
+  synchronously and runs the onBlur handler from the CURRENT render,
+  whose closure still holds the typed draft (and, for the slider,
+  touched=true). Result: the typed value is committed.
+    Live: Text color typed #00ff00 + Escape -> heading turned green.
+          Opacity exact typed 25 + Escape -> opacity 0.25.
+          Control: Font size (NumericValueControl, has the 5.5 guard)
+          typed 44 + Escape -> stayed 30px.
+
+RC-4  Enter creates two undo entries in the same two controls. CONFIRMED
+  live. Same mechanism: Enter calls commit, then blur() runs commit
+  again. Neither control has suppressNextBlurCommitRef (Checkpoint 5.5
+  fixed only NumericValueControl, NumberFieldRow and the text fields).
+  The store does not dedupe it: setTypographySettings (typographyCommands
+  .ts) always returns a new node object even for an identical value, so
+  the `document === state.document` no-op check in guardedStyleMutation
+  never fires.
+    Live: Text color #ff0000 + Enter -> 1 undo still red, 2 undos
+          original. Opacity 40 + Enter -> 1 undo still 0.4, 2 undos 1.
+          Control: Font size 61 + Enter -> 1 undo restores 30px.
+
+RC-5  Empty undo entry from focus-through on a set color. CONFIRMED live.
+  ColorFieldShell has no `touched` guard (the Checkpoint 5.6 fix). If the
+  color is set, focusing the text field and leaving it commits the same
+  string again and pushes an entry. (With the color unset, the empty
+  draft reverts and nothing is pushed; that case was also checked live.)
+  The SliderField number box does have `touched`, so it is not affected
+  by RC-5.
+
+RC-6  Displayed fallback differs from the rendered value. CONFIRMED live.
+  InspectorTypographySection.tsx line 199:
+  value={typography.fontSize?.value ?? 16}. An H1 with no explicit font
+  size renders at 30px (canvas default styles) but the field shows 16;
+  Arrow Up wrote 17px and shrank the heading. Not a delay bug, but live
+  editing makes it more visible. Other "?? default" fallbacks in other
+  sections were NOT VERIFIED.
+
+RC-7  Partial number input reads as empty. CONFIRMED live (browser fact).
+  In a type="number" input, Chromium reports input.value === "" for "-"
+  and "1.". Today this is harmless (commit only happens at the end).
+  With live commit, an intermediate "-" would look like a clear. For
+  fields with allowAuto (Width/Height), that would commit "auto"
+  mid-typing.
+
+
+5. GLOBAL OR COMPONENT-SPECIFIC?
+--------------------------------
+GLOBAL, CONFIRMED. The behavior belongs to the shared Inspector controls,
+not to element types. Live tests on Heading, Paragraph, Image, Section,
+Button and Navbar all showed the same delay with the same controls.
+Element type only decides WHICH sections appear (getElementCapabilities),
+never how a field commits.
+
+Component-specific aspects:
+  - Which fields exist: e.g. Section has no Typography section; Navbar
+    showed per-side padding because its sides differ.
+  - Defects RC-3 to RC-5 are specific to ColorFieldShell (every color
+    field, in every section) and SliderField's number box (Opacity, Gap).
+  - RC-6 is Typography font size.
+
+
+6. CANVAS, PREVIEW AND EXPORT SYNCHRONIZATION RISKS
+---------------------------------------------------
+- Canvas lag after commit: none. CONFIRMED live: computed style changed
+  within ~250ms of blur/Enter; DocumentCanvas subscribes directly to the
+  document with no memo barrier (code fact).
+- Document vs Canvas disagreement: they never disagree (code fact). The
+  only gap is field draft vs document while a field is focused.
+- Export: reads the store document, so it never sees a pending draft
+  (code fact). Opening the export dialog by mouse blurs the field first,
+  which commits. LIKELY safe in practice.
+- Preview mode: the Inspector is replaced by a "Previewing" panel, so no
+  draft can exist during Preview (code fact).
+- Save while a field is focused: useProjectKeyboardShortcuts handles
+  Ctrl+S with no editable-target check, and the field keeps focus (no
+  blur). The saved file would omit the typed value; the value commits
+  later on blur and marks the project unsaved again. LIKELY (not
+  reproduced; Save opens OS/desktop dialogs). The desktop native menu
+  "Save" would also not blur the renderer input: NOT VERIFIED.
+- Selection switch while a draft is pending: the draft committed to the
+  ORIGINAL element before selection changed. CONFIRMED live for a canvas
+  click (H1 typed 70 -> click paragraph area -> H1 70px, paragraph
+  untouched) and for a Structure-panel click (H1 -> Paragraph: same
+  result). This works because mousedown blurs the field before the click
+  handler selects. A live-update design must keep this property; the
+  component instances are reused across selections (no key), so any
+  timer-based debounce would be at risk of firing for the wrong node.
+
+
+7. UNDO/REDO IMPLICATIONS
+-------------------------
+Current state:
+  - One commit = one entry, except RC-4 (Enter in color / slider number:
+    2 entries) and RC-5 (empty entry). CONFIRMED.
+  - Typing "1", "2", "0" then blur = one entry (draft model).
+    CONFIRMED by T2 (1 undo restores).
+  - Ctrl+Z inside a focused input is ignored by the editor shortcut
+    (isEditableTarget, useEditorKeyboardShortcuts.ts line 6) and goes to
+    the browser's own text undo (code fact).
+  - History is unbounded (pushHistory has no cap). Snapshots share
+    structure, so memory per entry is modest, but per-keystroke entries
+    would still grow it quickly.
+
+If live updates are introduced naively (call the existing setter on
+every onChange):
+  - One undo entry per keystroke ("120" -> 3 entries plus any
+    intermediates).
+  - Escape could no longer "revert" by resetting the draft; the document
+    would already hold the typed value.
+  - Mid-typing validation failures would flash error states (font size
+    "0" on the way to "0.5").
+  - The transaction mechanism is a single global snapshot. A text-field
+    transaction left open (e.g. focus lost without blur firing, or the
+    component unmounting on selection or section change) would absorb
+    the next unrelated drag into the same undo entry, because
+    beginTransaction is a no-op while a snapshot exists.
+
+
+8. RECOMMENDED IMPLEMENTATION APPROACHES AND TRADEOFFS
+------------------------------------------------------
+A. Field-level transaction (RECOMMENDED)
+   On the first valid keystroke: beginTransaction(). Each valid parsed
+   value: call a history-free "live" write. Blur/Enter: commitTransaction
+   (one undo entry). Escape: restore transactionSnapshot.document then
+   cancelTransaction (the exact pattern InspectorSliderField already
+   uses). Invalid or partial drafts ("-", "1.", "", out-of-range): do not
+   write, keep the last valid live value, show the error only on commit.
+   + Matches professional editors; one undo entry per edit; reuses proven
+     infrastructure; fixes the issue in the shared controls, not per
+     section.
+   - Needs history-free writes for every style family. Two options:
+     (A1) add *Live setters per family (explicit and consistent with the
+     existing ones, but roughly 12-15 new store actions); or
+     (A2) make guardedStyleMutation skip pushHistory while a
+     transactionSnapshot is open (one central change, but it alters
+     global semantics, so every existing caller must be audited).
+   - Must close the transaction on unmount and on selection change
+     (cleanup effect), or the "absorbs the next drag" risk from section
+     7 appears.
+
+B. Commit on every valid change, then merge entries in history
+   Keep one-shot setters; merge consecutive entries with the same
+   (nodeId, property) key within a time window.
+   + Fewer store actions.
+   - Time-based merging is less predictable; Escape still needs snapshot
+     logic; it touches pushHistory, which every feature uses.
+
+C. Debounced commit (e.g. 150-300ms after typing stops)
+   + Smallest change.
+   - Not truly live; still one entry per pause; the timer can fire after a
+     selection change (component instances are reused, no key); and
+     Escape semantics get muddy. Not recommended.
+
+D. Visual-only preview (draft rendered as a canvas override, not
+   written to the document)
+   + No history impact.
+   - Violates "document model is the source of truth"; Canvas, Export and
+     overlays would disagree. Not recommended.
+
+Required regardless of approach:
+  - Fix RC-3 / RC-4 / RC-5 in ColorFieldShell and the SliderField number
+    box first (suppressNextBlurCommitRef + touched, same as 5.5/5.6).
+    They are independent of live updates and would otherwise be carried
+    into the new design.
+  - Parse with a "draft is a valid intermediate" rule: read
+    event.target.validity.badInput or switch these fields to
+    type="text" inputmode="decimal", so "-" is not treated as cleared
+    (RC-7).
+  - Decide whether empty-while-typing means "auto" live, or only on
+    commit. Recommend: only on commit.
+  - Colors: commit live only when isValidCssColor passes (e.g. "#ff0"
+    while typing "#ff0000" is valid shorthand and will flash; this is
+    acceptable but should be a deliberate decision).
+  - Consider filtering Ctrl+S from editable targets, or blurring/
+    committing before save.
+
+
+9. EXISTING TEST COVERAGE AND TESTS ACTUALLY EXECUTED
+-----------------------------------------------------
+Executed:
+  npx vitest run src/features/inspector src/features/editor/stores
+    -> 89 files, 1268 tests, all PASSED.
+  Live browser probes: ad-hoc Playwright (playwright-core, Chromium,
+  headless) scripts kept OUTSIDE the repo in the session scratchpad,
+  against `next dev -p 3123`. They only clicked, typed and read computed
+  styles; nothing was saved. Results (all CONFIRMED above):
+    T1  Font size typed: no Canvas change until blur
+    T2  Font size Enter: 1 undo restores (guarded control OK)
+    T3  Arrow Up on unset H1: 30px -> 17px (RC-6)
+    T4  Text color Enter: 2 undos needed (RC-4)
+    T5  Unset color focus/blur: no entry; Font size focus/blur: no entry
+    T6  Canvas-click switch with pending draft: committed to original node
+    T7  Cleared font size + blur: reverts to "16"/30px; "-" and "1."
+        read as ""; -5 shows "Enter a font size greater than 0.", no write
+    T8  Button Width: no change until blur
+    T9  Padding on Heading/Paragraph/Image/Section/Button: same delay
+    T10 Structure-click switch: committed to original node
+    T11 Navbar padding Top: same delay
+    T12 Opacity exact Enter: 2 undos needed (RC-4)
+    T13 Text color Escape: commits typed value (RC-3)
+    T14 Opacity exact Escape: commits typed value (RC-3)
+    T15 Font size Escape: reverts correctly (control)
+    T16 Set color focus-through: empty undo entry (RC-5)
+
+Coverage gaps (code fact):
+  - InspectorColorFieldShell.test.tsx (18 tests) and
+    InspectorSliderField.test.tsx (10 tests) never call .focus() before
+    keyboard events, so the real blur after Enter/Escape never fires in
+    tests. This is the same blind spot documented for Checkpoint 5.5.
+    NumericValueControl and NumberFieldRow tests do focus first.
+  - No e2e spec covers Inspector -> Canvas updates or Inspector undo
+    counts (only accessibility, panel-collapse and smoke specs mention
+    the Inspector).
+  - Not run: full `npm test`, lint, typecheck, the e2e suite (not needed
+    for a read-only investigation; no code changed).
+
+
+10. SUGGESTED IMPLEMENTATION CHECKPOINTS
+----------------------------------------
+BC-01.2  Fix commit defects in ColorFieldShell + SliderField number box
+         (RC-3, RC-4, RC-5) with focus-first regression tests. Small and
+         independent; recommended first.
+BC-01.3  Decide history strategy (A1 per-family Live setters vs A2
+         central "transaction suppresses pushHistory"); add store tests:
+         "N live writes + commit = 1 entry", "cancel restores", and
+         "unmount/selection change closes transaction".
+BC-01.4  Live-mode in InspectorNumericValueControl + InspectorNumberField
+         Row (covers Size, Spacing, Typography, Border, Radius, Shadow,
+         Filters, Position, Transform, Layout, Flex/Grid child): partial
+         input rules (RC-7), Escape restores snapshot, arrows unchanged.
+BC-01.5  Live-mode in ColorFieldShell text (validate-then-write) and the
+         SliderField number box.
+BC-01.6  Bulk fields (BulkNumberField / BulkTextField) on the bulk store
+         actions.
+BC-01.7  Effective-value display (RC-6: show the rendered default, not
+         16) and Ctrl+S-while-typing handling.
+BC-01.8  e2e spec: per representative element, type -> Canvas updates
+         before blur; one undo per edit; Escape reverts; selection switch
+         mid-edit lands on the original node; export/save include the
+         value.
+
+
+Files changed by this investigation: none in src/, test/, e2e/ or config.
+Created: docs/reports/BC-01.1-CSS-Inspector-Investigation.txt (this file)
+         changelogs/2026-10-29-css-inspector-investigation-BC-01.1.txt
+STOP: awaiting approval before any implementation work.

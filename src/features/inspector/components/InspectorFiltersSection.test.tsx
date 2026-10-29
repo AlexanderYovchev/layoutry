@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { selectHasUnsavedChanges, useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { InspectorFiltersSection } from "./InspectorFiltersSection";
 
 const initialState = useEditorStore.getState();
@@ -238,5 +238,111 @@ describe("InspectorFiltersSection", () => {
     for (const label of ["Opacity", "Brightness", "Contrast", "Saturation", "Hue Rotate", "Blur", "Grayscale", "Invert", "Sepia"]) {
       expect(screen.getByLabelText(label)).toBeInTheDocument();
     }
+  });
+
+  // BC-01.2 — Opacity's exact-value field against the real store. The
+  // section re-renders from the store's node (as in the app) and inputs
+  // are focused first so Enter/Escape's .blur() dispatches a real blur.
+  describe("Opacity exact-value edit sessions against the real store (BC-01.2)", () => {
+    function StoreBackedFilters() {
+      const node = useEditorStore((state) => state.document.children?.find((child) => child.id === "container-1"));
+      return node ? <InspectorFiltersSection node={node} /> : null;
+    }
+
+    function setup(opacity?: number) {
+      useEditorStore.setState((state) => {
+        const document = {
+          ...state.document,
+          children: [{ id: "container-1", tag: "div" as const, filters: opacity === undefined ? undefined : { opacity } }],
+        };
+        return { document, persistedDocument: document, past: [], future: [] };
+      });
+    }
+
+    const historyLength = () => useEditorStore.getState().past.length;
+    const opacityField = () => screen.getByLabelText("Opacity (exact value)");
+
+    it("Escape discards a changed value: no document change, no history, project stays clean", () => {
+      setup(80);
+      render(<StoreBackedFilters />);
+      const documentBefore = useEditorStore.getState().document;
+
+      const input = opacityField();
+      act(() => input.focus());
+      fireEvent.change(input, { target: { value: "25" } });
+      fireEvent.keyDown(input, { key: "Escape" });
+
+      expect(useEditorStore.getState().document).toBe(documentBefore);
+      expect(historyLength()).toBe(0);
+      expect(selectHasUnsavedChanges(useEditorStore.getState())).toBe(false);
+      expect(input).toHaveValue(80);
+    });
+
+    it("Enter commits once: one Undo restores, one Redo reapplies", () => {
+      setup(80);
+      render(<StoreBackedFilters />);
+
+      const input = opacityField();
+      act(() => input.focus());
+      fireEvent.change(input, { target: { value: "40" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(historyLength()).toBe(1);
+      expect(committedNode()?.filters?.opacity).toBe(40);
+
+      act(() => useEditorStore.getState().undo());
+      expect(committedNode()?.filters?.opacity).toBe(80);
+      expect(input).toHaveValue(80);
+
+      act(() => useEditorStore.getState().redo());
+      expect(committedNode()?.filters?.opacity).toBe(40);
+      expect(input).toHaveValue(40);
+    });
+
+    it("an unset opacity stays unset after focus/blur, focus/Enter, and an emptied draft", () => {
+      setup();
+      render(<StoreBackedFilters />);
+
+      const input = opacityField();
+      act(() => input.focus());
+      act(() => input.blur());
+      act(() => input.focus());
+      fireEvent.keyDown(input, { key: "Enter" });
+      act(() => input.focus());
+      fireEvent.change(input, { target: { value: "" } });
+      act(() => input.blur());
+
+      expect(committedNode()?.filters).toBeUndefined();
+      expect(historyLength()).toBe(0);
+      expect(input).toHaveValue(100);
+    });
+
+    it("an out-of-range value is clamped to the slider bounds and committed once", () => {
+      setup(80);
+      render(<StoreBackedFilters />);
+
+      const input = opacityField();
+      act(() => input.focus());
+      fireEvent.change(input, { target: { value: "250" } });
+      act(() => input.blur());
+
+      expect(committedNode()?.filters?.opacity).toBe(100);
+      expect(historyLength()).toBe(1);
+    });
+
+    it("the range slider drag is still exactly one history entry after the exact-value fix", () => {
+      setup(80);
+      render(<StoreBackedFilters />);
+
+      const slider = screen.getByRole("slider", { name: "Opacity" });
+      fireEvent.input(slider, { target: { value: "60" } });
+      fireEvent.input(slider, { target: { value: "30" } });
+      fireEvent.change(slider, { target: { value: "30" } });
+
+      expect(committedNode()?.filters?.opacity).toBe(30);
+      expect(historyLength()).toBe(1);
+      act(() => useEditorStore.getState().undo());
+      expect(committedNode()?.filters?.opacity).toBe(80);
+    });
   });
 });

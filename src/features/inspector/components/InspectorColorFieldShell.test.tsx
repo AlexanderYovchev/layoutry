@@ -171,4 +171,114 @@ describe("InspectorColorFieldShell", () => {
     expect(input).toHaveAttribute("aria-invalid", "true");
     expect(input).toHaveClass("border-red-400");
   });
+
+  // BC-01.2 regressions. Every test focuses the input first: Enter/Escape
+  // call .blur(), and only a genuinely focused input dispatches the real
+  // blur event that caused the double-commit/Escape-commit bugs. An
+  // unfocused synthetic keyDown (as in the older tests above) masks them.
+  describe("edit-session lifecycle on a focused field (BC-01.2)", () => {
+    it("Escape discards a changed value without committing, even though .blur() dispatches a real blur", () => {
+      const onCommit = vi.fn();
+      render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Text color" />);
+
+      const input = screen.getByLabelText("Text color");
+      input.focus();
+      fireEvent.change(input, { target: { value: "#00ff00" } });
+      fireEvent.keyDown(input, { key: "Escape" });
+
+      expect(onCommit).not.toHaveBeenCalled();
+      expect(input).toHaveValue("#3366ff");
+      expect(input).not.toHaveFocus();
+    });
+
+    it("Enter commits a changed value exactly once (the blur Enter triggers is not a second commit)", () => {
+      const onCommit = vi.fn();
+      render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Text color" />);
+
+      const input = screen.getByLabelText("Text color");
+      input.focus();
+      fireEvent.change(input, { target: { value: "#ff0000" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(onCommit).toHaveBeenCalledExactlyOnceWith("#ff0000");
+      expect(input).not.toHaveFocus();
+    });
+
+    it("a plain blur after editing commits exactly once", () => {
+      const onCommit = vi.fn();
+      render(<InspectorColorFieldShell value={null} onCommit={onCommit} label="Text color" />);
+
+      const input = screen.getByLabelText("Text color");
+      input.focus();
+      fireEvent.change(input, { target: { value: "rgb(1, 2, 3)" } });
+      input.blur();
+
+      expect(onCommit).toHaveBeenCalledExactlyOnceWith("rgb(1, 2, 3)");
+    });
+
+    it("focus then blur with no edit never commits, for a set value", () => {
+      const onCommit = vi.fn();
+      render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Text color" />);
+
+      const input = screen.getByLabelText("Text color");
+      input.focus();
+      input.blur();
+
+      expect(onCommit).not.toHaveBeenCalled();
+    });
+
+    it("focus then Enter with no edit never commits", () => {
+      const onCommit = vi.fn();
+      render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Text color" />);
+
+      const input = screen.getByLabelText("Text color");
+      input.focus();
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(onCommit).not.toHaveBeenCalled();
+    });
+
+    it("retyping the exact stored string is a no-op, not a commit", () => {
+      const onCommit = vi.fn();
+      render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Text color" />);
+
+      const input = screen.getByLabelText("Text color");
+      input.focus();
+      // Routed through a different value first: a single change to the
+      // identical DOM value is skipped by React's value tracker.
+      fireEvent.change(input, { target: { value: "#3366f" } });
+      fireEvent.change(input, { target: { value: "#3366ff" } });
+      input.blur();
+
+      expect(onCommit).not.toHaveBeenCalled();
+    });
+
+    it("the blur suppression is consumed once: the next real edit and blur still commit", () => {
+      const onCommit = vi.fn();
+      render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Text color" />);
+
+      const input = screen.getByLabelText("Text color");
+      input.focus();
+      fireEvent.change(input, { target: { value: "#000000" } });
+      fireEvent.keyDown(input, { key: "Escape" });
+      input.focus();
+      fireEvent.change(input, { target: { value: "#111111" } });
+      input.blur();
+
+      expect(onCommit).toHaveBeenCalledExactlyOnceWith("#111111");
+    });
+
+    it("an Enter on an unfocused field does not leave a stale suppression that swallows the next blur", () => {
+      const onCommit = vi.fn();
+      render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Text color" />);
+
+      const input = screen.getByLabelText("Text color");
+      fireEvent.keyDown(input, { key: "Enter" });
+      input.focus();
+      fireEvent.change(input, { target: { value: "#222222" } });
+      input.blur();
+
+      expect(onCommit).toHaveBeenCalledExactlyOnceWith("#222222");
+    });
+  });
 });

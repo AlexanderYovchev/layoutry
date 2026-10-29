@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { selectHasUnsavedChanges, useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { InspectorTypographySection } from "./InspectorTypographySection";
 
 const initialState = useEditorStore.getState();
@@ -260,5 +260,146 @@ describe("InspectorTypographySection", () => {
 
     rerender(<InspectorTypographySection node={{ id: "heading-2", tag: "h1" }} />);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  // BC-01.2 — Text color against the real store: history entries, Undo/
+  // Redo, dirty state. The section is re-rendered from the store's node
+  // (as InspectorNodeSummary does in the app), and every input is
+  // focused first so Enter/Escape's .blur() dispatches a real blur.
+  describe("Text color edit sessions against the real store (BC-01.2)", () => {
+    function StoreBackedTypography({ nodeId }: { nodeId: string }) {
+      const node = useEditorStore((state) => state.document.children?.find((child) => child.id === nodeId));
+      return node ? <InspectorTypographySection node={node} /> : null;
+    }
+
+    function setupTwoNodes(headingColor?: string) {
+      useEditorStore.setState((state) => {
+        const document = {
+          ...state.document,
+          children: [
+            { id: "heading-1", tag: "h1" as const, typography: headingColor ? { color: headingColor } : undefined },
+            { id: "paragraph-1", tag: "p" as const },
+          ],
+        };
+        return { document, persistedDocument: document, past: [], future: [] };
+      });
+    }
+
+    const nodeById = (id: string) => useEditorStore.getState().document.children?.find((child) => child.id === id);
+    const historyLength = () => useEditorStore.getState().past.length;
+
+    it("Escape discards a changed color: document, history and dirty state untouched", () => {
+      setupTwoNodes("#3366ff");
+      render(<StoreBackedTypography nodeId="heading-1" />);
+      const documentBefore = useEditorStore.getState().document;
+
+      const input = screen.getByLabelText("Text color");
+      act(() => input.focus());
+      fireEvent.change(input, { target: { value: "#00ff00" } });
+      fireEvent.keyDown(input, { key: "Escape" });
+
+      expect(useEditorStore.getState().document).toBe(documentBefore);
+      expect(historyLength()).toBe(0);
+      expect(selectHasUnsavedChanges(useEditorStore.getState())).toBe(false);
+      expect(input).toHaveValue("#3366ff");
+    });
+
+    it("Enter commits once: one Undo restores the old color, one Redo reapplies the new one", () => {
+      setupTwoNodes("#3366ff");
+      render(<StoreBackedTypography nodeId="heading-1" />);
+
+      const input = screen.getByLabelText("Text color");
+      act(() => input.focus());
+      fireEvent.change(input, { target: { value: "#ff0000" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(historyLength()).toBe(1);
+      expect(nodeById("heading-1")?.typography?.color).toBe("#ff0000");
+
+      act(() => useEditorStore.getState().undo());
+      expect(nodeById("heading-1")?.typography?.color).toBe("#3366ff");
+      expect(input).toHaveValue("#3366ff");
+
+      act(() => useEditorStore.getState().redo());
+      expect(nodeById("heading-1")?.typography?.color).toBe("#ff0000");
+      expect(input).toHaveValue("#ff0000");
+    });
+
+    it("a plain blur after editing commits exactly one history entry", () => {
+      setupTwoNodes();
+      render(<StoreBackedTypography nodeId="heading-1" />);
+
+      const input = screen.getByLabelText("Text color");
+      act(() => input.focus());
+      fireEvent.change(input, { target: { value: "rgb(10, 20, 30)" } });
+      act(() => input.blur());
+
+      expect(historyLength()).toBe(1);
+      expect(nodeById("heading-1")?.typography?.color).toBe("rgb(10, 20, 30)");
+    });
+
+    it("focus and blur with no edit: no history, no document change, project stays clean (set color)", () => {
+      setupTwoNodes("#3366ff");
+      render(<StoreBackedTypography nodeId="heading-1" />);
+      const documentBefore = useEditorStore.getState().document;
+
+      const input = screen.getByLabelText("Text color");
+      act(() => input.focus());
+      act(() => input.blur());
+      act(() => input.focus());
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(useEditorStore.getState().document).toBe(documentBefore);
+      expect(historyLength()).toBe(0);
+      expect(selectHasUnsavedChanges(useEditorStore.getState())).toBe(false);
+    });
+
+    it("an unset color stays unset after a no-op focus/blur and after an emptied draft", () => {
+      setupTwoNodes();
+      render(<StoreBackedTypography nodeId="heading-1" />);
+
+      const input = screen.getByLabelText("Text color");
+      act(() => input.focus());
+      act(() => input.blur());
+      act(() => input.focus());
+      fireEvent.change(input, { target: { value: "#1" } });
+      fireEvent.change(input, { target: { value: "" } });
+      act(() => input.blur());
+
+      expect(nodeById("heading-1")?.typography?.color).toBeUndefined();
+      expect(historyLength()).toBe(0);
+      expect(input).toHaveValue("");
+    });
+
+    it("an invalid color shows the error and leaves the document and history untouched", () => {
+      setupTwoNodes("#3366ff");
+      render(<StoreBackedTypography nodeId="heading-1" />);
+      const documentBefore = useEditorStore.getState().document;
+
+      const input = screen.getByLabelText("Text color");
+      act(() => input.focus());
+      fireEvent.change(input, { target: { value: "#12" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(useEditorStore.getState().document).toBe(documentBefore);
+      expect(historyLength()).toBe(0);
+      expect(screen.getByText("Enter a hex color (#RRGGBB) or an rgb()/rgba() value.")).toBeInTheDocument();
+    });
+
+    it("a selection change after the edit's blur commits to the ORIGINAL element only (the app's real event order: mousedown blurs before the click selects)", () => {
+      setupTwoNodes();
+      const { rerender } = render(<StoreBackedTypography nodeId="heading-1" />);
+
+      const input = screen.getByLabelText("Text color");
+      act(() => input.focus());
+      fireEvent.change(input, { target: { value: "#ff0000" } });
+      act(() => input.blur());
+      rerender(<StoreBackedTypography nodeId="paragraph-1" />);
+
+      expect(nodeById("heading-1")?.typography?.color).toBe("#ff0000");
+      expect(nodeById("paragraph-1")?.typography).toBeUndefined();
+      expect(screen.getByLabelText("Text color")).toHaveValue("");
+      expect(historyLength()).toBe(1);
+    });
   });
 });

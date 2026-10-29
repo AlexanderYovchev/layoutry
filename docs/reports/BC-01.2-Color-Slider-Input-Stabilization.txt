@@ -1,0 +1,301 @@
+LAYOUTRY — BC-01.2: COLOR & SLIDER INPUT STABILIZATION
+======================================================
+Date: 2026-10-29
+Type: Bug fix + regression tests
+Builds on: docs/reports/BC-01.1-CSS-Inspector-Investigation.txt
+Status: Implemented and tested. Not committed. Awaiting QA review.
+
+Labels used below:
+  VERIFIED          checked by an automated test that ran and passed in
+                    this checkpoint (Vitest/jsdom or Playwright/Chromium)
+  NOT VERIFIED      not covered by a test that ran here
+  KNOWN LIMITATION  a remaining behavior that was deliberately left as is
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+All three confirmed bugs are fixed in the two shared controls where
+BC-01.1 found them:
+  - InspectorColorFieldShell: the color text field used by Typography,
+    Background, Border, Box Shadow, Gradient stops, SVG fill/stroke and
+    vector objects.
+  - InspectorSliderField: the "(exact value)" number box next to the
+    Opacity and Gap sliders.
+
+  BUG A  Escape committed the typed value.     FIXED, VERIFIED
+  BUG B  Enter created two undo entries.       FIXED, VERIFIED
+  BUG C  Focus + blur with no edit created an
+         undo entry (set color).               FIXED, VERIFIED
+
+The fix reuses the exact guard pattern InspectorNumericValueControl and
+InspectorNumberFieldRow already use (Checkpoints 5.5 / 5.6). Nothing else
+changed: no store, history, schema, export, canvas or styling changes.
+Typing behavior is unchanged (still commit on blur/Enter); live typing is
+out of scope until BC-01.3.
+
+The new tests fail against the original code (9 unit tests, 5 Playwright
+tests) and pass with the fix.
+
+
+2. ROOT CAUSES ADDRESSED
+------------------------
+Both controls handle Enter and Escape by updating React state and then
+calling input.blur() to release focus. In a real, focused input, blur()
+synchronously dispatches a real blur event. React runs the onBlur handler
+from the CURRENT render, before the state updates from the keydown are
+applied, so the handler still sees the typed draft (and, in the slider,
+touched === true):
+  - Enter: commit() ran in keydown and again from the blur, giving two
+    history entries (BUG B).
+  - Escape: setDraft(original) was still pending, so the blur committed
+    the typed draft (BUG A).
+InspectorColorFieldShell also had no `touched` flag, so a blur after
+merely focusing a set color re-committed the same string. The store does
+not dedupe this, because the style commands always return a new node
+object, so guardedStyleMutation pushed a history entry and the project
+became "unsaved" (BUG C).
+
+InspectorSliderField already had `touched`, so BUG C did not apply there.
+
+Why existing tests missed it: the old tests fired keyDown at an input
+that was never focused. blur() on an unfocused element dispatches
+nothing, so the second commit never happened in jsdom.
+
+
+3. EXACT FILES MODIFIED
+-----------------------
+Implementation:
+  src/features/inspector/components/InspectorColorFieldShell.tsx
+  src/features/inspector/components/InspectorSliderField.tsx
+Tests (modified):
+  src/features/inspector/components/InspectorColorFieldShell.test.tsx
+  src/features/inspector/components/InspectorSliderField.test.tsx
+  src/features/inspector/components/InspectorTypographySection.test.tsx
+  src/features/inspector/components/InspectorFiltersSection.test.tsx
+Tests (created):
+  e2e/inspector-color-slider-commit.spec.ts
+Reports (created):
+  docs/reports/BC-01.2-Color-Slider-Input-Stabilization.txt
+  changelogs/2026-10-29-color-slider-input-stabilization-BC-01.2.txt
+Not touched: "BUGS AND CHANGES.txt" was already modified before this
+checkpoint. docs/reports/BC-01.1-CSS-Inspector-Investigation.txt is from
+the previous (uncommitted) checkpoint.
+
+
+4. IMPLEMENTATION DETAILS
+-------------------------
+InspectorColorFieldShell.tsx
+  - Added `touched` state: set by onChange, cleared on commit, on Escape
+    and when the external value changes (Undo/Redo, picker, selection).
+  - commit() returns early unless touched. An empty draft, or a draft
+    identical to the stored string, reverts the draft without calling
+    onCommit. The identical-string rule is safe because every caller
+    passes the authored value (`?? null`, or a gradient stop's own stored
+    color), never a displayed default. All 9 call sites were checked.
+  - Added suppressNextBlurCommitRef + handleBlur(): the one blur that
+    Enter/Escape's own blur() dispatches is ignored.
+  - releaseFocus(): arms the suppression ONLY if the input is actually
+    focused (document.activeElement === input). This avoids a stale flag
+    swallowing the next, unrelated blur when blur() dispatches nothing.
+    This is a small hardening over the 5.5 pattern, kept local to these
+    two files (InspectorNumericValueControl was not changed).
+  - Native color picker path unchanged: it still commits once, on the
+    native `change` event.
+
+InspectorSliderField.tsx (exact-value number box only)
+  - Added suppressNextBlurCommitRef, handleNumericBlur() and
+    releaseNumericFocus(), same as above.
+  - The range input, its begin/commit/cancelTransaction gesture and its
+    Escape-mid-drag handling are untouched.
+
+Validation semantics are unchanged: callers still validate (e.g.
+isValidCssColor in Typography); the slider still clamps to min/max; an
+empty or non-numeric slider draft still reverts.
+
+
+5. TRANSACTION AND HISTORY BEHAVIOR
+-----------------------------------
+No new history mechanism was added. A text commit is still one call to
+the section's existing one-shot setter (e.g. setElementTypography ->
+guardedStyleMutation -> one pushHistory). The fix only guarantees that
+call happens at most once per edit, and never for Escape or no-ops.
+
+begin/commit/cancelTransaction were inspected and deliberately NOT used
+for these text fields: a commit-on-blur field writes the document exactly
+once, so a transaction would add nothing. Transactions become necessary
+in BC-01.3, when typing writes live.
+
+Resulting lifecycle (VERIFIED in Chromium unless noted):
+  Focus input              no document or history change
+  Type                     draft only (unchanged behavior)
+  Enter                    commit once; focus released
+  Blur after editing       commit once
+  Escape                   draft reverts; nothing committed; focus released
+  Focus + blur, no edit    nothing (unset and set colors; slider box)
+  Focus + Enter, no edit   nothing
+  Retype identical color   nothing (VERIFIED in jsdom only)
+  Undo / Redo              one step restores / reapplies the edit
+  Invalid color            error shown; document and history unchanged
+  Empty draft              reverts; unset stays unset
+  Out-of-range slider      clamped, committed once (VERIFIED in jsdom only)
+  Project dirty state      unchanged after Escape and no-ops (VERIFIED in
+                           jsdom via selectHasUnsavedChanges)
+
+
+6. TEST CASES ADDED OR UPDATED
+------------------------------
+All new tests focus the input first, so the real blur after Enter/Escape
+fires. No existing test was changed or removed.
+
+InspectorColorFieldShell.test.tsx (+8, component level)
+  Escape discards; Enter commits once; blur commits once; focus/blur no
+  edit; focus/Enter no edit; identical retype is a no-op; suppression is
+  consumed once; an unfocused Enter leaves no stale suppression.
+InspectorSliderField.test.tsx (+6)
+  Escape discards; Enter once; blur once (clamped -5 -> 0); focus/blur
+  and focus/Enter no edit; empty draft reverts; the exact-value field
+  never opens a slider transaction.
+InspectorTypographySection.test.tsx (+7, real store, Text color)
+  Escape: document, history and dirty state untouched; Enter: 1 entry,
+  Undo restores, Redo reapplies, field resyncs; blur: 1 entry; no-op on a
+  set color: no document change, clean project; unset stays unset; an
+  invalid color shows the error with no change; a selection change after
+  blur commits to the original node only.
+InspectorFiltersSection.test.tsx (+5, real store, Opacity)
+  Escape no change and clean; Enter 1 entry + Undo/Redo; unset stays
+  unset (focus/blur, focus/Enter, emptied draft); clamp 250 -> 100;
+  slider drag still exactly 1 entry.
+e2e/inspector-color-slider-commit.spec.ts (11 tests, Chromium)
+  Color: Escape; Enter + Undo + Redo; blur + Undo; no-op unset and set;
+  invalid; native picker commits once; selection switch via Structure
+  tree mid-edit.
+  Opacity: Escape; Enter + Undo + Redo; blur + no-op + emptied draft;
+  range slider keyboard adjustment live + 1 entry.
+  Each test starts with an empty history, so "one Undo restores AND Undo
+  is then disabled" proves exactly one entry.
+
+Mapping to the brief's required tests 1-10: all covered (1, 2 Escape; 3,
+4 Enter; 5 blur; 6 no-op; 7 Undo/Redo; 8 invalid/empty/out-of-range; 9
+unset stays unset; 10 selection change).
+
+Proof the tests catch the bugs: the two component files were temporarily
+replaced with their HEAD versions (copied aside first, no git stash),
+the tests run, and the fixed files restored (byte-identical, checked with
+diff):
+  Vitest (color + slider files): 9 failed / 33 passed on HEAD code
+  Playwright (new spec): 5 failed / 6 passed on HEAD code
+  (the failures are exactly the Escape, Enter and no-op tests; the
+  passing ones are the behavior-preservation tests)
+
+
+7. COMMANDS EXECUTED AND RESULTS
+--------------------------------
+  npm run typecheck                    PASS (no errors)
+  npm run lint                         PASS (no warnings)
+  npx vitest run                       PASS: 338 files, 5061 passed,
+                                       1 skipped (pre-existing
+                                       it.skipIf(!canCreateFileSymlinks) in
+                                       desktop/recovery/recoveryStore.test.ts)
+  npx playwright test e2e/inspector-color-slider-commit.spec.ts
+                                       PASS: 11/11
+  npx playwright test                  PASS: 69/69 (full default suite:
+                                       58 existing + 11 new)
+  npm run build                        PASS (production build, static
+                                       routes generated)
+  npx prettier --write e2e/inspector-color-slider-commit.spec.ts
+                                       new spec formatted
+  Not run: desktop/Electron suites (npm run desktop:test,
+  desktop:test:packaged). No desktop code changed.
+  Note: `prettier --check .` reports 561 unformatted files repo-wide,
+  including both edited components at HEAD, so formatting was not
+  applied to the existing files (that would be an unrelated whole-file
+  reformat).
+
+During development, two of my own test mistakes (not app bugs) were
+found and fixed:
+  - direct input.focus()/blur() outside act() left React re-renders
+    unflushed in jsdom; wrapped in act().
+  - Playwright: Ctrl+Z is (by design) ignored while focus is inside an
+    input, so tests blur first; an "open Filters" helper targeted a
+    button that does not exist (Opacity is visible by default).
+
+
+8. PLAYWRIGHT / BROWSER VERIFICATION RESULTS
+--------------------------------------------
+Chromium, `next dev` via the project Playwright config:
+  VERIFIED  Escape restores the original color/opacity on the Canvas,
+            the field shows the original value, Undo stays disabled.
+  VERIFIED  Enter: one Ctrl+Z restores Canvas and field; Undo then
+            disabled; Ctrl+Shift+Z reapplies.
+  VERIFIED  Blur via clicking elsewhere commits once.
+  VERIFIED  No-op focus/blur and focus/Enter (unset and set color;
+            Opacity box) add no history.
+  VERIFIED  Invalid "#12": error visible, Canvas and history unchanged.
+  VERIFIED  Native color picker (simulated via fill(), which dispatches
+            input + change) still commits once and syncs the text field.
+            The real OS picker dialog cannot be driven by Playwright.
+  VERIFIED  Opacity range slider keyboard adjustment updates the Canvas
+            live, syncs the number box, one Undo restores.
+  VERIFIED  Typing a color on the Heading, then clicking Paragraph in the
+            Structure tree: Heading gets the color, Paragraph is
+            unchanged, field shows Paragraph's (unset) value. Canvas-click
+            switching was verified for numeric fields in BC-01.1 with the
+            same blur-before-select ordering.
+
+
+9. REMAINING RISKS AND LIMITATIONS
+----------------------------------
+KNOWN LIMITATION  Programmatic selection change with no blur. If the
+  selection changes while a field stays focused (no current UI path does
+  this: canvas and Structure clicks blur first, and editor shortcuts are
+  ignored inside inputs), and the new element has the SAME stored value,
+  the draft is not reset, and a later blur would commit to the new
+  element. This is shared by every draft-based Inspector control
+  (NumericValueControl, NumberFieldRow, ...), not specific to these two.
+  Not changed here because it needs a global policy (e.g. key fields by
+  node id, or commit/cancel on selection change). Recommend deciding it
+  in BC-01.3, where live editing makes it matter more.
+KNOWN LIMITATION  A validation error shown by a section (e.g. "Enter a
+  hex color ...") stays visible after Escape reverts the draft, until the
+  next valid commit or selection change. Same as the existing numeric
+  font-size error behavior; the section owns error state and the shell
+  has no cancel callback.
+KNOWN LIMITATION  An Opacity value typed equal to its displayed default
+  (100 when unset) still commits and makes it explicit. This is
+  intentional and matches InspectorNumericValueControl ("make an implicit
+  default explicit"); only true no-edit focus/blur is a no-op.
+NOT VERIFIED  Background, Border, Box Shadow, Gradient-stop, SVG and
+  vector color fields individually in a browser. They use the same fixed
+  component and pass authored values (checked by code reading); only
+  Text color was exercised end to end.
+NOT VERIFIED  Gap (Layout) exact-value box in a browser (same component;
+  covered by unit tests using label "Gap").
+NOT VERIFIED  Bulk (multi-selection) Inspector sections: they use
+  InspectorBulkTextField / InspectorBulkNumberField, which already had
+  these guards and were not changed.
+NOT VERIFIED  Save/reopen of a .layoutry file and HTML/CSS export after
+  these edits. The fix only changes how often an existing setter is
+  called, never what it writes; the existing persistence/export
+  Playwright specs passed in the full run.
+NOT VERIFIED  Firefox/WebKit (the project Playwright config runs
+  Chromium only), and the Electron desktop shell.
+NOT VERIFIED  The real native OS color dialog (only its events were
+  simulated).
+
+
+10. RECOMMENDATION FOR BC-01.3
+------------------------------
+Proceed with the BC-01.1 plan: decide the history strategy for live
+typing before changing any field.
+  1. Choose between (A1) per-family *Live store setters, or (A2)
+     guardedStyleMutation skipping pushHistory while a transactionSnapshot
+     is open. Add store tests: "N live writes + commit = 1 entry",
+     "cancel restores the snapshot", "unmount / selection change closes an
+     open transaction".
+  2. Decide the selection-change policy (commit or cancel a pending edit)
+     as part of that, since it resolves the first known limitation above.
+  3. Then switch InspectorNumericValueControl / InspectorNumberFieldRow
+     to live mode (handle "-" / "1." partial number input, Escape restores
+     the snapshot), followed by the color and slider-box fields reusing
+     this checkpoint's lifecycle.
+Keep the focus-first test pattern (unit + Playwright) for every control.

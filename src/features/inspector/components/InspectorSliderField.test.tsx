@@ -117,4 +117,83 @@ describe("InspectorSliderField (Checkpoint 1.15.6.1.1)", () => {
     expect(screen.getByRole("slider", { name: "Gap" })).toHaveValue("64");
     expect(screen.getByRole("spinbutton", { name: "Gap (exact value)" })).toHaveValue(64);
   });
+
+  // BC-01.2 regressions — focus first, so Enter/Escape .blur() dispatches
+  // the real blur event that used to run a second commit.
+  describe("exact-value field on a focused input (BC-01.2)", () => {
+    it("Escape discards a changed value without committing", () => {
+      const onCommit = vi.fn();
+      render(<InspectorSliderField label="Opacity" value={100} min={0} max={100} onLiveChange={() => {}} onCommit={onCommit} />);
+
+      const numberField = screen.getByRole("spinbutton", { name: "Opacity (exact value)" });
+      numberField.focus();
+      fireEvent.change(numberField, { target: { value: "25" } });
+      fireEvent.keyDown(numberField, { key: "Escape" });
+
+      expect(onCommit).not.toHaveBeenCalled();
+      expect(numberField).toHaveValue(100);
+      expect(numberField).not.toHaveFocus();
+    });
+
+    it("Enter commits a changed value exactly once", () => {
+      const onCommit = vi.fn();
+      render(<InspectorSliderField label="Opacity" value={100} min={0} max={100} onLiveChange={() => {}} onCommit={onCommit} />);
+
+      const numberField = screen.getByRole("spinbutton", { name: "Opacity (exact value)" });
+      numberField.focus();
+      fireEvent.change(numberField, { target: { value: "40" } });
+      fireEvent.keyDown(numberField, { key: "Enter" });
+
+      expect(onCommit).toHaveBeenCalledExactlyOnceWith(40);
+    });
+
+    it("a plain blur after editing commits exactly once, clamped", () => {
+      const onCommit = vi.fn();
+      render(<InspectorSliderField label="Gap" value={16} min={0} max={128} onLiveChange={() => {}} onCommit={onCommit} />);
+
+      const numberField = screen.getByRole("spinbutton", { name: "Gap (exact value)" });
+      numberField.focus();
+      fireEvent.change(numberField, { target: { value: "-5" } });
+      numberField.blur();
+
+      expect(onCommit).toHaveBeenCalledExactlyOnceWith(0);
+    });
+
+    it("focus then blur, or focus then Enter, with no edit never commits", () => {
+      const onCommit = vi.fn();
+      render(<InspectorSliderField label="Gap" value={16} min={0} max={128} onLiveChange={() => {}} onCommit={onCommit} />);
+
+      const numberField = screen.getByRole("spinbutton", { name: "Gap (exact value)" });
+      numberField.focus();
+      numberField.blur();
+      numberField.focus();
+      fireEvent.keyDown(numberField, { key: "Enter" });
+
+      expect(onCommit).not.toHaveBeenCalled();
+    });
+
+    it("an empty draft reverts on Enter instead of committing", () => {
+      const onCommit = vi.fn();
+      render(<InspectorSliderField label="Gap" value={16} min={0} max={128} onLiveChange={() => {}} onCommit={onCommit} />);
+
+      const numberField = screen.getByRole("spinbutton", { name: "Gap (exact value)" });
+      numberField.focus();
+      fireEvent.change(numberField, { target: { value: "" } });
+      fireEvent.keyDown(numberField, { key: "Enter" });
+
+      expect(onCommit).not.toHaveBeenCalled();
+      expect(numberField).toHaveValue(16);
+    });
+
+    it("never opens a slider transaction from the exact-value field", () => {
+      render(<InspectorSliderField label="Opacity" value={100} min={0} max={100} onLiveChange={() => {}} onCommit={() => {}} />);
+
+      const numberField = screen.getByRole("spinbutton", { name: "Opacity (exact value)" });
+      numberField.focus();
+      fireEvent.change(numberField, { target: { value: "30" } });
+      fireEvent.keyDown(numberField, { key: "Escape" });
+
+      expect(useEditorStore.getState().transactionSnapshot).toBeNull();
+    });
+  });
 });
