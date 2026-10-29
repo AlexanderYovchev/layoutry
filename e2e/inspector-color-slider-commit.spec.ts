@@ -1,5 +1,12 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { gotoApp } from "./support/gotoApp";
+import {
+  clickInspectorChrome,
+  computed,
+  expectUndoAvailable,
+  replaceText,
+  selectOnCanvas,
+} from "./support/inspector";
 
 /**
  * BC-01.2 — Inspector color text fields and the slider exact-value field
@@ -13,44 +20,6 @@ import { gotoApp } from "./support/gotoApp";
  * "one Undo restores it AND Undo is then disabled" proves the edit made
  * exactly one history entry.
  */
-
-const canvasNode = (page: Page, id: string) =>
-  page.locator(`[data-node-id="${id}"]`).first();
-
-const computed = (page: Page, id: string, property: string) =>
-  canvasNode(page, id).evaluate(
-    (element, prop) => getComputedStyle(element).getPropertyValue(prop),
-    property,
-  );
-
-async function selectOnCanvas(page: Page, id: string) {
-  await canvasNode(page, id).click({ position: { x: 5, y: 5 } });
-}
-
-/** Clicks blank Inspector chrome: moves focus off the field like a user clicking elsewhere, without changing the selection. */
-async function clickInspectorChrome(page: Page) {
-  await page
-    .locator("[data-inspector-palette]")
-    .first()
-    .click({ position: { x: 5, y: 5 } });
-}
-
-async function expectUndoAvailable(page: Page, available: boolean) {
-  await page.getByRole("menuitem", { name: "Edit" }).click();
-  const undo = page.getByRole("menuitem", { name: "Undo" });
-  if (available) await expect(undo).toBeEnabled();
-  else await expect(undo).toBeDisabled();
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("menu")).toBeHidden();
-}
-
-async function replaceText(page: Page, label: string, text: string) {
-  const field = page.getByLabel(label, { exact: true });
-  await field.click();
-  await field.press("Control+a");
-  await page.keyboard.type(text);
-  return field;
-}
 
 test.describe("Inspector color text field (BC-01.2)", () => {
   test.beforeEach(async ({ page }) => {

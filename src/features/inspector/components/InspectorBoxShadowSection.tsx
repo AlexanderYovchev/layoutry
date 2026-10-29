@@ -333,6 +333,7 @@ export function InspectorBoxShadowSection({ node }: InspectorBoxShadowSectionPro
                       allowedUnits={SHADOW_LENGTH_UNITS}
                       onUnitChange={(unit) => handleUnitChange(field, unit)}
                       onCommit={(next) => handleGeometryCommit(field, next)}
+                      onEditCancel={field === "blur" ? () => setBlurError(undefined) : undefined}
                     />
                   </InspectorPropertyRow>
                 );

@@ -66,12 +66,14 @@ export function InspectorGridChildSection({ node }: InspectorGridChildSectionPro
       />
       {columnStartFixed && (
         <InspectorNumberFieldRow
+          live
           label="Column start value"
           value={typeof gridChild.columnStart === "number" ? gridChild.columnStart : 1}
           onCommit={(value) => commit({ columnStart: Math.max(1, Math.round(value)) })}
         />
       )}
       <InspectorNumberFieldRow
+        live
         label="Column span"
         value={gridChild.columnSpan}
         onCommit={(value) => commit({ columnSpan: Math.max(1, Math.round(value)) })}
@@ -88,12 +90,14 @@ export function InspectorGridChildSection({ node }: InspectorGridChildSectionPro
       />
       {rowStartFixed && (
         <InspectorNumberFieldRow
+          live
           label="Row start value"
           value={typeof gridChild.rowStart === "number" ? gridChild.rowStart : 1}
           onCommit={(value) => commit({ rowStart: Math.max(1, Math.round(value)) })}
         />
       )}
       <InspectorNumberFieldRow
+        live
         label="Row span"
         value={gridChild.rowSpan}
         onCommit={(value) => commit({ rowSpan: Math.max(1, Math.round(value)) })}

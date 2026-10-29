@@ -1,0 +1,448 @@
+LAYOUTRY — BC-01.3: LIVE NUMERIC CSS INSPECTOR UPDATES
+======================================================
+Date: 2026-10-29
+Type: Feature (live editing) + regression tests
+Builds on: BC-01.1 (investigation), BC-01.2 (color/slider stabilization)
+Status: Implemented and tested. Not committed. Awaiting QA review.
+
+Labels:
+  VERIFIED          covered by an automated test that ran and passed here
+                    (Vitest/jsdom against the real store, or Playwright/
+                    Chromium with real typing)
+  NOT VERIFIED      not covered by a test that ran here
+  KNOWN LIMITATION  remaining behavior left as is, deliberately
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Numeric Inspector fields now apply valid values to the Canvas while the
+user types. No Enter or click-away is needed. The field keeps focus, the
+typed text and the caret position. A whole edit (any number of keystrokes
+and Arrow steps) is exactly one undo entry. Escape restores the pre-edit
+value (an unset property stays unset), and an edit that ends where it
+started records nothing. Incomplete or invalid input is never written.
+
+This is done centrally, in one shared hook used by the three shared
+numeric controls, plus one small, opt-in extension of the existing store
+transaction. It is not a per-section or per-component patch. Because the
+live value is written to the canonical document model, the Canvas,
+Preview and Export all show the same value (VERIFIED in Chromium).
+
+All acceptance criteria have automated evidence (section 9), with these
+limits: Chromium only; the Electron run covers the desktop shell but not
+live typing specifically; and the not-verified items in section 10.
+
+
+2. ROOT CAUSE AND ARCHITECTURAL APPROACH
+----------------------------------------
+Root cause (from BC-01.1): the numeric controls held typed text in local
+draft state and only called onCommit on blur/Enter. Each onCommit pushed
+its own history entry, so committing per keystroke would have meant one
+undo entry per character.
+
+Approach:
+  a) Store (src/features/editor/stores/useEditorStore.ts): one opt-in
+     option on the EXISTING transaction API, not a new history system.
+       beginTransaction({ mergeHistory: true }) records the transaction
+       snapshot in a new field, historyMergeSnapshot. While that is the
+       SAME object as transactionSnapshot, pushHistory() folds every
+       one-shot write into the open transaction instead of pushing an
+       entry. commitTransaction() then pushes the single pre-edit
+       snapshot, or nothing if the document ended structurally equal to
+       the snapshot (in which case the exact snapshot document object is
+       restored, so the project's reference-based dirty state is clean
+       again). Comparison is by identity, so any path that clears or
+       replaces the transaction (commit, cancel, resize commit/cancel,
+       Preview, loading a project) ends merging automatically. Each of
+       those paths also clears the field.
+     Plain beginTransaction() (sliders, gradient/shadow drags) and the
+     resize-transaction pair keep their exact previous semantics.
+     This let every existing setter (setElementTypography,
+     setElementPadding, setFreeChildGeometry, ...) be reused unchanged.
+     The alternative, adding about 15 per-family "*Live" setters, was not
+     needed.
+  b) Shared hook (src/features/inspector/hooks/useNumericEditSession.ts):
+     the edit-session engine, used by InspectorNumericValueControl,
+     InspectorNumberFieldRow and InspectorSliderField's exact-value box.
+     It writes live through the caller's own onCommit, so section-level
+     validation and clamping stay exactly where they were.
+  c) New utility src/features/editor/utils/isStructurallyEqual.ts (deep
+     equality where `undefined` keys count as absent) for the no-op check.
+
+
+3. FILES
+--------
+Created:
+  src/features/inspector/hooks/useNumericEditSession.ts
+  src/features/inspector/hooks/useNumericEditSession.test.tsx
+  src/features/editor/utils/isStructurallyEqual.ts
+  src/features/editor/utils/isStructurallyEqual.test.ts
+  src/features/editor/stores/useEditorStore.mergeTransaction.test.ts
+  e2e/inspector-live-numeric.spec.ts
+  e2e/support/inspector.ts  (helpers now shared by two specs, moved out
+                             of the BC-01.2 spec)
+  docs/reports/BC-01.3-Live-Numeric-CSS-Updates.txt (this file)
+  changelogs/2026-10-29-live-numeric-css-updates-BC-01.3.txt
+Modified:
+  src/features/editor/stores/useEditorStore.ts
+      historyMergeSnapshot field, beginTransaction option, pushHistory
+      fold, no-op-aware commitTransaction, field cleared at every
+      snapshot reset
+  src/features/editor/stores/useEditorStore.persistence.test.ts
+      the "every store field is decided" contract lists the new field
+      (reset by replaceDocument)
+  src/features/inspector/components/InspectorNumericValueControl.tsx
+      uses the hook; live by default; new optional props onEditCancel,
+      live
+  src/features/inspector/components/InspectorNumberFieldRow.tsx
+      uses the hook; live is OPT-IN (prop `live`)
+  src/features/inspector/components/InspectorSliderField.tsx
+      exact-value box uses the hook (live)
+  src/features/inspector/components/InspectorFreeGeometryFields.tsx,
+  InspectorLayoutSection.tsx, InspectorFlexChildSection.tsx,
+  InspectorGridChildSection.tsx
+      add `live` to their CSS rows
+  src/features/inspector/components/InspectorTypographySection.tsx,
+  InspectorBorderSection.tsx, InspectorBorderRadiusSection.tsx,
+  InspectorBoxShadowSection.tsx, InspectorFiltersSection.tsx,
+  InspectorGradientSection.tsx
+      onEditCancel clears their numeric validation message on Escape
+  src/features/inspector/components/InspectorNumericValueControl.test.tsx,
+  InspectorSliderField.test.tsx
+      old "Escape never calls onCommit" tests updated (see section 9)
+  e2e/inspector-color-slider-commit.spec.ts
+      imports the moved helpers; tests unchanged
+Baseline: HEAD 9e52d80 (BC-01.1 + BC-01.2, committed by the user).
+Nothing from BC-01.3 has been staged or committed. changelogs/ is
+gitignored, so the summary file cannot be staged by accident.
+
+
+4. NUMERIC PROPERTIES COVERED
+-----------------------------
+Live (InspectorNumericValueControl, default on):
+  Size            width, height, min/max width, min/max height
+  Spacing         margin and padding (all sides and per side)
+  Typography      font size, line height, letter spacing
+  Border          width
+  Border radius   radius (all corners or per corner)
+  Box shadow      x, y, blur, spread
+  Filters         brightness, contrast, saturation, hue rotate, blur,
+                  grayscale, invert, sepia
+  Gradient        angle, stop position
+  Position        offsets, z-index
+  Transform       translate X/Y, rotate, scale
+  Transition      duration, delay
+  Aspect ratio    custom width/height
+  Background image  custom size width/height
+  Media fit       object position X/Y
+Live (InspectorSliderField exact-value box): Opacity, Gap (all).
+Live (InspectorNumberFieldRow, opted in): Free-layout X/Y; flex/grid
+  container row/column gap; flex child grow/shrink/basis; grid child
+  column/row start and span.
+
+Deliberately NOT live (documented for a later checkpoint):
+  - InspectorNumberFieldRow rows that edit structure or attributes, not
+    CSS: List item count, Table columns/body rows, Select option count,
+    Progress value/max, SVG stroke width and viewBox, vector-object
+    geometry. A live "1" on the way to "12" would really delete table
+    rows or options. They keep commit-on-blur/Enter, now through the
+    same shared lifecycle (same guards).
+  - Multi-selection (Bulk*) numeric fields: InspectorBulkNumberField,
+    unchanged.
+  - Color text fields, unit selects, segmented controls: out of scope
+    (unchanged).
+  - Word spacing: not an existing Inspector property.
+
+Which are VERIFIED where:
+  Chromium (Playwright): padding on Heading, Paragraph, Image, Section,
+    Button (linked) and Navbar (per-side Top); font size; line height;
+    Button width, border radius, rotate; Opacity exact box (BC-01.2 spec,
+    still passing).
+  jsdom against the real store: font size, line height, padding (linked
+    + Arrow steps + clamp), flex child grow, opacity exact box.
+  NOT VERIFIED individually: the remaining rows above. They use the same
+  component with the same onCommit wiring as before; covered by reading
+  the code plus the shared-component tests.
+
+
+5. TRANSACTION LIFECYCLE IMPLEMENTATION
+---------------------------------------
+Session start: the first real edit (onChange or an Arrow step). Focus
+alone starts nothing.
+
+Live write: for a draft that parseLive accepts, i.e. complete, finite and
+within the control's min/max:
+  - On the first write, beginTransaction({ mergeHistory: true }) runs,
+    but only if NO transaction is open. If a gesture (resize, drag,
+    slider) already owns one, the session becomes "deferred": no live
+    preview, and it commits once at the end as before. It never joins,
+    commits or cancels someone else's transaction. (VERIFIED, jsdom.)
+  - The hook calls the caller's normal onCommit. Acceptance is detected
+    by whether the document reference changed, so the section's own
+    validation (e.g. font size > 0, protected styles) still decides.
+  - The same value is never re-submitted twice in a row.
+
+Session end: exactly once, whichever comes first.
+  Enter, blur              commit
+  pointerdown outside      commit (window, capture phase, so it runs
+                           BEFORE Canvas resize/move handlers call
+                           beginResizeTransaction on pointerdown)
+  selection change         commit (store subscription, so it also covers
+                           programmatic selection)
+  project shortcut         commit (window keydown, capture phase: Ctrl/
+  (Ctrl/Cmd+S, Shift+S,    Cmd+S etc. run after the edit is committed;
+  O, N)                    see section 6)
+  unmount                  commit
+  Escape                   cancel: restore the pre-edit document, then
+                           cancelTransaction()
+
+Commit: parseFinal applies the control's existing commit semantics
+(min/max clamp, empty draft -> "auto" where allowAuto). If the final
+value differs from the last live attempt it is written once more, inside
+the transaction. Then commitTransaction() runs, which records nothing if
+the net change is nothing.
+
+Revert (an invalid final draft, or one the caller rejects): the
+pre-edit document is restored and the transaction cancelled, instead of
+keeping an intermediate preview.
+
+Guards carried forward: the BC-01.2 / 5.5 Enter/Escape blur suppression
+(armed only when the input is actually focused), and 5.6 (no commit
+without an edit).
+
+After the session ends the draft resyncs once from the document
+(FORCE_RESYNC), so a value the section clamped or rounded is shown
+correctly.
+
+
+6. INPUT VALIDATION AND SELECTION BEHAVIOR
+------------------------------------------
+Incomplete or invalid drafts:
+  ""           not written live. At commit: "auto" if allowAuto (Width/
+               Height, as before), otherwise revert.  VERIFIED (Chromium +
+               jsdom)
+  "-", "1."    Chromium reports value "" with validity.badInput. Not
+               written live; the field keeps showing exactly what was
+               typed. A badInput final draft reverts the edit (it used to
+               commit "auto" in allowAuto fields, BC-01.1 RC-7).
+               VERIFIED (Chromium)
+  "0" -> "0.5" the intermediate "0" is rejected by the section (message
+               shown, nothing written); "0.5" goes live.  VERIFIED (jsdom)
+  "-5"         rejected; at Enter the edit reverts and the message stays,
+               explaining why.  VERIFIED (Chromium + jsdom)
+  out of range not previewed; the existing clamp applies at commit
+               (padding 99999 -> 500).  VERIFIED (jsdom)
+  Draft text is never rewritten mid-edit ("1.50" stays "1.50"; the caret
+  stays put across live writes).  VERIFIED (jsdom text; Chromium caret)
+
+Validation messages: Escape clears the section's numeric message (via the
+new onEditCancel prop, wired in 6 sections / 7 fields). A rejected final
+draft keeps it. VERIFIED (jsdom, font size).
+
+Selection changes:
+  - Canvas click and Structure-tree click mid-edit: the value lands on the
+    original element; the new element is untouched; the field shows the
+    new element's value.  VERIFIED (Chromium)
+  - Programmatic selection change with the input still focused (no blur):
+    commits to the original element; subsequent typing edits the new
+    element as a separate entry.  VERIFIED (jsdom)
+  - Same displayed value on both elements (the BC-01.2 known limitation):
+    now ends the edit on the original.  VERIFIED (jsdom)
+  - An invalid draft at selection change reverts the original element
+    (same commit path as blur).  VERIFIED by code path; the jsdom revert
+    tests use Enter/blur rather than a selection change.
+
+Other editor actions:
+  Ctrl+S / Save   project commands (projectCommands.editInProgress) refuse
+                  to run while ANY transaction is open ("Finish the
+                  current edit first"). Rather than weaken that invariant,
+                  a project shortcut first commits the field's edit; the
+                  save then stores the latest valid value and the field
+                  keeps focus.  VERIFIED (Chromium: IndexedDB contents
+                  checked; jsdom: transaction already closed when the
+                  shortcut listener runs)
+  Undo/Redo keys  Ctrl+Z inside an input is still ignored by the editor
+                  (native text undo), and does not end the edit.  VERIFIED
+                  (jsdom). The header Undo menu is a pointerdown, so the
+                  edit commits first.
+  Delete, menus, section toggles, Preview button, Export button:
+                  pointerdown commits first.  VERIFIED for Preview/Export
+                  (Chromium); others by code path.
+  Inspector unmount (section hidden by a selection change, collapse):
+                  commits.  VERIFIED (jsdom unmount)
+  Recovery snapshots: the recovery coordinator already waits while a
+                  transaction is open, so it now also waits while a field
+                  is mid-edit (it previously waited only for drags).
+                  KNOWN LIMITATION, harmless (the edit is one session).
+  Electron: no native application menu (Menu.setApplicationMenu(null));
+                  the same renderer code and keyboard paths. See section 9
+                  for the desktop run.
+
+
+7. UNDO/REDO VERIFICATION
+-------------------------
+VERIFIED (Chromium, fresh history per test; "one Undo restores AND Undo
+is then disabled" proves exactly one entry):
+  - font size 2 -> 24 -> 32 + Enter: one Undo restores the unset size,
+    field shows 16; one Redo reapplies 32px.
+  - padding on 5 element types: one Undo restores.
+  - rapid typing "9876" with no delay: one Undo restores.
+  - Escape and reverted invalid edits: Undo stays disabled.
+  - Structure-tree selection switch: one Undo reverts the heading edit;
+    Undo then disabled.
+VERIFIED (jsdom, real store): N live writes = 1 entry; Undo/Redo; no-op
+edit (30 -> back to 20) = 0 entries and the document reference restored;
+Arrow steps join the edit; cancelled merging transaction keeps the redo
+stack; plain transactions unchanged; merging never joins an open
+transaction; merging ends with resize commit/cancel, Preview and
+replaceDocument.
+
+
+8. CANVAS / PREVIEW / EXPORT CONSISTENCY
+----------------------------------------
+Live values are ordinary document mutations through the existing
+setters, so there is no visual-only override. Canvas re-renders from the
+store as before (no new memoization or DOM writes).
+VERIFIED (Chromium): after a live font-size edit, Preview mode renders the
+heading at 44px, and the Export Code dialog shows `font-size: 44px`.
+VERIFIED (Chromium): the saved project file contains the edited value.
+
+
+9. AUTOMATED TESTS AND EXACT RESULTS
+------------------------------------
+New / updated tests:
+  useNumericEditSession.test.tsx (23, real sections + real store):
+    live before blur + focus kept; one entry + Undo/Redo; blur once;
+    verbatim draft; Escape restores unset, clean, no history; Escape
+    clears the message; no-edit focus/blur/Enter; back-to-original =
+    no entry, clean; invalid intermediate; invalid final reverts (message
+    kept); emptied final reverts; programmatic selection change; same-
+    value selection change; unmount; pointerdown outside before another
+    gesture; pointerdown inside keeps the edit; foreign transaction ->
+    deferred; rapid typing; Arrow steps grouped; out-of-range clamp;
+    Ctrl+S commits first; Ctrl+A/Ctrl+Z keep the edit; NumberFieldRow
+    opt-in (Grow); slider exact box live + later drag separate.
+  useEditorStore.mergeTransaction.test.ts (6) and
+  isStructurallyEqual.test.ts (3).
+  InspectorNumericValueControl.test.tsx: the two "Escape never calls
+    onCommit" tests now run with live={false} (the legacy path); +1 test
+    for live Escape ("no commit beyond the live preview, reverts,
+    reports the cancel").
+  InspectorSliderField.test.tsx: the BC-01.2 Escape test now expects the
+    one live-preview call and no further call; still checks revert and
+    blur. (Its real-store counterpart in InspectorFiltersSection.test.tsx,
+    "Escape ... no document change, no history, clean", is unchanged and
+    passes.)
+  e2e/inspector-live-numeric.spec.ts (19, Chromium): 6 element types,
+    multi-keystroke Undo/Redo, caret, Escape, "-"/"-5", incomplete final
+    on blur, rapid typing, "1." line height, Width/Border radius/Rotate,
+    Width cleared -> auto, Canvas and Structure selection switches,
+    Preview + Export, Ctrl+S mid-edit with IndexedDB check.
+
+Commands and results:
+  npm run typecheck        PASS
+  npm run lint             PASS (0 problems)
+  npx vitest run src/features/inspector src/features/editor
+                           PASS (run during development)
+  npx vitest run           PASS: 341 files, 5094 passed, 1 skipped (the
+                           pre-existing it.skipIf(!canCreateFileSymlinks)
+                           in desktop/recovery/recoveryStore.test.ts)
+  npx playwright test e2e/inspector-live-numeric.spec.ts
+                      e2e/inspector-color-slider-commit.spec.ts
+                           PASS: 30/30
+  npx playwright test      PASS: 88/88 (full default suite)
+  npm run build            PASS
+  env -u ELECTRON_RUN_AS_NODE npm run desktop:test
+                           56 passed, 2 skipped (pre-existing
+                           test.skip gates, e.g. the persistence
+                           benchmark), 1 FAILED:
+                           e2e/desktop/lifecycle.spec.ts "a saved (or
+                           untouched) project closes at once, with no
+                           prompt at all" (the Electron process did not
+                           exit within 15 s).
+  npx playwright test -c playwright.desktop.config.ts
+                      e2e/desktop/lifecycle.spec.ts  (rerun 5x)
+                           9/9 passed 3 times; the same single test
+                           failed 2 times (timeout). Intermittent.
+                           The test launches the app and closes it
+                           without touching the Inspector. BC-01.3 code
+                           only runs during an active numeric edit
+                           (listeners attach while editing) plus one
+                           inert store field. Whether the flake already
+                           exists on HEAD 9e52d80 is NOT VERIFIED: a
+                           clean HEAD desktop build in a scratch copy
+                           failed (Turbopack rejects a junctioned
+                           node_modules), and getting one would need a
+                           dependency install or swapping out the
+                           uncommitted work in the repo, neither done
+                           without approval.
+  npx prettier --write on the new/changed e2e files only (the repo is
+  not Prettier-clean overall; existing src files were not reformatted).
+
+Test-only mistakes found and fixed while writing the Playwright spec (not
+app bugs): the Preview button's accessible name is "Enter Preview"; the
+"1" in "1." is itself a valid live value; computed font-size caps at
+10000px; the saved project JSON has sorted keys (now parsed, not
+string-matched). One real interaction was found and fixed: Ctrl+S
+mid-edit was refused by the save's existing "Finish the current edit
+first" guard (see section 6).
+
+
+10. REMAINING LIMITATIONS
+-------------------------
+KNOWN LIMITATION  Behavior change versus before: the existing "Escape
+  never calls onCommit" contract no longer holds in live mode. onCommit
+  is called for each valid draft (the live preview), and Escape undoes it
+  by restoring the document. Callers must therefore wire onCommit to a
+  store setter (all current callers do). With live={false} the old
+  contract still holds.
+KNOWN LIMITATION  Acceptance is detected by "did the document reference
+  change". A caller whose onCommit legitimately makes no change for a
+  new value is treated as a rejection (harmless: the edit reverts to a
+  document that already holds that value).
+KNOWN LIMITATION  During a merging transaction, ANY one-shot mutation
+  folds into the edit's single undo entry. No UI path can trigger
+  another mutation mid-edit without first ending the edit (pointerdown,
+  shortcuts and selection changes all commit first), but programmatic
+  callers could.
+KNOWN LIMITATION  Live validation feedback: a section's message can flash
+  for a valid-in-progress value (font size "0" on the way to "0.5").
+KNOWN LIMITATION  After a rejected final draft reverts, the section's
+  message stays until the next valid edit or a selection change
+  (intentional: it explains the revert).
+KNOWN LIMITATION  Recovery snapshots wait for an open edit to finish,
+  as they already did for drags.
+NOT VERIFIED  Live typing inside the Electron shell itself (the desktop
+  suite exercises the shell and persistence, not this checkpoint's
+  fields); Firefox/WebKit (the config is Chromium only).
+NOT VERIFIED  Whether the intermittent desktop lifecycle failure ("closes
+  at once, with no prompt", about 2 in 5 runs, process-exit timeout)
+  exists without BC-01.3. It does not exercise the Inspector; see section
+  9. Recommended: run that spec repeatedly on HEAD 9e52d80 before QA
+  sign-off.
+NOT VERIFIED  Position offsets/z-index, transition, aspect ratio,
+  background-image size, object position, gradient, box shadow, filters
+  other than opacity, flex/grid container gaps and grid child rows, Free
+  X/Y. Same shared component and wiring as the verified fields.
+NOT VERIFIED  Performance on very large documents: each keystroke re-
+  renders the Canvas from the store, as any committed edit always has.
+  No measurable lag in the tests here; no benchmark was run.
+Not implemented (scope): Bulk/multi-select fields, structural/attribute
+  NumberFieldRows, color text, word spacing.
+
+
+11. RECOMMENDATIONS FOR BC-01.4
+-------------------------------
+  1. Decide whether the multi-selection Bulk numeric fields should become
+     live. They can reuse useNumericEditSession plus the bulk setters,
+     which already go through guardedBulkStyleMutation -> pushHistory, so
+     merging applies unchanged.
+  2. Consider live color text (validate-then-write, same hook shape) now
+     that the transaction model exists.
+  3. Consider an explicit accepted/rejected return from onCommit, to
+     replace the document-reference heuristic, if more callers appear.
+  4. Fix the BC-01.1 RC-6 display mismatch (unset font size shows 16
+     while the H1 renders at 30px). With live editing, typing over the
+     displayed default is now more visible.
+  5. Optionally run the Playwright Inspector specs against the Electron
+     build.

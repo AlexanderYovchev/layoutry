@@ -137,6 +137,7 @@ import { describeStyleLockNotice, getStyleProtection, type StyleProtectionResult
 import { clampGridChildPlacement } from "@/features/editor/utils/clampGridChildPlacement";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
 import { cloneNodeWithFreshIds } from "@/features/editor/utils/cloneNodeWithFreshIds";
+import { isStructurallyEqual } from "@/features/editor/utils/isStructurallyEqual";
 import { collectNodeIds } from "@/features/editor/utils/collectNodeIds";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
 import { resolveFreeDestinationPlacement } from "@/features/editor/utils/resolveFreeDestinationPlacement";
@@ -199,6 +200,16 @@ interface EditorState {
   future: HistoryEntry[];
   /** Non-null while a continuous interaction (currently: resize) is mid-drag — see beginResizeTransaction. */
   transactionSnapshot: HistoryEntry | null;
+  /**
+   * The transactionSnapshot of a transaction opened with
+   * `beginTransaction({ mergeHistory: true })` (BC-01.3) — while it is the
+   * SAME object as transactionSnapshot, pushHistory folds every one-shot
+   * mutation into that open transaction instead of recording its own
+   * entry. Compared by identity, so any path that clears or replaces
+   * transactionSnapshot (commit, cancel, Preview, loading a project)
+   * ends the merge automatically; a stale value here is inert.
+   */
+  historyMergeSnapshot: HistoryEntry | null;
   /**
    * The one transient, non-modal editor message currently visible
    * (Checkpoint 1.15.3 — e.g. a blocked-by-style-protection notice). Never
@@ -589,8 +600,16 @@ interface EditorState {
    * is happening. Both pairs read/write the same `transactionSnapshot`
    * slot and are safely mutually exclusive — only one continuous
    * interaction is ever active at a time in this single-selection editor.
+   *
+   * `mergeHistory` (BC-01.3 — live Inspector numeric editing): the
+   * caller writes through the ordinary one-shot setters instead of
+   * dedicated *Live variants, and pushHistory folds those writes into
+   * this transaction. commitTransaction then records one entry — or
+   * none at all if the document ended structurally unchanged, restoring
+   * the exact snapshot document so the project stays clean. A no-op if a
+   * transaction is already open (it never joins someone else's).
    */
-  beginTransaction: () => void;
+  beginTransaction: (options?: { mergeHistory?: boolean }) => void;
   commitTransaction: () => void;
   cancelTransaction: () => void;
 
@@ -691,7 +710,14 @@ function snapshot(state: EditorState): HistoryEntry {
 
 /** Every one-shot (non-transactional) mutation pushes the pre-mutation snapshot and clears redo. */
 function pushHistory(state: EditorState): Pick<EditorState, "past" | "future"> {
+  // Inside a merging transaction the pre-transaction snapshot already
+  // stands for this write; commitTransaction records it once.
+  if (isMergingHistory(state)) return { past: state.past, future: state.future };
   return { past: [...state.past, snapshot(state)], future: [] };
+}
+
+function isMergingHistory(state: Pick<EditorState, "transactionSnapshot" | "historyMergeSnapshot">): boolean {
+  return state.transactionSnapshot !== null && state.transactionSnapshot === state.historyMergeSnapshot;
 }
 
 /**
@@ -845,6 +871,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   past: [],
   future: [],
   transactionSnapshot: null,
+  historyMergeSnapshot: null,
   editorNotice: null,
   editorMode: DEFAULT_EDITOR_MODE,
   runtimeVisibility: {},
@@ -923,7 +950,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   commitResizeTransaction: () =>
     set((state) => {
       if (!state.transactionSnapshot) return {};
-      return { past: [...state.past, state.transactionSnapshot], future: [], transactionSnapshot: null };
+      return { past: [...state.past, state.transactionSnapshot], future: [], transactionSnapshot: null, historyMergeSnapshot: null };
     }),
 
   // Discards the in-progress transaction without recording it — used
@@ -931,7 +958,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   // caller is responsible for restoring state.document to the snapshot
   // itself before calling this, since cancellation needs to revert the
   // live document too, not just skip the history push.
-  cancelResizeTransaction: () => set({ transactionSnapshot: null }),
+  cancelResizeTransaction: () => set({ transactionSnapshot: null, historyMergeSnapshot: null }),
 
   // Free-layout movement authors CSS position (section 30) — guarded the
   // same way every other one-shot style command is.
@@ -960,6 +987,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
       activeSvgTool: "select",
       svgDraft: null,
       transactionSnapshot: null,
+      historyMergeSnapshot: null,
     })),
 
   exitPreview: () => set({ editorMode: "design", runtimeVisibility: {} }),
@@ -1444,16 +1472,23 @@ export const useEditorStore = create<EditorState>()((set) => ({
   showEditorNotice: (message) => set((state) => nextEditorNoticeState(state, message)),
   dismissEditorNotice: () => set({ editorNotice: null }),
 
-  beginTransaction: () =>
-    set((state) => (state.transactionSnapshot ? {} : { transactionSnapshot: snapshot(state) })),
+  beginTransaction: (options) =>
+    set((state) => {
+      if (state.transactionSnapshot) return {};
+      const transactionSnapshot = snapshot(state);
+      return { transactionSnapshot, historyMergeSnapshot: options?.mergeHistory ? transactionSnapshot : null };
+    }),
 
   commitTransaction: () =>
     set((state) => {
       if (!state.transactionSnapshot) return {};
-      return { past: [...state.past, state.transactionSnapshot], future: [], transactionSnapshot: null };
+      if (isMergingHistory(state) && isStructurallyEqual(state.document, state.transactionSnapshot.document)) {
+        return { document: state.transactionSnapshot.document, transactionSnapshot: null, historyMergeSnapshot: null };
+      }
+      return { past: [...state.past, state.transactionSnapshot], future: [], transactionSnapshot: null, historyMergeSnapshot: null };
     }),
 
-  cancelTransaction: () => set({ transactionSnapshot: null }),
+  cancelTransaction: () => set({ transactionSnapshot: null, historyMergeSnapshot: null }),
 
   enterSvgEditMode: (svgNodeId) =>
     set((state) => {
@@ -1871,6 +1906,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
       past: [],
       future: [],
       transactionSnapshot: null,
+      historyMergeSnapshot: null,
       editorNotice: null,
       editorMode: DEFAULT_EDITOR_MODE,
       runtimeVisibility: {},

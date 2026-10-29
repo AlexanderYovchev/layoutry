@@ -201,6 +201,7 @@ export function InspectorTypographySection({ node }: InspectorTypographySectionP
           allowedUnits={FONT_SIZE_UNITS}
           onUnitChange={(unit) => typography.fontSize && commitField("fontSize", { ...typography.fontSize, unit })}
           onCommit={handleFontSizeCommit}
+          onEditCancel={() => setFontSizeError(undefined)}
         />
       </InspectorPropertyRow>
 
@@ -280,6 +281,7 @@ export function InspectorTypographySection({ node }: InspectorTypographySectionP
           allowedUnits={LINE_HEIGHT_UNITS}
           onUnitChange={(unit) => typography.lineHeight && commitField("lineHeight", { ...typography.lineHeight, unit })}
           onCommit={handleLineHeightCommit}
+          onEditCancel={() => setLineHeightError(undefined)}
         />
       </InspectorPropertyRow>
 

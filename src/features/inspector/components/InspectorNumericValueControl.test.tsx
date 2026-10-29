@@ -42,9 +42,9 @@ describe("InspectorNumericValueControl", () => {
     expect(onCommit).toHaveBeenCalledWith(200);
   });
 
-  it("reverts to the last committed value on Escape without calling onCommit", () => {
+  it("with live off, reverts to the last committed value on Escape without calling onCommit", () => {
     const onCommit = vi.fn();
-    render(<InspectorNumericValueControl ariaLabel="Width" value={10} onCommit={onCommit} />);
+    render(<InspectorNumericValueControl ariaLabel="Width" value={10} onCommit={onCommit} live={false} />);
 
     const input = screen.getByLabelText("Width");
     fireEvent.change(input, { target: { value: "999" } });
@@ -54,9 +54,9 @@ describe("InspectorNumericValueControl", () => {
     expect(input).toHaveValue(10);
   });
 
-  it("Escape never commits, even though it also blurs a genuinely-focused input (Checkpoint 5.5 regression)", () => {
+  it("with live off, Escape never commits, even though it also blurs a genuinely-focused input (Checkpoint 5.5 regression)", () => {
     const onCommit = vi.fn();
-    render(<InspectorNumericValueControl ariaLabel="Width" value={10} onCommit={onCommit} />);
+    render(<InspectorNumericValueControl ariaLabel="Width" value={10} onCommit={onCommit} live={false} />);
 
     const input = screen.getByLabelText("Width");
     input.focus();
@@ -64,6 +64,22 @@ describe("InspectorNumericValueControl", () => {
     fireEvent.keyDown(input, { key: "Escape" });
 
     expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it("live: Escape adds no commit beyond the live preview, reverts the draft and reports the cancel (BC-01.3)", () => {
+    const onCommit = vi.fn();
+    const onEditCancel = vi.fn();
+    render(<InspectorNumericValueControl ariaLabel="Width" value={10} onCommit={onCommit} onEditCancel={onEditCancel} />);
+
+    const input = screen.getByLabelText("Width");
+    input.focus();
+    fireEvent.change(input, { target: { value: "999" } });
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith(999);
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onEditCancel).toHaveBeenCalledTimes(1);
+    expect(input).toHaveValue(10);
   });
 
   it("a blur with no edit at all never commits (Checkpoint 5.6 regression — tabbing through an unedited field must not push a spurious history entry)", () => {

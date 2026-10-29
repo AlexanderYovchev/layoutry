@@ -36,11 +36,13 @@ export function InspectorFreeGeometryFields({ node }: InspectorFreeGeometryField
   return (
     <>
       <InspectorNumberFieldRow
+        live
         label="X"
         value={geometry.x}
         onCommit={(x) => setFreeChildGeometry(node.id, { ...geometry, x })}
       />
       <InspectorNumberFieldRow
+        live
         label="Y"
         value={geometry.y}
         onCommit={(y) => setFreeChildGeometry(node.id, { ...geometry, y })}

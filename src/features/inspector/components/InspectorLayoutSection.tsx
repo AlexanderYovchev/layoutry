@@ -226,11 +226,13 @@ function FlexContainerControls({ node, onChange }: FlexContainerControlsProps) {
         ) : (
           <div className="flex w-full flex-col gap-1.5">
             <InspectorNumberFieldRow
+              live
               label="Row gap"
               value={flex.rowGap}
               onCommit={(value) => onChange({ ...flex, rowGap: Math.max(0, value) })}
             />
             <InspectorNumberFieldRow
+              live
               label="Column gap"
               value={flex.columnGap}
               onCommit={(value) => onChange({ ...flex, columnGap: Math.max(0, value) })}
@@ -267,11 +269,13 @@ function GridContainerControls({ node, onChange }: GridContainerControlsProps) {
         }
       />
       <InspectorNumberFieldRow
+        live
         label="Row gap"
         value={grid.rowGap}
         onCommit={(value) => onChange({ ...grid, rowGap: Math.max(0, value) })}
       />
       <InspectorNumberFieldRow
+        live
         label="Column gap"
         value={grid.columnGap}
         onCommit={(value) => onChange({ ...grid, columnGap: Math.max(0, value) })}

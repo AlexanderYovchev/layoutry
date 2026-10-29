@@ -62,11 +62,13 @@ export function InspectorFlexChildSection({ node }: InspectorFlexChildSectionPro
   return (
     <InspectorSection label="Flex item" defaultOpen>
       <InspectorNumberFieldRow
+        live
         label="Grow"
         value={flexChild.grow}
         onCommit={(value) => commit({ grow: Math.max(0, value) })}
       />
       <InspectorNumberFieldRow
+        live
         label="Shrink"
         value={flexChild.shrink}
         onCommit={(value) => commit({ shrink: Math.max(0, value) })}
@@ -83,6 +85,7 @@ export function InspectorFlexChildSection({ node }: InspectorFlexChildSectionPro
       />
       {basisFixed && (
         <InspectorNumberFieldRow
+          live
           label="Basis (px)"
           value={typeof flexChild.basis === "number" ? flexChild.basis : 0}
           onCommit={(value) => commit({ basis: Math.max(0, value) })}

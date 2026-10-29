@@ -271,6 +271,7 @@ export function InspectorGradientSection({ node }: InspectorGradientSectionProps
               unit="%"
               allowedUnits={["%"]}
               onCommit={handleStopPositionCommit}
+              onEditCancel={() => setPositionError(undefined)}
             />
           </InspectorPropertyRow>
         </>

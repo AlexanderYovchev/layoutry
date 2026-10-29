@@ -274,6 +274,7 @@ export function InspectorFiltersSection({ node }: InspectorFiltersSectionProps) 
             allowedUnits={FILTER_BLUR_UNITS}
             onUnitChange={handleBlurUnitChange}
             onCommit={handleBlurCommit}
+            onEditCancel={() => setError("blur", undefined)}
           />
         </InspectorPropertyRow>
       </div>

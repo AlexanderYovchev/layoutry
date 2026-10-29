@@ -107,6 +107,7 @@ describe("replaceDocument — the atomic restoration contract", () => {
       "past",
       "future",
       "transactionSnapshot",
+      "historyMergeSnapshot",
       "editorNotice",
       "editorMode",
       "runtimeVisibility",

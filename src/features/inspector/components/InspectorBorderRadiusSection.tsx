@@ -125,6 +125,7 @@ export function InspectorBorderRadiusSection({ node }: InspectorBorderRadiusSect
           allowedUnits={BORDER_RADIUS_UNITS}
           onUnitChange={handleUnitChange}
           onCommit={handleRadiusCommit}
+          onEditCancel={() => setRadiusError(undefined)}
         />
       </InspectorPropertyRow>
 

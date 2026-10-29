@@ -1,97 +1,66 @@
 "use client";
 
-import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { useId, useRef, type KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
 import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
+import { useNumericEditSession } from "@/features/inspector/hooks/useNumericEditSession";
 
 interface InspectorNumberFieldRowProps {
   label: string;
   value: number;
   onCommit: (value: number) => void;
+  /**
+   * Apply valid drafts while typing (BC-01.3). Off by default: this row
+   * also edits structure and attributes (table/list/option counts,
+   * progress, SVG geometry), where a live "1" on the way to "12" would
+   * really delete rows. Callers opt in only for CSS properties.
+   */
+  live?: boolean;
+}
+
+function formatDraft(value: number): string {
+  return String(Math.round(value));
+}
+
+function parseFiniteNumber(draft: string): { value: number } | null {
+  if (draft.trim() === "") return null;
+  const parsed = Number(draft);
+  return Number.isFinite(parsed) ? { value: parsed } : null;
 }
 
 /**
  * An editable numeric row (Checkpoint 3.4.4) — the counterpart to the
  * read-only InspectorFieldRow, used for a Free child's X/Y/Width/Height
- * fields. Edits are local (draft state) until blur/Enter commits them
- * through onCommit, which every caller wires to the same store action
- * the drag/resize handles use (see InspectorFreeGeometryFields), so the
- * Inspector is never a second source of truth for geometry. Escape
- * reverts the draft to the last committed value without calling
- * onCommit. An invalid (non-numeric) draft on blur/Enter is discarded
- * the same way, rather than committing NaN.
+ * fields and the other simple numeric rows. Every commit goes through
+ * onCommit, which callers wire to the same store action the drag/resize
+ * handles use (see InspectorFreeGeometryFields), so the Inspector is never
+ * a second source of truth. Escape reverts without committing; an invalid
+ * (non-numeric) draft is discarded rather than committing NaN.
  *
- * Two bug fixes (Checkpoint 5.7 — this control shares the exact same
- * risk class InspectorNumericValueControl already had two real bugs
- * found and fixed for, in Checkpoints 5.5 and 5.6, but had never itself
- * been audited):
- *
- * 1. Enter/Escape both call event.currentTarget.blur() to visually
- *    release focus. In a genuinely-focused real browser input, that
- *    dispatches a real native blur event, which this input's own
- *    onBlur handler previously treated as an *unrelated second* commit
- *    of the identical already-committed (Enter) or just-reverted
- *    (Escape) draft — silently doubling undo/redo history entries for
- *    one keypress (the Checkpoint 5.5 bug). suppressNextBlurCommitRef
- *    fixes this exactly like InspectorNumericValueControl does.
- * 2. A blur with no edit at all (tabbing into an X/Y/Width/Height field
- *    without touching it, then clicking elsewhere) still ran the full
- *    commit path and called onCommit with the value it already had —
- *    a spurious no-op history entry (the Checkpoint 5.6 bug). `touched`
- *    fixes this exactly like InspectorNumericValueControl does — set
- *    only by a real onChange, cleared on every resync/commit, so
- *    commit() can tell "genuinely edited" apart from "focus passed
- *    through."
+ * Shares its draft/commit lifecycle with InspectorNumericValueControl via
+ * useNumericEditSession (BC-01.3), including the Checkpoint 5.7 fixes that
+ * hook carries forward (no double commit from Enter's own blur, no commit
+ * without an edit), and optionally its live mode.
  */
-export function InspectorNumberFieldRow({ label, value, onCommit }: InspectorNumberFieldRowProps) {
+export function InspectorNumberFieldRow({ label, value, onCommit, live = false }: InspectorNumberFieldRowProps) {
   const inputId = useId();
-  const [draft, setDraft] = useState(String(Math.round(value)));
-  const suppressNextBlurCommitRef = useRef(false);
-  const [touched, setTouched] = useState(false);
-
-  // Keeps the field in sync with live external updates (a drag/resize
-  // session, or another field's commit that also affects this one) by
-  // comparing against the value seen on the previous render, resetting
-  // draft during render itself rather than in a useEffect (React's
-  // recommended "adjusting state when a prop changes" pattern — avoids
-  // the extra cascading render a useEffect-based sync would cause).
-  const [lastSyncedValue, setLastSyncedValue] = useState(value);
-  if (value !== lastSyncedValue) {
-    setLastSyncedValue(value);
-    setDraft(String(Math.round(value)));
-    setTouched(false);
-  }
-
-  function commit() {
-    if (!touched) return;
-    setTouched(false);
-    const parsed = Number(draft);
-    if (draft.trim() !== "" && Number.isFinite(parsed)) {
-      onCommit(parsed);
-    } else {
-      setDraft(String(Math.round(value)));
-    }
-  }
-
-  function handleBlur() {
-    if (suppressNextBlurCommitRef.current) {
-      suppressNextBlurCommitRef.current = false;
-      return;
-    }
-    commit();
-  }
+  const inputRef = useRef<HTMLInputElement>(null);
+  const session = useNumericEditSession<number>({
+    inputRef,
+    value,
+    format: formatDraft,
+    parseLive: parseFiniteNumber,
+    parseFinal: parseFiniteNumber,
+    onCommit,
+    live,
+  });
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
-      commit();
-      suppressNextBlurCommitRef.current = true;
-      event.currentTarget.blur();
+      session.commitAndRelease(event.currentTarget);
     } else if (event.key === "Escape") {
       event.preventDefault();
-      setDraft(String(Math.round(value)));
-      setTouched(false);
-      suppressNextBlurCommitRef.current = true;
-      event.currentTarget.blur();
+      session.cancelAndRelease(event.currentTarget);
     }
   }
 
@@ -101,14 +70,12 @@ export function InspectorNumberFieldRow({ label, value, onCommit }: InspectorNum
         {label}
       </label>
       <input
+        ref={inputRef}
         id={inputId}
         type="number"
-        value={draft}
-        onChange={(event) => {
-          setDraft(event.target.value);
-          setTouched(true);
-        }}
-        onBlur={handleBlur}
+        value={session.draft}
+        onChange={session.handleChange}
+        onBlur={session.handleBlur}
         onKeyDown={handleKeyDown}
         className={cn(inspectorFieldClassName, "min-w-16 px-2 text-right")}
       />

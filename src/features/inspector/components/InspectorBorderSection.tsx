@@ -172,6 +172,7 @@ export function InspectorBorderSection({ node }: InspectorBorderSectionProps) {
           allowedUnits={WIDTH_UNITS}
           onUnitChange={handleWidthUnitChange}
           onCommit={handleWidthCommit}
+          onEditCancel={() => setWidthError(undefined)}
         />
       </InspectorPropertyRow>
 

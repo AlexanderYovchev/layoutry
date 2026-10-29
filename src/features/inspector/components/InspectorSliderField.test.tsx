@@ -121,16 +121,17 @@ describe("InspectorSliderField (Checkpoint 1.15.6.1.1)", () => {
   // BC-01.2 regressions — focus first, so Enter/Escape .blur() dispatches
   // the real blur event that used to run a second commit.
   describe("exact-value field on a focused input (BC-01.2)", () => {
-    it("Escape discards a changed value without committing", () => {
+    it("Escape discards a changed value: no commit beyond the live preview (BC-01.3), draft reverts", () => {
       const onCommit = vi.fn();
       render(<InspectorSliderField label="Opacity" value={100} min={0} max={100} onLiveChange={() => {}} onCommit={onCommit} />);
 
       const numberField = screen.getByRole("spinbutton", { name: "Opacity (exact value)" });
       numberField.focus();
       fireEvent.change(numberField, { target: { value: "25" } });
+      expect(onCommit).toHaveBeenCalledExactlyOnceWith(25);
       fireEvent.keyDown(numberField, { key: "Escape" });
 
-      expect(onCommit).not.toHaveBeenCalled();
+      expect(onCommit).toHaveBeenCalledTimes(1);
       expect(numberField).toHaveValue(100);
       expect(numberField).not.toHaveFocus();
     });

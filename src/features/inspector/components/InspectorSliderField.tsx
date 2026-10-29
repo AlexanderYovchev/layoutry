@@ -1,9 +1,16 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, type KeyboardEvent } from "react";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn } from "@/lib/utils";
 import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
+import { useNumericEditSession } from "@/features/inspector/hooks/useNumericEditSession";
+
+function parseFiniteNumber(draft: string): number | null {
+  if (draft.trim() === "") return null;
+  const parsed = Number(draft);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 interface InspectorSliderFieldProps {
   label: string;
@@ -27,12 +34,13 @@ interface InspectorSliderFieldProps {
    */
   onLiveChange: (value: number) => void;
   /**
-   * Called exactly once when the paired exact-entry numeric field commits
-   * (Enter or blur) — wire this to the property's normal, history-
-   * pushing setter (one commit = one history entry, matching every other
-   * Inspector numeric field). Never called for the slider itself — the
-   * slider's own commit is commitTransaction(), triggered internally by
-   * this component's native `change` listener.
+   * Called by the paired exact-entry numeric field — once per valid draft
+   * while typing, plus once at commit if the final (clamped) value differs
+   * (BC-01.3). Wire this to the property's normal, history-pushing setter:
+   * the field wraps the edit in a merging transaction, so the whole edit is
+   * still one history entry, matching every other Inspector numeric field.
+   * Never called for the slider itself — the slider's own commit is
+   * commitTransaction(), triggered internally by its native `change`.
    */
   onCommit: (value: number) => void;
 }
@@ -87,20 +95,29 @@ export function InspectorSliderField({ label, value, min, max, step = 1, unit, d
   // so the DOM itself no longer remembers what the value was a moment ago.
   const lastKnownValueRef = useRef(displayValue);
 
-  const [draft, setDraft] = useState(isMixed ? "" : String(displayValue));
-  const [touched, setTouched] = useState(false);
-  // BC-01.2: the exact-value box's Enter/Escape call .blur(), whose real
-  // blur event runs the CURRENT render's commitNumericDraft() — `touched`
-  // still true and the typed draft still in its closure — so Enter
-  // committed twice and Escape committed the value it meant to discard.
-  // Same fix InspectorNumericValueControl got in Checkpoint 5.5.
-  const suppressNextBlurCommitRef = useRef(false);
-  const [lastSyncedValue, setLastSyncedValue] = useState(value);
-  if (value !== lastSyncedValue) {
-    setLastSyncedValue(value);
-    setDraft(value === null ? "" : String(value));
-    setTouched(false);
-  }
+  // The exact-value box shares the numeric Inspector edit session
+  // (BC-01.3): valid in-range drafts apply live through onCommit inside a
+  // merging transaction (one undo entry per edit), out-of-range drafts
+  // clamp only at commit, Escape restores. It carries forward the BC-01.2
+  // fix for Enter/Escape's own blur committing a second time.
+  const numberInputRef = useRef<HTMLInputElement>(null);
+  const numericSession = useNumericEditSession<number | null>({
+    inputRef: numberInputRef,
+    value,
+    format: (current) => (current === null ? "" : String(current)),
+    parseLive: (draft) => {
+      const parsed = parseFiniteNumber(draft);
+      return parsed !== null && parsed >= min && parsed <= max ? { value: parsed } : null;
+    },
+    parseFinal: (draft) => {
+      const parsed = parseFiniteNumber(draft);
+      return parsed === null ? null : { value: Math.min(max, Math.max(min, parsed)) };
+    },
+    onCommit: (next) => {
+      if (next !== null) onCommit(next);
+    },
+    live: true,
+  });
 
   // Imperative sync into the uncontrolled range input — only ever pushes
   // a value IN from outside (undo/redo, another control, a fresh
@@ -151,43 +168,12 @@ export function InspectorSliderField({ label, value, min, max, step = 1, unit, d
     event.currentTarget.blur();
   }
 
-  function commitNumericDraft() {
-    if (!touched) return;
-    setTouched(false);
-    const parsed = Number(draft);
-    if (draft.trim() !== "" && Number.isFinite(parsed)) {
-      const clamped = Math.min(max, Math.max(min, parsed));
-      onCommit(clamped);
-    } else {
-      setDraft(isMixed ? "" : String(displayValue));
-    }
-  }
-
-  function handleNumericBlur() {
-    if (suppressNextBlurCommitRef.current) {
-      suppressNextBlurCommitRef.current = false;
-      return;
-    }
-    commitNumericDraft();
-  }
-
-  // Only arms the suppression when .blur() will genuinely dispatch a blur
-  // event (the input is focused) — otherwise the flag would linger and
-  // swallow the next, unrelated blur.
-  function releaseNumericFocus(input: HTMLInputElement) {
-    if (document.activeElement === input) suppressNextBlurCommitRef.current = true;
-    input.blur();
-  }
-
   function handleNumericKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
-      commitNumericDraft();
-      releaseNumericFocus(event.currentTarget);
+      numericSession.commitAndRelease(event.currentTarget);
     } else if (event.key === "Escape") {
       event.preventDefault();
-      setDraft(isMixed ? "" : String(displayValue));
-      setTouched(false);
-      releaseNumericFocus(event.currentTarget);
+      numericSession.cancelAndRelease(event.currentTarget);
     }
   }
 
@@ -213,6 +199,7 @@ export function InspectorSliderField({ label, value, min, max, step = 1, unit, d
           className={cn("h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-line accent-accent disabled:cursor-not-allowed disabled:opacity-50")}
         />
         <input
+          ref={numberInputRef}
           id={numberId}
           type="number"
           min={min}
@@ -220,13 +207,10 @@ export function InspectorSliderField({ label, value, min, max, step = 1, unit, d
           step={step}
           disabled={disabled}
           aria-label={`${label} (exact value)`}
-          value={draft}
+          value={numericSession.draft}
           placeholder={isMixed ? "Mixed" : undefined}
-          onChange={(event) => {
-            setDraft(event.target.value);
-            setTouched(true);
-          }}
-          onBlur={handleNumericBlur}
+          onChange={numericSession.handleChange}
+          onBlur={numericSession.handleBlur}
           onKeyDown={handleNumericKeyDown}
           className={cn(inspectorFieldClassName, "w-14 shrink-0 px-2 text-right")}
         />
