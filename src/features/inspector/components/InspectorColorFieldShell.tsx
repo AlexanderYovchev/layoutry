@@ -1,23 +1,27 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent } from "react";
 import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
 import { cn } from "@/lib/utils";
 import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
+import { useInspectorEditSession } from "@/features/inspector/hooks/useInspectorEditSession";
+import { isValidCssColor } from "@/features/editor/utils/cssColor";
 
 interface InspectorColorFieldShellProps {
   /** A CSS color string (any valid syntax), or null when unset. */
   value: string | null;
   /**
    * Makes the text field editable (Checkpoint 4.2's "hexadecimal text
-   * entry, rgb()/rgba() parsing") — commits the typed text verbatim on
-   * blur/Enter, Escape reverts. Its mere presence also turns the circular
-   * swatch into a real visual color-picker trigger (Checkpoint 4.3.0.1) —
-   * there is no separate "picker enabled" flag; typing and visually
-   * picking always share one commit path. This component never validates
-   * the text itself (that's the caller's domain concern — see
-   * isValidCssColor/editor/utils/cssColor.ts); it only reflects an
-   * externally-passed `error` as a visual invalid state. Omitted, the
+   * entry, rgb()/rgba() parsing") — commits the typed text verbatim; valid
+   * colors apply live while typing (BC-01.4), Escape reverts. Its mere
+   * presence also turns the circular swatch into a real visual
+   * color-picker trigger (Checkpoint 4.3.0.1) — there is no separate
+   * "picker enabled" flag; typing and visually picking always share one
+   * commit path. Validating the committed value stays the caller's domain
+   * concern (isValidCssColor, editor/utils/cssColor.ts); this component
+   * only uses that same rule to decide which drafts are worth previewing
+   * live, and reflects an externally-passed `error` as a visual invalid
+   * state. Omitted, the
    * field stays the original Checkpoint 4.1 read-only preview shell (no
    * picker either — there would be nowhere to send a picked value).
    */
@@ -28,6 +32,10 @@ interface InspectorColorFieldShellProps {
   label: string;
   /** Presence marks the field visually invalid (red border, aria-invalid) — the caller renders the actual message (e.g. via the wrapping InspectorPropertyRow's own `error`), so it isn't duplicated here. */
   error?: string;
+  /** Called when the user cancels a typed edit with Escape — clear a transient validation message here. */
+  onEditCancel?: () => void;
+  /** Apply valid typed colors while typing (BC-01.4). On by default; off = commit on blur/Enter only. */
+  live?: boolean;
 }
 
 // A native <input type="color"> only ever accepts a 6-digit, alpha-free
@@ -101,32 +109,44 @@ export function InspectorColorFieldShell({
   disabled = false,
   label,
   error,
+  onEditCancel,
+  live = true,
 }: InspectorColorFieldShellProps) {
   const hasValue = value !== null;
   const isEditable = onCommit !== undefined;
 
-  const [draft, setDraft] = useState(value ?? "");
-  const [touched, setTouched] = useState(false);
-  // Adjusts the draft when the external value changes (Undo/Redo, another
-  // control affecting the same node, or a color picked visually — see
-  // this component's own doc comment) — same reset-during-render pattern
-  // every other draft/commit Inspector control uses.
-  const [lastSyncedValue, setLastSyncedValue] = useState(value);
-  if (value !== lastSyncedValue) {
-    setLastSyncedValue(value);
-    setDraft(value ?? "");
-    setTouched(false);
-  }
-
-  // BC-01.2: the same two guards InspectorNumericValueControl got in
-  // Checkpoints 5.5/5.6, which this text field never received. `touched`
-  // (set only by a real onChange) keeps a focus-then-blur with no edit
-  // from committing; suppressNextBlurCommitRef swallows the one real blur
-  // event that Enter/Escape's own .blur() dispatches synchronously. Without
-  // it, that blur ran the CURRENT render's commit(), whose closure still
-  // held the typed draft, so Enter committed twice and Escape committed
-  // the very value it was meant to discard.
-  const suppressNextBlurCommitRef = useRef(false);
+  // BC-01.4: the text field shares the Inspector edit session with the
+  // numeric controls. A draft that is a valid color (isValidCssColor — the
+  // rule every caller validates with) is applied live through onCommit,
+  // inside one merging transaction, so the whole edit is one undo entry;
+  // an invalid or half-typed draft is never written and the typed text is
+  // never rewritten. Escape restores the pre-edit color (unset stays
+  // unset). The caller still validates the final value and owns the error
+  // message. Carries forward BC-01.2: no double commit from Enter/Escape's
+  // own blur, no commit without an edit.
+  const textInputRef = useRef<HTMLInputElement>(null);
+  const session = useInspectorEditSession<string | null>({
+    inputRef: textInputRef,
+    value,
+    format: (current) => current ?? "",
+    parseLive: (draft) => {
+      const trimmed = draft.trim();
+      return isValidCssColor(trimmed) ? { value: trimmed } : null;
+    },
+    parseFinal: (draft) => {
+      const trimmed = draft.trim();
+      // With live off, `value` is still the pre-edit color, so retyping
+      // that exact string stays the no-op it was in BC-01.2. Live, the store
+      // already records nothing for an edit that ends unchanged.
+      if (trimmed === "" || (!live && trimmed === value)) return null;
+      return { value: trimmed };
+    },
+    onCommit: (next) => {
+      if (next !== null) onCommit?.(next);
+    },
+    onEditCancel,
+    live: isEditable && live,
+  });
 
   const colorInputRef = useRef<HTMLInputElement>(null);
   const representableHex = toNativeColorInputValue(value);
@@ -156,45 +176,12 @@ export function InspectorColorFieldShell({
     return () => input.removeEventListener("change", handleNativeChange);
   }, [onCommit]);
 
-  function commit() {
-    if (!onCommit || !touched) return;
-    setTouched(false);
-    const trimmed = draft.trim();
-    // Retyping the exact stored string is a no-op, not an edit worth a
-    // history entry — unlike a numeric field, `value` here is always the
-    // authored string itself (null when unset), never a displayed default.
-    if (trimmed === "" || trimmed === value) {
-      setDraft(value ?? "");
-      return;
-    }
-    onCommit(trimmed);
-  }
-
-  function handleBlur() {
-    if (suppressNextBlurCommitRef.current) {
-      suppressNextBlurCommitRef.current = false;
-      return;
-    }
-    commit();
-  }
-
-  // Only arms the suppression when .blur() will genuinely dispatch a blur
-  // event (the input is focused) — otherwise the flag would linger and
-  // swallow the next, unrelated blur.
-  function releaseFocus(input: HTMLInputElement) {
-    if (document.activeElement === input) suppressNextBlurCommitRef.current = true;
-    input.blur();
-  }
-
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
-      commit();
-      releaseFocus(event.currentTarget);
+      session.commitAndRelease(event.currentTarget);
     } else if (event.key === "Escape") {
       event.preventDefault();
-      setDraft(value ?? "");
-      setTouched(false);
-      releaseFocus(event.currentTarget);
+      session.cancelAndRelease(event.currentTarget);
     }
   }
 
@@ -259,16 +246,10 @@ export function InspectorColorFieldShell({
         readOnly={!isEditable}
         aria-label={label}
         aria-invalid={error ? true : undefined}
-        value={isEditable ? draft : (value ?? "")}
-        onChange={
-          isEditable
-            ? (event) => {
-                setDraft(event.target.value);
-                setTouched(true);
-              }
-            : undefined
-        }
-        onBlur={isEditable ? handleBlur : undefined}
+        ref={textInputRef}
+        value={isEditable ? session.draft : (value ?? "")}
+        onChange={isEditable ? session.handleChange : undefined}
+        onBlur={isEditable ? session.handleBlur : undefined}
         onKeyDown={isEditable ? handleKeyDown : undefined}
         placeholder="Unset"
         disabled={disabled}

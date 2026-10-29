@@ -3,7 +3,7 @@
 import { useId, useRef, type KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
 import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
-import { useNumericEditSession } from "@/features/inspector/hooks/useNumericEditSession";
+import { useInspectorEditSession } from "@/features/inspector/hooks/useInspectorEditSession";
 
 interface InspectorNumberFieldRowProps {
   label: string;
@@ -38,14 +38,14 @@ function parseFiniteNumber(draft: string): { value: number } | null {
  * (non-numeric) draft is discarded rather than committing NaN.
  *
  * Shares its draft/commit lifecycle with InspectorNumericValueControl via
- * useNumericEditSession (BC-01.3), including the Checkpoint 5.7 fixes that
+ * useInspectorEditSession (BC-01.3), including the Checkpoint 5.7 fixes that
  * hook carries forward (no double commit from Enter's own blur, no commit
  * without an edit), and optionally its live mode.
  */
 export function InspectorNumberFieldRow({ label, value, onCommit, live = false }: InspectorNumberFieldRowProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
-  const session = useNumericEditSession<number>({
+  const session = useInspectorEditSession<number>({
     inputRef,
     value,
     format: formatDraft,

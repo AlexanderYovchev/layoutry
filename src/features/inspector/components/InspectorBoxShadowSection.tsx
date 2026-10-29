@@ -300,6 +300,7 @@ export function InspectorBoxShadowSection({ node }: InspectorBoxShadowSectionPro
                   label="Shadow color"
                   value={selectedLayer.color ?? null}
                   onCommit={handleColorCommit}
+                  onEditCancel={() => setColorError(undefined)}
                   error={colorError}
                 />
               </InspectorPropertyRow>

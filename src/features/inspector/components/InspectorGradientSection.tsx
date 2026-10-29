@@ -260,6 +260,7 @@ export function InspectorGradientSection({ node }: InspectorGradientSectionProps
               label="Gradient stop color"
               value={selectedStop.color}
               onCommit={handleStopColorCommit}
+              onEditCancel={() => setColorError(undefined)}
               error={colorError}
             />
           </InspectorPropertyRow>

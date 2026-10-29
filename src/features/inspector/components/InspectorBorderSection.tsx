@@ -196,6 +196,7 @@ export function InspectorBorderSection({ node }: InspectorBorderSectionProps) {
           label="Border color"
           value={target.color ?? null}
           onCommit={handleColorCommit}
+          onEditCancel={() => setColorError(undefined)}
           onReset={() => {
             setColorError(undefined);
             commitSideField("color", undefined);

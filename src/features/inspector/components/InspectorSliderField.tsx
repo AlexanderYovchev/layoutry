@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, type KeyboardEvent } from "react";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn } from "@/lib/utils";
 import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
-import { useNumericEditSession } from "@/features/inspector/hooks/useNumericEditSession";
+import { useInspectorEditSession } from "@/features/inspector/hooks/useInspectorEditSession";
 
 function parseFiniteNumber(draft: string): number | null {
   if (draft.trim() === "") return null;
@@ -101,7 +101,7 @@ export function InspectorSliderField({ label, value, min, max, step = 1, unit, d
   // clamp only at commit, Escape restores. It carries forward the BC-01.2
   // fix for Enter/Escape's own blur committing a second time.
   const numberInputRef = useRef<HTMLInputElement>(null);
-  const numericSession = useNumericEditSession<number | null>({
+  const numericSession = useInspectorEditSession<number | null>({
     inputRef: numberInputRef,
     value,
     format: (current) => (current === null ? "" : String(current)),

@@ -110,13 +110,14 @@ export function InspectorVectorObjectSection({ svgNode, objectIds, protection }:
         <InspectorProtectedStyleGroup protected={protection.protected}>
           <div className="flex flex-col gap-2">
             <InspectorPropertyRow label="Fill" state={fillError ? "invalid" : object.fill ? "set" : "unset"} error={fillError}>
-              <InspectorColorFieldShell label="Fill" value={object.fill ?? null} onCommit={commitFill} onReset={() => setSvgObjectsFill(svgNode.id, ids, undefined)} error={fillError} />
+              <InspectorColorFieldShell label="Fill" value={object.fill ?? null} onCommit={commitFill} onEditCancel={() => setFillError(undefined)} onReset={() => setSvgObjectsFill(svgNode.id, ids, undefined)} error={fillError} />
             </InspectorPropertyRow>
             <InspectorPropertyRow label="Stroke" state={strokeError ? "invalid" : object.stroke ? "set" : "unset"} error={strokeError}>
               <InspectorColorFieldShell
                 label="Stroke"
                 value={object.stroke ?? null}
                 onCommit={commitStroke}
+                onEditCancel={() => setStrokeError(undefined)}
                 onReset={() => setSvgObjectsStroke(svgNode.id, ids, undefined)}
                 error={strokeError}
               />

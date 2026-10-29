@@ -177,9 +177,9 @@ describe("InspectorColorFieldShell", () => {
   // blur event that caused the double-commit/Escape-commit bugs. An
   // unfocused synthetic keyDown (as in the older tests above) masks them.
   describe("edit-session lifecycle on a focused field (BC-01.2)", () => {
-    it("Escape discards a changed value without committing, even though .blur() dispatches a real blur", () => {
+    it("with live off, Escape discards a changed value without committing, even though .blur() dispatches a real blur", () => {
       const onCommit = vi.fn();
-      render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Text color" />);
+      render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Text color" live={false} />);
 
       const input = screen.getByLabelText("Text color");
       input.focus();
@@ -189,6 +189,36 @@ describe("InspectorColorFieldShell", () => {
       expect(onCommit).not.toHaveBeenCalled();
       expect(input).toHaveValue("#3366ff");
       expect(input).not.toHaveFocus();
+    });
+
+    it("live: Escape adds no commit beyond the live preview of a valid color, reverts the draft and reports the cancel (BC-01.4)", () => {
+      const onCommit = vi.fn();
+      const onEditCancel = vi.fn();
+      render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} onEditCancel={onEditCancel} label="Text color" />);
+
+      const input = screen.getByLabelText("Text color");
+      input.focus();
+      fireEvent.change(input, { target: { value: "#00ff0" } });
+      expect(onCommit).not.toHaveBeenCalled();
+      fireEvent.change(input, { target: { value: "#00ff00" } });
+      expect(onCommit).toHaveBeenCalledExactlyOnceWith("#00ff00");
+      fireEvent.keyDown(input, { key: "Escape" });
+
+      expect(onCommit).toHaveBeenCalledTimes(1);
+      expect(onEditCancel).toHaveBeenCalledTimes(1);
+      expect(input).toHaveValue("#3366ff");
+    });
+
+    it("live: an invalid or half-typed color is never submitted, and the typed text is kept verbatim (BC-01.4)", () => {
+      const onCommit = vi.fn();
+      render(<InspectorColorFieldShell value={null} onCommit={onCommit} label="Text color" />);
+
+      const input = screen.getByLabelText("Text color");
+      input.focus();
+      for (const draft of ["#", "#1", "#12", "rgb(1, 2", "red", " #fff "]) fireEvent.change(input, { target: { value: draft } });
+
+      expect(onCommit).toHaveBeenCalledExactlyOnceWith("#fff");
+      expect(input).toHaveValue(" #fff ");
     });
 
     it("Enter commits a changed value exactly once (the blur Enter triggers is not a second commit)", () => {
@@ -238,9 +268,9 @@ describe("InspectorColorFieldShell", () => {
       expect(onCommit).not.toHaveBeenCalled();
     });
 
-    it("retyping the exact stored string is a no-op, not a commit", () => {
+    it("with live off, retyping the exact stored string is a no-op, not a commit (live: see the store-backed tests)", () => {
       const onCommit = vi.fn();
-      render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Text color" />);
+      render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Text color" live={false} />);
 
       const input = screen.getByLabelText("Text color");
       input.focus();
@@ -253,9 +283,9 @@ describe("InspectorColorFieldShell", () => {
       expect(onCommit).not.toHaveBeenCalled();
     });
 
-    it("the blur suppression is consumed once: the next real edit and blur still commit", () => {
+    it("with live off, the blur suppression is consumed once: the next real edit and blur still commit", () => {
       const onCommit = vi.fn();
-      render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Text color" />);
+      render(<InspectorColorFieldShell value="#3366ff" onCommit={onCommit} label="Text color" live={false} />);
 
       const input = screen.getByLabelText("Text color");
       input.focus();

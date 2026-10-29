@@ -107,7 +107,7 @@ test.describe("Typography font size", () => {
     await expect
       .poll(() => computed(page, "heading-1", "font-size"))
       .toBe(original);
-    await expect(field).toHaveValue("16");
+    await expect(field).toHaveValue("30");
     await expectUndoAvailable(page, false);
 
     await page.keyboard.press("Control+Shift+z");
@@ -145,7 +145,7 @@ test.describe("Typography font size", () => {
     await field.press("Escape");
 
     await expect(field).not.toBeFocused();
-    await expect(field).toHaveValue("16");
+    await expect(field).toHaveValue("30");
     expect(await computed(page, "heading-1", "font-size")).toBe(original);
     await expectUndoAvailable(page, false);
   });
@@ -163,7 +163,7 @@ test.describe("Typography font size", () => {
     expect(await computed(page, "heading-1", "font-size")).toBe(original);
 
     await field.press("Enter");
-    await expect(field).toHaveValue("16");
+    await expect(field).toHaveValue("30");
     expect(await computed(page, "heading-1", "font-size")).toBe(original);
     await expectUndoAvailable(page, false);
   });
@@ -180,7 +180,7 @@ test.describe("Typography font size", () => {
     await page.keyboard.type("-");
     await clickInspectorChrome(page);
 
-    await expect(field).toHaveValue("16");
+    await expect(field).toHaveValue("30");
     await expect
       .poll(() => computed(page, "heading-1", "font-size"))
       .toBe(original);

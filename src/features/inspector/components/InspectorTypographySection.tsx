@@ -10,6 +10,7 @@ import { InspectorResetButton } from "@/features/inspector/components/InspectorR
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { InspectorSegmentedRow } from "@/features/inspector/components/InspectorSegmentedRow";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { useRenderedFontSize } from "@/features/inspector/hooks/useRenderedFontSize";
 import {
   getTypographySettings,
   isValidCssColor,
@@ -111,6 +112,10 @@ const TEXT_ALIGN_ICONS = {
 export function InspectorTypographySection({ node }: InspectorTypographySectionProps) {
   const setElementTypography = useEditorStore((state) => state.setElementTypography);
   const typography = getTypographySettings(node);
+  // An unset font size shows (and steps from) what the Canvas actually
+  // renders — e.g. an H1's 30px heading default — never a guessed 16
+  // (BC-01.4). Displayed only; the property stays unset until edited.
+  const renderedFontSize = useRenderedFontSize(typography.fontSize ? null : node.id);
 
   const [fontSizeError, setFontSizeError] = useState<string | undefined>(undefined);
   const [lineHeightError, setLineHeightError] = useState<string | undefined>(undefined);
@@ -196,7 +201,7 @@ export function InspectorTypographySection({ node }: InspectorTypographySectionP
       >
         <InspectorNumericValueControl
           ariaLabel="Font size"
-          value={typography.fontSize?.value ?? 16}
+          value={typography.fontSize?.value ?? renderedFontSize ?? 16}
           unit={typography.fontSize?.unit ?? "px"}
           allowedUnits={FONT_SIZE_UNITS}
           onUnitChange={(unit) => typography.fontSize && commitField("fontSize", { ...typography.fontSize, unit })}
@@ -247,6 +252,7 @@ export function InspectorTypographySection({ node }: InspectorTypographySectionP
           label="Text color"
           value={typography.color ?? null}
           onCommit={handleColorCommit}
+          onEditCancel={() => setColorError(undefined)}
           onReset={() => {
             setColorError(undefined);
             resetField("color");

@@ -6,6 +6,8 @@ import type { EditorElementNode } from "@/features/editor/types/document";
 import { getFlexChildSettings } from "@/features/editor/types/flowLayout";
 import { getElementSpacing } from "@/features/editor/types/spacing";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
+import { InspectorBackgroundSection } from "@/features/inspector/components/InspectorBackgroundSection";
+import { InspectorBorderSection } from "@/features/inspector/components/InspectorBorderSection";
 import { InspectorFiltersSection } from "@/features/inspector/components/InspectorFiltersSection";
 import { InspectorFlexChildSection } from "@/features/inspector/components/InspectorFlexChildSection";
 import { InspectorSpacingSection } from "@/features/inspector/components/InspectorSpacingSection";
@@ -408,5 +410,264 @@ describe("live numeric editing (BC-01.3)", () => {
     fireEvent.change(slider, { target: { value: "30" } });
     expect(node("heading-1")?.filters?.opacity).toBe(30);
     expect(history()).toBe(2);
+  });
+});
+
+describe("live color text editing (BC-01.4)", () => {
+  const textColor = (id = "heading-1") => node(id)?.typography?.color;
+
+  it("a valid color reaches the document before blur, focus is kept, and Enter records one entry; Undo/Redo", () => {
+    render(<Selected section={InspectorTypographySection} />);
+    const input = screen.getByLabelText("Text color");
+    focus(input);
+    type(input, "#", "#f", "#ff", "#ff0");
+    expect(textColor()).toBe("#ff0");
+    type(input, "#ff00", "#ff000", "#ff0000");
+    expect(textColor()).toBe("#ff0000");
+    expect(input).toHaveFocus();
+    expect(history()).toBe(0);
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(history()).toBe(1);
+    act(() => store().undo());
+    expect(node("heading-1")?.typography).toBeUndefined();
+    expect(input).toHaveValue("");
+    act(() => store().redo());
+    expect(textColor()).toBe("#ff0000");
+    expect(input).toHaveValue("#ff0000");
+  });
+
+  it("invalid or half-typed text never touches the document", () => {
+    render(<Selected section={InspectorTypographySection} />);
+    const documentBefore = store().document;
+    const input = screen.getByLabelText("Text color");
+    focus(input);
+    type(input, "#", "#1", "#12", "rgb(1, 2", "red", "hsl(10, 50");
+
+    expect(store().document).toBe(documentBefore);
+    expect(store().transactionSnapshot).toBeNull();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("Escape restores an unset color to unset, and an authored color to that color — no history, clean", () => {
+    render(<Selected section={InspectorTypographySection} />);
+    const input = screen.getByLabelText("Text color");
+    focus(input);
+    type(input, "#00ff00");
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(node("heading-1")?.typography).toBeUndefined();
+    expect(history()).toBe(0);
+    expect(selectHasUnsavedChanges(store())).toBe(false);
+
+    act(() => store().setElementTypography("heading-1", { color: "#123456" }));
+    useEditorStore.setState({ past: [], persistedDocument: store().document });
+    focus(input);
+    type(input, "#abcdef");
+    expect(textColor()).toBe("#abcdef");
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(textColor()).toBe("#123456");
+    expect(input).toHaveValue("#123456");
+    expect(history()).toBe(0);
+    expect(selectHasUnsavedChanges(store())).toBe(false);
+  });
+
+  it("blur commits once; focus/blur without an edit, and retyping the same color, record nothing", () => {
+    act(() => store().setElementTypography("heading-1", { color: "#123456" }));
+    useEditorStore.setState({ past: [], persistedDocument: store().document });
+    const documentBefore = store().document;
+    render(<Selected section={InspectorTypographySection} />);
+    const input = screen.getByLabelText("Text color");
+
+    focus(input);
+    blur(input);
+    focus(input);
+    type(input, "#000000", "#123456");
+    blur(input);
+    expect(history()).toBe(0);
+    expect(store().document).toBe(documentBefore);
+
+    focus(input);
+    type(input, "rgba(0, 0, 0, 0.5)");
+    blur(input);
+    expect(textColor()).toBe("rgba(0, 0, 0, 0.5)");
+    expect(history()).toBe(1);
+  });
+
+  it("an invalid final draft reverts the whole edit (and the field) instead of keeping an intermediate color", () => {
+    render(<Selected section={InspectorTypographySection} />);
+    const input = screen.getByLabelText("Text color");
+    focus(input);
+    type(input, "#ff0000", "#ff00zz");
+    expect(textColor()).toBe("#ff0000");
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(node("heading-1")?.typography).toBeUndefined();
+    expect(history()).toBe(0);
+    expect(store().transactionSnapshot).toBeNull();
+    expect(input).toHaveValue("");
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter a hex color");
+
+    // Escape on the next edit clears that message.
+    focus(input);
+    type(input, "#0");
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("a programmatic selection change mid-edit commits the color to the original element only", () => {
+    render(<Selected section={InspectorTypographySection} />);
+    const input = screen.getByLabelText("Text color");
+    focus(input);
+    type(input, "#ff0000");
+    act(() => store().selectOnly("paragraph-1"));
+
+    expect(textColor("heading-1")).toBe("#ff0000");
+    expect(node("paragraph-1")?.typography).toBeUndefined();
+    expect(history()).toBe(1);
+    expect(screen.getByLabelText("Text color")).toHaveValue("");
+  });
+
+  it("Ctrl+S mid-edit commits the color first, so the save finds no open transaction", () => {
+    render(<Selected section={InspectorTypographySection} />);
+    const input = screen.getByLabelText("Text color");
+    focus(input);
+    type(input, "#ff0000");
+    let transactionSeenBySave: unknown = "not called";
+    const listener = () => {
+      transactionSeenBySave = store().transactionSnapshot;
+    };
+    window.addEventListener("keydown", listener);
+    try {
+      fireEvent.keyDown(input, { key: "s", ctrlKey: true });
+    } finally {
+      window.removeEventListener("keydown", listener);
+    }
+    expect(transactionSeenBySave).toBeNull();
+    expect(textColor()).toBe("#ff0000");
+    expect(history()).toBe(1);
+  });
+
+  it("the native picker commits once on its own, after a typed edit has been committed (no orphaned transaction)", () => {
+    render(<Selected section={InspectorTypographySection} />);
+    const input = screen.getByLabelText("Text color");
+    focus(input);
+    type(input, "#ff0000");
+    const picker = screen.getByLabelText("Choose text color");
+    // Clicking the swatch: pointerdown outside the text field ends the typed edit first.
+    fireEvent.pointerDown(picker);
+    expect(store().transactionSnapshot).toBeNull();
+    expect(history()).toBe(1);
+
+    fireEvent.change(picker, { target: { value: "#00aa00" } });
+    expect(textColor()).toBe("#00aa00");
+    expect(history()).toBe(2);
+    expect(input).toHaveValue("#00aa00");
+    expect(store().transactionSnapshot).toBeNull();
+  });
+
+  it.each([
+    ["Background", InspectorBackgroundSection, "Background color", () => node("heading-1")?.background?.color],
+    ["Border", InspectorBorderSection, "Border color", () => JSON.stringify(node("heading-1")?.border ?? null)],
+  ] as const)("%s color is live with the same lifecycle", (_name, Section, label, read) => {
+    render(<Selected section={Section} />);
+    const before = read();
+    const input = screen.getByLabelText(label);
+    focus(input);
+    type(input, "#ff0000");
+    expect(String(read())).toContain("#ff0000");
+    expect(history()).toBe(0);
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(read()).toEqual(before);
+    expect(history()).toBe(0);
+
+    focus(input);
+    type(input, "#00ff00");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(String(read())).toContain("#00ff00");
+    expect(history()).toBe(1);
+  });
+});
+
+describe("font size shows the rendered value while unset (BC-01.4)", () => {
+  /** A stand-in Canvas element: jsdom has no Tailwind, so the rendered size is given inline. */
+  function renderWithCanvas(px: string) {
+    const surface = window.document.createElement("div");
+    surface.setAttribute("data-document-surface", "");
+    const heading = window.document.createElement("h1");
+    heading.setAttribute("data-node-id", "heading-1");
+    heading.style.fontSize = px;
+    surface.append(heading);
+    window.document.body.append(surface);
+    const view = render(<Selected section={InspectorTypographySection} />);
+    return {
+      heading,
+      cleanup: () => {
+        view.unmount();
+        surface.remove();
+      },
+    };
+  }
+
+  it("displays the rendered size, not 16, and leaves the property unset after focus and blur", () => {
+    const { cleanup } = renderWithCanvas("30px");
+    try {
+      const input = screen.getByLabelText("Font size");
+      expect(input).toHaveValue(30);
+      focus(input);
+      blur(input);
+      expect(node("heading-1")?.typography).toBeUndefined();
+      expect(history()).toBe(0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("Arrow Up steps from the rendered value (30 -> 31), Arrow Down from it (30 -> 29); Undo and Escape return to unset", () => {
+    const { cleanup } = renderWithCanvas("30px");
+    try {
+      const input = screen.getByLabelText("Font size");
+      focus(input);
+      fireEvent.keyDown(input, { key: "ArrowUp" });
+      expect(fontSize()).toBe(31);
+      expect(node("heading-1")?.typography?.fontSize?.unit).toBe("px");
+      blur(input);
+      expect(history()).toBe(1);
+      act(() => store().undo());
+      expect(node("heading-1")?.typography).toBeUndefined();
+      expect(input).toHaveValue(30);
+
+      focus(input);
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+      expect(fontSize()).toBe(29);
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(node("heading-1")?.typography).toBeUndefined();
+      expect(input).toHaveValue(30);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("an authored font size is shown as authored (value and unit), never the measured one", () => {
+    act(() => store().setElementTypography("heading-1", { fontSize: { value: 2, unit: "rem" } }));
+    const { cleanup } = renderWithCanvas("30px");
+    try {
+      expect(screen.getByLabelText("Font size")).toHaveValue(2);
+      expect(screen.getByLabelText("Font size unit")).toHaveValue("rem");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("re-measures after any document change, so a changed inherited size is reflected", () => {
+    const { heading, cleanup } = renderWithCanvas("30px");
+    try {
+      expect(screen.getByLabelText("Font size")).toHaveValue(30);
+      heading.style.fontSize = "22px";
+      // Any edit elsewhere in the document (e.g. on an ancestor) triggers a re-measure.
+      act(() => store().setElementTypography("paragraph-1", { color: "#111111" }));
+      expect(screen.getByLabelText("Font size")).toHaveValue(22);
+    } finally {
+      cleanup();
+    }
   });
 });

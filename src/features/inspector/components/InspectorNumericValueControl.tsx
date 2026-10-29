@@ -4,7 +4,7 @@ import { useId, useRef, type KeyboardEvent } from "react";
 import { InspectorUnitSelect, type CssUnit } from "@/features/inspector/components/InspectorUnitSelect";
 import { cn } from "@/lib/utils";
 import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
-import { useNumericEditSession } from "@/features/inspector/hooks/useNumericEditSession";
+import { useInspectorEditSession } from "@/features/inspector/hooks/useInspectorEditSession";
 
 export type NumericOrAuto = number | "auto";
 
@@ -59,7 +59,7 @@ function parseFiniteNumber(draft: string): number | null {
  * Escape restores the pre-edit value. Incomplete or out-of-range drafts
  * are never written: min/max still clamp only when the edit is committed,
  * and an empty draft still commits "auto" (allowAuto) only at commit. See
- * useNumericEditSession for the full lifecycle, including the Checkpoint
+ * useInspectorEditSession for the full lifecycle, including the Checkpoint
  * 5.5 (Enter/Escape double-blur) and 5.6 (no commit without an edit)
  * fixes it carries forward. `live={false}` keeps commit-on-blur/Enter.
  * Never bypasses the caller's onCommit — it holds only transient draft
@@ -83,7 +83,7 @@ export function InspectorNumericValueControl({
 }: InspectorNumericValueControlProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
-  const session = useNumericEditSession<NumericOrAuto>({
+  const session = useInspectorEditSession<NumericOrAuto>({
     inputRef,
     value,
     format: formatDraft,

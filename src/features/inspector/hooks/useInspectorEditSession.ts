@@ -12,13 +12,13 @@ export interface ParsedDraft<T> {
   value: T;
 }
 
-interface NumericEditSessionOptions<T> {
+interface InspectorEditSessionOptions<T> {
   /** The field's own input element — clicks inside it never end the session. */
   inputRef: RefObject<HTMLInputElement | null>;
   /** The committed value currently in the document (or the control's displayed default when unset). */
   value: T;
   format: (value: T) => string;
-  /** A draft the document may hold RIGHT NOW while typing — complete, finite and in range — or null to keep the last preview. */
+  /** A draft the document may hold RIGHT NOW while typing (a complete, in-range number; a valid color) — or null to keep the last preview. */
   parseLive: (draft: string) => ParsedDraft<T> | null;
   /** The draft as it should be committed when the session ends (the control's existing clamp/"auto" semantics), or null if it can't be. */
   parseFinal: (draft: string) => ParsedDraft<T> | null;
@@ -43,9 +43,10 @@ interface EditSession<T> {
 const FORCE_RESYNC: unique symbol = Symbol("force-resync");
 
 /**
- * One numeric Inspector field's editing session (BC-01.3) — the shared
- * engine behind InspectorNumericValueControl, InspectorNumberFieldRow and
- * InspectorSliderField's exact-value box.
+ * One Inspector text field's editing session — the shared engine behind
+ * the numeric controls (BC-01.3: InspectorNumericValueControl,
+ * InspectorNumberFieldRow, InspectorSliderField's exact-value box) and the
+ * color text field (BC-01.4: InspectorColorFieldShell).
  *
  * A session starts with the first real edit (typing or an Arrow step;
  * focus alone never starts one). While live, every draft that parseLive
@@ -53,9 +54,10 @@ const FORCE_RESYNC: unique symbol = Symbol("force-resync");
  * inside `beginTransaction({ mergeHistory: true })`, so the Canvas, Preview
  * and Export all read the one canonical document while the whole session
  * records a single undo entry. Incomplete or invalid drafts ("", "-",
- * "1.", out of range) are never written; the Canvas keeps the last valid
- * preview and the field keeps exactly what the user typed — the draft is
- * never resynced from the document mid-session, so the caret never jumps.
+ * "1.", out of range, "#ff00z") are never written; the Canvas keeps the
+ * last valid preview and the field keeps exactly what the user typed — the
+ * draft is never resynced from the document mid-session, so the caret
+ * never jumps.
  *
  * The session ends exactly once, whichever comes first:
  *   Enter / blur / pointerdown anywhere outside the input (capture phase,
@@ -66,9 +68,10 @@ const FORCE_RESYNC: unique symbol = Symbol("force-resync");
  *     -> commit: the final draft (parseFinal) is written if it differs
  *        from the last live attempt, then the transaction commits. A final
  *        draft that is invalid, or that the caller rejects, reverts the
- *        whole session instead of keeping an intermediate preview. (If
- *        nothing was written live and the caller rejects the one final
- *        commit, the draft and the caller's message stay, as before.)
+ *        whole session instead of keeping an intermediate preview, and the
+ *        field shows its pre-edit value again; the caller's message stays,
+ *        explaining why. (With live off, a rejected final commit keeps
+ *        the draft and the message, as before BC-01.3.)
  *   Escape
  *     -> cancel: the pre-session document is restored and the
  *        transaction cancelled, so an unset property stays unset.
@@ -80,7 +83,7 @@ const FORCE_RESYNC: unique symbol = Symbol("force-resync");
  * release focus with .blur(), and the one real blur that dispatches is
  * suppressed — it would otherwise run a second end-of-session.
  */
-export function useNumericEditSession<T>(options: NumericEditSessionOptions<T>) {
+export function useInspectorEditSession<T>(options: InspectorEditSessionOptions<T>) {
   const { value, format, inputRef } = options;
   const [draft, setDraft] = useState(() => format(value));
   const [badInput, setBadInput] = useState(false);
@@ -130,7 +133,6 @@ export function useNumericEditSession<T>(options: NumericEditSessionOptions<T>) 
       revert();
     } else {
       const attempt = session.lastAttempt;
-      const nothingWrittenLive = attempt === null;
       let accepted: boolean;
       // The caller's validation is deterministic: a value just attempted
       // live is never re-submitted.
@@ -143,7 +145,7 @@ export function useNumericEditSession<T>(options: NumericEditSessionOptions<T>) 
       }
       if (accepted) {
         if (ownedSnapshot) useEditorStore.getState().commitTransaction();
-      } else if (nothingWrittenLive) {
+      } else if (session.deferred) {
         setEditing(false);
         return;
       } else {

@@ -1,0 +1,346 @@
+LAYOUTRY — BC-01.4: LIVE COLOR EDITING & FONT-SIZE ACCURACY
+==========================================================
+Date: 2026-10-29
+Type: Inspector enhancement + bug fix + regression tests
+Baseline: HEAD b0be173 (BC-01.3, committed by the user)
+Status: Implemented and tested. Not committed. Awaiting QA review.
+
+Labels:
+  VERIFIED          covered by an automated test that ran and passed here
+                    (Vitest/jsdom against the real store, or Playwright/
+                    Chromium with real typing and computed Canvas styles)
+  NOT VERIFIED      not covered by a test that ran here
+  KNOWN LIMITATION  remaining behavior left as is, deliberately
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+A. Live color text. Every color text field built on the shared
+   InspectorColorFieldShell now applies a valid color to the Canvas
+   while the user types: 9 fields in 7 sections (section 4). It reuses
+   BC-01.3's edit session (renamed useInspectorEditSession) and its
+   merging transaction, with no new history mechanism:
+     - one edit = one undo entry;
+     - Escape restores the pre-edit color (an unset color stays unset);
+     - invalid or half-typed text is never written;
+     - an invalid final draft reverts the edit;
+     - selection changes, Ctrl+S and unmount commit to the original
+       element.
+   The native color picker is unchanged and still commits once.
+   VERIFIED (Chromium + jsdom).
+
+B. Font size accuracy. While no font size is authored, the Font size
+   field now shows the size the Canvas actually renders (H1: 30, not 16).
+   Arrow Up/Down step from that value (30 -> 31 / 29). Nothing is written
+   until the user edits. VERIFIED (Chromium): all six heading levels,
+   paragraph and button display their computed size; an <option> shows
+   the size it inherits from its <select> and follows a change to it.
+
+All acceptance criteria have test evidence (section 9), within the
+limits listed in section 10.
+
+
+2. ROOT CAUSES
+--------------
+Font size: the mismatch is NOT a browser default. Canvas and Export
+apply the document default presentation `heading`
+(src/features/canvas/utils/documentDefaultStyles.ts: text-3xl, i.e.
+font-size 1.875rem = 30px) to every h1-h6 with no authored font size
+(elementStyleRecipes.ts textElementDefaults). The Inspector ignored that
+and hard-coded a fallback: InspectorTypographySection
+`value={typography.fontSize?.value ?? 16}`. Arrow Up therefore stepped
+from 16 and wrote 17px. The same table gives paragraph/list-item 1rem
+(16px) and button/controls/table cells text-sm (14px). Links and
+<option> have no font-size default and inherit from their parent.
+All h1-h6 share the single `heading` default, so all render at 30px
+(VERIFIED in Chromium).
+
+Color: InspectorColorFieldShell kept typed text in local draft state
+and committed only on blur/Enter (BC-01.1 RC-1), the same pattern
+BC-01.3 replaced for numeric fields.
+
+
+3. EXACT FILES
+--------------
+Created:
+  src/features/inspector/hooks/useRenderedFontSize.ts
+  e2e/inspector-live-color-font-size.spec.ts
+  docs/reports/BC-01.4-Live-Color-And-Font-Size-Accuracy.txt (this file)
+  changelogs/2026-10-29-live-color-font-size-BC-01.4.txt (gitignored)
+Moved (git mv; the hook now serves color fields too):
+  src/features/inspector/hooks/useNumericEditSession.ts
+    -> useInspectorEditSession.ts
+  src/features/inspector/hooks/useNumericEditSession.test.tsx
+    -> useInspectorEditSession.test.tsx
+Modified:
+  useInspectorEditSession.ts
+      rename; doc comment; in live mode a rejected final draft now
+      always restores the field's pre-edit text (section 7)
+  useInspectorEditSession.test.tsx
+      +14 tests (live color, font-size display)
+  src/features/inspector/components/InspectorColorFieldShell.tsx
+      text field on the shared session; new optional props
+      onEditCancel and live; native picker code unchanged
+  InspectorColorFieldShell.test.tsx
+      3 BC-01.2 contract tests now run with live={false}; +2 live tests
+  InspectorTypographySection.tsx
+      unset font size uses useRenderedFontSize; text color onEditCancel
+  InspectorBackgroundSection.tsx, InspectorBorderSection.tsx,
+  InspectorBoxShadowSection.tsx, InspectorGradientSection.tsx,
+  InspectorSvgSection.tsx, InspectorVectorObjectSection.tsx
+      onEditCancel clears their color message on Escape
+  InspectorNumericValueControl.tsx, InspectorNumberFieldRow.tsx,
+  InspectorSliderField.tsx
+      import/name updates for the rename only
+  e2e/inspector-live-numeric.spec.ts
+      four BC-01.3 assertions expected the H1 field to read "16" after
+      Undo/Escape (the old wrong value); they now expect "30". The two
+      paragraph assertions stay "16" (a paragraph really is 16px).
+No store, schema, export, canvas or styling changes. Nothing staged or
+committed.
+
+
+4. LIVE COLOR IMPLEMENTATION DETAILS
+------------------------------------
+Coverage (confirmed in the repo: every InspectorColorFieldShell with an
+onCommit):
+  Typography      Text color
+  Background      Background color
+  Border          Border color
+  Box shadow      Shadow color
+  Gradient        Gradient stop color
+  SVG             Fill, Stroke
+  Vector object   Fill, Stroke
+Not covered: multi-selection bulk color fields (InspectorBulkTextField;
+multi-select is out of scope). Unchanged.
+
+Mechanics (InspectorColorFieldShell):
+  - parseLive: the trimmed draft, only if isValidCssColor accepts it.
+    That is the existing rule every caller validates with, so a draft
+    that would be rejected is never even submitted, and no error message
+    flashes while typing. Formats are unchanged: hex #rgb/#rgba/#rrggbb/
+    #rrggbbaa, rgb()/rgba(), hsl()/hsla(), and transparent/currentColor/
+    inherit. Named colors like "red" are still rejected. No new formats.
+  - parseFinal: the trimmed draft. The caller's own validation still
+    decides at commit; rejection reverts the edit.
+  - The typed text is never rewritten mid-edit (" #fff " stays as typed;
+    "#fff" is what gets written). VERIFIED (jsdom). The caret stays put
+    across live writes. VERIFIED (Chromium: rgb(1, 2, 3) -> 34 -> 345
+    typed mid-string).
+  - Writes go through the caller's normal onCommit (the existing section
+    setters), so it is one canonical document and there are no Canvas
+    DOM writes.
+  - Native picker: still listens to the native `change` event and
+    commits once, outside any transaction. Clicking the swatch is a
+    pointerdown outside the text field, so a typed edit commits first;
+    the two never share or orphan a transaction. VERIFIED (jsdom + a
+    Chromium fill() of the input, which dispatches input + change: two
+    undo steps for typed then picked). The picker swatch follows typed
+    colors when representable as 6-digit hex (existing imperative sync
+    off the value prop; unchanged).
+  - live={false} keeps the BC-01.2 commit-on-blur contract, including
+    "retyping the stored string is a no-op".
+
+
+5. FONT-SIZE RESOLUTION APPROACH
+--------------------------------
+useRenderedFontSize(nodeId) reads getComputedStyle(fontSize) from the
+node's element on the Canvas ([data-document-surface] [data-node-id]),
+only while no font size is authored. This is the same "start from what
+is on screen" approach the Size section already uses for unset
+dimensions (useRenderedNodeSize).
+
+Why measure rather than re-derive:
+  - The Canvas applies exactly the documentDefaultStyles declarations
+    that Export prints (EXPORT parity specs already enforce this), so the
+    measured value is the Canvas/Preview/Export value.
+  - Inheritance, rem/em and any future breakpoint default come out
+    right without a second, hand-maintained copy of the cascade (no
+    cascade engine, no per-tag table, no "H1 = 30" special case).
+It re-measures in a layout effect after every document change (an
+ancestor edit can change what a node inherits), so the field never paints
+a stale value. Display only: the property stays unset until the user
+edits. Arrow steps start from the displayed value; step, min/max and unit
+behavior are unchanged (an unset size steps in px).
+Authored values are shown as authored (value + unit, e.g. 2 rem), never
+the measured px.
+
+Inherited and responsive cases:
+  Inherits from parent  VERIFIED (Chromium): an option shows its select's
+                        size and follows a change to it (-> 22px).
+  Relative units        authored rem/em are displayed as authored; an
+                        unset size is displayed in px (computed).
+  Breakpoints           no font-size breakpoint exists in the default
+                        table today; the measured value is the one at the
+                        current Canvas width.
+  CSS variables         not supported in authored font sizes (no change).
+  See section 10 for the limits.
+
+
+6. TRANSACTION AND UNDO/REDO BEHAVIOR
+-------------------------------------
+Color edits use the BC-01.3 merging transaction unchanged:
+beginTransaction({ mergeHistory: true }) on the first valid draft (never
+joining an open gesture's transaction), one entry on commit, none if the
+color ends where it started (the document reference is restored, so the
+project is clean).
+  VERIFIED (Chromium): #ff -> #ff0 -> #ff0000 is one entry; one Undo
+    restores the unset color (field ""), Undo then disabled; Redo
+    reapplies. Blur commits one entry. Typed edit + picker pick = two
+    entries.
+  VERIFIED (jsdom): Undo/Redo resync the field; retyping the same color
+    = no entry and the same document object; Escape on unset and on
+    authored colors = no entry, clean.
+Font size: an Arrow step from the displayed default is one entry; one
+Undo returns to unset (field shows 30 again). VERIFIED (Chromium + jsdom).
+
+
+7. VALIDATION AND SELECTION LIFECYCLE
+-------------------------------------
+Invalid or incomplete drafts ("#", "#12", "rgb(1, 2", "red"): never
+written, and the document object is untouched.  VERIFIED (jsdom)
+Valid intermediate values preview (e.g. "#ff0" while typing "#ff0000").
+VERIFIED (Chromium)
+Invalid final draft (e.g. "#ff0000" then "zz" + Enter): the whole edit
+reverts (Canvas, document and field), no history, and the section's
+message ("Enter a hex color ...") stays visible to explain why. Escape
+on a later edit clears it.  VERIFIED (Chromium + jsdom)
+  Change in the shared hook: in live mode a rejected final draft now
+  ALWAYS restores the field's pre-edit text. BC-01.3 kept the typed text
+  when nothing had been written live; BC-01.4 section 3.D requires the
+  restore. With live off, the old keep-draft behavior is unchanged.
+Escape: restores the pre-edit color, clears the section's color message
+(onEditCancel, wired for all 9 fields), no history.  VERIFIED (jsdom;
+Chromium for the restore)
+Selection change mid-edit (Canvas click; programmatic selectOnly):
+commits to the original element only; the field then shows the new
+element's color.  VERIFIED (Chromium canvas click; jsdom programmatic)
+Ctrl+S mid-edit: commits first, then saves; the saved file contains the
+color; focus stays.  VERIFIED (Chromium IndexedDB read-back; jsdom)
+Unmount, deletion, Preview, Export, menus: the same session lifecycle
+as BC-01.3 (pointerdown/selection/unmount commit first). Unmount, Preview
+and Export are VERIFIED for numeric fields in BC-01.3; for color they are
+NOT VERIFIED separately (same hook code path).
+Undo/Redo shortcuts: Ctrl+Z inside the text field stays native text undo
+(the editor ignores shortcuts in inputs), as before.
+
+
+8. CANVAS / PREVIEW / EXPORT VERIFICATION
+-----------------------------------------
+VERIFIED (Chromium):
+  - Live colors appear on the Canvas via computed style before blur
+    (text, background on a section, border on a button).
+  - Focusing and leaving the unset Font size field authors nothing: the
+    export contains no "font-size: 30px", and Undo stays disabled.
+  - After Arrow Up (31px), Preview renders 31px and Export contains
+    font-size: 31px.
+
+
+9. TESTS EXECUTED, EXACT RESULTS
+--------------------------------
+New tests:
+  useInspectorEditSession.test.tsx +14 (jsdom, real store):
+    live color: preview before blur + focus + one entry + Undo/Redo;
+    invalid/half-typed never written; Escape on unset and authored; blur
+    once, no-op focus/blur, same-color retype = 0 entries; invalid final
+    reverts field and document, message kept, Escape clears it;
+    programmatic selection change; Ctrl+S commits first; picker after a
+    typed edit (two entries, no orphan); Background and Border colors
+    (same lifecycle).
+    font size: shows the rendered 30, not 16, and stays unset after
+    focus/blur; Arrow Up 31 / Arrow Down 29, Undo and Escape back to
+    unset; an authored value (2 rem) shown as authored; re-measure after
+    a document change (inherited size changes).
+  InspectorColorFieldShell.test.tsx +2 (live Escape contract;
+    half-typed text never submitted, text kept verbatim); 3 BC-01.2
+    tests now pass live={false}.
+  e2e/inspector-live-color-font-size.spec.ts — 14 (Chromium):
+    color: intermediate previews + one entry + Undo/Redo; caret; Escape;
+    blur/no-op; invalid final; Canvas selection switch; native picker;
+    Background + Border live; Ctrl+S with IndexedDB check.
+    font size: H1 30 -> 31 / 29 + Undo; focus/blur authors nothing; H1-H6
+    + paragraph + button equal computed; option inherits from select and
+    follows it; Preview + Export.
+Mapping to the brief's tests 1-23: all covered. Item 14 (multiple
+sections) covers Text, Background and Border; Shadow, Gradient, SVG and
+Vector colors are NOT VERIFIED separately (section 10).
+
+Commands and results:
+  npm run typecheck                         PASS
+  npm run lint                              PASS (0 problems)
+  npx vitest run (inspector/editor, during development)
+                                            PASS
+  npx vitest run                            PASS: 341 files, 5110
+                                            passed, 1 skipped
+                                            (pre-existing
+                                            it.skipIf(!canCreateFileSymlinks))
+  npx playwright test <three Inspector specs>
+                                            PASS 44/44
+  npx playwright test                       PASS 102/102 (full suite)
+  npm run build                             PASS
+  env -u ELECTRON_RUN_AS_NODE npm run desktop:test
+                                            56 passed, 2 skipped
+                                            (pre-existing skips), 1
+                                            FAILED: lifecycle.spec.ts "a
+                                            saved (or untouched) project
+                                            closes at once, with no prompt
+                                            at all" (process-exit timeout)
+  lifecycle.spec.ts rerun 4x                3 x 9/9 passed, 1 x the same
+                                            single failure
+Electron classification: NOT a BC-01.4 regression. The identical
+intermittent failure was already reproduced on the BC-01.3 code (now HEAD
+b0be173) before any BC-01.4 change existed (BC-01.3 report: 2 of 5
+reruns). The test opens and closes the app without touching the
+Inspector. Whether it predates BC-01.3 remains NOT VERIFIED (a clean
+older build was not possible without a dependency install; see the
+BC-01.3 report).
+
+Test-only mistakes fixed while writing the spec: the select's Structure
+node starts collapsed (expand first); an unused helper parameter (lint).
+No app bugs were found in this pass.
+
+
+10. KNOWN LIMITATIONS AND UNVERIFIED SCENARIOS
+----------------------------------------------
+KNOWN LIMITATION  The displayed unset font size is the Canvas's computed
+  px at the current Canvas width. Before the first measurement, or for a
+  node that is not rendered, the field falls back to 16 (this only
+  happens in tests without a Canvas).
+KNOWN LIMITATION  Unset font size is displayed and stepped in px even
+  when the default is defined in rem (30px = 1.875rem).
+KNOWN LIMITATION  Same class of mismatch, not fixed (out of scope): the
+  unset Line height still shows 1.5 (an H1 renders 1.2) and Letter
+  spacing 0 (an H1 renders -0.025em); the multi-selection Typography
+  font size keeps its own fallback.
+KNOWN LIMITATION  The existing validator accepts some intermediate
+  strings that look odd live: "#ff00" (4-digit hex with alpha 00, i.e.
+  transparent) while typing "#ff0000"; rgb() channels above 255 (the
+  browser clamps them). The validator is unchanged.
+KNOWN LIMITATION  A rejected final color keeps the section's message
+  after the revert (it explains why), until the next valid edit,
+  Escape, or a selection change. Consistent with BC-01.3 numeric fields.
+KNOWN LIMITATION  Live mode with another gesture's transaction already
+  open (no UI path does this) falls back to one commit at the end; there
+  a retyped identical color records an entry.
+NOT VERIFIED  Shadow, Gradient stop, SVG and Vector-object color fields
+  individually (same component, same wiring as the verified ones).
+NOT VERIFIED  Unmount, deletion, Preview and Export mid color edit
+  (verified for numeric fields in BC-01.3; same hook path).
+NOT VERIFIED  Firefox/WebKit (the config is Chromium only); live color
+  or font size inside the Electron window; the real OS color dialog
+  (only its events were simulated).
+NOT VERIFIED  Whether the Electron lifecycle flake predates BC-01.3.
+
+
+11. RECOMMENDATIONS FOR BC-01.5
+-------------------------------
+  1. Apply the same rendered-value display to unset Line height and
+     Letter spacing (measure, display only), and to the multi-selection
+     font size.
+  2. Decide whether bulk (multi-select) color/numeric fields should be
+     live; they can reuse useInspectorEditSession with the bulk setters.
+  3. Investigate the intermittent Electron lifecycle test on HEAD 9e52d80
+     with a clean install, to settle whether it predates BC-01.3.
+  4. Consider whether a rejected final value should keep or clear the
+     section message (currently kept, consistently, for numeric and
+     color fields).

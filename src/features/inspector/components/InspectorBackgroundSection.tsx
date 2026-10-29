@@ -89,6 +89,7 @@ export function InspectorBackgroundSection({ node }: InspectorBackgroundSectionP
           label="Background color"
           value={background.color ?? null}
           onCommit={handleColorCommit}
+          onEditCancel={() => setColorError(undefined)}
           onReset={() => {
             setColorError(undefined);
             setElementBackground(node.id, withBackgroundField(background, "color", undefined));
