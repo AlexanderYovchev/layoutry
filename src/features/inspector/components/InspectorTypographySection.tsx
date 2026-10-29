@@ -10,7 +10,7 @@ import { InspectorResetButton } from "@/features/inspector/components/InspectorR
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { InspectorSegmentedRow } from "@/features/inspector/components/InspectorSegmentedRow";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
-import { useRenderedFontSize } from "@/features/inspector/hooks/useRenderedFontSize";
+import { useRenderedTypography, type RenderedKeywordOrNumber } from "@/features/inspector/hooks/useRenderedTypography";
 import {
   getTypographySettings,
   isValidCssColor,
@@ -109,13 +109,31 @@ const TEXT_ALIGN_ICONS = {
  * requirement) instead of being silently coerced the way Spacing's
  * negative-value clamp is.
  */
+/**
+ * Arrow Up/Down need a number to step from when an unset line-height
+ * computes to `normal` (e.g. select/option), which has no single numeric
+ * value — it depends on the font. 1.2 is the upper end of the range CSS 2.1
+ * recommends for `normal` (1.0-1.2). It is used only once the user steps;
+ * the field itself shows "Normal", never a made-up number.
+ * (Letter-spacing `normal` adds no spacing, so its baseline is exactly 0.)
+ */
+const NORMAL_LINE_HEIGHT_STEP_BASE = 1.2;
+
+/** An unset line-height/letter-spacing for the numeric control: the rendered number, the control's keyword sentinel for a computed `normal`, or the fallback while unmeasured. */
+function renderedOrKeyword(rendered: RenderedKeywordOrNumber | null | undefined, fallback: number): NumericOrAuto {
+  if (!rendered) return fallback;
+  return rendered.kind === "normal" ? "auto" : rendered.value;
+}
+
 export function InspectorTypographySection({ node }: InspectorTypographySectionProps) {
   const setElementTypography = useEditorStore((state) => state.setElementTypography);
   const typography = getTypographySettings(node);
-  // An unset font size shows (and steps from) what the Canvas actually
-  // renders — e.g. an H1's 30px heading default — never a guessed 16
-  // (BC-01.4). Displayed only; the property stays unset until edited.
-  const renderedFontSize = useRenderedFontSize(typography.fontSize ? null : node.id);
+  // Unset font size, line height and letter spacing show (and step from)
+  // what the Canvas actually renders — e.g. an H1's 30px / 1.2 / -0.75px
+  // heading default — never a guessed 16 / 1.5 / 0 (BC-01.4, BC-01.5).
+  // Displayed only; each property stays unset until edited.
+  const allAuthored = Boolean(typography.fontSize && typography.lineHeight && typography.letterSpacing);
+  const rendered = useRenderedTypography(allAuthored ? null : node.id);
 
   const [fontSizeError, setFontSizeError] = useState<string | undefined>(undefined);
   const [lineHeightError, setLineHeightError] = useState<string | undefined>(undefined);
@@ -201,7 +219,7 @@ export function InspectorTypographySection({ node }: InspectorTypographySectionP
       >
         <InspectorNumericValueControl
           ariaLabel="Font size"
-          value={typography.fontSize?.value ?? renderedFontSize ?? 16}
+          value={typography.fontSize?.value ?? rendered?.fontSizePx ?? 16}
           unit={typography.fontSize?.unit ?? "px"}
           allowedUnits={FONT_SIZE_UNITS}
           onUnitChange={(unit) => typography.fontSize && commitField("fontSize", { ...typography.fontSize, unit })}
@@ -281,7 +299,9 @@ export function InspectorTypographySection({ node }: InspectorTypographySectionP
       >
         <InspectorNumericValueControl
           ariaLabel="Line height"
-          value={typography.lineHeight?.value ?? 1.5}
+          value={typography.lineHeight?.value ?? renderedOrKeyword(rendered?.lineHeight, 1.5)}
+          keywordPlaceholder="Normal"
+          keywordStepBase={NORMAL_LINE_HEIGHT_STEP_BASE}
           step={0.1}
           unit={typography.lineHeight?.unit ?? "unitless"}
           allowedUnits={LINE_HEIGHT_UNITS}
@@ -306,7 +326,9 @@ export function InspectorTypographySection({ node }: InspectorTypographySectionP
       >
         <InspectorNumericValueControl
           ariaLabel="Letter spacing"
-          value={typography.letterSpacing?.value ?? 0}
+          value={typography.letterSpacing?.value ?? renderedOrKeyword(rendered?.letterSpacing, 0)}
+          keywordPlaceholder="Normal"
+          keywordStepBase={0}
           unit={typography.letterSpacing?.unit ?? "px"}
           allowedUnits={LETTER_SPACING_UNITS}
           onUnitChange={(unit) => typography.letterSpacing && commitField("letterSpacing", { ...typography.letterSpacing, unit })}

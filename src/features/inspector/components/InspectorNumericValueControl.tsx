@@ -28,6 +28,27 @@ interface InspectorNumericValueControlProps {
   onEditCancel?: () => void;
   /** Apply valid drafts while typing (BC-01.3). On by default; off = commit on blur/Enter only. */
   live?: boolean;
+  /**
+   * Shown (as a placeholder over an empty field) while `value` is the
+   * "auto" keyword sentinel — e.g. "Normal" for a computed
+   * line-height/letter-spacing of `normal` (BC-01.5). Defaults to "Auto"
+   * when allowAuto is set.
+   */
+  keywordPlaceholder?: string;
+  /** The number Arrow Up/Down step from while `value` is the keyword (default: min, else 0). Used only once the user steps. */
+  keywordStepBase?: number;
+}
+
+function decimalsOf(value: number): number {
+  const text = String(value);
+  const point = text.indexOf(".");
+  return point === -1 || text.includes("e") ? 0 : text.length - point - 1;
+}
+
+/** current + delta without binary float drift (1.3 + 0.1 must be 1.4, not 1.4000000000000001). */
+function addStep(current: number, delta: number): number {
+  const decimals = Math.min(6, Math.max(decimalsOf(current), decimalsOf(delta)));
+  return Number((current + delta).toFixed(decimals));
 }
 
 function clamp(value: number, min?: number, max?: number): number {
@@ -80,6 +101,8 @@ export function InspectorNumericValueControl({
   disabled = false,
   onEditCancel,
   live = true,
+  keywordPlaceholder,
+  keywordStepBase,
 }: InspectorNumericValueControlProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -102,8 +125,8 @@ export function InspectorNumericValueControl({
   });
 
   function applyStep(delta: number) {
-    const current = typeof value === "number" ? value : min ?? 0;
-    session.stepTo(clamp(current + delta, min, max));
+    const current = typeof value === "number" ? value : keywordStepBase ?? min ?? 0;
+    session.stepTo(clamp(addStep(current, delta), min, max));
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -129,7 +152,7 @@ export function InspectorNumericValueControl({
         aria-label={ariaLabel}
         type="number"
         value={session.draft}
-        placeholder={allowAuto ? "Auto" : undefined}
+        placeholder={value === "auto" && keywordPlaceholder ? keywordPlaceholder : allowAuto ? "Auto" : undefined}
         disabled={disabled}
         onChange={session.handleChange}
         onBlur={session.handleBlur}

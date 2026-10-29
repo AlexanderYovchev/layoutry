@@ -1,0 +1,357 @@
+LAYOUTRY — BC-01.5: COMPUTED TYPOGRAPHY VALUES & INSPECTOR ACCURACY
+==================================================================
+Date: 2026-10-29
+Type: Inspector correctness + regression tests
+Baseline: HEAD c1b5dce (BC-01.4, committed by the user)
+Status: Implemented and tested. Not committed. Awaiting QA review.
+
+Labels:
+  VERIFIED          covered by an automated test or measurement that ran
+                    here (Vitest/jsdom against the real store, or
+                    Chromium via Playwright against real computed styles)
+  NOT VERIFIED      not covered by anything that ran here
+  KNOWN LIMITATION  remaining behavior left as is, deliberately
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Unset Line height and Letter spacing no longer show fixed guesses
+(1.5 / 0). They show what the Canvas actually renders: H1 1.2 / -0.75,
+paragraph 1.625 / Normal, button 1.429 / Normal. A computed `normal` is
+shown as "Normal" (an empty field with that placeholder), never as an
+invented number. Arrow keys step from the displayed value, and from
+`normal` only from explicit, documented baselines, applied only once
+the user actually steps. Reading values never writes to the document:
+focus or blur of an unset field authors nothing. Live editing,
+one-entry Undo/Redo, Escape and selection handling are the BC-01.3
+behavior, unchanged. Font size behaves exactly as in BC-01.4.
+
+The BC-01.4 measurement hook was extended (renamed
+useRenderedTypography): one getComputedStyle read covers all three
+properties, with the same single document subscription. No cascade
+engine, no new subscriptions, no change to Canvas/Export.
+
+Two directly related defects were also fixed:
+  - Arrow stepping drifted (1.3 + 0.1 wrote 1.4000000000000001).
+  - Nothing could display a computed `normal` (the numeric-only field
+    had no keyword display).
+
+The intermittent Electron app-close failure was investigated with
+evidence (section 11): it reproduces on 9e52d80, before any BC-01.3 to
+BC-01.5 code, at a statistically indistinguishable rate.
+
+
+2. INVESTIGATION FINDINGS
+-------------------------
+Measured in Chromium (computed styles of Canvas elements) against what
+the Inspector displayed before this checkpoint:
+
+  element    font-size  line-height  letter-spacing | Inspector (before)
+  h1         30px       36px (1.2)   -0.75px        | LH 1.5, LS 0
+  p          16px       26px (1.625) normal         | LH 1.5, LS 0
+  button     14px       20px (1.429) normal         | LH 1.5, LS 0
+  input      14px       20px         normal         | LH 1.5, LS 0
+  select     14px       normal       normal         | LH 1.5, LS 0
+  option     14px       normal       normal         | LH 1.5, LS 0
+  card h3    18px/15px  1.2          -0.025em       | LH 1.5, LS 0
+  card p     13px/12px  1.625        normal         | LH 1.5, LS 0
+  link (a)   inherits (no own font-size / line-height / letter-spacing)
+
+Confirmed mismatches (VERIFIED):
+  - Line height: wrong for every element except where the rendered
+    multiple happens to be 1.5.
+  - Letter spacing: wrong for every heading (the `heading` default
+    applies tracking-tight, -0.025em).
+  - `normal` (select/option line-height; letter-spacing on most
+    elements) had no representation at all.
+Already correct, left unchanged:
+  - Font size (BC-01.4).
+  - Font weight: unset shows no highlighted option, a deliberate earlier
+    decision, so it never falsely claims a value.
+  - Font style, decoration and alignment: segmented controls, same
+    unset convention.
+Not Inspector properties (no change; computed 0px everywhere): word
+spacing, text indent.
+Responsive: the default table has no font-size, line-height or
+letter-spacing breakpoints (the only media rule is the legacy body
+padding).
+Extra finding (VERIFIED, browser behavior): Chromium ignores line-height
+on <select> and its options. Computed stays `normal` even with an
+inline `line-height: 2`, reproduced on a plain HTML page outside
+Layoutry. Letter spacing on a select does apply and inherits to its
+options.
+
+
+3. CONFIRMED ROOT CAUSES
+-----------------------
+InspectorTypographySection hard-coded the unset displays:
+  value={typography.lineHeight?.value ?? 1.5}
+  value={typography.letterSpacing?.value ?? 0}
+while the Canvas and Export render the document default presentations in
+src/features/canvas/utils/documentDefaultStyles.ts:
+  heading    line-height calc(2.25 / 1.875) = 1.2, letter-spacing -0.025em
+  paragraph  line-height 1.625
+  list-item  line-height 1.5
+  text-sm (button, controls, cells)  line-height calc(1.25 / 0.875)
+plus, for everything else, the inherited html line-height (1.5) and
+`normal` letter spacing. Form controls (select/option) compute
+line-height `normal`.
+InspectorNumericValueControl.applyStep added binary floats directly
+(no rounding), and its keyword state ("auto") stepped from min ?? 0.
+
+
+4. EXACT FILES
+--------------
+Moved (git mv; the hook now covers three properties):
+  src/features/inspector/hooks/useRenderedFontSize.ts
+    -> useRenderedTypography.ts (rewritten; same font-size semantics)
+Created:
+  src/features/inspector/hooks/useRenderedTypography.test.tsx
+  e2e/inspector-computed-typography.spec.ts
+  docs/reports/BC-01.5-Computed-Typography-Accuracy.txt (this file)
+  changelogs/2026-10-29-computed-typography-accuracy-BC-01.5.txt
+    (gitignored)
+Modified:
+  src/features/inspector/components/InspectorTypographySection.tsx
+      reads useRenderedTypography; unset line height / letter spacing
+      display; "Normal" placeholder; the documented stepping baselines
+  src/features/inspector/components/InspectorNumericValueControl.tsx
+      optional keywordPlaceholder + keywordStepBase props; drift-free
+      Arrow stepping (addStep)
+  src/features/inspector/components/InspectorNumericValueControl.test.tsx
+      +4 tests
+  src/features/inspector/hooks/useInspectorEditSession.test.tsx
+      +9 tests
+No store, schema, export, canvas, preset or styling changes. Nothing
+staged or committed.
+
+
+5. IMPLEMENTATION DETAILS
+-------------------------
+useRenderedTypography(nodeId | null) — src/features/inspector/hooks/
+  - Reads getComputedStyle once from
+    `[data-document-surface] [data-node-id="<id>"]` (the Canvas element
+    only, never the Structure tree or overlays) in a layout effect keyed
+    on [nodeId, document]. It re-measures after every document change,
+    so ancestor edits are reflected without a stale paint; it uses the
+    same single store subscription as BC-01.4.
+  - Returns { fontSizePx, lineHeight, letterSpacing }; each of the latter
+    two is { kind: "normal" } | { kind: "number", value } | null
+    (unreadable), independently, so one odd value never hides the
+    others.
+  - Results are keyed by nodeId: a measurement for one node is never
+    reported for another (selection changes). Null when not measuring
+    (everything authored) or when the element isn't on the Canvas.
+InspectorTypographySection
+  - Measures only while at least one of font size, line height or
+    letter spacing is unset.
+  - renderedOrKeyword(): the rendered number, the control's keyword
+    sentinel ("auto") for `normal`, or the previous fallback
+    (1.5 / 0) while unmeasured (no Canvas, e.g. tests).
+InspectorNumericValueControl
+  - keywordPlaceholder: shown over the empty field while the value is
+    the keyword ("Normal"). Without allowAuto an emptied field still
+    never commits the keyword.
+  - keywordStepBase: the number Arrow keys step from while the value is
+    the keyword (previously min ?? 0).
+  - addStep(): current + step, rounded to the precision of both
+    (at most 6 decimals), so 1.3 -> 1.4 and 1.429 -> 1.329 exactly.
+    VERIFIED (jsdom).
+
+
+6. LINE-HEIGHT HANDLING
+-----------------------
+Authored: shown as authored, value and unit (e.g. 40 px); never the
+  measured value.  VERIFIED (jsdom)
+Unset, computed px: shown as the multiple computed px / the element's
+  own computed font size, rounded to 3 decimals, with the field's
+  existing unset unit (unitless). Every default in the table is a
+  unitless multiple, so this is the authored form of the value
+  (H1 36/30 = 1.2, paragraph 26/16 = 1.625, button 20/14 = 1.429).
+  VERIFIED (Chromium: Inspector equals the computed style for Heading,
+  Paragraph, Button, Select, Option)
+Unset, computed `normal`: empty field with the placeholder "Normal"; no
+  number is fabricated.  VERIFIED (Chromium: select; jsdom)
+Stepping:
+  - from an effective value: 1.2 -> 1.3 (live: computed 39px), one Undo
+    back to the default (36px, field 1.2), Redo.  VERIFIED (Chromium)
+  - from `normal`: baseline 1.2 (NORMAL_LINE_HEIGHT_STEP_BASE, the upper
+    end of the 1.0-1.2 range CSS 2.1 recommends for `normal`), used ONLY
+    when the user presses an Arrow key: Arrow Up writes 1.3, Arrow Down
+    1.1. Focus alone writes nothing; Escape restores unset.  VERIFIED
+    (jsdom values; Chromium: the document holds 1.3 then nothing after
+    Escape)
+Units: the unit select is unchanged. Authored px/%/unitless values are
+  never converted. A step from an unset value writes unitless.
+
+
+7. LETTER-SPACING HANDLING
+--------------------------
+Authored: shown as authored, value and unit (e.g. 0.1 em).  VERIFIED
+  (jsdom)
+Unset, computed px: shown in px, the field's existing unset unit
+  (H1: -0.75 = -0.025em at 30px).  VERIFIED (Chromium)
+Unset, computed `normal`: "Normal" placeholder over an empty field. CSS
+  Text 3 defines `normal` as no additional spacing (it computes to zero),
+  so 0 is its exact numeric equivalent; the field still says "Normal"
+  so an unset property is never mistaken for an authored 0.  VERIFIED
+  (Chromium: paragraph, button, select, option)
+Stepping: from an effective value, the existing step (1 px):
+  -0.75 -> 0.25px live; Escape restores -0.75.  VERIFIED (Chromium).
+  From `normal`: baseline 0 (exact), so Arrow Up writes 1px, Arrow Down
+  -1px; one Undo back to normal.  VERIFIED (Chromium + jsdom)
+Inheritance: a select's authored letter spacing (2px) is inherited by
+  its option, and the option's field follows it (2).  VERIFIED (Chromium)
+
+
+8. AUTHORED vs INHERITED vs COMPUTED SEMANTICS
+----------------------------------------------
+  Authored    the document holds a value: shown exactly as authored,
+              property state "set" (the row's existing state dot and
+              Reset button).
+  Default     no authored value: shown from the Canvas's computed style
+  Inherited   (component default or inherited, which computed style
+              cannot tell apart). Property state stays "unset". Nothing
+              is written.
+  Normal      shown as "Normal", state "unset".
+Focus, blur and Enter without an edit author nothing and leave the
+project clean.  VERIFIED (jsdom: no document change, no history;
+Chromium: Undo stays disabled)
+
+
+9. CANVAS / PREVIEW / EXPORT VERIFICATION
+-----------------------------------------
+VERIFIED (Chromium):
+  - Inspector values equal the computed Canvas styles for Heading,
+    Paragraph, Button, Select and Option.
+  - After focusing and leaving the unset fields, the export contains no
+    authored `line-height: 1.2;` or `letter-spacing: -0.75px`.
+  - After Arrow Up (1.3), Preview renders line-height 39px with letter
+    spacing still at the -0.75px default, and Export contains
+    `line-height: 1.3`.
+  - Live typing ("2") reaches the Canvas (60px) before blur.
+Export formatting and architecture are unchanged.
+
+
+10. UNDO/REDO VERIFICATION
+--------------------------
+VERIFIED (Chromium): line height step = one entry (Undo -> default,
+  Undo disabled, Redo -> 1.3); letter spacing from normal = one entry
+  (Undo -> normal); Escape after typing or stepping = no entry; the
+  select test proves its only history entry is the insertion itself.
+VERIFIED (jsdom): two Arrow steps 1.2 -> 1.4 = one entry; Undo
+  -> unset (field 1.2); Redo -> 1.4; selection change mid-edit commits
+  to the original element only.
+All BC-01.2 to BC-01.4 tests still pass (section 11).
+
+
+11. TEST COMMANDS AND EXACT RESULTS
+-----------------------------------
+New tests:
+  useRenderedTypography.test.tsx (6): px/multiple/px readings;
+    `normal` kept; rounding (20/14 = 1.429) and an unreadable value
+    without losing font size; missing node / not measuring -> null;
+    only reads inside the document surface; re-measure after a document
+    change and per-node keying.
+  useInspectorEditSession.test.tsx (+9, real section + real store): H1
+    defaults shown and nothing authored on focus/blur; `normal` as
+    Normal; baselines from normal + Escape; drift-free stepping + Undo/
+    Redo; authored values shown as authored (font size still rendered);
+    live typing + Escape; selection change mid-edit; re-measure of
+    changed defaults/inherited values; no Canvas element -> previous
+    fallbacks, nothing authored.
+  InspectorNumericValueControl.test.tsx (+4): drift-free steps; keyword
+    placeholder and step base; an emptied keyword field never commits
+    the keyword; the numeric placeholder rules are unchanged.
+  e2e/inspector-computed-typography.spec.ts (8, Chromium): Heading/
+    Paragraph/Button match the Canvas; select `normal` + option
+    inheritance; stepping from normal; line height step + Undo/Redo;
+    live typing + Escape; letter spacing step + Escape; letter spacing
+    from normal + Undo; no authoring on focus, Preview and Export.
+Mapping to the brief's tests 1-17: all covered (17 = all BC-01.4 font
+size tests still pass).
+
+Commands:
+  npm run typecheck                     PASS
+  npm run lint                          PASS (0 problems)
+  npx vitest run (inspector, during development)
+                                        PASS
+  npx vitest run                        PASS: 342 files, 5129 passed,
+                                        1 skipped (pre-existing
+                                        it.skipIf(!canCreateFileSymlinks))
+  npx playwright test e2e/inspector-computed-typography.spec.ts
+                                        PASS 8/8
+  npx playwright test                   PASS 110/110 (full suite)
+  npm run build                         PASS
+  env -u ELECTRON_RUN_AS_NODE npm run desktop:test
+                                        PASS: 57 passed, 2 skipped
+                                        (pre-existing skips), 0 failed
+
+Electron intermittent failure: lifecycle.spec.ts:70, "a saved (or
+untouched) project closes at once, with no prompt at all"
+(process-exit timeout). It did not fail in the full run above, so it
+was measured directly:
+  build at 9e52d80 (BC-01.2: no BC-01.3/4/5 code), built from a
+  `git archive` export with a hard-linked node_modules (no install, no
+  change to the repo):
+      lifecycle.spec.ts x16  -> the same test failed 7/16 (44%)
+  current working tree (BC-01.5):
+      lifecycle.spec.ts x16  -> the same test failed 9/16 (56%)
+  The difference is not statistically meaningful (Fisher's exact test,
+  two-sided p ~ 0.72). VERIFIED: the failure is pre-existing (it occurs
+  without any live-editing code). NOT VERIFIED: whether BC-01.3-01.5
+  changed its rate at all; the samples can't resolve a difference that
+  small. The test opens and closes the app without touching the
+  Inspector.
+
+Test-only mistakes fixed while writing the spec (not app bugs):
+inserting a component is itself an undo entry; the select's tree node
+starts collapsed. One browser fact was found (Chromium ignores
+line-height on <select>; see section 2) and the tests were adjusted to
+assert what the document holds there.
+
+
+12. KNOWN LIMITATIONS
+---------------------
+KNOWN LIMITATION  An unset line height is shown as a unitless multiple
+  of the element's own font size. If a node inherits a px line height
+  from an ancestor that authored px, the multiple is exact for the
+  current font size but a step then writes a unitless value (which
+  scales with font size). The only inheriting path today is
+  select -> option, where Chromium ignores line-height anyway.
+KNOWN LIMITATION  Values are rounded to 3 decimals for display (20/14 =
+  1.4286 shows 1.429); a step from there writes the rounded base.
+KNOWN LIMITATION  The `normal` line-height baseline (1.2) is a
+  documented convention, not a measurement; `normal` really depends on
+  the font. It is used only once the user presses an Arrow key.
+KNOWN LIMITATION  An unset letter spacing is shown and stepped in px,
+  even where the default is written in em (-0.025em = -0.75px at 30px).
+KNOWN LIMITATION  Letter spacing `normal` now shows "Normal" instead of
+  the previous "0" (intentional: the field must not suggest an
+  authored 0).
+KNOWN LIMITATION  Chromium ignores line-height on <select>/<option>
+  (browser behavior): an authored value there is stored, shown and
+  exported, but not visible on the Canvas.
+KNOWN LIMITATION  Values are measured at the current Canvas width; no
+  typography breakpoints exist in the defaults today. Authored CSS
+  variables are not supported (unchanged).
+KNOWN LIMITATION  The multi-selection (bulk) Typography fields keep
+  their own fallbacks (multi-select out of scope).
+NOT VERIFIED  Firefox/WebKit (the config is Chromium only), the Electron
+  window itself for these fields, list items, table cells, legend and
+  figcaption individually (same hook path; their defaults come from the
+  same table).
+
+
+13. RECOMMENDATIONS FOR BC-01.6
+-------------------------------
+  1. Decide whether Line height should be hidden or noted for
+     <select>/<option>, since Chromium never applies it there.
+  2. Consider showing the default's own unit for unset letter spacing
+     (em) if the defaults table can be consulted for the unit without
+     duplicating the cascade.
+  3. Bulk (multi-select) typography: apply the same rendered-value
+     display if multi-select work resumes.
+  4. Investigate the pre-existing Electron lifecycle flake (process exit
+     >15s after close, ~50% of isolated runs) as its own task; it is
+     unrelated to the Inspector work, per the evidence above.

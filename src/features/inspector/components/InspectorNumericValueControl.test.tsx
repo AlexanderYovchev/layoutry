@@ -250,4 +250,47 @@ describe("InspectorNumericValueControl", () => {
     expect(onCommit).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Width")).toHaveValue(50);
   });
+
+  describe("keyword display and stepping (BC-01.5)", () => {
+    it("Arrow steps carry no binary float drift (1.3 + 0.1 = 1.4, 1.429 - 0.1 = 1.329)", () => {
+      const onCommit = vi.fn();
+      const { rerender } = render(<InspectorNumericValueControl ariaLabel="Line height" value={1.3} step={0.1} onCommit={onCommit} />);
+      const input = screen.getByLabelText("Line height");
+      fireEvent.keyDown(input, { key: "ArrowUp" });
+      expect(onCommit).toHaveBeenLastCalledWith(1.4);
+
+      rerender(<InspectorNumericValueControl ariaLabel="Line height" value={1.429} step={0.1} onCommit={onCommit} />);
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+      expect(onCommit).toHaveBeenLastCalledWith(1.329);
+    });
+
+    it("shows keywordPlaceholder over an empty field while the value is the keyword, and steps from keywordStepBase", () => {
+      const onCommit = vi.fn();
+      render(<InspectorNumericValueControl ariaLabel="Line height" value="auto" step={0.1} keywordPlaceholder="Normal" keywordStepBase={1.2} onCommit={onCommit} />);
+      const input = screen.getByLabelText("Line height");
+      expect(input).toHaveValue(null);
+      expect(input).toHaveAttribute("placeholder", "Normal");
+
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+      expect(onCommit).toHaveBeenCalledExactlyOnceWith(1.1);
+    });
+
+    it("without allowAuto, an emptied keyword field never commits the keyword", () => {
+      const onCommit = vi.fn();
+      render(<InspectorNumericValueControl ariaLabel="Line height" value="auto" keywordPlaceholder="Normal" onCommit={onCommit} />);
+      const input = screen.getByLabelText("Line height");
+      input.focus();
+      fireEvent.change(input, { target: { value: "2" } });
+      fireEvent.change(input, { target: { value: "" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(onCommit).not.toHaveBeenCalledWith("auto");
+      expect(input).toHaveAttribute("placeholder", "Normal");
+    });
+
+    it("a numeric value keeps the existing placeholder rules (none unless allowAuto)", () => {
+      render(<InspectorNumericValueControl ariaLabel="Line height" value={1.5} keywordPlaceholder="Normal" onCommit={() => {}} />);
+      expect(screen.getByLabelText("Line height")).not.toHaveAttribute("placeholder");
+    });
+  });
 });

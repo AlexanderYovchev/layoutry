@@ -671,3 +671,188 @@ describe("font size shows the rendered value while unset (BC-01.4)", () => {
     }
   });
 });
+
+describe("line height and letter spacing show the rendered value while unset (BC-01.5)", () => {
+  /** A stand-in Canvas element with the computed values a browser reports (line-height in px, or "normal"). */
+  function renderWithCanvas(style: Partial<Record<"fontSize" | "lineHeight" | "letterSpacing", string>>) {
+    const surface = window.document.createElement("div");
+    surface.setAttribute("data-document-surface", "");
+    const heading = window.document.createElement("h1");
+    heading.setAttribute("data-node-id", "heading-1");
+    Object.assign(heading.style, style);
+    surface.append(heading);
+    window.document.body.append(surface);
+    const view = render(<Selected section={InspectorTypographySection} />);
+    return {
+      heading,
+      cleanup: () => {
+        view.unmount();
+        surface.remove();
+      },
+    };
+  }
+  const lineHeight = () => node("heading-1")?.typography?.lineHeight;
+  const letterSpacing = () => node("heading-1")?.typography?.letterSpacing;
+
+  it("shows the H1 default (36px / 30px = 1.2, -0.75px), not 1.5 / 0, and authors nothing on focus and blur", () => {
+    const { cleanup } = renderWithCanvas({ fontSize: "30px", lineHeight: "36px", letterSpacing: "-0.75px" });
+    try {
+      const lineHeightInput = screen.getByLabelText("Line height");
+      const letterSpacingInput = screen.getByLabelText("Letter spacing");
+      expect(lineHeightInput).toHaveValue(1.2);
+      expect(screen.getByLabelText("Line height unit")).toHaveValue("unitless");
+      expect(letterSpacingInput).toHaveValue(-0.75);
+      expect(screen.getByLabelText("Letter spacing unit")).toHaveValue("px");
+
+      for (const input of [lineHeightInput, letterSpacingInput]) {
+        focus(input);
+        blur(input);
+      }
+      expect(node("heading-1")?.typography).toBeUndefined();
+      expect(history()).toBe(0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("a computed `normal` is shown as Normal (empty field), never a made-up number, and focus/blur keeps it unset", () => {
+    const { cleanup } = renderWithCanvas({ fontSize: "14px", lineHeight: "normal", letterSpacing: "normal" });
+    try {
+      const lineHeightInput = screen.getByLabelText("Line height");
+      const letterSpacingInput = screen.getByLabelText("Letter spacing");
+      expect(lineHeightInput).toHaveValue(null);
+      expect(lineHeightInput).toHaveAttribute("placeholder", "Normal");
+      expect(letterSpacingInput).toHaveValue(null);
+      expect(letterSpacingInput).toHaveAttribute("placeholder", "Normal");
+
+      focus(lineHeightInput);
+      fireEvent.keyDown(lineHeightInput, { key: "Enter" });
+      expect(node("heading-1")?.typography).toBeUndefined();
+      expect(history()).toBe(0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("from `normal`, Arrow keys step from the documented baselines only once the user steps (line height 1.2, letter spacing 0); Escape restores unset", () => {
+    const { cleanup } = renderWithCanvas({ fontSize: "14px", lineHeight: "normal", letterSpacing: "normal" });
+    try {
+      const lineHeightInput = screen.getByLabelText("Line height");
+      focus(lineHeightInput);
+      fireEvent.keyDown(lineHeightInput, { key: "ArrowUp" });
+      expect(lineHeight()).toEqual({ value: 1.3, unit: "unitless" });
+      fireEvent.keyDown(lineHeightInput, { key: "Escape" });
+      expect(node("heading-1")?.typography).toBeUndefined();
+      expect(lineHeightInput).toHaveAttribute("placeholder", "Normal");
+      expect(lineHeightInput).toHaveValue(null);
+
+      const letterSpacingInput = screen.getByLabelText("Letter spacing");
+      focus(letterSpacingInput);
+      fireEvent.keyDown(letterSpacingInput, { key: "ArrowDown" });
+      expect(letterSpacing()).toEqual({ value: -1, unit: "px" });
+      fireEvent.keyDown(letterSpacingInput, { key: "Escape" });
+      expect(node("heading-1")?.typography).toBeUndefined();
+      expect(history()).toBe(0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("Arrow keys step from the effective value without float drift (1.2 -> 1.3 -> 1.4); one Undo returns to unset", () => {
+    const { cleanup } = renderWithCanvas({ fontSize: "30px", lineHeight: "36px", letterSpacing: "-0.75px" });
+    try {
+      const input = screen.getByLabelText("Line height");
+      focus(input);
+      fireEvent.keyDown(input, { key: "ArrowUp" });
+      fireEvent.keyDown(input, { key: "ArrowUp" });
+      expect(lineHeight()).toEqual({ value: 1.4, unit: "unitless" });
+      blur(input);
+      expect(history()).toBe(1);
+
+      act(() => store().undo());
+      expect(node("heading-1")?.typography).toBeUndefined();
+      expect(input).toHaveValue(1.2);
+      act(() => store().redo());
+      expect(lineHeight()).toEqual({ value: 1.4, unit: "unitless" });
+
+      const spacing = screen.getByLabelText("Letter spacing");
+      focus(spacing);
+      fireEvent.keyDown(spacing, { key: "ArrowUp" });
+      expect(letterSpacing()).toEqual({ value: 0.25, unit: "px" });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("authored values are shown as authored, in their own units, never the measured ones", () => {
+    act(() =>
+      store().setElementTypography("heading-1", {
+        lineHeight: { value: 40, unit: "px" },
+        letterSpacing: { value: 0.1, unit: "em" },
+      }),
+    );
+    const { cleanup } = renderWithCanvas({ fontSize: "30px", lineHeight: "36px", letterSpacing: "-0.75px" });
+    try {
+      expect(screen.getByLabelText("Line height")).toHaveValue(40);
+      expect(screen.getByLabelText("Line height unit")).toHaveValue("px");
+      expect(screen.getByLabelText("Letter spacing")).toHaveValue(0.1);
+      expect(screen.getByLabelText("Letter spacing unit")).toHaveValue("em");
+      // The still-unset font size keeps showing the rendered value.
+      expect(screen.getByLabelText("Font size")).toHaveValue(30);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("live typing and Escape on an unset line height: written before blur, restored to unset on Escape", () => {
+    const { cleanup } = renderWithCanvas({ fontSize: "30px", lineHeight: "36px" });
+    try {
+      const input = screen.getByLabelText("Line height");
+      focus(input);
+      type(input, "2");
+      expect(lineHeight()).toEqual({ value: 2, unit: "unitless" });
+      expect(input).toHaveFocus();
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(node("heading-1")?.typography).toBeUndefined();
+      expect(input).toHaveValue(1.2);
+      expect(history()).toBe(0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("a selection change mid-edit commits the line height to the original element only", () => {
+    const { cleanup } = renderWithCanvas({ fontSize: "30px", lineHeight: "36px" });
+    try {
+      const input = screen.getByLabelText("Line height");
+      focus(input);
+      type(input, "1.8");
+      act(() => store().selectOnly("paragraph-1"));
+      expect(lineHeight()).toEqual({ value: 1.8, unit: "unitless" });
+      expect(node("paragraph-1")?.typography).toBeUndefined();
+      expect(history()).toBe(1);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("a changed inherited or default value is re-measured after a document change", () => {
+    const { heading, cleanup } = renderWithCanvas({ fontSize: "30px", lineHeight: "36px", letterSpacing: "normal" });
+    try {
+      heading.style.lineHeight = "45px";
+      heading.style.letterSpacing = "2px";
+      act(() => store().setElementTypography("paragraph-1", { color: "#111111" }));
+      expect(screen.getByLabelText("Line height")).toHaveValue(1.5);
+      expect(screen.getByLabelText("Letter spacing")).toHaveValue(2);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("with no Canvas element to measure, the fields fall back to their previous defaults without authoring anything", () => {
+    render(<Selected section={InspectorTypographySection} />);
+    expect(screen.getByLabelText("Line height")).toHaveValue(1.5);
+    expect(screen.getByLabelText("Letter spacing")).toHaveValue(0);
+    expect(node("heading-1")?.typography).toBeUndefined();
+  });
+});
