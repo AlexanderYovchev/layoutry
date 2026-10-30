@@ -79,6 +79,12 @@ const FORCE_RESYNC: unique symbol = Symbol("force-resync");
  * commitTransaction). The draft resyncs from the document once the
  * session ends.
  *
+ * Another mutation of the document while the edit is open (anything but
+ * this field's own writes, which go through mergeTransactionWrite) makes
+ * the store close the edit as its own undo step first (BC-01.6, D1); the
+ * session then ends without touching the document ("adopt"), so neither a
+ * revert nor Escape can undo that other change.
+ *
  * Carries forward the Checkpoint 5.5 / BC-01.2 guard: Enter and Escape
  * release focus with .blur(), and the one real blur that dispatches is
  * suppressed — it would otherwise run a second end-of-session.
@@ -110,11 +116,21 @@ export function useInspectorEditSession<T>(options: InspectorEditSessionOptions<
   const sessionRef = useRef<EditSession<T> | null>(null);
   const suppressNextBlurRef = useRef(false);
 
-  const endSession = useCallback((mode: "commit" | "cancel") => {
+  const endSession = useCallback((mode: "commit" | "cancel" | "adopt") => {
     const session = sessionRef.current;
     if (!session?.active) return;
     session.active = false;
     const latest = latestRef.current;
+    if (mode === "adopt") {
+      // The store already closed this edit's transaction because something
+      // else mutated the document (see pushHistory): the edit so far is its
+      // own undo step. Touch nothing — above all, never restore the
+      // pre-edit snapshot over that other change — and resync the field.
+      setEditing(false);
+      setBadInput(false);
+      setLastSyncedValue(FORCE_RESYNC);
+      return;
+    }
     const ownedSnapshot =
       session.snapshot !== null && useEditorStore.getState().transactionSnapshot === session.snapshot ? session.snapshot : null;
 
@@ -140,7 +156,8 @@ export function useInspectorEditSession<T>(options: InspectorEditSessionOptions<
         accepted = attempt.accepted;
       } else {
         const before = useEditorStore.getState().document;
-        latest.onCommit(final.value);
+        if (ownedSnapshot) useEditorStore.getState().mergeTransactionWrite(() => latest.onCommit(final.value));
+        else latest.onCommit(final.value);
         accepted = useEditorStore.getState().document !== before;
       }
       if (accepted) {
@@ -184,7 +201,8 @@ export function useInspectorEditSession<T>(options: InspectorEditSessionOptions<
       return false;
     }
     const before = useEditorStore.getState().document;
-    latestRef.current.onCommit(next);
+    const commit = latestRef.current.onCommit;
+    useEditorStore.getState().mergeTransactionWrite(() => commit(next));
     session.lastAttempt = { value: next, accepted: useEditorStore.getState().document !== before };
     return true;
   }
@@ -257,6 +275,11 @@ export function useInspectorEditSession<T>(options: InspectorEditSessionOptions<
     window.addEventListener("pointerdown", handlePointerDown, true);
     window.addEventListener("keydown", handleKeyDown, true);
     const unsubscribe = useEditorStore.subscribe((state, previous) => {
+      const session = sessionRef.current;
+      if (session?.active && session.snapshot !== null && state.transactionSnapshot !== session.snapshot) {
+        endSession("adopt");
+        return;
+      }
       if (state.selection !== previous.selection) endSession("commit");
     });
     return () => {

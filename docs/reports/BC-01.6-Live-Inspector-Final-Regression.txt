@@ -1,0 +1,434 @@
+LAYOUTRY — BC-01.6: LIVE CSS INSPECTOR FINAL REGRESSION & STABILIZATION
+=======================================================================
+Date: 2026-10-29
+Baseline: HEAD 6e086e1 (BC-01.5, committed by the user)
+Status: Testing complete; one defect fixed. Not committed. Awaiting QA.
+
+Labels:
+  VERIFIED          shown by an automated test or measurement that ran here
+  NOT VERIFIED      not covered by anything that ran here
+  KNOWN LIMITATION  remaining behavior left as is, deliberately
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+The live CSS Inspector (BC-01.2 to BC-01.5) was exercised end to end.
+Real Inspector typing across 9 sections was checked on the Canvas
+before blur. The edited project was saved, read back from IndexedDB and
+exported with the real export engine. Preview was then compared with the
+exported page over every property the existing export-parity harness
+measures: 7 elements, 623 property checks, 0 differences. The project
+was reopened after an app reload, again with 0 differences. History,
+keyboard, validation, accessibility, listener cleanup and keystroke
+latency were measured. Tests ran in Chromium, Firefox and WebKit, and
+in the Electron desktop app.
+
+One real defect was found and fixed (D1, introduced by BC-01.3). A store
+mutation from outside a field during an open live edit (for example a
+programmatic delete) was folded into that edit's undo step. Worse, an
+Escape or an invalid final draft then restored the pre-edit snapshot
+over it, bringing a deleted element back. No UI path triggers it today
+(every pointerdown, shortcut and selection change ends the edit first),
+but it was a data-integrity hole. Its fix is narrow, in the store and
+the hook, and covered by 6 new tests.
+
+No critical or high-severity regression remains. Recommendation: CLOSE
+BC-01, with the limitations in section 13.
+
+
+2. INSPECTOR CONTROL COVERAGE MATRIX
+------------------------------------
+(sections = Inspector sections using the control; "live" = valid values
+reach the Canvas while typing; Undo = one entry per edit session.)
+
+Live numeric — InspectorNumericValueControl (live by default)
+  Sections: Size, Spacing, Typography, Border, Border Radius, Box Shadow,
+    Filters, Gradient, Position, Transform, Transition, Aspect Ratio,
+    Background Image, Media (object position).
+  Expected/observed: live; out-of-range never previewed, clamped at
+    commit; "auto" only at commit (Width/Height); Escape restores;
+    Arrow keys step live within the same edit.
+  Browser-verified properties (Chromium; Firefox/WebKit via the same
+    specs): width, padding, margin, font size, line height, letter
+    spacing, border width, border radius, rotate, translate X, opacity
+    (box), shadow blur, gradient angle, brightness, position offsets.
+    Height, min/max sizes, transition, aspect ratio, z-index, shadow
+    offsets/spread, other filters, gradient stop position and
+    background-image size are NOT VERIFIED in a browser individually
+    (same component and wiring).
+Live numeric rows — InspectorNumberFieldRow with `live`
+  Sections: Free geometry X/Y, flex/grid container gaps, Flex child,
+    Grid child.  VERIFIED: flex child grow (jsdom), navbar gap via the
+    slider box (Chromium). Others NOT VERIFIED individually.
+Structural / attribute rows — InspectorNumberFieldRow without `live`
+  (INTENTIONAL commit-on-blur): List items, Table columns/rows, Select
+  option count, Progress value/max, SVG stroke width/viewBox, vector
+  object geometry. A live "1" on the way to "12" would really delete
+  content. Same guards (no double commit, no commit without an edit).
+Sliders — InspectorSliderField (range + live exact box)
+  Sections: Filters (Opacity), Layout (Gap). Range: live via *Live
+  setters in a plain transaction, one entry per drag. VERIFIED: mouse
+  drag = one Undo step (Chromium); box live (Chromium, jsdom).
+Live color text — InspectorColorFieldShell (live by default)
+  Sections: Typography, Background, Border, Box Shadow, Gradient stop,
+    SVG fill/stroke, Vector fill/stroke (9 fields).  VERIFIED in a
+    browser: text, background, border, shadow, gradient stop. SVG/vector
+    fill and stroke NOT VERIFIED in a browser (same component).
+Native color picker — the same shell's <input type="color">
+  Commits once on `change`, outside any transaction. VERIFIED in
+  Chromium and Firefox. WebKit: see section 8 (the build has no color
+  input).
+Dropdowns — native <select>: unit selects, Transition timing,
+  Interactions, Form control type. One-shot commit on change
+  (unchanged; not part of BC-01).
+Button groups — InspectorSegmentedRow (about 25 sections): one-shot
+  commit per click (unchanged). Used in the tests: Background source
+  "Gradient", Position "Relative", heading level H1-H6.
+Text/string inputs — Identity (id/class), Link href, Media src/alt,
+  Option text, Background image URL, Form control fields: commit on
+  blur/Enter (unchanged; not CSS-numeric, out of BC-01 scope).
+Specialized — font family combobox (commit on pick), boolean toggles,
+  gradient stop track and shadow layer drag (plain transactions).
+  Unchanged.
+Multi-selection Bulk* fields: unchanged (commit on blur/Enter); not
+  live (multi-select out of scope).
+
+
+3. TRANSACTION AND UNDO/REDO FINDINGS
+-------------------------------------
+Each item is VERIFIED unless marked.
+ 1  One continuous edit = one entry (Chromium: multi-keystroke font
+    size, rapid "9876", Arrow steps; jsdom).
+ 2  Escape: no history (Chromium + jsdom).
+ 3  Enter commits once; 4 Blur commits once (Chromium + jsdom).
+ 5  No-op focus/blur: no history (Chromium + jsdom).
+ 6  Invalid final input reverts safely (Chromium + jsdom).
+ 7  Unset stays unset after cancellation (Chromium + jsdom; also checked
+    in the saved file).
+ 8/9  Undo/Redo (Chromium + jsdom).
+10  Selection change cannot redirect edits (Canvas click, Structure tree,
+    programmatic).
+11  Collapsing the section mid-edit commits; Ctrl+S then succeeds,
+    proving no transaction was left open (project commands refuse to run
+    while one is open). (Chromium)
+12  Deleting via Edit > Delete mid-edit: the edit and the delete are
+    separate steps; nothing orphaned (Chromium). A programmatic delete:
+    see D1 (jsdom).
+13  Ctrl+Z / Ctrl+Y inside a focused field are the browser's native text
+    undo (observed: "40" -> "4"); the Canvas follows the restored text
+    live, the document never holds an invalid value, and Escape still
+    restores the pre-edit value. Outside a field, Ctrl+Z is the editor's
+    Undo. (Chromium)
+14  Consecutive edits to different properties (Font size, Tab, Line
+    height) are separate Undo steps. (Chromium)
+15  Canvas resize drag and slider drag after a live edit: each one step,
+    in order. (Chromium)
+mergeHistory inspection:
+  - Nested transactions: impossible. beginTransaction is a no-op while
+    one is open, and the session falls back to one commit at the end
+    without touching the foreign transaction.
+  - Stale references: ownership is compared by snapshot identity, and
+    every snapshot-clearing path also clears historyMergeSnapshot.
+  - Accidental merging: FOUND and FIXED (D1, section 10).
+
+
+4. KEYBOARD AND VALIDATION RESULTS
+----------------------------------
+VERIFIED (Chromium unless noted; the same specs ran in Firefox/WebKit):
+  - Rapid typing: no lost update, one entry.
+  - Backspace/Delete: live (123 -> 12 -> 2 px).
+  - Arrow Up/Down: live, drift-free (1.2 -> 1.3 -> 1.4).
+  - Enter and Escape release focus; Tab commits and moves focus.
+  - Ctrl+S mid-edit commits first, then saves (BC-01.3/01.4 specs).
+  - Empty input: reverts, or "auto" for Width/Height.
+  - Incomplete decimals ("1.", "-"): never written.
+  - Letters, "px" and "e" in a number field: never written.
+  - Negative: section message (e.g. "Border width can't be negative."),
+    which Escape clears.
+  - Out of range (opacity 250): never previewed (the Canvas keeps the
+    last valid intermediate, 0.25); clamped to 100 on Enter.
+  - Switching selection mid-edit commits to the original element.
+  - Invalid units: the unit is a select, so the unit can't be typed
+    invalid.
+KNOWN LIMITATION  Typing "250" passes through "2" and "25", which are
+  valid and previewed live (the Canvas briefly shows 0.02, then 0.25).
+
+
+5. TYPOGRAPHY VERIFICATION
+--------------------------
+VERIFIED (BC-01.4/01.5 specs, all passing again in Chromium, Firefox,
+WebKit and Electron):
+  - Font size, line height and letter spacing show the rendered value
+    while unset and the authored value when set.
+  - "Normal" for computed `normal`; stepping from documented baselines
+    only when the user steps.
+  - Parent -> child inheritance (select -> option), parent/default
+    changes re-measured, selection changes handled.
+  - Display-only: nothing is authored on focus, blur or Enter.
+Electron: H1 shows 30 / 1.2 / -0.75 in the desktop window (new desktop
+spec).
+Performance: exactly 1 getComputedStyle call per keystroke while unset
+typography is being measured (in-page counter). The measurement is not
+what makes the slow Vitest test slow: stubbed out, that test took the
+same time (about 4.5s either way).
+
+
+6. CANVAS / PREVIEW / EXPORT PARITY FINDINGS
+--------------------------------------------
+Method (e2e/inspector-final-regression.spec.ts, "live edit matrix"):
+  - About 20 real Inspector edits across headings, paragraph, button,
+    section, image and box shadow: typography (size, line height,
+    letter spacing, color), spacing, size, border width/color/radius,
+    background color, gradient (angle, stop color), shadow (blur,
+    color), filters (brightness), transforms (rotate, translate X) and
+    opacity. Each was confirmed on the Canvas before blur.
+  - Ctrl+S, then read the saved document from IndexedDB, export it with
+    the real engine, and open it in a second page.
+  - measureCanvas (Preview at the export width) vs measureExport over
+    the harness's COMPARED_PROPERTIES (about 90 computed properties
+    plus geometry).
+Result: VERIFIED. 7 elements, 623 property checks, 0 differences in
+  Chromium; the same test also passed in Firefox and WebKit. The edited
+  values are what Preview shows (heading 44px, paragraph padding 12px,
+  border 2px, brightness 1.2). After an app reload and reopening the
+  project, Preview equals the pre-save Preview (0 differences).
+  Undo/Redo consistency: covered per property in sections 3 and 4.
+Not measured: Navbar and flex/grid parity in this matrix (the navbar gap
+  and position offsets were checked live and with Undo, but not
+  exported); pixel-level screenshot parity (left to the existing
+  export-visual-parity spec, which still passes).
+No mismatch found; no Export change.
+
+
+7. PERSISTENCE VERIFICATION
+---------------------------
+VERIFIED (Chromium, the browser's IndexedDB project library):
+  - Ctrl+S during live editing commits, then saves (BC-01.3/01.4 specs).
+  - Saving after Enter (41) and after blur (42) stores that value;
+    Escape after typing 43 leaves the project "saved" and the file at 42.
+  - Reopen after a reload reproduces the styling (0 differences).
+  - Unset values stay unset in the file (heading spacing, paragraph
+    typography).
+  - No active edit blocks a save: Ctrl+S always reached "saved".
+Undo history across reopen follows the existing convention (opening a
+  project resets history; useEditorStore.persistence tests); not
+  re-tested in a browser.
+NOT VERIFIED  The desktop .layoutry file-on-disk save/open path for
+  Inspector edits (the desktop suite's own persistence specs pass;
+  they do not involve live edits).
+
+
+8. BROWSER AND ELECTRON RESULTS
+-------------------------------
+  Chromium (project config): full suite 122/122.
+  Firefox and WebKit: run with a temporary config (deleted afterwards)
+    over the 5 Inspector specs (63 tests). Browsers were installed into
+    Playwright's user cache (`npx playwright install firefox webkit`),
+    with no change to package.json or the lockfile.
+      Firefox  63/63 passed.
+      WebKit   61/63 passed. Both failures are native color picker
+               tests: Playwright's WebKit build on Windows has no color
+               input (`<input type="color">` reports type="text", and
+               fill() fires no `change`). Reproduced on a plain HTML
+               page. KNOWN LIMITATION (test environment); real
+               Safari/macOS NOT VERIFIED.
+      WebKit computed-style difference: line-height reports 57.200001px
+               where Chromium reports 57.2px. The test now accepts both;
+               the Inspector rounds its own readings (3 decimals), so
+               this does not affect the UI.
+  Electron (npm run desktop:test): 58 passed, 2 skipped (pre-existing
+    test.skip gates), 0 failed. Includes the new
+    e2e/desktop/inspector-live-edit.spec.ts. VERIFIED in the desktop
+    window: live font size/color before blur, rendered defaults
+    (30 / 1.2 / -0.75), Escape, one-step Undo.
+  Pre-existing Electron app-close flake (lifecycle.spec.ts:70):
+    reproduced on pre-live-editing code in BC-01.5 (7/16). It did not
+    fail in either full desktop run of this checkpoint. Tracked
+    separately; no new evidence links it to BC-01.
+
+
+9. PERFORMANCE AND ACCESSIBILITY OBSERVATIONS
+---------------------------------------------
+Measured (Chromium, dev build, in-page):
+  - Keystroke -> Canvas computed style: median 22ms, p95 79ms, max 82ms
+    (30 samples).
+  - getComputedStyle calls: 1 per keystroke (typography measurement).
+  - 50 edit sessions (click/type/Enter-or-Escape): the window capture
+    pointerdown/keydown listener count returned exactly to its starting
+    value, so no listener leak.
+  - Transaction cleanup: every lifecycle test ends with a successful
+    Ctrl+S, so no transaction was left open.
+NOT VERIFIED  Canvas re-render counts per keystroke (not instrumented).
+  Each live write re-renders the Canvas from the store, as any committed
+  edit always has. No production-build timing was taken.
+Accessibility (VERIFIED, Chromium): every Inspector input/select/
+  textarea has an accessible name (aria-label, aria-labelledby or a
+  label) for Heading, Button, Image and Section selections. Validation
+  messages use role="alert". Tab moves focus and commits. Enter/Escape
+  release focus by design (the existing convention). Focus stays in the
+  field during live writes.
+
+
+10. DEFECTS FOUND AND FIXES APPLIED
+-----------------------------------
+D1 — FIXED
+  Severity: Medium (data integrity; no known UI trigger).
+  Introduced: BC-01.3 (merging transaction).
+  Reproduction (jsdom, real store and Typography section):
+    focus Font size, type 24 then -5, then call store.deleteSelection()
+    (or setElementTypography on another node) while the field is still
+    focused.
+  Expected: the delete/other change persists, as its own undo step.
+  Actual (before the fix):
+    (a) the deleted heading came back (the revert restored the pre-edit
+        snapshot);
+    (b) Escape undid the other element's change;
+    (c) the edit and the other change were one undo step.
+  Root cause: pushHistory folded EVERY one-shot mutation into an open
+    merging transaction, not only the field's own writes. The hook's
+    revert/Escape then restored that transaction's pre-edit snapshot.
+  Fix (store + hook):
+    - store: a new action, mergeTransactionWrite(write), marks the
+      session's own writes (a module-level depth counter, never
+      outliving the synchronous call). Any other one-shot mutation while
+      a merging transaction is open first closes it (the edit's entry,
+      unless it changed nothing), then records itself.
+    - hook: all live/final writes go through mergeTransactionWrite. When
+      the field sees its transaction closed by someone else, it ends the
+      session in an "adopt" mode that never touches the document.
+  Files: src/features/editor/stores/useEditorStore.ts,
+    src/features/inspector/hooks/useInspectorEditSession.ts.
+  Tests: 3 reproduction tests (useInspectorEditSession.test.tsx, failing
+    before the fix and passing after) and 3 store tests
+    (useEditorStore.mergeTransaction.test.ts).
+  Contract change: a write inside a merging transaction now merges only
+    through mergeTransactionWrite. The 3 BC-01.3 store tests that wrote
+    directly were updated to use it; that is the new API, not a
+    weakened assertion.
+  Regression risk: low. Only merging transactions (Inspector edits) are
+    affected; plain transactions (drags, sliders) are unchanged. The
+    full suites pass.
+
+Not defects (test-only mistakes found and fixed while writing the spec):
+  "Add Shadow" button name; the button's default radius is 6px (an
+  authored 6 looks unchanged); typing 250 previews 25 first; a button's
+  padding floors its width; WebKit float precision; a timeout under
+  WebKit load.
+
+Pre-existing / environmental (not BC-01 defects; documented, not fixed):
+  E1 Vitest: EditorApp.test.tsx "clicking each semantic sectioning
+     catalog card..." times out (15s) in the full suite at default
+     parallelism on this machine (about 15 workers on 16 threads). It
+     reproduces on HEAD with the BC-01.6 changes removed (verified by
+     swapping the 4 files back, then restoring them byte-identical). It
+     takes about 4.5s alone and passes in the full suite with
+     --maxWorkers=4. It passed in the BC-01.4/01.5 full runs. Its
+     timeout was not changed.
+  E2 WebKit (Windows build) has no color input (section 8).
+  E3 Electron lifecycle flake (section 8).
+Observations carried forward (documented earlier, unchanged):
+  Chromium ignores line-height on <select>/<option>. Recovery snapshots
+  wait while a field is mid-edit. If a field stays focused after typing
+  (no blur) for a long time, a crash in that window would lose that
+  last edit from recovery. Severity low.
+
+
+11. EXACT FILES MODIFIED
+------------------------
+Modified:
+  src/features/editor/stores/useEditorStore.ts
+      mergeTransactionWrite; pushHistory closes a merging transaction on
+      an outside mutation
+  src/features/inspector/hooks/useInspectorEditSession.ts
+      own writes via mergeTransactionWrite; "adopt" end; doc comment
+  src/features/editor/stores/useEditorStore.mergeTransaction.test.ts
+      3 tests use mergeTransactionWrite; +3 D1 tests
+  src/features/inspector/hooks/useInspectorEditSession.test.tsx
+      +3 D1 reproduction tests
+Created:
+  e2e/inspector-final-regression.spec.ts (12 tests)
+  e2e/desktop/inspector-live-edit.spec.ts (1 test)
+  docs/reports/BC-01.6-Live-Inspector-Final-Regression.txt (this file)
+  changelogs/2026-10-29-live-inspector-final-regression-BC-01.6.txt
+    (gitignored)
+Temporary, deleted: playwright.crossbrowser.tmp.config.ts.
+Outside the repo: Playwright Firefox and WebKit browsers in the user
+cache; scratch probe scripts.
+Nothing staged or committed.
+
+
+12. COMMANDS AND TEST COUNTS
+----------------------------
+  npm run typecheck                         PASS
+  npm run lint                              PASS (0 problems; one unused
+                                            import in the new spec was
+                                            fixed)
+  npx vitest run (default parallelism)      1 failed | 5134 passed |
+                                            1 skipped (5136); the
+                                            failure is E1, which
+                                            reproduces on HEAD
+                                            (1 failed | 5128 passed |
+                                            1 skipped)
+  npx vitest run --maxWorkers=4             PASS: 5135 passed, 1 skipped
+                                            (5136), 342 files
+  npx playwright test (Chromium, full)      PASS 122/122 (12 new)
+  Firefox, 5 Inspector specs (temp config)  63/63
+  WebKit, 5 Inspector specs (temp config)   61/63 (E2: native picker x2)
+  npm run build                             PASS
+  env -u ELECTRON_RUN_AS_NODE npm run desktop:test
+                                            PASS 58 passed, 2 skipped,
+                                            0 failed (1 new)
+  New tests: Vitest +6, Playwright +12, desktop +1.
+
+
+13. REMAINING RISKS AND LIMITATIONS
+-----------------------------------
+KNOWN LIMITATION  Structural/attribute numeric rows and multi-selection
+  fields are commit-on-blur by design.
+KNOWN LIMITATION  Valid intermediate values preview live (opacity "2"
+  on the way to "25"; "#ff00" on the way to "#ff0000").
+KNOWN LIMITATION  After D1, an outside mutation mid-edit ends the edit:
+  further typing in the still-focused field starts a new edit (a new
+  undo step), and Escape can no longer revert the part already closed.
+KNOWN LIMITATION  Recovery snapshots wait for an open edit (see
+  section 10).
+KNOWN LIMITATION  Chromium ignores line-height on select/option.
+KNOWN LIMITATION  Typography display rules from BC-01.4/01.5 (px for
+  unset letter spacing, the 1.2 `normal` baseline, 3-decimal rounding).
+NOT VERIFIED  Real Safari/macOS; SVG/vector colors in a browser; the
+  individually unlisted numeric properties in section 2; Canvas
+  re-render counts; production-build timings; desktop file-on-disk
+  save of live edits.
+Pre-existing, tracked separately: E1 (Vitest timeout under load), E3
+  (Electron app-close flake).
+
+
+14. RECOMMENDATION
+------------------
+CLOSE BC-01.
+  - Live numeric and color editing, transactional Undo/Redo, validation
+    and cancellation, computed typography, Canvas/Preview/Export parity
+    and persistence are verified with browser evidence in Chromium,
+    Firefox, WebKit (except the environment-limited native picker) and
+    Electron.
+  - The one defect found (D1, medium, no known UI trigger) is fixed and
+    regression-tested.
+  - No newly introduced critical or high-severity regression remains.
+  - The remaining items are documented limitations or pre-existing,
+    environment-related test issues (E1-E3) that do not come from BC-01.
+
+
+15. SUGGESTED NEXT STEPS FOR BC-02
+----------------------------------
+  1. Decide on multi-selection live editing (the Bulk* fields could
+     reuse useInspectorEditSession with the bulk setters).
+  2. Consider letting recovery snapshots run while a field is mid-edit,
+     or ending an idle edit session after a timeout.
+  3. Decide what the Line height control should do on <select>/<option>.
+  4. Stabilize E1: give the slow EditorApp catalog test more time, or
+     cap Vitest workers in CI. That is a separate decision; the timeout
+     was not changed here.
+  5. Investigate the Electron app-close flake (E3) as its own task.
+  6. Optionally add Firefox/WebKit projects to the Playwright config.
+     They are not configured today, and the native-picker tests would
+     need a WebKit-on-Windows skip.

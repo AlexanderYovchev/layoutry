@@ -856,3 +856,52 @@ describe("line height and letter spacing show the rendered value while unset (BC
     expect(node("heading-1")?.typography).toBeUndefined();
   });
 });
+
+describe("a mutation from outside the field during an open edit (BC-01.6, defect D1)", () => {
+  it("an element deleted mid-edit stays deleted, even when the edit then reverts (invalid final draft)", () => {
+    render(<Selected section={InspectorTypographySection} />);
+    const input = screen.getByLabelText("Font size");
+    focus(input);
+    type(input, "24", "-5");
+    expect(fontSize()).toBe(24);
+
+    // e.g. a programmatic delete while the field still has focus
+    act(() => store().deleteSelection());
+
+    expect(node("heading-1")).toBeUndefined();
+    expect(store().transactionSnapshot).toBeNull();
+    // Undo brings the element back (with its pre-edit font size at most one step later).
+    act(() => store().undo());
+    expect(node("heading-1")).toBeDefined();
+  });
+
+  it("Escape does not undo another element's change made while the field was being edited", () => {
+    render(<Selected section={InspectorTypographySection} />);
+    const input = screen.getByLabelText("Font size");
+    focus(input);
+    type(input, "44");
+    act(() => store().setElementTypography("paragraph-1", { color: "#123456" }));
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(node("paragraph-1")?.typography?.color).toBe("#123456");
+    expect(store().transactionSnapshot).toBeNull();
+  });
+
+  it("the outside change and the field's own edit stay separate undo steps", () => {
+    render(<Selected section={InspectorTypographySection} />);
+    const input = screen.getByLabelText("Font size");
+    focus(input);
+    type(input, "44");
+    act(() => store().setElementTypography("paragraph-1", { color: "#123456" }));
+    blur(input);
+
+    expect(fontSize()).toBe(44);
+    expect(node("paragraph-1")?.typography?.color).toBe("#123456");
+    act(() => store().undo());
+    expect(node("paragraph-1")?.typography?.color).toBeUndefined();
+    expect(fontSize()).toBe(44);
+    act(() => store().undo());
+    expect(fontSize()).toBeUndefined();
+    expect(store().past).toHaveLength(0);
+  });
+});

@@ -610,6 +610,12 @@ interface EditorState {
    * transaction is already open (it never joins someone else's).
    */
   beginTransaction: (options?: { mergeHistory?: boolean }) => void;
+  /**
+   * Runs `write` as the open merging transaction's own write (BC-01.6):
+   * one-shot mutations inside it fold into the transaction. Any other
+   * one-shot mutation while it is open closes it first (see pushHistory).
+   */
+  mergeTransactionWrite: (write: () => void) => void;
   commitTransaction: () => void;
   cancelTransaction: () => void;
 
@@ -708,11 +714,27 @@ function snapshot(state: EditorState): HistoryEntry {
   return { document: state.document, selection: state.selection };
 }
 
+/**
+ * > 0 only while mergeTransactionWrite runs the owning edit's own write —
+ * module state, not store state, because it never outlives that one
+ * synchronous call and nothing renders from it.
+ */
+let mergedWriteDepth = 0;
+
 /** Every one-shot (non-transactional) mutation pushes the pre-mutation snapshot and clears redo. */
-function pushHistory(state: EditorState): Pick<EditorState, "past" | "future"> {
-  // Inside a merging transaction the pre-transaction snapshot already
-  // stands for this write; commitTransaction records it once.
-  if (isMergingHistory(state)) return { past: state.past, future: state.future };
+function pushHistory(state: EditorState): Pick<EditorState, "past" | "future"> & Partial<Pick<EditorState, "transactionSnapshot" | "historyMergeSnapshot">> {
+  const open = state.transactionSnapshot;
+  if (open !== null && open === state.historyMergeSnapshot) {
+    // The owning edit's own write: the pre-transaction snapshot already
+    // stands for it; commitTransaction records it once.
+    if (mergedWriteDepth > 0) return { past: state.past, future: state.future };
+    // A mutation from anywhere else (BC-01.6, D1) must never be folded into
+    // that edit's undo step, nor be undone by the edit's own Escape/revert
+    // restoring its pre-edit snapshot. So it closes the edit first — its
+    // own entry, unless it changed nothing — then records itself.
+    const editEntry = isStructurallyEqual(state.document, open.document) ? [] : [open];
+    return { past: [...state.past, ...editEntry, snapshot(state)], future: [], transactionSnapshot: null, historyMergeSnapshot: null };
+  }
   return { past: [...state.past, snapshot(state)], future: [] };
 }
 
@@ -1489,6 +1511,15 @@ export const useEditorStore = create<EditorState>()((set) => ({
     }),
 
   cancelTransaction: () => set({ transactionSnapshot: null, historyMergeSnapshot: null }),
+
+  mergeTransactionWrite: (write) => {
+    mergedWriteDepth++;
+    try {
+      write();
+    } finally {
+      mergedWriteDepth--;
+    }
+  },
 
   enterSvgEditMode: (svgNodeId) =>
     set((state) => {

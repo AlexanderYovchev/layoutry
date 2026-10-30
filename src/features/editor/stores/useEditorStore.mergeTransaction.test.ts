@@ -17,6 +17,11 @@ function setFontSize(value: number) {
   store().setElementTypography("heading-1", { ...heading()?.typography, fontSize: { value, unit: "px" } });
 }
 
+/** The owning edit's own write (how the Inspector edit session writes). */
+function ownWrite(write: () => void) {
+  store().mergeTransactionWrite(write);
+}
+
 beforeEach(() => {
   useEditorStore.setState(initialState, true);
   useEditorStore.setState({ persistedDocument: store().document });
@@ -25,9 +30,9 @@ beforeEach(() => {
 describe("merging transaction", () => {
   it("folds any number of one-shot writes into exactly one history entry", () => {
     store().beginTransaction({ mergeHistory: true });
-    setFontSize(2);
-    setFontSize(24);
-    setFontSize(32);
+    ownWrite(() => setFontSize(2));
+    ownWrite(() => setFontSize(24));
+    ownWrite(() => setFontSize(32));
     expect(store().past).toHaveLength(0);
     store().commitTransaction();
 
@@ -45,8 +50,8 @@ describe("merging transaction", () => {
   it("records nothing, and restores the exact pre-transaction document, when the net change is nothing", () => {
     const documentBefore = store().document;
     store().beginTransaction({ mergeHistory: true });
-    store().setElementTypography("heading-1", { fontSize: { value: 40, unit: "px" } });
-    store().setElementTypography("heading-1", undefined);
+    ownWrite(() => store().setElementTypography("heading-1", { fontSize: { value: 40, unit: "px" } }));
+    ownWrite(() => store().setElementTypography("heading-1", undefined));
     store().commitTransaction();
 
     expect(store().past).toHaveLength(0);
@@ -60,7 +65,7 @@ describe("merging transaction", () => {
     expect(store().future).toHaveLength(1);
 
     store().beginTransaction({ mergeHistory: true });
-    setFontSize(30);
+    ownWrite(() => setFontSize(30));
     const snapshot = store().transactionSnapshot;
     if (snapshot) useEditorStore.setState({ document: snapshot.document });
     store().cancelTransaction();
@@ -104,5 +109,37 @@ describe("merging transaction", () => {
       setFontSize(12);
       expect(store().past).toHaveLength(pastBefore + 1);
     }
+  });
+
+  it("a mutation that is not the edit's own write closes the edit first: two separate undo steps, transaction ended (BC-01.6, D1)", () => {
+    store().beginTransaction({ mergeHistory: true });
+    ownWrite(() => setFontSize(30));
+    store().setElementTypography("paragraph-1", { color: "#123456" });
+
+    expect(store().transactionSnapshot).toBeNull();
+    expect(store().historyMergeSnapshot).toBeNull();
+    expect(store().past).toHaveLength(2);
+    store().undo();
+    expect(findNodeById(store().document, "paragraph-1")?.typography).toBeUndefined();
+    expect(fontSize()).toBe(30);
+    store().undo();
+    expect(heading()?.typography).toBeUndefined();
+  });
+
+  it("an outside mutation during an edit that changed nothing records only itself", () => {
+    store().beginTransaction({ mergeHistory: true });
+    store().setElementTypography("paragraph-1", { color: "#123456" });
+
+    expect(store().past).toHaveLength(1);
+    expect(store().transactionSnapshot).toBeNull();
+  });
+
+  it("the depth guard is released even if the write throws", () => {
+    store().beginTransaction({ mergeHistory: true });
+    expect(() => ownWrite(() => {
+      throw new Error("boom");
+    })).toThrow("boom");
+    store().setElementTypography("paragraph-1", { color: "#123456" });
+    expect(store().transactionSnapshot).toBeNull();
   });
 });
