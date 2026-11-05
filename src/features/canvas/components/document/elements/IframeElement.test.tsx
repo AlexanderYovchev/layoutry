@@ -90,3 +90,63 @@ describe("IframeElement (Checkpoint 1.15)", () => {
     expect(document.querySelector("iframe")).not.toBeNull();
   });
 });
+
+describe("IframeElement embed safety (BC-02.3)", () => {
+  const props = { parentId: "page-1", parentLayoutMode: "flow", parentFlowDisplay: "block" } as const;
+
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("always renders an explicit sandbox, with allow-same-origin only for another origin", () => {
+    const { rerender } = render(<IframeElement node={{ id: "iframe-1", tag: "iframe", src: "https://example.com/embed" }} {...props} />);
+    expect(document.querySelector("iframe")).toHaveAttribute("sandbox", "allow-forms allow-popups allow-scripts allow-same-origin");
+    rerender(<IframeElement node={{ id: "iframe-1", tag: "iframe", src: "/same-origin.html" }} {...props} />);
+    expect(document.querySelector("iframe")).toHaveAttribute("sandbox", "allow-forms allow-popups allow-scripts");
+    rerender(<IframeElement node={{ id: "iframe-1", tag: "iframe" }} {...props} />);
+    expect(document.querySelector("iframe")).toHaveAttribute("sandbox", "allow-forms allow-popups allow-scripts");
+  });
+
+  it("does not load a data:, blob:, file: or about: source, but keeps the element and its title", () => {
+    for (const src of ["data:text/html,<script>top.location='x'</script>", "blob:http://localhost:3000/1", "file:///C:/x", "about:blank"]) {
+      const { unmount } = render(<IframeElement node={{ id: "iframe-1", tag: "iframe", src, title: "Embedded content" }} {...props} />);
+      const iframe = document.querySelector("iframe");
+      expect(iframe, src).not.toBeNull();
+      expect(iframe, src).not.toHaveAttribute("src");
+      expect(iframe, src).toHaveAttribute("title", "Embedded content");
+      unmount();
+    }
+  });
+
+  it("never copies other attributes from the node, even ones smuggled into the in-memory document", () => {
+    const node = Object.assign({ id: "iframe-1", tag: "iframe", src: "https://example.com/embed" }, {
+      sandbox: "allow-top-navigation allow-same-origin allow-scripts",
+      srcdoc: "<script>top.location='https://evil.test'</script>",
+      allow: "camera; microphone",
+      referrerpolicy: "unsafe-url",
+    });
+    render(<IframeElement node={node} {...props} />);
+    const iframe = document.querySelector("iframe");
+    expect(iframe).toHaveAttribute("sandbox", "allow-forms allow-popups allow-scripts allow-same-origin");
+    expect(iframe).not.toHaveAttribute("srcdoc");
+    expect(iframe).not.toHaveAttribute("allow");
+    expect(iframe).not.toHaveAttribute("referrerpolicy");
+  });
+
+  it("keeps the same iframe across a source change within the same policy, and replaces it when the sandbox changes", () => {
+    const { rerender } = render(<IframeElement node={{ id: "iframe-1", tag: "iframe", src: "https://a.example/1" }} {...props} />);
+    const first = document.querySelector("iframe");
+    rerender(<IframeElement node={{ id: "iframe-1", tag: "iframe", src: "https://b.example/2" }} {...props} />);
+    expect(document.querySelector("iframe")).toBe(first);
+    rerender(<IframeElement node={{ id: "iframe-1", tag: "iframe", src: "/same-origin.html" }} {...props} />);
+    expect(document.querySelector("iframe")).not.toBe(first);
+  });
+
+  it("keeps the same iframe across Design and Preview", () => {
+    const { rerender } = render(<IframeElement node={{ id: "iframe-1", tag: "iframe", src: "https://a.example/1" }} {...props} />);
+    const first = document.querySelector("iframe");
+    useEditorStore.setState({ editorMode: "preview" });
+    rerender(<IframeElement node={{ id: "iframe-1", tag: "iframe", src: "https://a.example/1" }} {...props} />);
+    expect(document.querySelector("iframe")).toBe(first);
+  });
+});

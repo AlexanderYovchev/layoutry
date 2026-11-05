@@ -175,4 +175,34 @@ describe("MediaGuideOverlay (Checkpoint 1.15)", () => {
 
     expect(useEditorStore.getState().document).toBe(documentBefore);
   });
+
+  it("BC-02.3 — explains a refused embed source (data:, blob:, file:, about:) instead of showing a silent blank frame", () => {
+    stubLargeRect();
+    for (const src of ["data:text/html,<b>x</b>", "blob:http://localhost:3000/1", "file:///C:/x", "about:blank"]) {
+      setDocument([{ id: "iframe-1", tag: "iframe", src }]);
+      const { unmount } = render(
+        <Harness>
+          <div data-node-id="iframe-1" />
+        </Harness>,
+      );
+      const guide = document.querySelector('[data-canvas-overlay="media-guide"]');
+      expect(guide, src).toHaveTextContent("Embed");
+      expect(guide, src).toHaveTextContent("Use an http or https address");
+      unmount();
+    }
+  });
+
+  it("BC-02.3 — shows no guide for an embed the policy frames (https or relative)", () => {
+    stubLargeRect();
+    for (const src of ["https://example.com/embed", "/page.html"]) {
+      setDocument([{ id: "iframe-1", tag: "iframe", src }]);
+      const { unmount } = render(
+        <Harness>
+          <div data-node-id="iframe-1" />
+        </Harness>,
+      );
+      expect(document.querySelector('[data-canvas-overlay="media-guide"]'), src).toBeNull();
+      unmount();
+    }
+  });
 });

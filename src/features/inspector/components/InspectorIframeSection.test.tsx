@@ -40,7 +40,7 @@ describe("InspectorIframeSection (Checkpoint 1.15)", () => {
     fireEvent.blur(input);
 
     expect(spy).not.toHaveBeenCalled();
-    expect(screen.getByText("Enter a valid embed URL.")).toBeInTheDocument();
+    expect(screen.getByText("Enter an http or https embed URL.")).toBeInTheDocument();
   });
 
   it("committing a new Title calls setElementTitle (no URL validation applied)", () => {
@@ -61,5 +61,28 @@ describe("InspectorIframeSection (Checkpoint 1.15)", () => {
     fireEvent.click(screen.getByLabelText("Reset title"));
 
     expect(spy).toHaveBeenCalledWith("iframe-1", undefined);
+  });
+
+  it("BC-02.3 — rejects a data:, blob:, file: or about: Source URL, which the Canvas would not frame", () => {
+    for (const value of ["data:text/html,<script>alert(1)</script>", "blob:http://localhost:3000/1", "file:///C:/x", "about:blank"]) {
+      const spy = vi.spyOn(useEditorStore.getState(), "setElementSrc");
+      const { unmount } = render(<InspectorIframeSection node={baseNode} />);
+      const input = screen.getByLabelText("Source URL");
+      fireEvent.change(input, { target: { value } });
+      fireEvent.blur(input);
+      expect(spy, value).not.toHaveBeenCalled();
+      expect(screen.getByText("Enter an http or https embed URL.")).toBeInTheDocument();
+      spy.mockRestore();
+      unmount();
+    }
+  });
+
+  it("BC-02.3 — still accepts a relative Source URL (framed, sandboxed, without same-origin access)", () => {
+    const spy = vi.spyOn(useEditorStore.getState(), "setElementSrc");
+    render(<InspectorIframeSection node={baseNode} />);
+    const input = screen.getByLabelText("Source URL");
+    fireEvent.change(input, { target: { value: "/widgets/map.html" } });
+    fireEvent.blur(input);
+    expect(spy).toHaveBeenCalledWith("iframe-1", "/widgets/map.html");
   });
 });

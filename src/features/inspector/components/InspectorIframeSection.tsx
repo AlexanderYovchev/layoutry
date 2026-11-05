@@ -5,6 +5,7 @@ import { InspectorMediaTextField } from "@/features/inspector/components/Inspect
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { isValidLinkHref } from "@/features/editor/types/link";
+import { resolveIframeSourcePolicy } from "@/lib/iframeSandbox";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
 interface InspectorIframeSectionProps {
@@ -37,8 +38,10 @@ export function InspectorIframeSection({ node }: InspectorIframeSectionProps) {
   }
 
   function handleSrcCommit(value: string) {
-    if (!isValidLinkHref(value)) {
-      setSrcError("Enter a valid embed URL.");
+    // BC-02.3: also refuse what the Canvas will not frame (data:, blob:,
+    // file:, about:, ...), with the same rule the Canvas and Export use.
+    if (!isValidLinkHref(value) || resolveIframeSourcePolicy(value, window.location.origin).refused) {
+      setSrcError("Enter an http or https embed URL.");
       return;
     }
     setSrcError(undefined);

@@ -35,6 +35,7 @@ import { getSelectedOptionValue } from "@/features/editor/types/select";
 import { DEFAULT_SVG_FILL, formatSvgViewBox, getSvgKind, resolveSvgFill, resolveSvgStroke, resolveSvgStrokeWidth, resolveSvgViewBox } from "@/features/editor/types/svg";
 import { hasSvgScene, resolveSvgScene, type SvgVectorObject } from "@/features/editor/types/svgScene";
 import { getEffectiveAutoplay, getMediaControls } from "@/features/editor/types/video";
+import { EXPORTED_PAGE_ORIGIN, resolveIframeSourcePolicy } from "@/lib/iframeSandbox";
 import { formatSvgPoints, pathCommandsToD } from "@/features/editor/utils/svgObjectGeometry";
 import { SVG_CIRCLE_GEOMETRY, SVG_RECTANGLE_GEOMETRY, SVG_STAR_POINTS, SVG_TRIANGLE_POINTS } from "@/features/editor/utils/svgPrimitiveGeometry";
 // Deep import by necessity: the project feature's index.ts also re-exports
@@ -441,7 +442,11 @@ function buildElement(state: BuildState, node: EditorElementNode, styleKey: stri
 
   if (tag === "iframe") {
     const src = checkedUrl(state, node.id, "src", node.src, "frame");
-    return buildMediaFrame(state, node, styleKey, resolveVideoOrIframeElementStyle(node, context), { tag: "iframe", attributes: [...attribute("src", src), ...attribute("title", node.title)] });
+    // The same explicit sandbox the Canvas renders (BC-02.3): the embed can
+    // never navigate or read the exported page. checkedUrl has already
+    // refused every scheme the policy refuses.
+    const { sandbox } = resolveIframeSourcePolicy(src, EXPORTED_PAGE_ORIGIN);
+    return buildMediaFrame(state, node, styleKey, resolveVideoOrIframeElementStyle(node, context), { tag: "iframe", attributes: [{ name: "sandbox", value: sandbox }, ...attribute("src", src), ...attribute("title", node.title)] });
   }
 
   if (tag === "svg") {

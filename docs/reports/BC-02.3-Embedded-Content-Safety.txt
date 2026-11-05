@@ -1,0 +1,430 @@
+LAYOUTRY — BC-02.3: EMBEDDED CONTENT SAFETY & IFRAME NAVIGATION PROTECTION
+==========================================================================
+Date: 2026-11-05
+Type: High-severity security fix + browser/Electron regression tests
+Baseline: HEAD 0dbfcda (BC-02.2.1).
+Status: Implemented and tested. Awaiting QA review. Not committed.
+
+Classification used below:
+  CONFIRMED     measured in a real browser or Electron, or a direct code fact
+  NOT VERIFIED  not checked, with the reason
+
+1. EXECUTIVE SUMMARY
+--------------------
+B4 is fixed in the web editor, and the desktop app stays protected.
+
+Before the fix, an authored Embed (<iframe>) had no sandbox anywhere.
+Measured in Chromium against local hostile pages:
+- A cross-origin page navigated the whole web editor away after a click.
+  Four ways worked: target=_top link, target=_parent link, top.location
+  and parent.location. It also worked through a redirect chain.
+- A page on the editor's own origin read the editor's DOM, and in Design
+  mode it navigated the editor away as soon as it loaded, without a click.
+- data:, blob:, file: and about: sources were framed as typed.
+- A cross-origin page that redirects back to the editor loaded a second,
+  fully privileged copy of the editor inside the frame.
+
+The fix has three parts:
+1. One shared iframe policy (src/lib/iframeSandbox.ts), used by the Canvas
+   (Design and Preview) and the HTML export:
+   - an explicit sandbox on every iframe; no top navigation and no popup
+     escape are ever granted;
+   - allow-same-origin only for an embed on another origin;
+   - only http(s), protocol-relative and relative sources are framed.
+2. The web build sends "frame-ancestors 'none'" and "X-Frame-Options:
+   DENY", so the editor can never be loaded inside a frame. This closes
+   the redirect-to-editor case at the browser level.
+3. User-facing: the Inspector refuses unsupported embed sources, and
+   Design explains why an embed with a refused source shows nothing.
+
+Evidence:
+- The new 29-test browser spec failed 18 of its first 26 tests on the old
+  code (exploit shown). The redirect-to-editor test was added later; it
+  fails with the header removed.
+- With the fix: all 29 pass in Chromium, Firefox and WebKit.
+- Electron: 2 new tests pass, and its existing security suite is unchanged.
+
+No Electron setting, schema field, permission or persistence format
+changed. Recommendation: CLOSE BC-02.3 (section 15).
+
+2. ORIGINAL B4 REPRODUCTION (before the fix, Chromium, real editor)
+-------------------------------------------------------------------
+Setup: e2e/embed-safety.spec.ts on HEAD 0dbfcda (fix not applied).
+- Two loopback attacker origins (http://127.0.0.1:<random ports>).
+- A hostile page on the editor's own origin, served through a Playwright
+  route.
+- A project with one Embed pointing at the hostile page, imported through
+  the real import input.
+"Editor intact" means all of these held: the editor URL, a marker set in
+the editor's window (lost on any navigation), and the document's heading.
+
+Result: 18 failed, 8 passed.
+- Cross-origin embed, Preview, one click each: link-top, link-parent,
+  script-top, script-parent all left the editor (URL changed to the
+  attacker's /landed.html).
+- Redirect chain (A redirects to B): script-top left the editor.
+- Same-origin embed:
+  - all four of the above left the editor;
+  - read-parent returned "ran:Layoutry" (it read the editor's title);
+  - Design mode, no click: the page navigated the editor away on load.
+- data:, about:, blob: and file: sources: src rendered as typed (data:
+  then runs its own script).
+- Export: no sandbox attribute in the exported HTML.
+- Sandbox-attribute tests: no sandbox attribute (2 failures).
+Already safe before the fix: cross-origin read-parent (the same-origin
+policy), popups (the editor was not navigated), and in-frame links.
+
+Redirect to the editor's own origin (probe, before the header was added):
+the frame loaded http://localhost:3000/ with the editor's real origin, and
+script in it read parent.document.title = "Layoutry". The Playwright route
+does not apply to redirected requests, so the frame got the editor's real
+page; a real deployment behaves the same way.
+
+3. ROOT CAUSE
+-------------
+CONFIRMED (code fact).
+- One render path: Canvas Design and Preview both use
+  src/features/canvas/components/document/elements/IframeElement.tsx.
+  Preview is a mode of the same Canvas, not a separate frame. It rendered
+  <iframe src={node.src} title id className style> with no sandbox, no
+  allow attribute and no scheme check.
+- The export (buildExportDocument.ts) wrote <iframe src title>, also with
+  no sandbox. It already refused data:/blob:/file:/other schemes through
+  checkExportUrl(…, "frame"); the Canvas did not.
+- URL checks before the fix: the Inspector and the schema only refused
+  javascript:.
+- The web build had no CSP or framing headers. Electron's own CSP
+  (frame-src http: https:, frame-ancestors 'none') and its navigation
+  guard are why the desktop app was never affected.
+- No user-controlled attribute path exists:
+  - the document schema is strict (z.strictObject), so a sandbox, srcdoc,
+    allow or referrerPolicy field is refused at import (unit-tested);
+  - the renderer copies no extra fields;
+  - there is no dangerouslySetInnerHTML or raw HTML anywhere on the
+    Canvas.
+- No other iframe creation path exists: the export runtime and Inspector
+  create no iframes.
+
+4. THREAT MODEL
+---------------
+Attacker: whoever controls the page an embed points to, including any page
+it redirects to. The attacker cannot change Layoutry's own code or what the
+editor's origin serves.
+Assets: the editor's window (its navigation, DOM, in-memory project and
+undo history), the editor's origin storage (IndexedDB library and
+recovery), and in Electron the preload bridge and Node.js.
+Out of scope: what the embedded site itself does to its own users, and
+providers that refuse to be framed (X-Frame-Options/CSP on their side).
+Exported pages are the author's own site (section 8).
+
+5. EXACT SANDBOX POLICY
+-----------------------
+Every Canvas and exported iframe gets:
+  sandbox="allow-forms allow-popups allow-scripts"
+and, only when the embed URL's origin differs from the host page:
+  sandbox="allow-forms allow-popups allow-scripts allow-same-origin"
+
+Granted, and why:
+  allow-scripts      embeds (players, maps, widgets) are script-driven
+  allow-forms        a form inside the embed submits within the frame
+  allow-popups       "open in new tab" links; the popup stays sandboxed
+  allow-same-origin  cross-origin only: the embed keeps its own origin, so
+                     its storage and requests work. The same-origin policy
+                     still keeps it out of the editor. Never given to a
+                     same-origin or relative URL, where allow-scripts plus
+                     allow-same-origin would let it remove its own sandbox.
+Never granted (unit-tested over all host types):
+  allow-top-navigation, allow-top-navigation-by-user-activation,
+  allow-top-navigation-to-custom-protocols, allow-popups-to-escape-sandbox,
+  allow-modals, allow-downloads (and pointer-lock, presentation,
+  orientation-lock, storage-access-by-user-activation).
+No `allow` (Permissions Policy) attribute is emitted. That is the same as
+before, so fullscreen, autoplay with sound, camera and similar stay at the
+browser's default for cross-origin frames (section 13).
+
+How the origin is decided:
+- Canvas: compared with window.location.origin. Until the origin is known
+  (server prerender and hydration) the iframe has no src at all.
+- Export: relative URLs count as the page's own origin; absolute and
+  protocol-relative URLs count as another origin.
+
+Redirects: the sandbox is decided from the authored URL. A cross-origin
+embed that redirects to another origin keeps its cross-origin rights
+(tested: still cannot navigate or read the editor). One that redirects
+back to the editor's origin is refused by the browser, because of the new
+frame-ancestors 'none' header (tested; without the header the editor
+loads inside the frame with 37 scripts).
+
+Remounting: the <iframe> is keyed on its sandbox value. Sandbox flags only
+apply to the frame's next navigation, so a policy change (for example a
+source edited from cross-origin to same-origin) replaces the frame rather
+than leaving the old document under old flags. Changing the source within
+the same policy, or switching between Design and Preview, keeps the same
+element (unit-tested; 5 Preview sessions in the browser kept the same
+element and frame count, with one load).
+
+6. URL AND ATTRIBUTE HANDLING
+-----------------------------
+Source                     Canvas (after)         Export (unchanged rule)
+https: / http:             framed                 framed
+//host/path                framed (other origin)  framed
+/path, page.html, ?q, #x   framed, no same-origin framed, no same-origin
+same-origin absolute URL   framed, no same-origin (n/a)
+data:, blob:, file:        NOT loaded             refused (existing
+                                                  unsafe/non-portable
+                                                  diagnostic)
+about:blank, about:srcdoc  NOT loaded             refused
+javascript:, vbscript:     refused at import and  refused
+                           in the Inspector; not
+                           loaded
+" JavaScript:", "java\tscript:", leading NUL      NOT loaded (the URL
+                                                  parser normalizes them
+                                                  first)
+ftp:, chrome:, app:        NOT loaded             refused
+srcdoc / sandbox / allow   cannot exist: refused  n/a
+  fields in a document     at import
+Desktop (host app://layoutry): relative URLs resolve to app:, so they are
+not loaded, which matches the desktop CSP's frame-src http: https:.
+
+The policy uses the standard URL parser, so it reads a URL exactly the way
+the browser will. It returns the authored string unchanged.
+
+Inspector (InspectorIframeSection): a source the policy refuses is no
+longer committed. It shows the existing error slot with "Enter an http or
+https embed URL." (the old javascript:-only message was "Enter a valid
+embed URL."). Relative URLs are still accepted.
+
+Existing documents with a refused source:
+- The node and its title are kept, and it stays selectable.
+- In Design, the existing empty-media guide shows "Embed / Use an http or
+  https address".
+- In Preview it is an empty frame, with no error and no crash.
+- No schema change and no migration.
+
+7. CANVAS / PREVIEW BEHAVIOR
+----------------------------
+- Design: the embed loads and runs sandboxed. Its "escape on load" attempt
+  fails in Chromium, Firefox, WebKit and Electron. The Canvas shield still
+  covers it, so clicking selects the node (the Inspector's Source URL
+  field appears).
+- Preview: the embed is interactive, but no click or script can leave
+  the frame: link-top, link-parent, script-top, script-parent and
+  read-parent all fail, cross-origin and same-origin. A popup may open in
+  the browser (allow-popups), stays sandboxed, and cannot navigate the
+  editor.
+- In-frame links and form submits work and navigate only the frame.
+- Exit Preview returns to Design with the embed visible.
+- 5 repeated Preview sessions: same iframe element, same frame count, the
+  embed loaded once, Undo still disabled, editor intact.
+- No listener is added by the fix. The test's message listener belongs to
+  the test.
+
+8. EXPORT SECURITY BEHAVIOR
+---------------------------
+Decision: exported iframes get the same sandbox as the Canvas, so Preview
+shows what the export does, and an embed can't take over the author's
+published page either.
+
+Consequences assessed:
+- Embeds that only render, play, submit forms in-frame or open new tabs
+  are unaffected (same capabilities as in Preview).
+- Embeds that intentionally navigate the top page (some payment/OAuth
+  flows, "framebuster" pages) or need alert()/confirm() or downloads no
+  longer can. Those were already unsafe for the editor, and would differ
+  between Preview and the export without this change.
+- Relative embeds of the author's own pages run without same-origin
+  rights. Same-origin with scripts would make the sandbox pointless.
+
+Evidence (Chromium, Firefox, WebKit):
+- The exported HTML carries
+  sandbox="allow-forms allow-popups allow-scripts allow-same-origin".
+- Served from its own loopback origin, the hostile embed's link-top and
+  script-top leave the exported page in place, and in-frame navigation
+  works.
+- Control test: the same exported page with the sandbox stripped is taken
+  over by one click (waitForURL to the attacker's page), which proves the
+  test page is really hostile.
+- The export adds no CSP of its own; that is the hosting site's choice.
+
+If QA prefers no sandbox in exports, it is one line in
+buildExportDocument.ts, and the editor would stay protected.
+
+9. ELECTRON VERIFICATION
+------------------------
+New: e2e/desktop/embed-safety.spec.ts (real Electron, real security
+settings, offline). Only the test instance's main process serves a fake
+https://embed.test/ origin from memory (session.protocol.handle) and
+allows just that origin in place of launchLayoutry's cancel-all recorder.
+The app's code, CSP, navigation guard and window policy are unchanged.
+- The embed renders with the cross-origin sandbox, and its page loads.
+- Preview: link-top, link-parent, script-top, script-parent, read-parent
+  and popup all fail. The window stays on app://layoutry/ with the marker
+  intact, and still only 1 BrowserWindow (no popup or privileged window).
+- Inside the embed: window.require, window.process and the preload bridge
+  window.layoutryDesktop are all undefined.
+- In-frame navigation works. Exit Preview works.
+- Design: the escape-on-load attempt fails, and reading the parent throws.
+- Unchanged: nodeIntegration, contextIsolation, sandbox, webSecurity, CSP,
+  the navigation guard, the window-open handler and the permission handler.
+  The existing desktop security tests still pass (section 11).
+
+10. COMPATIBILITY RESULTS
+-------------------------
+Tested only with controlled local pages:
+- A well-behaved cross-origin widget, sandboxed, compared with the same
+  page in a plain unsandboxed iframe on the same host page:
+    Chromium  storage ok, cookie blocked, media-query ok, fetch ok
+              (identical to the control)
+    Firefox   storage ok, cookie ok, media-query ok, fetch ok (identical)
+    WebKit    storage ok, cookie blocked, media-query ok, fetch ok
+              (identical)
+  The blocked cookie is the browser's third-party cookie rule (the control
+  is blocked too), not the sandbox.
+- postMessage from the embed to the host works (every report above uses it).
+- In-frame links and GET forms work.
+NOT VERIFIED: real third-party providers (YouTube, Vimeo, Google Maps,
+Spotify, and so on). No public sites were used, as the brief requires.
+These providers typically need scripts, their own origin and popups, which
+the policy grants. Some also ask for fullscreen through allow="fullscreen",
+which Layoutry has never set (section 13). A provider that sends
+X-Frame-Options or frame-ancestors refuses to be framed anywhere; that is
+the provider's rule, not a Layoutry defect. BC-08 owns provider support.
+
+11. TESTS AND EXACT RESULTS
+---------------------------
+New and changed tests:
+  src/lib/iframeSandbox.test.ts                      36 tests (new)
+  src/features/canvas/.../IframeElement.test.tsx     +5 tests
+  src/features/canvas/.../MediaGuideOverlay.test.tsx +2 tests
+  src/features/inspector/.../InspectorIframeSection.test.tsx
+                                   +2 tests; 1 message text updated
+  src/features/editor/schemas/editorDocumentSchema.test.ts  9 tests (new)
+  src/features/export/utils/buildExportDocument.test.ts     +1 test
+  next.config.test.ts         +2 tests; the web-config shape assertion
+                              updated ({} became { headers })
+  e2e/embed-safety.spec.ts               29 tests (new)
+  e2e/desktop/embed-safety.spec.ts       2 tests (new)
+  e2e/support/embedAttackPages.ts        hostile and well-behaved pages
+
+Mutation and before checks:
+- Old code (HEAD): 18 of the first 26 browser tests failed (section 2).
+- Header removed, header assertions also removed: the redirect test fails
+  with { editor: true, scripts: 37 }. Restored.
+
+Full regression (final code, Windows 10, ELECTRON_RUN_AS_NODE stripped):
+  npm run typecheck                        passed, 0 errors
+  npm run lint (eslint .)                  passed, 0 problems
+  Vitest, full (--maxWorkers=4)            345 files; 5214 passed,
+                                           1 skipped (the existing symlink
+                                           test), 0 failed
+  Playwright web suite, Chromium (full)    159 passed, 0 failed, 0 flaky
+                                           (130 before + 29 new)
+  Firefox + WebKit (temporary config, deleted afterwards), embed-safety +
+  preview-media specs: 66 passed, 8 failed
+      embed-safety: Firefox 29/29, WebKit 29/29
+      preview-media: Firefox 8/8; WebKit 0/8, all waiting for media to
+      load. This is the known Playwright-WebKit-on-Windows limitation from
+      BC-02.2 (no media loads even on a plain page). Same as before, and
+      not related to this change.
+  npm run build (production)               passed
+  npm run desktop:test (builds, then full) 61 passed, 2 skipped, 0 failed
+      (59 before + 2 new; the 2 skips are the opt-in persistence
+      benchmarks). Includes the unchanged security.spec.ts:
+      top-level navigation, popups, permissions, Node access and CSP
+      (including "frame-src app" still blocked).
+Pre-existing flakes (desktop lifecycle.spec.ts:70; EditorApp catalog test
+at default Vitest parallelism) did not appear. No security assertion was
+weakened. The two assertions that changed are named in this section: the
+Inspector message text, and next.config's web shape.
+
+12. FILES MODIFIED
+------------------
+Source (10 modified files, +224 / -17, plus 3 new source files):
+  src/lib/iframeSandbox.ts                         NEW  shared policy
+  src/features/canvas/hooks/useHostOrigin.ts       NEW  host origin (null on
+                                                        the server)
+  src/features/canvas/components/document/elements/IframeElement.tsx
+      sandbox and src from the policy; keyed on sandbox; doc comment
+  src/features/canvas/components/overlay/MediaGuideOverlay.tsx
+      "Use an http or https address" guide for refused embed sources
+  src/features/inspector/components/InspectorIframeSection.tsx
+      refuses sources the policy refuses; new message text
+  src/features/export/utils/buildExportDocument.ts
+      exported iframes get the same sandbox
+  next.config.ts
+      web build: frame-ancestors 'none' + X-Frame-Options DENY
+Tests:
+  src/lib/iframeSandbox.test.ts                              NEW
+  src/features/editor/schemas/editorDocumentSchema.test.ts   NEW
+  IframeElement.test.tsx, MediaGuideOverlay.test.tsx,
+  InspectorIframeSection.test.tsx, buildExportDocument.test.ts,
+  next.config.test.ts                                        modified
+  e2e/embed-safety.spec.ts                                   NEW
+  e2e/desktop/embed-safety.spec.ts                           NEW
+  e2e/support/embedAttackPages.ts                            NEW
+Reports:
+  docs/reports/BC-02.3-Embedded-Content-Safety.txt (this file)
+  changelogs/2026-11-05-embedded-content-safety-BC-02.3.txt (gitignored)
+Not modified: desktop/ (all Electron code), the document schema, project
+persistence, the export runtime, the media lifecycle code (BC-02.2/02.2.1).
+
+13. KNOWN LIMITATIONS
+---------------------
+- No allow= (Permissions Policy) on embeds, as before: cross-origin embeds
+  cannot go fullscreen or autoplay with sound unless the browser default
+  allows it. Adding allow="fullscreen" is low risk, but it would grant
+  something new, so it is left as a decision (possibly for BC-08).
+- alert()/confirm()/prompt() and downloads inside embeds are blocked.
+- Popups from embeds open (browser) sandboxed; in Electron they are denied
+  as before.
+- Relative embeds lose same-origin rights. In Electron, relative embeds are
+  not loaded, as the desktop CSP already required.
+- Real third-party providers are not verified (section 10).
+- The web hosting headers come from next.config.ts, so they apply when the
+  web build is served by Next. A different host serving the web build
+  would need the same two headers. Electron sets its own.
+- An existing project with a data:/blob:/file:/about: embed now shows an
+  empty frame (the export already dropped those).
+
+14. REMAINING SECURITY RISKS
+----------------------------
+- LOW: a cross-origin embed with allow-same-origin can still do anything
+  inside its own frame, such as phishing-style content. This is inherent
+  to embedding third-party pages.
+- LOW: popups from a sandboxed embed (web) open new tabs. They are
+  sandboxed and cannot touch the editor.
+- LOW: on a web host that does not send the frame-ancestors header, the
+  redirect-to-editor case would come back. That frame could only ever run
+  Layoutry's own code, which has no message channel for a frame to drive
+  (no window "message" listeners), so the attacker would get no control.
+- None HIGH or MEDIUM remain in the tested model.
+
+15. RECOMMENDATION
+------------------
+CLOSE BC-02.3.
+- The original B4 exploit, shown failing on the old code, is blocked
+  in Chromium, Firefox and WebKit. Script-triggered and click-triggered
+  escapes, including through a redirect chain, all fail.
+- Same-origin and cross-origin boundaries are both tested. A same-origin
+  page now runs in an opaque origin, and a redirect back to the editor is
+  refused by the browser.
+- Unsafe imported attributes cannot exist (the strict schema refuses
+  them), and the renderer copies none.
+- Design and Preview work. Selection and Preview exit are unchanged, the
+  embed is not remounted, and nothing is added to history.
+- Export behavior is decided and documented (same sandbox, section 8).
+- Electron security is intact (2 new tests and the full existing suite).
+- B2/B3 media behavior unchanged (preview-media spec 8/8 Chromium and
+  Firefox; Electron preview-media test passes).
+Decisions for QA: the export sandbox (section 8), and allow="fullscreen"
+for embeds (section 13; left off, as before).
+
+BC-02 DEFECT REGISTER
+---------------------
+B1  Forms noninteractive              PENDING (BC-02.4)
+B2  Muted autoplay                    FIXED (BC-02.2/02.2.1)
+B3  Media continues after Preview     FIXED (BC-02.2)
+B4  Unsafe iframe navigation          FIXED in BC-02.3, pending QA
+B5  Hide parity mismatch              PENDING (BC-02.5)
+B6  Missing aria-expanded             PENDING (BC-02.5)
+B7  Reduced-motion mismatch           PENDING (BC-02.5)

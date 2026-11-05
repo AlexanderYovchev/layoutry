@@ -167,6 +167,19 @@ describe("buildExportDocument — Preview semantics and editor-only state", () =
     expect(input).toEqual(before);
   });
 
+  it("gives every exported iframe the Canvas's explicit sandbox (BC-02.3)", () => {
+    const document = build(
+      page([
+        { id: "f-remote", tag: "iframe", src: "https://maps.example.com/embed", title: "Map" },
+        { id: "f-relative", tag: "iframe", src: "widgets/map.html", title: "Local" },
+        { id: "f-empty", tag: "iframe", title: "Empty" },
+      ]),
+    );
+    expect(attributeMap(find(document.root, "f-remote", "-media"))).toEqual({ sandbox: "allow-forms allow-popups allow-scripts allow-same-origin", src: "https://maps.example.com/embed", title: "Map" });
+    expect(attributeMap(find(document.root, "f-relative", "-media"))).toEqual({ sandbox: "allow-forms allow-popups allow-scripts", src: "widgets/map.html", title: "Local" });
+    expect(attributeMap(find(document.root, "f-empty", "-media"))).toEqual({ sandbox: "allow-forms allow-popups allow-scripts", title: "Empty" });
+  });
+
   it("selects the first option carrying the authored selection's value", () => {
     const document = build(page([{ id: "s-1", tag: "select", children: [{ id: "o-1", tag: "option", text: "A" }, { id: "o-2", tag: "option", text: "B", value: "b", selected: true }, { id: "o-3", tag: "option", text: "C", value: "b" }] }]));
     expect(attributeMap(find(document.root, "o-2"))).toMatchObject({ selected: true, value: "b" });
