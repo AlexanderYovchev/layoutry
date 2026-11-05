@@ -1,0 +1,345 @@
+LAYOUTRY — BC-02.4: INTERACTIVE FORMS IN PREVIEW
+=================================================
+Date: 2026-11-05
+Type: High-severity bug fix + integration tests
+Baseline: HEAD eef1bbb (BC-02.3).
+Status: Implemented and tested. Awaiting QA review. Not committed.
+
+Classification used below:
+  CONFIRMED     measured in a real browser or Electron, or a direct code fact
+  NOT VERIFIED  not checked, with the reason
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+B1 is fixed: every form control Layoutry has can be used in Preview the
+way it is on the exported page.
+- Text fields and textarea: typing, deleting, selecting (keyboard and
+  mouse), insert/paste, native Ctrl+Z.
+- Checkbox, radio group (click, Space, arrow keys) and label activation.
+- Select (mouse and keyboard), number steppers, Tab order and labels.
+
+What is typed or toggled in Preview is only the browser's runtime state.
+It never reaches the document, the undo history or the saved/unsaved
+status, and every Preview starts, and ends, at the authored defaults.
+
+The fix makes the existing Design-only guards actually Design-only, plus
+three small additions:
+1. Form controls are keyed on the mode, so each mode change starts from
+   the authored defaults.
+2. Escape in a form field no longer throws the user out of Preview.
+3. No drag in Preview. This also fixes a defect found during this work:
+   B8, a Preview drag moved a free-layout element in the saved document.
+
+No new state, store field, schema field or rendering path. Form submission
+stays prevented, so nothing can navigate or reload the editor.
+
+Evidence:
+- Before the fix (HEAD), 5 of the first 10 browser tests failed (B1 shown).
+  The B8 test, added later, failed with the element moved from 20px to
+  167px.
+- After: 12/12 browser tests in Chromium, Firefox and WebKit; Electron
+  1/1; 10/10 new unit tests.
+- With the old sources, 6 of the new unit tests fail.
+
+Recommendation: CLOSE BC-02.4 (section 14).
+
+
+2. B1 ROOT CAUSE
+----------------
+CONFIRMED (code fact + browser). Preview reuses the same Canvas elements as
+Design. Every Design-mode guard that keeps a click from acting like a live
+field was applied in BOTH modes:
+- useNativeFormValueEditing (Input/Textarea): readOnly = !isEditing, and
+  mousedown preventDefault outside an editing session. The double-click
+  that starts a session already returned early in Preview, so in Preview
+  a field could never become editable.
+- InputElement: checkbox/radio got onMouseDown/onClick preventDefault.
+- SelectElement: onMouseDown/onClick preventDefault (the list never opened).
+- ContainerElement: a label's click preventDefault (no label activation).
+- CanvasInteractionBoundary: Escape always exited Preview, even while the
+  user was typing in a field.
+- useNodeDragSource: drag listeners in every mode. A mouse drag meant to
+  select text in a field started a node drag on the parent <label>/<form>.
+Files: canvas/hooks/useNativeFormValueEditing.ts (unchanged; its props are
+now attached in Design only), canvas/components/document/elements/
+InputElement.tsx, TextareaElement.tsx, SelectElement.tsx,
+ContainerElement.tsx, canvas/components/CanvasInteractionBoundary.tsx,
+canvas/hooks/useNodeDragSource.ts.
+
+Reproduction (before the fix, Chromium, e2e/preview-forms.spec.ts):
+- Click a text field in Preview, press End, type "XYZ": the value stays
+  "Ada" (export gives "AdaXYZ").
+- fill() times out: the field is read-only.
+- A checkbox click leaves it unchecked.
+- A mouse drag across a field selects nothing (selection 3..3).
+- Escape in a field exits Preview.
+
+New defect found: B8 — MEDIUM — Preview drag edited the document.
+- Reproduction: a free-layout container with a paragraph; Enter Preview;
+  drag the paragraph; Exit Preview.
+- Before: the exported code changed from left: 20px / top: 20px to
+  left: 167px / top: 142px, and an undo step was recorded.
+- A drag of a flow container in Preview also recorded a (no-op) undo
+  step: Undo became enabled.
+- Root cause: useNodeDragSource and useFreeChildMoveSession had no mode
+  check.
+- Fix: no drag listeners and dnd-kit's draggable disabled in Preview.
+- Tests: e2e "B8: ..." (paragraph and input), unit "B8: no drag listener
+  exists in Preview ...".
+- Remaining risk: none known. The selection/resize overlay was already
+  hidden in Preview.
+
+
+3. SUPPORTED FORM CONTROL INVENTORY (what the code actually has)
+----------------------------------------------------------------
+Control (model)              Preview after fix        Export
+input text                   type, select, delete,    same (native)
+                             paste, Ctrl+Z
+input email/password/        type                     same
+  search/url
+input number                 type, arrow steppers     same
+input tel                    type (any characters)    same
+input checkbox               click, Space, label      same
+input radio (name groups)    click, arrow keys        same
+textarea                     multiline typing         same
+select + option (single)     mouse opens, keyboard    same
+                             changes
+label (wrapping a control)   activates the control    same
+form                         never submits (see 8)    browser default
+fieldset / legend            containers, no change    same
+button                       always type="button";    same
+                             runs its interactions
+Not in the model at all: date/time, range, file, color inputs; submit
+and reset buttons; multi-select; the disabled, readonly, required, min,
+max, step, form action and method attributes. Nothing was invented. Edge
+cases that need those (required validation, reset button, file selection,
+disabled/read-only fields, range) cannot be authored, so they are listed
+as not applicable (section 12). Type-based validity (email/url/number) is
+native in both Preview and the export.
+
+
+4. IMPLEMENTATION DETAILS
+-------------------------
+- InputElement / TextareaElement:
+  - In Preview, none of useNativeFormValueEditing's props are attached
+    (readOnly, mousedown guard, double-click, blur/keydown commit, the
+    tel filter), nor the toggle preventDefaults, nor drag listeners.
+  - <input>/<textarea> carry key={isPreview ? "preview" : "design"}.
+- SelectElement: the activation preventDefaults and drag listeners are
+  Design-only; keyed the same way.
+- ContainerElement: the label-activation guard is Design-only. The form
+  submit guard stays in both modes (section 8).
+- CanvasInteractionBoundary: Escape with focus in an
+  input/textarea/select still runs the dismissal step (it closes an open
+  dropdown or overlay, like the exported page's runtime), but does not
+  exit Preview. Escape anywhere else exits as before, and the header
+  toggle always works.
+- useNodeDragSource: in Preview, useDraggable({ disabled: true }) and no
+  listeners, for flow and free-layout children alike.
+No new listeners, timers, store fields or state. The keyed remount is the
+only lifecycle change. It touches leaf form controls (a select remounts
+with its options), and only when the mode changes.
+
+
+5. RUNTIME STATE ISOLATION
+--------------------------
+Mechanism: these controls were already uncontrolled (defaultValue,
+defaultChecked, select defaultValue), and the document is written only at
+useNativeFormValueEditing's Design commit or by Inspector edits. Neither
+can run in Preview. The browser's own field state is the runtime state.
+The mode key resets it.
+
+Verified:
+- Entering Preview: all values and toggles equal the authored defaults
+  (2 sessions in the browser; 2 in unit tests).
+- Changing text, textarea, number, checkbox, radio and select, then
+  exiting: everything is back to the authored defaults.
+- Document, persistedDocument, past and future: the same objects as before
+  (unit).
+- Undo stays disabled and the project status is unchanged (browser).
+- The exported code is identical before and after (browser). The export is
+  a pure function of the document, so the document is unchanged. Nothing
+  is serialized, because nothing reached the document.
+- Save/reopen: there is nothing new to persist. The persistence specs
+  still pass (section 10). The saved status not changing is the check
+  that Preview made the project dirty in no way.
+
+
+6. DESIGN MODE PRESERVATION
+---------------------------
+- A click selects the control (the Inspector shows its fields); typing
+  does nothing; checkboxes don't toggle; select mousedown is prevented;
+  label clicks are prevented (browser + unit).
+- Double-click editing still works after a Preview session: one Enter
+  commit = one undo step (unit; Electron).
+- Drag/resize in Design: unchanged code path. The full web suite and
+  desktop suite still pass, including the drag and resize specs.
+- Keyboard shortcuts: unchanged (useEditorKeyboardShortcuts still skips
+  editable targets and does nothing in Preview).
+
+
+7. PREVIEW / EXPORT PARITY
+--------------------------
+The same document is exported with exportHtmlCss and opened as a real page
+(Chromium, Firefox, WebKit):
+- defaults: all 9 text values, checkbox, radio and select match the
+  authored values, exactly as in Preview;
+- typing, label-checkbox, radio arrow keys and select keyboard behave
+  the same.
+Differences, by design:
+- Submission: the exported <form> has no action, so a real submit (Enter
+  in a form's only text field) reloads the page with the values in the
+  URL. Preview prevents submission, because the same reload would replace
+  the editor (section 8).
+- Escape in a field: the export runtime closes an open relationship; so
+  does Preview. Only Preview's own "exit Preview" step is skipped.
+
+
+8. SECURITY FINDINGS
+--------------------
+- Form submission: still prevented in Preview. With no action, a submit
+  would navigate the web editor to itself with the form data in the URL
+  and lose the session. In Electron the navigation guard would refuse it.
+  Tested: Enter in a single-field form, Enter in the multi-field form, and
+  the Send button. The URL, query and window marker are unchanged in
+  Chromium, Firefox and WebKit, and the URL in Electron.
+- No user data is sent anywhere. There is no action/method in the model
+  and no new form backend. External submission would need an isolation
+  design and separate approval.
+- No script execution was added. The controls are the editor's own React
+  elements, and no authored markup or script is inserted.
+- File inputs do not exist in the model.
+- Event propagation: unchanged except for the Escape rule and drag.
+- Keyboard: editor shortcuts already skip input/textarea/select and do
+  nothing in Preview. Ctrl+S in a Preview field is taken by the project
+  Save shortcut (tested: nothing is typed). Those shortcuts deliberately
+  work in fields; a save would write the authored document, which
+  Preview never changes.
+  Ctrl+Z in a Preview field is the field's own undo; the editor's Undo
+  stays disabled.
+- BC-02.3 iframe protections and BC-02.2/02.2.1 media behavior are
+  untouched (their specs still pass; section 10).
+
+
+9. ACCESSIBILITY VERIFICATION
+-----------------------------
+Browser (Chromium, Firefox, WebKit):
+- Keyboard focus: a click focuses, and Tab moves text → email → password.
+- Space toggles the checkbox; ArrowDown moves the radio selection.
+- Select: ArrowDown changes the value.
+- Accessible names: getByRole("textbox", { name: "Name" }) and
+  getByRole("checkbox", { name: "Subscribe" }) resolve through the
+  wrapping labels.
+- Focus indicators: the browser's native focus ring. Nothing suppresses
+  it (no style change).
+Not applicable: disabled fields, required-field validation (no such
+attributes in the model).
+
+
+10. TESTS AND EXACT RESULTS
+---------------------------
+New:
+  src/features/canvas/components/previewForms.test.tsx   10 tests
+  e2e/preview-forms.spec.ts                              12 tests
+  e2e/desktop/preview-forms.spec.ts                       1 test
+Before/mutation:
+- HEAD sources: 5 of the first 10 browser tests failed; the B8 test
+  (later) failed with the moved element.
+- HEAD sources with the new unit tests: 6 failed, 4 passed (the 4 check
+  the Design guards, double-click, form submit and Design editing, which
+  must not change).
+
+Final results (Windows 10, ELECTRON_RUN_AS_NODE stripped):
+  npm run typecheck                        passed, 0 errors
+  npm run lint (eslint .)                  passed, 0 problems
+  Vitest, full (--maxWorkers=4)            346 files; 5224 passed,
+                                           1 skipped (existing symlink
+                                           test), 0 failed (5214 + 10 new)
+  Playwright web suite, Chromium (full)    171 passed, 0 failed, 0 flaky
+                                           (159 + 12 new)
+  New forms spec, final                    Chromium 12/12, Firefox 12/12,
+                                           WebKit 12/12
+  BC-02.3 embed spec                       Firefox 29/29, WebKit 29/29
+                                           (and Chromium in the full suite)
+  BC-02.2 media spec, Firefox              8/8
+  npm run build (production)               passed
+  npm run desktop:test (builds, then full) 62 passed, 2 skipped, 0 failed
+                                           (61 + 1 new; skips = opt-in
+                                           persistence benchmarks)
+The first cross-browser run had 2 WebKit failures, both in keyboard steps
+right after a mouse click on a checkbox/radio. WebKit (Safari behavior)
+does not focus those controls on click, so Space/ArrowDown went nowhere.
+The exported-page test failed the same way, which shows it is the
+platform, not Preview. The steps now focus the control explicitly. No
+assertion was weakened: the keys must still toggle and move the
+selection.
+Pre-existing flakes did not appear.
+
+
+11. MODIFIED FILES
+------------------
+Source (6 files, +61 / -9):
+  src/features/canvas/components/document/elements/InputElement.tsx
+  src/features/canvas/components/document/elements/TextareaElement.tsx
+  src/features/canvas/components/document/elements/SelectElement.tsx
+  src/features/canvas/components/document/elements/ContainerElement.tsx
+  src/features/canvas/components/CanvasInteractionBoundary.tsx
+  src/features/canvas/hooks/useNodeDragSource.ts
+Tests (new):
+  src/features/canvas/components/previewForms.test.tsx
+  e2e/preview-forms.spec.ts
+  e2e/desktop/preview-forms.spec.ts
+Reports:
+  docs/reports/BC-02.4-Interactive-Forms-In-Preview.txt (this file)
+  changelogs/2026-11-05-interactive-forms-preview-BC-02.4.txt (gitignored)
+Not modified: useNativeFormValueEditing.ts, the store, schema,
+persistence, export, Electron code, the media and iframe code.
+
+
+12. KNOWN LIMITATIONS
+---------------------
+- Preview never submits a form; the exported page does (section 7).
+- Not authorable today, so not testable: required/disabled/readonly,
+  min/max/step, date/time/range/file/color inputs, submit/reset buttons,
+  multi-select.
+- Browser autofill: NOT VERIFIED (Playwright profiles have no saved data).
+  Nothing in Preview prevents it.
+- Real clipboard paste: insertText (the same input path) is tested; an OS
+  clipboard paste is not, because Playwright has no portable clipboard.
+- The native select popup itself can't be driven by Playwright. Mouse
+  activation is shown as mousedown not being prevented; keyboard changes
+  are real.
+- A Design editing session still open when Preview starts (not reachable
+  by the mouse, since the toolbar click blurs the field first) would stay
+  open underneath. Not seen in testing.
+
+
+13. REMAINING DEFECTS — BC-02 REGISTER
+--------------------------------------
+B1  Forms noninteractive              FIXED in BC-02.4, pending QA
+B2  Muted autoplay                    FIXED
+B3  Media continues after Preview     FIXED
+B4  Unsafe iframe navigation          FIXED
+B5  Hide parity mismatch              PENDING (BC-02.5)
+B6  Missing aria-expanded             PENDING (BC-02.5)
+B7  Reduced-motion mismatch           PENDING (BC-02.5)
+B8  Preview drag edited the document  NEW, FIXED in BC-02.4, pending QA
+
+
+14. RECOMMENDATION
+------------------
+CLOSE BC-02.4.
+- B1 is fixed and shown failing on the old code. Every form control the
+  model supports works in Preview in Chromium, Firefox, WebKit and
+  Electron.
+- Runtime values stay out of the document, history and saved status, and
+  reset on every Preview entry and exit.
+- Design editing (select, double-click edit, drag, resize, Inspector,
+  Undo) is unchanged.
+- Exported forms keep their behavior and defaults.
+- Form submission cannot reload or navigate the editor.
+- B8, found during this work, is fixed with its own tests.
+For QA: whether Preview should ever simulate submission (for example, show
+the values that would be sent) is a feature question for a later
+checkpoint; nothing is sent today.

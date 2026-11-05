@@ -61,6 +61,17 @@ function preventCheckedToggle(event: ReactMouseEvent) {
  * mount, so an Undo/Redo/Inspector-Reset change to node.checked would
  * otherwise leave the mounted control visually stale exactly the way an
  * unhandled `defaultValue` did in Checkpoint 1.10.
+ *
+ * Preview (BC-02.4): the control behaves like the live field it is on the
+ * exported page. None of the Design guards apply (read-only outside an
+ * editing session, the mousedown/click preventDefaults, the Design-time
+ * tel filter), and drag listeners are not attached. What the user types
+ * or toggles is the browser's own runtime state: nothing is committed to
+ * the document. The element is keyed on the mode, so entering Preview
+ * starts from the authored defaults, and leaving it discards whatever was
+ * typed. Each mode change is a fresh mount: defaultValue and
+ * defaultChecked re-apply, and the form's own reset() keeps restoring
+ * the authored values.
  */
 export function InputElement({ node, parentId, parentLayoutMode, parentFlowDisplay }: DocumentElementProps) {
   const dropRef = useNodeDropRegistration(node);
@@ -81,6 +92,7 @@ export function InputElement({ node, parentId, parentLayoutMode, parentFlowDispl
 
   return (
     <input
+      key={isPreview ? "preview" : "design"}
       type={inputType}
       name={node.name}
       placeholder={node.placeholder}
@@ -91,7 +103,7 @@ export function InputElement({ node, parentId, parentLayoutMode, parentFlowDispl
         checkedResyncRef.current = element;
       })}
       {...documentNodeAttributes(node, parentId)}
-      {...(isToggle ? { onMouseDown: preventCheckedToggle, onClick: preventCheckedToggle } : editable.editableProps)}
+      {...(isPreview ? undefined : isToggle ? { onMouseDown: preventCheckedToggle, onClick: preventCheckedToggle } : editable.editableProps)}
       className={cn(
         documentDefaultClasses(recipe.defaults),
         !isToggle && editable.isEditing && "cursor-text",
@@ -99,7 +111,7 @@ export function InputElement({ node, parentId, parentLayoutMode, parentFlowDispl
         node.className,
       )}
       style={recipe.style}
-      {...(!isToggle && editable.isEditing ? undefined : listeners)}
+      {...(isPreview || (!isToggle && editable.isEditing) ? undefined : listeners)}
     />
   );
 }

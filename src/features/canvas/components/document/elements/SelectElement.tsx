@@ -55,6 +55,11 @@ function preventSelectActivation(event: ReactMouseEvent) {
  * value rather than isEditing (Select has no editing session at all —
  * selection is Inspector-only, the same "Inspector-only, never
  * Canvas-toggled" shape Checkbox/Radio's checked state already uses).
+ *
+ * Preview (BC-02.4): the select opens and changes like on the exported
+ * page. The activation guards and drag listeners are Design-only, the
+ * chosen option is runtime-only, and the element is keyed on the mode, so
+ * each Preview starts and ends at the authored selection.
  */
 export function SelectElement({ node, parentId, parentLayoutMode, parentFlowDisplay, children }: DocumentElementProps) {
   const dropRef = useNodeDropRegistration(node);
@@ -83,6 +88,7 @@ export function SelectElement({ node, parentId, parentLayoutMode, parentFlowDisp
 
   return (
     <select
+      key={isPreview ? "preview" : "design"}
       name={node.name}
       defaultValue={selectedValue}
       id={node.htmlId}
@@ -90,15 +96,14 @@ export function SelectElement({ node, parentId, parentLayoutMode, parentFlowDisp
         selectRef.current = element;
       })}
       {...documentNodeAttributes(node, parentId)}
-      onMouseDown={preventSelectActivation}
-      onClick={preventSelectActivation}
+      {...(isPreview ? undefined : { onMouseDown: preventSelectActivation, onClick: preventSelectActivation })}
       className={cn(
         documentDefaultClasses(recipe.defaults),
         isDragging && "opacity-40",
         node.className,
       )}
       style={recipe.style}
-      {...listeners}
+      {...(isPreview ? undefined : listeners)}
     >
       {children}
     </select>

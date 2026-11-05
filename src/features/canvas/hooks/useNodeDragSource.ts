@@ -3,6 +3,7 @@
 import { useDraggable } from "@dnd-kit/core";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useFreeChildMoveSession } from "@/features/canvas/hooks/useFreeChildMoveSession";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { getElementDisplayName } from "@/features/editor/utils/elementDisplayName";
 import type { ContainerLayoutMode } from "@/features/editor/types/layout";
 import type { EditorElementNode } from "@/features/editor/types/document";
@@ -35,16 +36,26 @@ export interface NodeDragSource {
  * useFreeChildMoveSession, never touching the document tree. Both hooks
  * are always called (React's rules of hooks forbid conditional calls);
  * only one branch's result is ever returned.
+ *
+ * Preview (BC-02.4): no listeners at all, and dnd-kit's draggable is
+ * disabled. Preview is for testing the page, not editing it. Before this,
+ * a drag in Preview moved a free-layout element in the document (B8) and
+ * recorded an undo step for flow elements, and a parent's listener took
+ * over a mouse drag meant to select text in a field.
  */
 export function useNodeDragSource(
   node: EditorElementNode,
   parentLayoutMode: ContainerLayoutMode = "flow",
 ): NodeDragSource {
+  const isPreview = useEditorStore((state) => state.editorMode === "preview");
   const { setNodeRef, listeners, isDragging } = useDraggable({
+    disabled: isPreview,
     id: node.id,
     data: { kind: "move", nodeId: node.id, label: getElementDisplayName(node) },
   });
   const freeMove = useFreeChildMoveSession(node.id);
+
+  if (isPreview) return { setNodeRef: parentLayoutMode === "free" ? () => {} : setNodeRef, listeners: undefined, isDragging: false };
 
   if (parentLayoutMode === "free") {
     return {

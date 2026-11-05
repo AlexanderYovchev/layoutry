@@ -24,6 +24,12 @@ type SemanticTag = "section" | "ul" | "ol" | "header" | "nav" | "main" | "articl
  * `<form>`. Form's own `action`/`method` are out of this checkpoint's
  * scope (see this checkpoint's report), so there is nothing else for a
  * real submission to do here even if it weren't prevented.
+ *
+ * Still prevented in Preview (BC-02.4): the web editor would otherwise
+ * reload itself with the form data in its URL, losing the session (and
+ * in the desktop app the navigation guard would refuse it). Native
+ * validation still runs first, because the browser validates before it
+ * fires submit.
  */
 function preventEditorFormSubmission(event: FormEvent) {
   event.preventDefault();
@@ -43,6 +49,9 @@ function preventEditorFormSubmission(event: FormEvent) {
  * to suppress just that native redirect — MDN documents this explicitly
  * — without touching propagation (selection still bubbles normally) or
  * faking the markup.
+ *
+ * Design only (BC-02.4): in Preview a click on a label focuses or toggles
+ * its control, as on the exported page.
  */
 function preventEditorLabelActivation(event: ReactMouseEvent) {
   event.preventDefault();
@@ -94,7 +103,7 @@ export function ContainerElement({
       ref={mergeRefs<HTMLElement>(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
       {...(node.tag === "form" ? { onSubmit: preventEditorFormSubmission } : undefined)}
-      {...(node.tag === "label" ? { onClick: preventEditorLabelActivation } : undefined)}
+      {...(node.tag === "label" && !isPreview ? { onClick: preventEditorLabelActivation } : undefined)}
       className={cn(documentDefaultClasses(recipe.defaults), isDragging && "opacity-40", node.className)}
       style={recipe.style}
       {...listeners}

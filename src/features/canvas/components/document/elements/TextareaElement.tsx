@@ -31,6 +31,11 @@ import type { DocumentElementProps } from "@/features/canvas/types/documentRende
  * the external-value resync effect for Undo/Redo/Reset — applies
  * identically to Textarea with zero hook code changes, proving the
  * hook was already generalized correctly in Checkpoint 1.10.
+ *
+ * Preview (BC-02.4): exactly InputElement's Preview behavior. The Design
+ * guards and drag listeners are off, typed text is runtime-only, and the
+ * element is keyed on the mode so every Preview starts, and ends, at the
+ * authored value.
  */
 export function TextareaElement({ node, parentId, parentLayoutMode, parentFlowDisplay }: DocumentElementProps) {
   const dropRef = useNodeDropRegistration(node);
@@ -41,13 +46,14 @@ export function TextareaElement({ node, parentId, parentLayoutMode, parentFlowDi
 
   return (
     <textarea
+      key={isPreview ? "preview" : "design"}
       name={node.name}
       placeholder={node.placeholder}
       defaultValue={node.value}
       id={node.htmlId}
       ref={mergeRefs<HTMLTextAreaElement>(dropRef, dragRef, editable.elementRef)}
       {...documentNodeAttributes(node, parentId)}
-      {...editable.editableProps}
+      {...(isPreview ? undefined : editable.editableProps)}
       className={cn(
         documentDefaultClasses(recipe.defaults),
         editable.isEditing && "cursor-text",
@@ -55,7 +61,7 @@ export function TextareaElement({ node, parentId, parentLayoutMode, parentFlowDi
         node.className,
       )}
       style={recipe.style}
-      {...(editable.isEditing ? undefined : listeners)}
+      {...(isPreview || editable.isEditing ? undefined : listeners)}
     />
   );
 }

@@ -13,6 +13,11 @@ interface CanvasInteractionBoundaryProps {
   document: EditorElementNode;
 }
 
+/** A native text-entry or choice control, which owns Escape while it has focus (BC-02.4). */
+function isFormField(target: EventTarget | null): boolean {
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
+}
+
 /**
  * The deepest data-node-id under the pointer, or null if that node's own
  * tag opts out of selection (see elementCapabilities) — the document root
@@ -177,7 +182,11 @@ export function CanvasInteractionBoundary({
         }
         // Escape is a convenience exit from Preview (section 57), never
         // the ONLY way out — the header's own Preview/Design toggle
-        // always works too (see GlobalActions).
+        // always works too (see GlobalActions). Not while a form field
+        // has focus (BC-02.4): Escape belongs to the field there (a
+        // search field clears itself), and a user typing in Preview must
+        // not be thrown back to Design.
+        if (isFormField(event.target)) return;
         exitPreview();
         return;
       }
