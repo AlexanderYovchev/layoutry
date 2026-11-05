@@ -1,0 +1,397 @@
+LAYOUTRY — BC-02.2: MEDIA LIFECYCLE & AUTOPLAY STABILIZATION
+==============================================================
+Date: 2026-11-05
+Type: High-severity bug fix + integration tests
+Baseline: HEAD 019d6ca (BC-01.6) plus the uncommitted BC-02.1 report.
+Status: Implemented and tested. Awaiting QA review. Not committed.
+
+Classification used below:
+  CONFIRMED     measured in a real browser or Electron, or a direct code fact
+  NOT VERIFIED  not checked, with the reason
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+B2 (muted autoplay never starts in Preview) and B3 (media keeps playing
+after Exit Preview) share one root cause: the Canvas renders a single
+native <video>/<audio> element for both Design and Preview, and entering
+or leaving Preview changed only its `autoplay` attribute. Nothing ever
+started or stopped playback.
+
+The fix is one small canvas hook, usePreviewMediaPlayback, used by
+VideoElement and AudioElement. When Preview starts it calls play() once
+on media with autoplay enabled. When Preview ends, or the element
+unmounts, it calls pause(). No document, store, export, schema or
+Electron change was made.
+
+Both defects are fixed and covered by tests that fail without the fix:
+  - Vitest: 9 of the 13 original hook tests fail with the hook disabled.
+  - Chromium: 5 of 7 browser tests fail with the hook disabled (B2 and B3
+    each reproduced on their own).
+  - Electron: the desktop test fails with the hook disabled (B2).
+With the fix, every test passes in Chromium, Firefox and Electron.
+WebKit could not be verified: Playwright's Windows WebKit build loads no
+media at all, even on a plain page outside Layoutry.
+
+Recommendation: CLOSE BC-02.2 (section 16), with one open product decision
+about unmuted autoplay (section 14).
+
+
+2. ROOT CAUSE OF B2 — MUTED AUTOPLAY DOES NOT START
+---------------------------------------------------
+CONFIRMED (code fact + browser).
+- VideoElement/AudioElement render `autoPlay={isPreview && !!node.autoplay}`.
+  The element mounts and loads in Design with no autoplay attribute.
+- Enter Preview is a store change (editorMode "design" -> "preview"). React
+  re-renders the SAME element and only adds the attribute. Nothing remounts.
+- Chromium only acts on autoplay while the element is loading. An element
+  that has already loaded ignores an autoplay attribute added later
+  (reproduced on a plain page in BC-02.1). Firefox does start it, which is
+  why B2 was Chromium/Electron only.
+- Not a policy or muting problem: `muted` is committed as a property
+  before any attempt, and a muted video is always allowed to autoplay.
+  A video first mounted during Preview (for example, inside something
+  shown by an interaction) did autoplay, because it loads with the
+  attribute already set.
+
+Reproduction (before the fix, Chromium, real app):
+  1. Import a project with a video: autoplay + muted + loop, local WebM.
+  2. Wait until it has loaded in Design (readyState >= 3).
+  3. Click Enter Preview.
+  Result: paused === true, currentTime stays 0. Test failure seen:
+  "Error: v-auto should be playing" (preview-media-lifecycle.spec.ts, and
+  e2e/desktop/preview-media.spec.ts in Electron).
+
+
+3. ROOT CAUSE OF B3 — MEDIA KEEPS PLAYING AFTER PREVIEW
+-------------------------------------------------------
+CONFIRMED (code fact + browser).
+- Exit Preview (exitPreview, and replaceDocument when a project is opened
+  or created) only sets editorMode back to "design". The same element stays
+  mounted, and removing the autoplay attribute does not pause anything.
+- In Design, MediaInteractionShield covers the element again, so the
+  native controls that could pause it can no longer be reached.
+
+Reproduction (before the fix, Chromium, real app):
+  1. Enter Preview; start every video and audio (the test calls play()
+     after a real click, the same as using the native Play control).
+  2. Click Exit Preview.
+  Result: paused === false and currentTime keeps advancing in Design.
+  Test failure seen: "Error: v-auto should be paused".
+
+
+4. FILES MODIFIED
+-----------------
+Created:
+  src/features/canvas/hooks/usePreviewMediaPlayback.ts       the fix
+  src/features/canvas/hooks/usePreviewMediaPlayback.test.tsx 14 tests
+  e2e/preview-media-lifecycle.spec.ts                        7 browser tests
+  e2e/desktop/preview-media.spec.ts                          1 Electron test
+  e2e/support/previewMedia.ts       shared document, fixtures, helpers
+  e2e/fixtures/media/preview-clip.webm   37,988 bytes, 4 s VP8, no audio
+                                         track, generated locally with
+                                         MediaRecorder (no third-party asset)
+  docs/reports/BC-02.2-Media-Lifecycle-And-Autoplay.txt  (this file)
+  changelogs/2026-11-05-media-lifecycle-autoplay-BC-02.2.txt (gitignored)
+
+Modified:
+  src/features/canvas/components/document/elements/VideoElement.tsx
+      a ref on <video>, one hook call, two doc-comment lines.
+  src/features/canvas/components/document/elements/AudioElement.tsx
+      the same for <audio>.
+  test/setup.ts
+      jsdom polyfill: play() resolves, pause() is a no-op (jsdom only
+      reports "not implemented"), the same pattern as the existing
+      dialog/pointer-capture polyfills.
+  e2e/desktop/support/layoutryApp.ts
+      copyApp's extra-file type widened from string to string | Uint8Array
+      so binary media can be put in a copy of the static export.
+
+Not modified: editor store, document model and schema, Inspector, export
+runtime, Electron main/preload/security/protocol code, CSP.
+
+
+5. IMPLEMENTATION DETAILS
+-------------------------
+usePreviewMediaPlayback(mediaRef, { isPreview, autoplay }) is one
+useEffect with deps [mediaRef, isPreview, autoplay]:
+
+  if (!media || !isPreview) return;          // Design: do nothing
+  if (autoplay) Promise.resolve(media.play()).catch(() => {});
+  return () => media.pause();                // on exit or unmount
+
+- play() runs only when Preview starts (or autoplay is switched on while
+  in Preview). It does not run on unrelated renders, selection changes or
+  store updates (unit-tested).
+- The returned promise is always caught. A rejection (NotAllowedError
+  from autoplay policy, or AbortError when a pause interrupts a pending
+  play) is ignored. The user can still start the media from the controls.
+- muted is never written by the hook. React commits the `muted` property
+  before effects run, so a muted video is muted when play() is called
+  (unit-tested by recording `this.muted` inside play()).
+- Media without autoplay is never played by the hook.
+- The `autoPlay={isPreview && ...}` attribute is unchanged. It still
+  covers media first mounted during Preview and a source replaced during
+  Preview.
+- Why a hook and not a remount: a keyed remount on mode change would also
+  restart loading every video, flash posters, and lose the playback
+  position the brief asks to keep. The hook changes nothing that renders.
+
+
+6. MEDIA LIFECYCLE BEHAVIOR (as implemented)
+--------------------------------------------
+Entering Preview   autoplay media: play() once; the browser's policy
+                   decides. Other media stays paused.
+During Preview     native controls work (the shield is gone, as before).
+                   Playback state is runtime only.
+Leaving Preview    every mounted video and audio is paused, autoplay or
+                   not. Not rewound. Nothing written to the project.
+Reopening Preview  autoplay media plays again from where it was paused.
+                   Other media stays paused at its position.
+
+Edge cases (U = Vitest, C = Chromium, F = Firefox, E = Electron):
+  1  first Preview entry                    U C F E
+  2  leaving Preview                        U C F E
+  3  repeated Preview sessions              U (3x) C (3x) F (3x) E (2x)
+  4  switching selection in Preview         U (no extra play())
+  5  editing media properties               Design: hook does nothing
+                                            (deps change, isPreview false).
+                                            Preview: autoplay switched on
+                                            plays once; switched off pauses.
+  6  replacing the source in Preview        U: same element, src updated,
+                                            no second play(); the native
+                                            autoplay attribute starts it.
+  7  deleting a media node in Preview       U: pause() on unmount
+  8  deleting its parent                    U: nested media paused
+  9  opening another project                U: replaceDocument resets the
+ 10  creating a new project                    mode and the old media is
+                                               paused (both use
+                                               replaceDocument)
+ 11  closing the project                    same path as 9/10
+ 12  navigating away / unmounting editor    U: pause() on unmount. The
+                                            browser also stops media when
+                                            the page unloads.
+ 13  switching modes                        only Design/Preview exist;
+                                            covered by 1-3
+ 14  unmounting the editor                  U
+ 15  several media at once                  U C F E (6 elements)
+  -  media hidden by an interaction         C F: Preview unmounts hidden
+                                            nodes; after Exit Preview the
+                                            remounted element is paused.
+  Cases 5-8 during Preview are reachable only through the store, because
+  Preview disables the Inspector and the editing shortcuts. They are
+  tested at the store level as a safeguard. In Design the same edits are
+  ordinary document edits, and the hook does nothing.
+  -  Preview hidden but mounted             does not happen: Preview is a
+                                            mode of the one Canvas, not a
+                                            separate mounted view.
+
+
+7. PREVIEW / EXPORT COMPARISON
+------------------------------
+Configuration          Preview (after fix)         Exported page
+Video with controls    controls work               controls work
+Video without controls paused until started        same
+Muted autoplay video   plays on Preview start      plays on load (C, F)
+Looping video          loop attribute unchanged    same
+Video without autoplay stays paused                stays paused (C, F)
+Audio with controls    controls work               same
+Audio without autoplay stays paused                same
+Multiple media         independent                 independent
+Leaving Preview        everything paused           n/a (no modes)
+
+Export is unchanged. The test generates the export with exportHtmlCss for
+the same document, checks that <video> keeps autoplay + muted, checks that
+the page contains no pause() call, opens it, and confirms the autoplay
+video plays and the plain one stays paused.
+
+
+8. ELECTRON VERIFICATION
+------------------------
+CONFIRMED with e2e/desktop/preview-media.spec.ts (real Electron, real
+security settings, offline network black hole). The media fixtures are
+written into a temporary copy of the static export, so they load from
+app://layoutry/ under the existing CSP (`media-src 'self' ...`).
+- Muted autoplay video and audio play after Enter Preview, twice.
+- User-started video, video without controls, and unmuted audio play,
+  then everything is paused after each Exit Preview.
+- No http(s)/ws request was made. The app:// handler reads the fixtures
+  through file://, which the request recorder lists. Expected.
+- Without the fix the same test fails with "v-auto should be playing"
+  (rebuilt out/ with the hook disabled, then rebuilt again with the fix).
+- No Electron setting, permission, preload API or CSP rule was changed.
+
+
+9. SECURITY IMPLICATIONS
+------------------------
+- No new Node.js exposure, IPC, permission, protocol privilege or CSP
+  change. The fix runs only in the renderer, on elements it already owns.
+- No autoplay policy bypass. The hook calls the standard play() and
+  accepts a rejection. It never unmutes and never retries.
+- Unmuted autoplay: see section 14. play() runs right after the user
+  clicks Enter Preview, so the browser may allow sound that an exported
+  page opened cold would block. That is the browser's own rule for a user
+  gesture, not a bypass, but it is a parity difference.
+- Test-only: copyApp now accepts binary files. It only writes into a
+  temporary copy and never touches the real build.
+
+
+10. PERFORMANCE AND CLEANUP
+---------------------------
+- No event listeners, timers, intervals or retry loops were added.
+- The effect re-runs only when Preview starts or ends, or when that
+  element's autoplay flag changes. Typing, selection, and other store
+  updates do not run it (unit-tested: play() count unchanged).
+- No DOM queries: each element uses its own ref. The effect captures the
+  element for its cleanup, and nothing keeps it after unmount.
+- Every play() promise is caught, so there are no unhandled rejections
+  (unit-tested with process "unhandledRejection").
+
+
+11. UNIT / INTEGRATION TESTS
+----------------------------
+src/features/canvas/hooks/usePreviewMediaPlayback.test.tsx (14 tests).
+These render the real CanvasInteractionBoundary from the real store and
+spy on HTMLMediaElement.prototype.play/pause. They map to the brief:
+   1 autoplay + muted                   "starts autoplay-enabled media
+                                         exactly once, video and audio,
+                                         nested too"
+   2 autoplay disabled                  "leaves media without autoplay
+                                         paused"
+   3 muted before play                  "already muted when play() is
+                                         attempted"
+   4 play() rejected                    "rejected by browser autoplay
+                                         policy is handled"
+   5 exit pauses video, 6 audio         "exiting Preview pauses every
+                                         video and audio"
+   7 multiple media                     5 media elements in every test
+   8 repeated sessions                  3 sessions
+   9 media deletion, 10 parent deletion one test, both cases
+  11 project switching                  replaceDocument
+  12 source replacement                 setElementSrc in Preview
+  13 unmount cleanup                    editor unmount
+  14 no document mutation, and
+  15 no history entries                 document, persistedDocument,
+                                         past, future all unchanged
+  +  never plays/pauses in Design; no extra play() on unrelated updates;
+     unmuted autoplay is attempted and stays unmuted.
+Mutation check: with the hook's effect disabled, 9 of the 13 original
+tests fail. The 4 that still pass test what must NOT happen (Design,
+autoplay disabled, rejection, no document mutation).
+The existing VideoElement/AudioElement tests are unchanged and pass.
+
+
+12. BROWSER TEST RESULTS
+------------------------
+e2e/preview-media-lifecycle.spec.ts, 7 tests, against real local media
+from a loopback server owned by the spec (byte-range support). Every
+media element has loaded in Design before each test, which is B2's real
+precondition. Playback is checked with paused plus currentTime advancing
+by more than 0.2 s, and stopping is checked by currentTime not changing
+over 400 ms.
+  1 Design never plays media, even media that already loaded
+  2 B2: muted autoplay video and audio start; non-autoplay stays paused
+  3 B3: leaving Preview pauses every playing video and audio, not rewound,
+    and the Design shield is back on top of the video
+  4 repeated Preview sessions (3)
+  5 media hidden by an interaction is not left playing after exit
+  6 Undo stays disabled across a Preview session with playback
+  7 Export keeps its native autoplay and has no editor pause logic
+
+Results:
+  Chromium  7/7 passed. Without the fix: 5 failed (tests 2-6), 2 passed
+            (1 and 7, which check Design and Export and do not depend on
+            the fix). Test 3 was then changed to start media by hand so
+            it does not depend on B2, and it fails on its own without
+            the fix ("v-auto should be paused").
+  Firefox   7/7 passed (run again after the test 3 change: 7/7).
+  WebKit    NOT VERIFIED. All 7 timed out waiting for media to load. A
+            plain page outside Layoutry shows the same thing: Playwright's
+            Windows WebKit reports canPlayType "probably" for WebM, MP4
+            and WAV but stays at readyState 0. That is the test platform,
+            not Layoutry. Firefox and WebKit ran through a temporary
+            config, deleted afterwards (the repo config is Chromium-only).
+  MP4/H.264 NOT VERIFIED (Playwright's Chromium has no H.264). The fix
+            does not depend on the codec.
+
+A browser console error, "Temporal.Duration properties must be finite",
+appeared during the Firefox/WebKit run. Layoutry's src has no Temporal
+code. It was not investigated further and is unrelated to media.
+
+
+13. FULL REGRESSION RESULTS
+---------------------------
+All on the final code (Windows 10, environment with ELECTRON_RUN_AS_NODE
+stripped):
+  npm run typecheck                          passed, 0 errors
+  npm run lint (eslint .)                    passed, 0 problems
+  Vitest, full (--maxWorkers=4)              343 files; 5149 passed,
+                                             1 skipped, 0 failed
+      The skip is pre-existing: recoveryStore's symlink test needs a
+      symlink-capable account, which this machine does not have.
+  Vitest, new hook file                      14/14 passed
+  Vitest, canvas elements + hook (early run) 27 files, 302/302 passed
+  Playwright web suite, Chromium (full)      129 passed, 0 failed,
+                                             0 flaky (includes the 7 new)
+  Playwright new spec, Firefox               7/7 passed
+  Playwright new spec, WebKit                0/7: media never loads on this
+                                             platform (section 12)
+  npm run build (production)                 passed
+  npm run desktop:test (builds, then full)   59 passed, 2 skipped, 0 failed
+      The 2 skips are the opt-in persistence benchmarks (test.skip unless
+      enabled), as before. The new preview-media test passed.
+      lifecycle.spec.ts:70, the known pre-existing flake, passed this run.
+
+Pre-existing flaky tests (tracked separately, not caused by this change):
+  - e2e/desktop/lifecycle.spec.ts:70 (passed here).
+  - Vitest's EditorApp catalog test can time out at default parallelism.
+    Suites run with --maxWorkers=4, as in BC-01.
+No assertion was weakened and no test was skipped to get these results.
+
+
+14. KNOWN LIMITATIONS
+---------------------
+- Unmuted autoplay (open decision). The hook calls play() for every
+  autoplay-enabled element. A muted one always plays. An unmuted one plays
+  only if the browser allows it. Because play() runs right after the Enter
+  Preview click, Chromium usually allows it, while an exported page opened
+  without a click would usually block it. If Preview should copy the
+  exported page's cold-load behavior, the alternative is one line: call
+  play() only when the element is muted. Not changed without a decision.
+- Autoplay is never guaranteed. It is up to the browser and its settings.
+- Playback position stays when the same element is reused. It is lost
+  when the element remounts (hidden by an interaction, deleted and undone,
+  or a project reopened). This matches the brief.
+- Switching autoplay off for an element during Preview would pause it.
+  This can't happen from the UI: Preview replaces the Inspector with a
+  placeholder and ignores the editing shortcuts (Undo/Redo/Delete/...).
+- WebKit and MP4 not verified (section 12).
+
+
+15. REMAINING DEFECTS — BC-02 ISSUE REGISTER
+--------------------------------------------
+B1  Preview forms do not work                PENDING (BC-02.4)
+B2  Muted video autoplay fails               FIXED in BC-02.2, pending QA
+B3  Media continues playing after Preview    FIXED in BC-02.2, pending QA
+B4  Unsafe iframe navigation                 PENDING (BC-02.3)
+B5  Hide behavior mismatch                   PENDING (BC-02.5)
+B6  Missing aria-expanded                    PENDING (BC-02.5)
+B7  Reduced-motion mismatch                  PENDING (BC-02.5)
+No new defect was found.
+
+
+16. RECOMMENDATION
+------------------
+CLOSE BC-02.2.
+- B2 fixed: muted autoplay starts after Enter Preview even when the media
+  already loaded in Design. Shown in Chromium, Firefox and Electron, and
+  failing without the fix in Chromium and Electron.
+- B3 fixed: every video and audio is paused on Exit Preview. Shown in
+  Chromium, Firefox and Electron, and failing without the fix in Chromium.
+  Electron's B3 failure was not re-shown separately, because the Electron
+  test stops at B2 first; BC-02.1 recorded it there.
+- Export, Design editing, document state and history are unchanged.
+- No regression in any suite.
+Before closing, decide on unmuted autoplay in Preview (section 14). The
+current behavior is reasonable either way, and the alternative is a
+one-line change.

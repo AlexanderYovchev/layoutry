@@ -1,7 +1,9 @@
 "use client";
 
+import { useRef } from "react";
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
+import { usePreviewMediaPlayback } from "@/features/canvas/hooks/usePreviewMediaPlayback";
 import { MediaInteractionShield } from "@/features/canvas/components/document/elements/MediaInteractionShield";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
@@ -47,7 +49,8 @@ import type { DocumentElementProps } from "@/features/canvas/types/documentRende
  *
  * `autoPlay` is gated on `isPreview` exactly like VideoElement's own
  * fix this same checkpoint applies — see that component's doc comment for
- * the full Design-mode-safety reasoning, identical here.
+ * the full Design-mode-safety reasoning, identical here. Preview autoplay
+ * start and pause-on-exit come from usePreviewMediaPlayback (BC-02.2).
  *
  * A MediaInteractionShield sits after the `<audio>` in DOM order, exactly
  * like Video's own — renders nothing in Preview (see that component's own
@@ -59,6 +62,8 @@ export function AudioElement({ node, parentId, parentLayoutMode, parentFlowDispl
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
+  const mediaRef = useRef<HTMLAudioElement>(null);
+  usePreviewMediaPlayback(mediaRef, { isPreview, autoplay: !!node.autoplay });
   const recipe = resolveAudioElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
 
   return (
@@ -70,6 +75,7 @@ export function AudioElement({ node, parentId, parentLayoutMode, parentFlowDispl
       {...listeners}
     >
       <audio
+        ref={mediaRef}
         src={node.src}
         controls={getMediaControls(node)}
         autoPlay={isPreview && !!node.autoplay}

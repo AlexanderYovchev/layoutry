@@ -1,0 +1,587 @@
+LAYOUTRY — BC-02.1: DYNAMIC COMPONENT PREVIEW INVESTIGATION
+===========================================================
+Date: 2026-10-30
+Type: Read-only investigation + architecture review
+Baseline: HEAD 019d6ca (BC-01.6). No source, test or config file changed.
+Status: Complete. Awaiting architecture and QA review.
+
+Classification:
+  CONFIRMED     measured in a real browser here, or a direct code fact
+                (marked "code fact")
+  LIKELY        strongly supported by code reading, not reproduced
+  NOT VERIFIED  not checked
+
+How it was tested: temporary Playwright scripts kept outside the repo,
+driving the real app (`next dev`) and the real Electron build. A local
+server (with HTTP Range support) served generated test media: a 4s
+VP8 WebM, a 3s WAV and a poster. No third-party network resource was
+used. Exported pages were taken from the app's own Export Code dialog
+and opened as real pages. One project file contained every dynamic
+element.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Preview is not a separate runtime. It is a mode of the same Canvas
+renderer, with no iframe, and its click behavior lives in the editor
+store. Exported pages run a separate, dependency-free script that
+replays the same model. Styles are shared by Canvas, Preview and Export;
+behavior is implemented twice.
+
+What works well:
+  - All 8 interactive compositions (Dropdown, Collapsible, Tabs, Modal,
+    Dismissible Alert, Toast, Popover, Drawer) gave identical visible
+    results in Preview and Export after clicking their triggers.
+  - Video and audio load and play in Preview with native controls.
+    Progress bars match across surfaces.
+  - `javascript:` URLs are refused by both the Inspector and the project
+    schema. Electron's hardening holds.
+
+Confirmed defects (section 11):
+  B1 HIGH   Form controls do nothing in Preview: inputs and textareas are
+            read-only, checkboxes and radios don't toggle, selects don't
+            open. All work in exported pages.
+  B2 HIGH   Muted autoplay does not start in Preview in Chromium or
+            Electron. It does start in exported pages.
+  B3 HIGH   Media keeps playing after leaving Preview, including audio,
+            in Design, where its controls are blocked.
+  B4 HIGH   (web) An authored iframe is unsandboxed: a click inside a
+            cross-origin page navigated the whole editor away.
+  B5 MEDIUM Hiding an element behaves differently: Preview destroys it
+            (video restarts from 0), Export only hides it (video keeps
+            playing, audibly, while hidden).
+  B6 LOW    aria-expanded is missing on triggers in Preview.
+  B7 LOW    Reduced-motion handling differs between Preview and Export.
+
+The biggest gap against the user's requirement is a missing capability,
+not a bug. There is no authored animation that can actually run:
+no keyframes, no hover/focus states, no entrance animation. Transitions
+can be authored, but nothing in Preview or Export ever changes a style
+to trigger them. Progress bars are static: nothing can change their
+value at runtime. Interactions are limited to click -> show/hide/toggle.
+
+
+2. PREVIEW ARCHITECTURE AND DATA FLOW
+-------------------------------------
+Code facts unless marked.
+
+Entry and exit:
+  GlobalActions.tsx (Enter Preview / Exit Preview button), via
+  EditorApp.tsx previewControl, into useEditorStore enterPreview /
+  exitPreview. Escape also exits, once no dismissible target is open
+  (CanvasInteractionBoundary.tsx handleKeyDown).
+State:
+  editorMode "design" | "preview" (editor/types/editorMode.ts).
+  enterPreview seeds runtimeVisibility from each node's authored
+  initialPreviewVisibility, and clears SVG edit state and any transaction.
+  exitPreview clears runtimeVisibility. Runtime state never enters the
+  document or history.
+Rendering:
+  No iframe and no separate document. DocumentCanvas ->
+  CanvasInteractionBoundary -> DocumentNodeRenderer -> the same element
+  components as Design, reading isPreview from the store. Preview shares
+  the editor's DOM, origin and global CSS. CanvasOverlay returns null.
+  The Inspector shows a "Previewing" panel. Editor shortcuts are off.
+  Hidden nodes return null, i.e. are UNMOUNTED (DocumentNodeRenderer.tsx
+  line 48).
+Data: the store's `document` directly (no copy or serialization).
+CSS: inline style + Tailwind default classes, from the shared recipes
+  (canvas/utils/elementStyleRecipes.ts + documentDefaultStyles.ts). Export
+  uses the same recipes. isPreview only gates transitions and dialog
+  positioning.
+Behavior in Preview: one delegated window click listener and one keydown
+  listener (CanvasInteractionBoundary) calling
+  useEditorStore.executeInteractionsForNode, plus DialogElement's
+  showModal/close effect, editor/utils/dismissibleTargets.ts and
+  canvas/utils/relationshipContainment.ts.
+Behavior in Export: export/utils/exportInteractionRuntime.ts, a constant
+  script that reads generated data-ly-* attributes
+  (buildExportBehaviors.ts), and never builds code from document data.
+  Delegated listeners on window; a dialog gets its own listeners.
+Canonical implementation?
+  Rendering/styles: YES, one shared recipe layer.
+  Behavior: NO. There are two implementations of one model. Their
+  agreement is enforced only by e2e/export-interactions.spec.ts.
+Listener cleanup: the Canvas listeners are removed in effect cleanup. The
+  export runtime lives for the page's life.
+Reset/refresh: only runtimeVisibility is reset on entry. Media elements,
+  and anything else in the DOM, persist across modes (see B3).
+Browser vs Electron: the same renderer code. Electron adds CSP, sandbox,
+  navigation and permission rules (section 9).
+Authored JavaScript: none exists. There is no custom-code field and no
+  raw HTML. Preview executes no user code except inside iframes.
+
+
+3. VIDEO COMPONENT FINDINGS
+---------------------------
+Model and UI (code fact): native <video> inside a wrapper div
+(VideoElement.tsx). Inspector: Source URL, Poster URL, Controls (default
+on), Autoplay, Muted, Loop. Audio is identical without a poster.
+MediaInteractionShield covers it in Design only, which is INTENTIONAL.
+
+Feature results (Chromium; Firefox in brackets where it differs):
+  Direct URL playback          WORKING, CONFIRMED (WebM, WAV)
+  Native controls present      WORKING, CONFIRMED (shield gone: the hit
+                               test finds VIDEO in Preview, a DIV in
+                               Design)
+  Play/pause by real click     WORKING, CONFIRMED
+  Seeking                      WORKING, CONFIRMED via the media API
+                               (Range requests served); the scrub bar
+                               itself was not dragged
+  Volume, mute                 WORKING, CONFIRMED via the media API
+  Loop                         WORKING, CONFIRMED (Firefox: time wrapped
+                               3.97 -> 0.27; Chromium: attribute only)
+  Autoplay, muted              BROKEN in Preview (B2); works in Export.
+                               [Firefox: works]
+  Autoplay, with sound         Blocked in Chromium Export: browser policy,
+                               not a bug. In Chromium Preview it is
+                               also blocked, by B2, despite the Enter
+                               Preview click.  [Firefox: plays]
+  Poster                       WORKING, CONFIRMED as an attribute; the
+                               painted image was not compared
+  Controls off                 WORKING, CONFIRMED
+  Fullscreen                   WORKING in Chromium, CONFIRMED.
+                               NOT VERIFIED in Electron: the click reached
+                               the video, requestFullscreen() had not
+                               settled after 800ms, and the session denies
+                               permissions by default
+  Responsive sizing            PARTIALLY verified: the video follows its
+                               wrapper (238px in a 240px box); a resize
+                               while playing was not tested
+  Exit Preview                 BROKEN (B3)
+Formats: MP4/H.264 NOT VERIFIED. Playwright's Chromium build has no
+  proprietary codecs, so this says nothing about Layoutry. Support is
+  whatever the browser's <video> supports; Layoutry adds no codec logic.
+Unsupported (missing, not bugs): file upload (URLs only); preload,
+  playsinline, captions/<track>, multiple <source>, start time; provider
+  embeds (BC-08). `src` accepts relative paths, which then depend on
+  where the export is published.
+Design also loads media: videos reached readyState 4 and iframes
+  executed while in Design (CONFIRMED).
+
+
+4. PROGRESS COMPONENT FINDINGS
+------------------------------
+Native <progress> (ProgressElement.tsx), not custom. Inspector:
+Indeterminate, Value, Max. Determinate requires a value; Max defaults to
+100; values are clamped (code fact).
+CONFIRMED, identical in Preview and Export: value 40 / max 100 -> position
+  0.4; no value -> :indeterminate matches, value attribute absent.
+Indeterminate animation: drawn by the browser itself. Not measured.
+Runtime change: NOT IMPLEMENTED. No interaction action, animation or
+  script can alter a progress value in Preview or Export (code fact:
+  actions are only show/hide/toggle).
+Appearance: resolved through the generic box recipe. Whether authored
+  background/colors visibly style the native bar in each browser is
+  NOT VERIFIED (native progress is normally styled via pseudo-elements,
+  which the document model has no way to author).
+Conclusion: a fixed-value bar is correctly rendered, but it is not a
+dynamic progress bar. What the user asked for is a NEW FEATURE needing
+a UX decision (section 15). Nothing was simulated.
+
+
+5. ANIMATION SUPPORT FINDINGS
+-----------------------------
+  CSS transitions      Authorable (Inspector Transition section): property
+                       (opacity, background-color, border-color, box-shadow;
+                       transform is not offered), duration, timing, delay.
+                       Applied only in Preview and Export, deliberately not
+                       in Design. CONFIRMED: computed 0s Design, 0.5s Preview,
+                       0.5s Export.
+                       But they never visibly run: nothing changes a style
+                       at runtime. Show/hide unmounts (Preview) or sets
+                       `hidden` (Export), neither of which transitions.
+                       Code fact; PARTIALLY WORKING at best.
+  CSS keyframes        NOT IMPLEMENTED (code fact; no model field)
+  Transform animation  NOT IMPLEMENTED. Transform is static.
+  Hover / focus styles NOT IMPLEMENTED (the model has no pseudo-states)
+  Entrance animations  NOT IMPLEMENTED
+  Looping animations   NOT IMPLEMENTED (native indeterminate progress and
+                       looping video are the only motion)
+  Interaction-triggered
+  animation            NOT IMPLEMENTED
+  Timeline             NOT IMPLEMENTED
+Restart on reopen, persisting animation state: not applicable, as no
+  authored animation runs.
+prefers-reduced-motion: CONFIRMED mismatch (B7). Under reduce, the
+  editor's global rule in src/app/globals.css (line 292) reaches Canvas
+  elements too (Preview 0.00001s), while Export has no such rule (0.5s).
+Layoutry's default stylesheets add no motion to document elements.
+Canvas does not "suppress" animations; apart from transitions, none exist.
+
+
+6. INTERACTIVE COMPONENT INVENTORY
+----------------------------------
+Exp = expected; D = Design; P = Preview; E = exported page.
+JS = needs JavaScript in the exported page. All CONFIRMED unless marked.
+
+  Button, no interaction   Exp: nothing. D select; P inert; E inert.
+                           Note: always type="button", so it can never
+                           submit a form (code fact).
+  Button + interaction     Runs bindings. P works, E works (JS).
+  Link                     Navigate. D/P: click prevented deliberately
+                           (INTENTIONALLY DISABLED, so Preview cannot
+                           navigate the editor). E navigates. No target or
+                           new-tab option exists.
+  Navbar                   Links + layout only. No menu toggle. Same as Link.
+  Text input, textarea     Typing. D: double-click authoring. P: BROKEN (B1).
+                           E: works.
+  Checkbox, radio          Toggle. P: BROKEN (B1). E: works.
+  Select                   Open list. P: BROKEN (B1; mousedown prevented).
+                           E: works.
+  Form                     Submit. P: Enter suppressed, INTENTIONALLY
+                           DISABLED. E: Enter in a text input sends GET to the
+                           same page (?q=...); no action/method field exists.
+                           Contact and Login forms have no working submit
+                           button in any surface (Button note above; LIKELY
+                           from the code, not clicked in export).
+  Dropdown, Popover        Toggle + outside click + Escape. P and E match
+                           (JS). aria-expanded only in E (B6).
+  Collapsible              Toggle. P and E match (JS).
+  Tabs                     Show/hide panels. P and E match (JS). No authored
+                           active-tab styling or tab ARIA roles (code fact).
+  Modal, Drawer            Native <dialog>, modal in both (:modal true); P
+                           and E match (JS).
+  Dismissible Alert, Toast Hide/show. P and E match (JS). Toast has no timer.
+  Accordion, Carousel      Not implemented as components.
+  Video/Audio controls     Native; P and E work.
+  Iframe                   Live in D (shielded), P and E. See section 9.
+Accessibility: native elements keep their semantics. Dialogs are real
+modals. Escape closes in both. Focus return is handled in both (code fact;
+not separately tested).
+
+
+7. INTERACTION BUTTON OPTIONS AND BEHAVIOR
+------------------------------------------
+Evidence for BC-04. Code facts unless marked.
+Location: the Inspector's Interactions section, on every node except the
+  document root.
+Controls:
+  Add Interaction    adds a binding
+  Action             Show | Hide | Toggle
+  Target             a picker of document elements ("Missing target" if
+                     the target was deleted)
+  Remove             deletes the binding
+  Initial state      Visible | Hidden (whether the element starts hidden in
+                     Preview and Export; it stays visible while designing,
+                     and this works without any binding of its own)
+Trigger: click only, not offered as a choice.
+Model: EditorElementNode.interactions: [{ id, trigger: "click", action,
+  targetId }] plus initialPreviewVisibility. targetId is an internal node
+  id. Bindings are authored data (saved, undoable, cloned); current
+  visibility is ephemeral (runtimeVisibility).
+Execution: Preview: CanvasInteractionBoundary -> the store. The nearest
+  node only; a click on a nested node does not run its parent's actions.
+  Actions run in order.
+Dismissal: a "click -> toggle" pair whose target starts hidden behaves
+  like a menu: outside click or Escape closes it. Escape closes one at a
+  time, then exits Preview.
+Export: data-ly-* attributes and the runtime (section 2). A page with no
+  triggers or dialogs gets no script.
+Supported types: any node can be a trigger or a target.
+Limitations: no hover, focus, submit, keyboard or timer triggers; no
+  navigate, scroll, animate, play/pause, or set-value actions; no
+  conditions, sequences or delays. All documented as deliberate in
+  editor/types/interactions.ts.
+For BC-04: "Interaction" means "when this is clicked, show/hide/toggle
+that element", and nothing more. Users must also learn Initial state.
+
+
+8. CANVAS / PREVIEW / EXPORT / ELECTRON COMPARISON MATRIX
+---------------------------------------------------------
+"Canvas" = Design mode. "Electron" = Electron Preview.
+
+Feature             Canvas        Preview        Export         Electron
+Video load          WORKING       WORKING        WORKING        WORKING
+Video playback      INTENT.DIS.   WORKING        WORKING        WORKING
+  (real click)      (shield)
+Native controls     INTENT.DIS.   WORKING        WORKING*       WORKING
+Muted autoplay      INTENT.DIS.   BROKEN (B2)    WORKING        BROKEN (B2)
+                                  Firefox: OK
+Stop on exit        BROKEN (B3)   n/a            n/a            BROKEN (B3)
+Audio playback      INTENT.DIS.   WORKING        NOT VERIFIED   NOT VERIFIED
+Fullscreen          INTENT.DIS.   WORKING        NOT VERIFIED   NOT VERIFIED
+Progress, fixed     WORKING       WORKING        WORKING        NOT VERIFIED
+Progress, indet.    WORKING       WORKING        WORKING        NOT VERIFIED
+Progress, runtime   NOT IMPL.     NOT IMPL.      NOT IMPL.      NOT IMPL.
+Transition values   INTENT.DIS.   PARTIAL        PARTIAL        NOT VERIFIED
+                                  (never fires)  (never fires)
+Keyframes           NOT IMPL.     NOT IMPL.      NOT IMPL.      NOT IMPL.
+Hover effects       NOT IMPL.     NOT IMPL.      NOT IMPL.      NOT IMPL.
+Button interactions INTENT.DIS.   WORKING        WORKING        WORKING
+  (selects instead)
+8 compositions      INTENT.DIS.   WORKING        WORKING        NOT VERIFIED**
+Text input/textarea INTENT.DIS.   BROKEN (B1)    WORKING        BROKEN (B1)
+Checkbox/radio      INTENT.DIS.   BROKEN (B1)    WORKING        BROKEN (B1)***
+Select              INTENT.DIS.   BROKEN (B1)    WORKING        NOT VERIFIED**
+Links               INTENT.DIS.   INTENT.DIS.    WORKING        NOT VERIFIED
+Form submit         INTENT.DIS.   INTENT.DIS.    PARTIAL (GET)  NOT VERIFIED
+Dialog              INTENT.DIS.   WORKING        WORKING        NOT VERIFIED**
+Iframe content      runs,shielded WORKING        WORKING****    WORKING
+
+*    v-auto-sound state and controls attribute verified in Export; the
+     native UI was exercised in Preview only.
+**   Same renderer code as Chromium Preview, so LIKELY the same.
+***  Checkbox tested; radio is the same code path.
+**** Loads; navigating out of it from an exported page is ordinary web
+     behavior. In Export a `data:` frame URL is dropped, with a warning.
+Electron Export was not opened: exported pages are plain web pages.
+
+
+9. SECURITY ASSESSMENT
+----------------------
+Authored content shares the editor's DOM and origin (no iframe). That is
+acceptable only because authored data never becomes markup or script:
+no dangerouslySetInnerHTML, no custom code (code fact, also stated in
+desktop/security/contentSecurityPolicy.ts).
+
+Holding up (CONFIRMED):
+  - `javascript:` href/src refused by the Inspector and the project
+    schema (import error: "javascript: URLs are not allowed").
+  - data:text/html iframes run with an opaque origin; touching the parent
+    throws SecurityError.
+  - Cross-origin frames cannot read the parent.
+  - Export drops unsafe URLs, with a diagnostic; the export runtime uses
+    tokens only.
+  - Electron: contextIsolation, sandbox, no nodeIntegration, no webview
+    (code fact). Top-level navigation restricted: the same frame-bust
+    was BLOCKED, editor intact (CONFIRMED). Window opening denied,
+    permissions denied (code fact).
+  - Electron CSP (code fact): script-src self + inline; media/img http,
+    https; frame-src http, https; connect-src self; form-action none;
+    object-src none.
+
+Weak (see B4):
+  - Authored iframes have no `sandbox` and no `allow` policy in Design,
+    Preview or Export (CONFIRMED).
+  - They load and run script in DESIGN mode too, before any Preview.
+  - Web build: no CSP at all (the header is null, CONFIRMED).
+  - A frame on another origin navigated the top window after a click
+    inside it, replacing the editor (CONFIRMED, web). No leave-page
+    prompt was seen. Whether unsaved work could be recovered afterwards
+    is NOT VERIFIED (recovery snapshots exist).
+  - A same-origin frame (src="/") loads the editor inside itself and can
+    read its parent (CONFIRMED). The web app hosts nothing else on that
+    origin today, so the practical risk is low.
+
+Would more dynamic behavior add risk?
+  - Pausing/resetting media, enabling form controls, hover states,
+    keyframes and more triggers: no new privilege, if they remain
+    declarative data.
+  - Any custom JavaScript or raw HTML would break the premise above and
+    would require moving Preview into a sandboxed frame: a security
+    architecture change needing separate approval.
+  - Letting forms actually submit or links navigate in Preview would
+    need a sandbox or an interception policy. In Electron, CSP
+    form-action 'none' and the navigation policy already refuse them.
+  - Do not weaken any Electron rule for BC-02.
+
+
+10. PERFORMANCE AND LIFECYCLE FINDINGS
+--------------------------------------
+Measured (Chromium, dev build, the full test document with 4 videos, 1
+audio and 1 iframe; garbage collection forced before each reading):
+  Preview cycles     JS listeners  DOM nodes  Heap
+  3                  978           4732       18.4 MB
+  33                 978           4726       19.1 MB
+  63                 978           4726       19.5 MB
+  Listeners and nodes are flat, so there is no leak there. Heap rose about
+  1.1 MB over 60 cycles; that is too little to call a leak.
+  Preview toggle to next frame: median 43ms, max 49.6ms (10 samples).
+Timers: none in element components, the store's Preview code or the
+  export runtime (code fact).
+Video cleanup: none exists; see B3. A video keeps decoding in Design
+  after Preview.
+CPU from continuous animation: not measured, because none exists.
+Repeated sessions: visibility resets correctly (code fact). Media time
+  does not: 2.66s carried into the next Preview (CONFIRMED).
+Production-build timing: NOT VERIFIED.
+
+
+11. CONFIRMED BUGS
+------------------
+B1 — Form controls are inert in Preview                    Severity HIGH
+  Subsystem: Canvas form elements.
+  Expected: type, toggle and choose in Preview, as in the exported page.
+  Actual: input/textarea stay readOnly and never take focus; checkbox and
+    radio don't change; the select's mousedown is prevented.
+  Reproduce: Enter Preview; click a text input and type. Value stays
+    "hello"; the exported page gives "helloXYZ".
+  Root cause: Design-mode guards are not mode-aware:
+    useNativeFormValueEditing (readOnly: !isEditing; the double-click entry
+    returns early in Preview), InputElement.preventCheckedToggle,
+    SelectElement.preventSelectActivation.
+  Files: src/features/canvas/hooks/useNativeFormValueEditing.ts,
+    canvas/components/document/elements/InputElement.tsx, TextareaElement.tsx,
+    SelectElement.tsx.
+  Impact: Canvas none (guards remain right there). Preview high. Export none.
+    Electron same as Preview.
+  Resolution: skip the guards in Preview, without writing typed values to the
+    document. Reset on exit.
+  Risk: typing must not trigger editor shortcuts; Escape in a field currently
+    exits Preview (the Canvas keydown listener).
+
+B2 — Muted autoplay never starts in Preview (Chromium/Electron)  HIGH
+  Expected: an autoplay+muted video plays when Preview starts, as on the
+    exported page.
+  Actual: autoplay attribute present, paused at 0. Export: playing at 1.82s.
+  Reproduce: a Video with Autoplay + Muted; wait for it to load; Enter Preview.
+  Root cause: the element loads in Design without autoplay, and
+    `autoPlay={isPreview && ...}` adds the attribute later. Chromium ignores
+    autoplay added after loading (CONFIRMED on a plain page, no Layoutry:
+    late attribute paused, early attribute playing; Firefox plays both).
+    A video first mounted during Preview plays (t=1.2).
+    Not a browser policy issue: it is muted, and fails under both the
+    default and the user-activation policies.
+  Files: VideoElement.tsx, AudioElement.tsx.
+  Tests miss it: unit tests assert the attribute, not playback.
+  Impact: Canvas none. Preview high. Export none. Electron same as Preview.
+  Resolution: on entering Preview, explicitly call play() on media with
+    autoplay, handling a rejected promise quietly.
+  Risk: audible autoplay would run from the Enter Preview gesture, where an
+    exported page would be blocked (design decision, section 15).
+
+B3 — Media keeps playing after Exit Preview                 HIGH
+  Expected: media stops on exit; the next Preview starts clean.
+  Actual: video and audio kept advancing in Design (audio 0.36s -> 1.36s after
+    exit), in Chromium and Firefox; video also in Electron. The shield blocks the controls, so
+    the user cannot pause it. Playback position and user mute state also carry
+    into the next Preview (2.66s preserved).
+  Reproduce: Enter Preview; play a video or audio; Exit Preview.
+  Root cause: the same element persists across modes and nothing resets it.
+  Files: VideoElement.tsx, AudioElement.tsx, MediaInteractionShield.tsx.
+  Impact: Canvas: audible, and the user can't stop it from the Canvas until
+    it ends (a looping video never ends). Preview: stale state. Export none.
+    Electron same.
+  Resolution: on exit, pause and reset media (a keyed remount would also work).
+  Risk: low. It shares a hook with B2.
+
+B4 — An authored iframe can navigate the editor away (web)  HIGH
+  Subsystem: IframeElement, web hosting.
+  Expected: embedded content cannot affect the editor.
+  Actual: see section 9. Electron is protected; the web build is not.
+  Reproduce: an Embed pointing at a page that sets window.top.location on
+    click; Enter Preview; click inside it.
+  Root cause: no sandbox attribute; no CSP or leave-page guard on the web.
+  Files: canvas/components/document/elements/IframeElement.tsx,
+    export/utils/buildExportDocument.ts.
+  Impact: Canvas: the frame is shielded but runs. Preview: possible loss of
+    the session. Export: normal web behavior, the author's choice. Electron:
+    none.
+  Resolution: decide a sandbox policy for Canvas/Preview (not necessarily
+    Export). Separate approval required.
+  Risk: `sandbox` can break legitimate embeds; BC-08 depends on this decision.
+
+B5 — Hide/show behaves differently in Preview and Export    MEDIUM
+  Actual: Preview: a video playing at 2.31s returned paused at 0. Export: kept
+    its position and KEPT PLAYING while hidden (2.32 -> 2.77 hidden -> 3.0), so
+    a hidden video stays audible.
+  Root cause: DocumentNodeRenderer returns null (unmount) vs export runtime
+    element.hidden = true.
+  Impact: Preview doesn't predict Export. Form values in panels would be
+    affected the same way once B1 is fixed (LIKELY).
+  Resolution: choose one semantic (section 15).
+  Risk: changing Preview to `hidden` alters dialog and unmount-dependent code.
+
+B6 — aria-expanded missing in Preview                       LOW
+  Actual: Export maintains false/true on triggers; Preview has no attribute.
+  Root cause: only the export runtime manages it.
+  Impact: Preview accessibility testing only.
+  Resolution: mirror it in the Canvas element attributes in Preview.
+
+B7 — Reduced-motion differs                                 LOW
+  Actual: Preview 0.00001s; Export 0.5s under prefers-reduced-motion.
+  Root cause: src/app/globals.css rule reaches the document surface; export
+    has no equivalent.
+  Impact: invisible today (transitions never fire); it matters once they do.
+  Resolution: scope the editor rule to chrome, and decide an export policy.
+
+
+12. MISSING FEATURES VERSUS INTENTIONAL LIMITATIONS
+---------------------------------------------------
+Intentional (not defects):
+  - Design: media shielded, autoplay off, transitions off, clicks select,
+    form controls guarded.
+  - Preview: links and form submission do not navigate (protects the editor).
+  - Sound autoplay blocked in exported pages: browser policy.
+  - Click-only interactions: documented scope.
+Missing features (new work, not bugs):
+  - Keyframe, entrance, looping and transform animation.
+  - Hover and focus states (these would also give transitions a trigger).
+  - Runtime progress changes.
+  - More triggers and actions (including play/pause media).
+  - Form action/method and a submit button type.
+  - Preview link feedback (what a blocked click means).
+  - Video upload, captions, preload, playsinline.
+  - Provider embeds: BC-08, not this milestone.
+
+
+13. TESTS EXECUTED AND EXACT RESULTS
+------------------------------------
+Existing tests:
+  npx playwright test e2e/export-interactions.spec.ts
+    e2e/export-workflow.spec.ts e2e/smoke.spec.ts
+                                                   20 passed
+  npx vitest run src/features/export src/features/canvas
+    useEditorStore.interactions + previewVisibility (--maxWorkers=4)
+                                                   94 files, 1116 passed
+Coverage gap: no e2e spec plays a video in Preview, types into a Preview
+  form, or leaves Preview with media playing.
+Temporary probes (outside the repo; nothing kept in it):
+  Video/audio        Chromium (user-activation policy) and Firefox
+  Autoplay root cause  plain page, Chromium and Firefox; app, default policy
+  Preview vs Export  Chromium, real exported HTML
+  Composition sweep  12 components; 8 with triggers, 10 trigger clicks: all
+                     visible text identical; initial text identical in all 12
+  Hide/show          Chromium Preview and Export
+  Security           Chromium, Electron
+  Reduced motion     Chromium Preview and Export
+  Lifecycle          Chromium CDP metrics, 63 Preview cycles
+  Electron           real app (build from BC-01.6, same code as HEAD), without
+                     the test suite's offline switches
+The dev server was stopped afterwards; `git status` is clean.
+NOT run: WebKit; the full Vitest, Playwright and Electron suites and the
+  production build (no code changed).
+
+
+14. PROPOSED IMPLEMENTATION CHECKPOINTS
+---------------------------------------
+Small, in order. Each needs approval.
+  BC-02.2  Media lifecycle in Preview (B2 + B3): one small mechanism that
+           starts autoplay media on entry, and pauses/resets on exit. Tests
+           must assert real playback, not attributes.
+  BC-02.3  Preview form controls (B1): mode-aware guards; ephemeral values;
+           Escape handling in fields.
+  BC-02.4  Preview/Export parity (B5, B6): one hide semantic, aria-expanded,
+           plus an automated parity check over behavior, not just styles.
+  BC-02.5  Embed safety (B4): sandbox policy, web leave-page guard, web CSP.
+           Security review; coordinate with BC-08.
+  BC-02.6  Animation decision: only after the design decisions below. The
+           smallest useful step is probably hover states, which make
+           existing transitions work, plus B7.
+  BC-02.7  Dynamic progress: only after the UX decision below.
+Not recommended here: a timeline or animation engine; more triggers (BC-04
+explains the current system first); provider embeds (BC-08); custom code.
+
+
+15. OPEN DESIGN DECISIONS REQUIRING USER APPROVAL
+-------------------------------------------------
+  1. Audible autoplay in Preview: allow it (Enter Preview is a gesture, but
+     then it differs from Export), or play only muted media, matching what a
+     visitor's browser would do?
+  2. Preview start: should every Preview restart media from 0 and reset all
+     runtime state? (Recommended: yes.)
+  3. Form values in Preview: discard on exit? (Recommended: yes, never written
+     to the document.)
+  4. Hide semantic: should a hidden element keep its state (Export today) or
+     be destroyed (Preview today)? Should hidden media pause?
+  5. Should Preview simulate link clicks: stay blocked, show a notice, or
+     navigate in a new window?
+  6. Iframe sandbox: which permissions, and does it apply to Export too?
+  7. "Dynamic progress bar": what does it mean to you? Options: a timed fill
+     on load, a looping demo, driven by an interaction, or tied to page
+     scroll/video position.
+  8. "Custom animations": which first: hover effects, entrance effects, or
+     looping effects?
+  9. prefers-reduced-motion in exported pages: should export respect it
+     automatically?

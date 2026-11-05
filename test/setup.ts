@@ -38,6 +38,15 @@ if (typeof Element !== "undefined" && !Element.prototype.setPointerCapture) {
   };
 }
 
+// jsdom does not implement media playback (play/pause only report "not
+// implemented"). Tests that care about playback spy on these.
+if (typeof HTMLMediaElement !== "undefined") {
+  HTMLMediaElement.prototype.play = function play() {
+    return Promise.resolve();
+  };
+  HTMLMediaElement.prototype.pause = function pause() {};
+}
+
 // jsdom does not implement scrollIntoView, used to bring a newly selected
 // Structure tree row into view.
 if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {

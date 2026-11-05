@@ -79,7 +79,7 @@ export async function removeDir(dir: string): Promise<void> {
  */
 export async function copyApp(
   folderName: string,
-  extraExportFiles: Record<string, string> = {},
+  extraExportFiles: Record<string, string | Uint8Array> = {},
 ): Promise<{ root: string; appDir: string }> {
   const root = await makeTempDir("layoutry-app-copy-");
   const appDir = path.join(root, folderName);

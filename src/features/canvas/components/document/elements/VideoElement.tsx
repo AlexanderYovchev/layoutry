@@ -1,7 +1,9 @@
 "use client";
 
+import { useRef } from "react";
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
+import { usePreviewMediaPlayback } from "@/features/canvas/hooks/usePreviewMediaPlayback";
 import { MediaInteractionShield } from "@/features/canvas/components/document/elements/MediaInteractionShield";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
@@ -48,12 +50,16 @@ import type { DocumentElementProps } from "@/features/canvas/types/documentRende
  * through duplication/undo/redo — only the attribute actually handed to
  * the DOM element is now conditioned on mode, the same isPreview-gated-
  * render-time-attribute shape DialogElement already established for a
- * different field.
+ * different field. The attribute alone is not enough once the element
+ * has already loaded in Design, and nothing pauses on Preview exit —
+ * usePreviewMediaPlayback (BC-02.2) handles both.
  */
 export function VideoElement({ node, parentId, parentLayoutMode, parentFlowDisplay }: DocumentElementProps) {
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
+  const mediaRef = useRef<HTMLVideoElement>(null);
+  usePreviewMediaPlayback(mediaRef, { isPreview, autoplay: !!node.autoplay });
   const recipe = resolveVideoOrIframeElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
 
   return (
@@ -65,6 +71,7 @@ export function VideoElement({ node, parentId, parentLayoutMode, parentFlowDispl
       {...listeners}
     >
       <video
+        ref={mediaRef}
         src={node.src}
         poster={node.poster}
         controls={getMediaControls(node)}
