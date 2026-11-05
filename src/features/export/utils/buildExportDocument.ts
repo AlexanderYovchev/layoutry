@@ -34,7 +34,7 @@ import { getProgressMax, getProgressValue } from "@/features/editor/types/progre
 import { getSelectedOptionValue } from "@/features/editor/types/select";
 import { DEFAULT_SVG_FILL, formatSvgViewBox, getSvgKind, resolveSvgFill, resolveSvgStroke, resolveSvgStrokeWidth, resolveSvgViewBox } from "@/features/editor/types/svg";
 import { hasSvgScene, resolveSvgScene, type SvgVectorObject } from "@/features/editor/types/svgScene";
-import { getMediaControls } from "@/features/editor/types/video";
+import { getEffectiveAutoplay, getMediaControls } from "@/features/editor/types/video";
 import { formatSvgPoints, pathCommandsToD } from "@/features/editor/utils/svgObjectGeometry";
 import { SVG_CIRCLE_GEOMETRY, SVG_RECTANGLE_GEOMETRY, SVG_STAR_POINTS, SVG_TRIANGLE_POINTS } from "@/features/editor/utils/svgPrimitiveGeometry";
 // Deep import by necessity: the project feature's index.ts also re-exports
@@ -432,7 +432,9 @@ function buildElement(state: BuildState, node: EditorElementNode, styleKey: stri
   if (tag === "video" || tag === "audio") {
     const src = checkedUrl(state, node.id, "src", node.src, "media");
     const poster = tag === "video" ? checkedUrl(state, node.id, "poster", node.poster, "image") : undefined;
-    const attributes = [...attribute("src", src), ...attribute("poster", poster), ...attribute("controls", getMediaControls(node)), ...attribute("autoplay", node.autoplay === true), ...attribute("muted", node.muted === true), ...attribute("loop", node.loop === true)];
+    const attributes = [...attribute("src", src), ...attribute("poster", poster), ...attribute("controls", getMediaControls(node)), ...attribute("autoplay", getEffectiveAutoplay(node)), ...attribute("muted", node.muted === true), ...attribute("loop", node.loop === true)];
+    // Muted-only autoplay (BC-02.2.1), the same rule Preview follows.
+    if (node.autoplay === true && !getEffectiveAutoplay(node)) report(state, "warning", "unmuted-autoplay", "Autoplay was left out because the media is not muted. Layoutry only autoplays muted media; the controls still start it.", node.id, "autoplay");
     const recipe = tag === "video" ? resolveVideoOrIframeElementStyle(node, context) : resolveAudioElementStyle(node, context);
     return buildMediaFrame(state, node, styleKey, recipe, { tag, attributes });
   }

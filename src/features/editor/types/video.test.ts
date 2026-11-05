@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getMediaControls } from "./video";
+import { getEffectiveAutoplay, getMediaControls } from "./video";
 
 describe("getMediaControls (Checkpoint 1.15, renamed from getVideoControls in 1.15.6.12.3)", () => {
   it("defaults to true when unset — a freshly created Video/Audio is still usable on the Canvas", () => {
@@ -10,5 +10,16 @@ describe("getMediaControls (Checkpoint 1.15, renamed from getVideoControls in 1.
   it("returns the explicit stored value when set", () => {
     expect(getMediaControls({ controls: true })).toBe(true);
     expect(getMediaControls({ controls: false })).toBe(false);
+  });
+});
+
+describe("getEffectiveAutoplay (BC-02.2.1 muted-only autoplay)", () => {
+  it("is true only when autoplay and muted are both authored true", () => {
+    expect(getEffectiveAutoplay({ autoplay: true, muted: true })).toBe(true);
+    expect(getEffectiveAutoplay({ autoplay: true })).toBe(false);
+    expect(getEffectiveAutoplay({ autoplay: true, muted: false })).toBe(false);
+    expect(getEffectiveAutoplay({ muted: true })).toBe(false);
+    expect(getEffectiveAutoplay({ autoplay: false, muted: true })).toBe(false);
+    expect(getEffectiveAutoplay({})).toBe(false);
   });
 });

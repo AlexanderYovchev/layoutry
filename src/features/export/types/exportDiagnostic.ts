@@ -31,7 +31,8 @@ export type ExportDiagnosticCode =
   | "ignored-children"
   | "unsupported-trigger"
   | "non-operable-trigger"
-  | "control-characters-removed";
+  | "control-characters-removed"
+  | "unmuted-autoplay";
 
 export interface ExportDiagnostic {
   code: ExportDiagnosticCode;

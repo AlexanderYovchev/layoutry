@@ -98,12 +98,72 @@ describe("usePreviewMediaPlayback (BC-02.2)", () => {
     }
   });
 
-  it("unmuted autoplay is attempted too, left to the browser's policy, and stays unmuted", () => {
-    useEditorStore.getState().replaceDocument({ id: "page-root", tag: "page", children: [{ id: "video-sound", tag: "video", src: "/clip.webm", autoplay: true }] });
-    render(<Workspace />);
-    act(() => useEditorStore.getState().enterPreview());
-    expect(callsOn(play, "video-sound")).toBe(1);
-    expect(media("video-sound").muted).toBe(false);
+  describe("muted-only autoplay policy (BC-02.2.1)", () => {
+    const policyTree: EditorElementNode = {
+      id: "page-root",
+      tag: "page",
+      children: [
+        { id: "muted-auto", tag: "video", src: "/clip.webm", autoplay: true, muted: true },
+        { id: "unmuted-auto", tag: "video", src: "/clip.webm", autoplay: true },
+        { id: "muted-noauto", tag: "video", src: "/clip.webm", muted: true },
+        { id: "unmuted-noauto", tag: "video", src: "/clip.webm" },
+        { id: "unmuted-auto-audio", tag: "audio", src: "/tone.ogg", autoplay: true, muted: false },
+      ],
+    };
+
+    beforeEach(() => {
+      useEditorStore.getState().replaceDocument(policyTree);
+    });
+
+    it("starts only muted + autoplay; unmuted autoplay, and anything without autoplay, is never started", () => {
+      render(<Workspace />);
+      act(() => useEditorStore.getState().enterPreview());
+      expect(callsOn(play, "muted-auto")).toBe(1);
+      expect(callsOn(play, "unmuted-auto")).toBe(0);
+      expect(callsOn(play, "unmuted-auto-audio")).toBe(0);
+      expect(callsOn(play, "muted-noauto")).toBe(0);
+      expect(callsOn(play, "unmuted-noauto")).toBe(0);
+      expect(play).toHaveBeenCalledTimes(1);
+    });
+
+    it("never mutes unmuted media, and gives it no native autoplay attribute in Preview", () => {
+      render(<Workspace />);
+      act(() => useEditorStore.getState().enterPreview());
+      expect(media("unmuted-auto").muted).toBe(false);
+      expect(media("unmuted-auto").autoplay).toBe(false);
+      expect(media("unmuted-auto-audio").autoplay).toBe(false);
+      expect(media("muted-auto").autoplay).toBe(true);
+    });
+
+    it("still pauses unmuted media on exit, and keeps the policy on every new session", () => {
+      render(<Workspace />);
+      for (let session = 0; session < 2; session++) {
+        act(() => useEditorStore.getState().enterPreview());
+        act(() => useEditorStore.getState().exitPreview());
+      }
+      expect(callsOn(play, "muted-auto")).toBe(2);
+      expect(callsOn(play, "unmuted-auto")).toBe(0);
+      expect(callsOn(pause, "unmuted-auto")).toBe(2);
+      expect(callsOn(pause, "unmuted-auto-audio")).toBe(2);
+    });
+
+    it("does not auto-start media the user unmuted from the controls in an earlier session", () => {
+      render(<Workspace />);
+      act(() => useEditorStore.getState().enterPreview());
+      media("muted-auto").muted = false;
+      act(() => useEditorStore.getState().exitPreview());
+      act(() => useEditorStore.getState().enterPreview());
+      expect(callsOn(play, "muted-auto")).toBe(1);
+    });
+
+    it("keeps the authored autoplay and muted fields as they were", () => {
+      render(<Workspace />);
+      act(() => useEditorStore.getState().enterPreview());
+      act(() => useEditorStore.getState().exitPreview());
+      expect(useEditorStore.getState().document).toBe(policyTree);
+      expect(policyTree.children?.[1]).toMatchObject({ autoplay: true });
+      expect(policyTree.children?.[1]?.muted).toBeUndefined();
+    });
   });
 
   it("B3: exiting Preview pauses every video and audio, autoplay or not", () => {

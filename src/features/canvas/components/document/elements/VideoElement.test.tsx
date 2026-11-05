@@ -82,11 +82,11 @@ describe("VideoElement (Checkpoint 1.15)", () => {
     expect(video.autoplay).toBe(false);
   });
 
-  it("Checkpoint 1.15.6.12.3 — an authored autoplay: true DOES render as native autoplay once in Preview mode", () => {
+  it("Checkpoint 1.15.6.12.3 — an authored muted autoplay DOES render as native autoplay once in Preview mode", () => {
     useEditorStore.setState({ editorMode: "preview" });
     render(
       <VideoElement
-        node={{ id: "video-1", tag: "video", autoplay: true }}
+        node={{ id: "video-1", tag: "video", autoplay: true, muted: true }}
         parentId="page-1"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
@@ -94,6 +94,14 @@ describe("VideoElement (Checkpoint 1.15)", () => {
     );
     const video = document.querySelector("video") as HTMLVideoElement;
     expect(video.autoplay).toBe(true);
+  });
+
+  it("BC-02.2.1 — an unmuted autoplay renders no native autoplay in Preview, and stays unmuted", () => {
+    useEditorStore.setState({ editorMode: "preview" });
+    render(<VideoElement node={{ id: "video-1", tag: "video", autoplay: true }} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+    const video = document.querySelector("video") as HTMLVideoElement;
+    expect(video.autoplay).toBe(false);
+    expect(video.muted).toBe(false);
   });
 
   it("Checkpoint 1.15.6.12.3 — the MediaInteractionShield is present in Design (unchanged) but absent in Preview (the fix), so native controls become reachable", () => {

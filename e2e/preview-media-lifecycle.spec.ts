@@ -7,6 +7,7 @@ import {
   ALL_MEDIA,
   CLIP_FILE,
   TONE_FILE,
+  UNMUTED_AUTOPLAY,
   clipBytes,
   toneBytes,
   importMediaDocument,
@@ -108,10 +109,17 @@ test("B2: muted autoplay video and audio start when Preview opens; media without
   await expectAdvancing(page, "a-auto");
   await expectAdvancing(page, "v-nested");
   expect((await mediaState(page, "v-auto")).muted).toBe(true);
-  for (const id of ["v-plain", "v-noctrl", "a-plain"]) {
+  // Unmuted autoplay is not started (BC-02.2.1), even right after the
+  // Enter Preview click, and is not muted to make it start.
+  for (const id of ["v-plain", "v-noctrl", "a-plain", ...UNMUTED_AUTOPLAY]) {
     const state = await mediaState(page, id);
     expect(state.paused, id).toBe(true);
     expect(state.currentTime, id).toBe(0);
+  }
+  for (const id of UNMUTED_AUTOPLAY) {
+    const state = await mediaState(page, id);
+    expect(state.muted, id).toBe(false);
+    expect(state.autoplay, id).toBe(false);
   }
 });
 
@@ -145,7 +153,7 @@ test("repeated Preview sessions: autoplay restarts each time, everything stops e
     await enterPreview(page);
     await expectAdvancing(page, "v-auto");
     await expectAdvancing(page, "a-auto");
-    expect((await mediaState(page, "v-plain")).paused).toBe(true);
+    for (const id of ["v-plain", ...UNMUTED_AUTOPLAY]) expect((await mediaState(page, id)).paused, id).toBe(true);
     await exitPreview(page);
     for (const id of ALL_MEDIA) await expectStopped(page, id);
   }
@@ -170,16 +178,42 @@ test("Undo stays unavailable: playback across a Preview session records no histo
   await expect(undo).toBeDisabled();
 });
 
-test("Export keeps its own native autoplay and has no editor pause logic", async ({ page }) => {
+test("muted-only policy: unmuted autoplay can still be started by hand, keeps its sound, and stops on exit", async ({ page }) => {
+  await enterPreview(page);
+  await expectAdvancing(page, "v-auto");
+  for (const id of UNMUTED_AUTOPLAY) expect((await mediaState(page, id)).paused, id).toBe(true);
+  // A real click is the user gesture the native Play control would provide.
+  await page.locator('[data-document-surface] [data-node-id="v-sound"] video').click();
+  for (const id of UNMUTED_AUTOPLAY) expect(await startPlayback(page, id), id).toBe("playing");
+  for (const id of UNMUTED_AUTOPLAY) {
+    await expectAdvancing(page, id);
+    expect((await mediaState(page, id)).muted, id).toBe(false);
+  }
+  await exitPreview(page);
+  for (const id of UNMUTED_AUTOPLAY) await expectStopped(page, id);
+});
+
+test("Export follows muted-only autoplay and has no editor pause logic", async ({ page }) => {
   const result = exportHtmlCss(mediaDocument(base), { mode: "standalone", title: "Media" });
   expect(result.ok).toBe(true);
+  expect(result.diagnostics.filter((diagnostic) => diagnostic.code === "unmuted-autoplay").map((diagnostic) => diagnostic.nodeId)).toEqual(["v-sound", "a-sound"]);
   const html = result.files.find((file) => file.path.endsWith(".html"))?.content ?? "";
-  expect(html).toMatch(/<video[^>]*\bautoplay\b[^>]*\bmuted\b|<video[^>]*\bmuted\b[^>]*\bautoplay\b/);
   expect(html).not.toMatch(/\.pause\(\)/);
   files.set("export.html", Buffer.from(html));
   await page.goto(`${base}export.html`);
-  const exported = page.locator("video[autoplay]").first();
-  await expect.poll(() => exported.evaluate((video: HTMLVideoElement) => !video.paused && video.currentTime > 0.2)).toBe(true);
-  const plain = await page.locator("video:not([autoplay])").first().evaluate((video: HTMLVideoElement) => video.paused);
-  expect(plain).toBe(true);
+  const attributes = (id: string) => page.locator(`#${id}`).evaluate((media: HTMLMediaElement) => ({ autoplay: media.hasAttribute("autoplay"), muted: media.hasAttribute("muted"), loop: media.loop, controls: media.controls }));
+  expect(await attributes("v-auto")).toEqual({ autoplay: true, muted: true, loop: true, controls: true });
+  expect(await attributes("a-auto")).toEqual({ autoplay: true, muted: true, loop: true, controls: true });
+  expect(await attributes("v-sound")).toEqual({ autoplay: false, muted: false, loop: true, controls: true });
+  expect(await attributes("a-sound")).toEqual({ autoplay: false, muted: false, loop: true, controls: true });
+
+  const state = (id: string) => page.locator(`#${id}`).evaluate((media: HTMLMediaElement) => ({ paused: media.paused, currentTime: media.currentTime }));
+  await expect.poll(async () => (await state("v-auto")).currentTime).toBeGreaterThan(0.2);
+  for (const id of [...UNMUTED_AUTOPLAY, "v-plain"]) expect(await state(id), id).toEqual({ paused: true, currentTime: 0 });
+
+  // Manual playback still works on the exported page.
+  await page.locator("#v-sound").click();
+  const started = await page.locator("#v-sound").evaluate((media: HTMLMediaElement) => media.play().then(() => "playing", (error: Error) => error.name));
+  expect(started).toBe("playing");
+  await expect.poll(async () => (await state("v-sound")).currentTime).toBeGreaterThan(0.2);
 });

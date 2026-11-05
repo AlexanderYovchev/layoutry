@@ -55,10 +55,13 @@ export function mediaDocument(base: string): EditorElementNode {
         id: "media-section",
         tag: "section",
         children: [
-          { id: "v-auto", tag: "video", src: clip, autoplay: true, muted: true, loop: true, dimensions: size },
-          { id: "v-plain", tag: "video", src: clip, dimensions: size },
+          { id: "v-auto", htmlId: "v-auto", tag: "video", src: clip, autoplay: true, muted: true, loop: true, dimensions: size },
+          { id: "v-plain", htmlId: "v-plain", tag: "video", src: clip, dimensions: size },
+          // Autoplay authored WITHOUT mute: Layoutry never starts these by itself (BC-02.2.1).
+          { id: "v-sound", htmlId: "v-sound", tag: "video", src: clip, autoplay: true, loop: true, dimensions: size },
+          { id: "a-sound", htmlId: "a-sound", tag: "audio", src: tone, autoplay: true, loop: true },
           { id: "v-noctrl", tag: "video", src: clip, controls: false, loop: true, dimensions: size },
-          { id: "a-auto", tag: "audio", src: tone, autoplay: true, muted: true, loop: true },
+          { id: "a-auto", htmlId: "a-auto", tag: "audio", src: tone, autoplay: true, muted: true, loop: true },
           { id: "a-plain", tag: "audio", src: tone, loop: true },
           { id: "b-toggle", tag: "button", text: "Toggle media box", interactions: [{ id: "i-toggle", trigger: "click", action: "toggle", targetId: "d-box" }] },
           { id: "d-box", tag: "div", children: [{ id: "v-nested", tag: "video", src: clip, autoplay: true, muted: true, loop: true, dimensions: size }] },
@@ -68,7 +71,10 @@ export function mediaDocument(base: string): EditorElementNode {
   };
 }
 
-export const ALL_MEDIA = ["v-auto", "v-plain", "v-noctrl", "a-auto", "a-plain", "v-nested"] as const;
+export const ALL_MEDIA = ["v-auto", "v-plain", "v-sound", "a-sound", "v-noctrl", "a-auto", "a-plain", "v-nested"] as const;
+
+/** Authored autoplay but not muted: must never start on its own. */
+export const UNMUTED_AUTOPLAY = ["v-sound", "a-sound"] as const;
 
 export async function importMediaDocument(page: Page, document: EditorElementNode) {
   const file = serializeProject({

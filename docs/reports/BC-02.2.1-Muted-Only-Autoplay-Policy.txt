@@ -1,0 +1,242 @@
+LAYOUTRY — BC-02.2.1: MUTED-ONLY AUTOPLAY POLICY
+=================================================
+Date: 2026-11-05
+Type: Small corrective fix + targeted regression tests
+Baseline: HEAD 61fa9de (BC-02.2, usePreviewMediaPlayback).
+Status: Implemented and tested. Awaiting QA review. Not committed.
+
+
+1. SUMMARY
+----------
+Product decision: Layoutry starts playback by itself only for media
+authored as BOTH autoplay and muted.
+
+Before this change:
+- Preview called play() on every autoplay element. Because entering
+  Preview is a click, Chromium and Electron allowed unmuted media to start
+  with sound. This was measured, not assumed: with the old rule restored,
+  the unmuted test video was playing in both.
+- Export wrote `autoplay` for unmuted media and left it to the browser to
+  block it.
+
+Now:
+- Preview: unmuted autoplay media gets no play() call and no native
+  `autoplay` attribute.
+- Export: `autoplay` is written only for muted media. When an unmuted
+  autoplay is left out, the export shows a warning.
+- The authored `autoplay` and `muted` fields are never changed. Nothing is
+  muted to make it play, and manual playback, pause, seek, volume, loop and
+  controls all still work.
+- B2 (muted autoplay starts) and B3 (everything stops on Exit Preview) are
+  still fixed.
+
+No schema change, no new permission, no Electron or CSP change.
+
+
+2. FILES MODIFIED (relative to 61fa9de; 14 files, +212 / -35)
+----------------------------------------------------------
+Source:
+  src/features/editor/types/video.ts
+      + getEffectiveAutoplay(node): autoplay === true && muted === true.
+        The one shared rule, next to the existing getMediaControls, which
+        Canvas and Export already both import.
+  src/features/canvas/components/document/elements/VideoElement.tsx
+  src/features/canvas/components/document/elements/AudioElement.tsx
+      autoPlay={isPreview && getEffectiveAutoplay(node)}, and the hook
+      gets autoplay: getEffectiveAutoplay(node).
+  src/features/canvas/hooks/usePreviewMediaPlayback.ts
+      play() only if the effective autoplay is on AND the element is still
+      muted (media.muted). Doc comment updated.
+  src/features/export/utils/buildExportDocument.ts
+      autoplay attribute = getEffectiveAutoplay(node); warning
+      "unmuted-autoplay" when an authored autoplay is left out.
+  src/features/export/types/exportDiagnostic.ts
+      + "unmuted-autoplay" diagnostic code.
+
+Tests:
+  src/features/editor/types/video.test.ts             + 1 test (6 cases)
+  src/features/canvas/hooks/usePreviewMediaPlayback.test.tsx
+      the old "unmuted autoplay is attempted" test replaced by 5 policy
+      tests
+  src/features/canvas/components/document/elements/VideoElement.test.tsx
+  src/features/canvas/components/document/elements/AudioElement.test.tsx
+      "autoplay renders in Preview" now uses muted media (the rule
+      changed, so the input changed; the assertion is the same), + 1
+      unmuted test each
+  src/features/export/utils/buildExportDocument.test.ts  + 1 test
+  e2e/support/previewMedia.ts
+      + unmuted autoplay video (v-sound) and audio (a-sound), html ids
+      so the exported page can be checked element by element, and the
+      UNMUTED_AUTOPLAY list
+  e2e/preview-media-lifecycle.spec.ts
+      B2 and repeated-session tests also check unmuted autoplay; + 1
+      manual-playback test; the Export test now checks each element
+  e2e/desktop/preview-media.spec.ts
+      unmuted autoplay stays paused in Electron
+
+Reports:
+  docs/reports/BC-02.2.1-Muted-Only-Autoplay-Policy.txt (this file)
+  changelogs/2026-11-05-muted-only-autoplay-BC-02.2.1.txt (gitignored)
+
+The BC-02.2 report is a point-in-time record and was left as written. Its
+section 14 open decision is settled by this checkpoint.
+
+
+3. IMPLEMENTATION DECISIONS
+---------------------------
+D1 One rule, shared. getEffectiveAutoplay lives in editor/types/video.ts,
+   the owner of media field semantics, so Preview and Export cannot drift
+   apart. The document keeps the authored values; only the rendered and
+   exported attribute is derived.
+
+D2 Two gates in Preview.
+   (a) The effective rule decides the native attribute and whether the
+       hook may play.
+   (b) The hook also checks the element's live `muted` property. A user
+       can unmute muted media with its controls during Preview. React
+       never re-syncs `muted` unless the authored value changes, so on
+       the next Preview entry that element is unmuted, and the hook does
+       not start it with sound. Each gate has its own failing test
+       (section 5).
+
+D3 No native autoplay attribute for unmuted media in Preview, so an
+   unmuted element first mounted during Preview (inside something an
+   interaction shows) cannot start through the attribute either.
+
+D4 Export drops the attribute and does not rely on browser blocking. The
+   brief says not to emit an effective autoplay instruction for unmuted
+   media. `muted` is still exported only when authored, so nothing is
+   muted for the user.
+
+D5 Export warning, severity "warning". exportDiagnostic.ts defines
+   warning as "something authored was dropped", which is what happens
+   here. Message: "Autoplay was left out because the media is not muted.
+   Layoutry only autoplays muted media; the controls still start it."
+   Without it the authored setting would vanish from the output silently.
+   It does not block export.
+
+D6 Not changed: the Inspector's Autoplay and Muted toggles, which still
+   save what the user sets. An Inspector hint ("autoplay requires
+   muted") would be a UI change outside this brief; it is a suggested
+   follow-up.
+
+
+4. POLICY MATRIX (Preview and Export, measured)
+-----------------------------------------------
+autoplay  muted   Preview                Export
+on        on      starts (C F E)         autoplay + muted exported;
+                                         plays on load (C F)
+on        off     paused at 0; not muted paused at 0; no autoplay
+                  (C F E)                attribute; warning (C F)
+off       on      paused (U)             no autoplay (U)
+off       off     paused (U C F E)       no autoplay, paused (U C F)
+C Chromium, F Firefox, E Electron, U Vitest.
+
+Manual playback of unmuted autoplay media: started after a real click,
+it plays, keeps its sound (muted === false), and stops on Exit Preview
+(C F). On the exported page it also starts by hand (C F).
+Loop and controls keep their authored values in Preview and Export
+(the exported attributes are checked for v-auto, a-auto, v-sound and
+a-sound).
+
+
+5. TEST EVIDENCE
+----------------
+Unit tests (Vitest):
+- getEffectiveAutoplay: 6 combinations.
+- Hook (real Canvas, real store, play/pause spied):
+    starts only muted + autoplay; unmuted autoplay and no-autoplay media
+      are never started (5 elements, video and audio)
+    unmuted media is never muted and has no native autoplay in Preview
+    unmuted media is still paused on exit; the policy holds every session
+    media the user unmuted earlier is not auto-started again
+    authored autoplay and muted fields unchanged; same document object
+- Video/Audio elements: muted autoplay renders autoplay in Preview;
+  unmuted does not.
+- Export: autoplay only on muted media; one warning per unmuted autoplay
+  (video and audio); controls/loop unchanged; input document unchanged.
+- History: the BC-02.2 test "playback never touches the document, dirty
+  state or history" still passes.
+
+Mutation checks:
+- Old rule restored in getEffectiveAutoplay (autoplay only): 5 unit tests
+  fail (helper, both element tests, export, hook attribute test).
+- Hook's live-muted gate removed: the "unmuted earlier" test fails.
+- Old rule restored in both places, Chromium: 4 of 8 browser tests fail,
+  with "v-sound: Expected paused true, Received false". Chromium really
+  starts unmuted media in Preview under the old rule.
+- Same in Electron (rebuilt): fails with "v-sound ... Received: false".
+  Restored and rebuilt afterwards.
+
+Browser (e2e/preview-media-lifecycle.spec.ts, 8 tests, local media):
+  Chromium 8/8 passed. Firefox 8/8 passed.
+  Firefox ran through a temporary config, deleted afterwards.
+Electron (e2e/desktop/preview-media.spec.ts): 1/1 passed, offline, media
+  from app:// in a copy of the export.
+
+
+6. FULL REGRESSION RESULTS
+--------------------------
+All on the final code (Windows 10, ELECTRON_RUN_AS_NODE stripped):
+  npm run typecheck                        passed, 0 errors
+  npm run lint (eslint .)                  passed, 0 problems
+  Vitest, full (--maxWorkers=4)            343 files; 5157 passed,
+                                           1 skipped, 0 failed
+      (BC-02.2: 5149 passed; the 8 new tests make the difference.)
+      The skip is the existing symlink test (no symlink rights here).
+  Vitest, editor/types + canvas + export   94 files, 1092 passed (early run)
+  Playwright web suite, Chromium (full)    130 passed, 0 failed, 0 flaky
+                                           (BC-02.2: 129; +1 new test)
+  New media spec, Firefox                  8/8 passed
+  New media spec, WebKit                   not run (section 7)
+  npm run build (production)               passed
+  npm run desktop:test (builds, then full) 59 passed, 2 skipped, 0 failed
+      The 2 skips are the opt-in persistence benchmarks, as before.
+Pre-existing flakes (e2e/desktop/lifecycle.spec.ts:70; EditorApp catalog
+test at default Vitest parallelism) did not appear. No assertion was
+weakened. The two element tests whose input changed (autoplay now also
+muted) assert the same thing as before, because the rule itself changed.
+
+
+7. REMAINING LIMITATIONS
+------------------------
+- WebKit: NOT VERIFIED. Playwright's Windows WebKit build loads no media
+  at all (readyState stays 0 even on a plain page outside Layoutry;
+  BC-02.2 section 12). This is the test platform, not a Layoutry defect.
+- MP4/H.264: NOT VERIFIED (no H.264 in Playwright's Chromium). The policy
+  does not depend on the codec.
+- Muted autoplay still depends on the browser. It is allowed by default
+  in every major browser, but user or enterprise settings can block it.
+  A rejected play() is ignored, and the controls still work.
+- Exported projects that relied on unmuted autoplay change behavior: the
+  attribute is no longer written, and the warning says so. Browsers
+  blocked those in most cases anyway.
+- The Inspector does not yet tell the user that autoplay needs mute
+  (D6, follow-up).
+
+
+8. ISSUE REGISTER
+-----------------
+B1  Preview forms do not work                PENDING (BC-02.4)
+B2  Muted video autoplay fails               FIXED (BC-02.2), still passing
+B3  Media continues playing after Preview    FIXED (BC-02.2), still passing
+B4  Unsafe iframe navigation                 PENDING (BC-02.3)
+B5  Hide behavior mismatch                   PENDING (BC-02.5)
+B6  Missing aria-expanded                    PENDING (BC-02.5)
+B7  Reduced-motion mismatch                  PENDING (BC-02.5)
+Unmuted-autoplay policy: IMPLEMENTED (BC-02.2.1), pending QA.
+
+
+9. RECOMMENDATION
+-----------------
+CLOSE BC-02.2.1 (and with it BC-02.2) after QA.
+- Muted autoplay works when permitted: Chromium, Firefox, Electron.
+- Layoutry no longer starts unmuted autoplay in Preview or Export. The old
+  rule demonstrably played it in Chromium and Electron; the new tests fail
+  on it.
+- Manual playback works in Preview and on the exported page.
+- B3 cleanup still holds (all media paused on exit, every session).
+- No schema change, no new permission, no unrelated export change; one
+  new export warning code.
+Suggested follow-up (not in this brief): an Inspector hint next to
+Autoplay saying it needs Muted.

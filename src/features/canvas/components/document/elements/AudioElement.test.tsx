@@ -76,13 +76,21 @@ describe("AudioElement (Checkpoint 1.15.6.12.3)", () => {
     expect(audio.autoplay).toBe(false);
   });
 
-  it("an authored autoplay: true DOES render as native autoplay once in Preview mode", () => {
+  it("an authored muted autoplay DOES render as native autoplay once in Preview mode", () => {
     useEditorStore.setState({ editorMode: "preview" });
     render(
-      <AudioElement node={{ id: "audio-1", tag: "audio", autoplay: true }} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+      <AudioElement node={{ id: "audio-1", tag: "audio", autoplay: true, muted: true }} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
     );
     const audio = document.querySelector("audio") as HTMLAudioElement;
     expect(audio.autoplay).toBe(true);
+  });
+
+  it("BC-02.2.1 — an unmuted autoplay renders no native autoplay in Preview, and stays unmuted", () => {
+    useEditorStore.setState({ editorMode: "preview" });
+    render(<AudioElement node={{ id: "audio-1", tag: "audio", autoplay: true }} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+    const audio = document.querySelector("audio") as HTMLAudioElement;
+    expect(audio.autoplay).toBe(false);
+    expect(audio.muted).toBe(false);
   });
 
   it("stamps the node's own id/tag as data attributes on the OUTER wrapper, not the inner <audio>", () => {

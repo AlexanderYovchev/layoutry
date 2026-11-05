@@ -4,6 +4,7 @@ import { useEffect, type RefObject } from "react";
 
 interface PreviewMediaPlaybackOptions {
   isPreview: boolean;
+  /** The effective autoplay (getEffectiveAutoplay): authored autoplay AND muted. */
   autoplay: boolean;
 }
 
@@ -22,6 +23,10 @@ interface PreviewMediaPlaybackOptions {
  *   before the attempt; this never unmutes anything. A rejected promise
  *   (browser autoplay policy, or a pause interrupting the play) is
  *   swallowed: the user can still start it from the native controls.
+ *   Muted-only (BC-02.2.1): the caller passes the effective autoplay, and
+ *   the element must also still be muted when Preview starts, so media
+ *   the user unmuted from the controls in an earlier session does not
+ *   start with sound. Unmuted media is never started automatically.
  *
  * - B3: nothing paused media when Preview ended, and Design's
  *   MediaInteractionShield then blocked the controls that could stop it.
@@ -36,7 +41,7 @@ export function usePreviewMediaPlayback(mediaRef: RefObject<HTMLMediaElement | n
   useEffect(() => {
     const media = mediaRef.current;
     if (!media || !isPreview) return;
-    if (autoplay) {
+    if (autoplay && media.muted) {
       void Promise.resolve(media.play()).catch(() => {});
     }
     return () => {

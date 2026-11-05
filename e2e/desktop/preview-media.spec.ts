@@ -3,6 +3,7 @@ import {
   ALL_MEDIA,
   CLIP_FILE,
   TONE_FILE,
+  UNMUTED_AUTOPLAY,
   clipBytes,
   importMediaDocument,
   mediaDocument,
@@ -71,7 +72,7 @@ async function expectStopped(page: Page, nodeId: string) {
   ).toBe(at);
 }
 
-test("muted autoplay starts in Preview and every video and audio stops when Preview exits, in the desktop app", async () => {
+test("muted-only autoplay starts in Preview and every video and audio stops when Preview exits, in the desktop app", async () => {
   const { app, page } = layoutry;
   await importMediaDocument(page, mediaDocument(""));
   await waitForMediaLoaded(page, ALL_MEDIA);
@@ -84,7 +85,9 @@ test("muted autoplay starts in Preview and every video and audio stops when Prev
     await expectPlaying(page, "v-auto");
     await expectPlaying(page, "a-auto");
     expect((await mediaState(page, "v-auto")).muted).toBe(true);
-    expect((await mediaState(page, "v-plain")).paused).toBe(true);
+    // Muted-only autoplay (BC-02.2.1): unmuted autoplay is left paused.
+    for (const id of ["v-plain", ...UNMUTED_AUTOPLAY])
+      expect((await mediaState(page, id)).paused, id).toBe(true);
 
     // B3: user-started media too, including unmuted audio.
     await page

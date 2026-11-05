@@ -19,3 +19,14 @@
 export function getMediaControls(node: { controls?: boolean }): boolean {
   return node.controls ?? true;
 }
+
+/**
+ * Layoutry's autoplay policy (BC-02.2.1): media starts on its own only when
+ * it is authored both autoplay AND muted. An unmuted autoplay never starts
+ * by itself, in Preview or in an exported page; the user starts it from
+ * the controls. The authored `autoplay` field is kept as is; only the
+ * effective value given to Canvas Preview and Export is derived here.
+ */
+export function getEffectiveAutoplay(node: { autoplay?: boolean; muted?: boolean }): boolean {
+  return node.autoplay === true && node.muted === true;
+}

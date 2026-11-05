@@ -139,6 +139,34 @@ describe("buildExportDocument — Preview semantics and editor-only state", () =
     expect(document.assets).toEqual([{ nodeId: "img-1", property: "src", url: "https://example.com/a.png", kind: "remote" }]);
   });
 
+  it("exports autoplay only for muted media (BC-02.2.1), warning when an unmuted autoplay is left out", () => {
+    const src = "https://example.com/clip.webm";
+    const input = page([
+      { id: "v-muted", tag: "video", src, autoplay: true, muted: true, loop: true },
+      { id: "v-unmuted", tag: "video", src, autoplay: true, loop: true },
+      { id: "a-unmuted", tag: "audio", src, autoplay: true, controls: false },
+      { id: "v-muted-noauto", tag: "video", src, muted: true },
+      { id: "v-plain", tag: "video", src },
+    ]);
+    const before = structuredClone(input);
+    const document = build(input);
+    expect(attributeMap(find(document.root, "v-muted", "-media"))).toMatchObject({ autoplay: true, muted: true, loop: true, controls: true });
+    expect(attributeMap(find(document.root, "v-unmuted", "-media"))).toMatchObject({ loop: true, controls: true });
+    expect(attributeMap(find(document.root, "v-unmuted", "-media"))).not.toHaveProperty("autoplay");
+    expect(attributeMap(find(document.root, "v-unmuted", "-media"))).not.toHaveProperty("muted");
+    expect(attributeMap(find(document.root, "a-unmuted", "-media"))).not.toHaveProperty("autoplay");
+    expect(attributeMap(find(document.root, "a-unmuted", "-media"))).not.toHaveProperty("controls");
+    expect(attributeMap(find(document.root, "v-muted-noauto", "-media"))).not.toHaveProperty("autoplay");
+    expect(attributeMap(find(document.root, "v-plain", "-media"))).not.toHaveProperty("autoplay");
+    const warnings = document.diagnostics.filter((diagnostic) => diagnostic.code === "unmuted-autoplay");
+    expect(warnings.map((warning) => [warning.nodeId, warning.severity, warning.property])).toEqual([
+      ["v-unmuted", "warning", "autoplay"],
+      ["a-unmuted", "warning", "autoplay"],
+    ]);
+    // The authored fields are untouched.
+    expect(input).toEqual(before);
+  });
+
   it("selects the first option carrying the authored selection's value", () => {
     const document = build(page([{ id: "s-1", tag: "select", children: [{ id: "o-1", tag: "option", text: "A" }, { id: "o-2", tag: "option", text: "B", value: "b", selected: true }, { id: "o-3", tag: "option", text: "C", value: "b" }] }]));
     expect(attributeMap(find(document.root, "o-2"))).toMatchObject({ selected: true, value: "b" });

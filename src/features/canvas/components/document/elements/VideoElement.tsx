@@ -8,7 +8,7 @@ import { MediaInteractionShield } from "@/features/canvas/components/document/el
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
 import { resolveVideoOrIframeElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
-import { getMediaControls } from "@/features/editor/types/video";
+import { getEffectiveAutoplay, getMediaControls } from "@/features/editor/types/video";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
@@ -59,7 +59,7 @@ export function VideoElement({ node, parentId, parentLayoutMode, parentFlowDispl
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
   const mediaRef = useRef<HTMLVideoElement>(null);
-  usePreviewMediaPlayback(mediaRef, { isPreview, autoplay: !!node.autoplay });
+  usePreviewMediaPlayback(mediaRef, { isPreview, autoplay: getEffectiveAutoplay(node) });
   const recipe = resolveVideoOrIframeElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
 
   return (
@@ -75,7 +75,7 @@ export function VideoElement({ node, parentId, parentLayoutMode, parentFlowDispl
         src={node.src}
         poster={node.poster}
         controls={getMediaControls(node)}
-        autoPlay={isPreview && !!node.autoplay}
+        autoPlay={isPreview && getEffectiveAutoplay(node)}
         muted={node.muted}
         loop={node.loop}
         id={node.htmlId}
