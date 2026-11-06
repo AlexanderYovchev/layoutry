@@ -1,0 +1,411 @@
+LAYOUTRY — BC-02.5: PREVIEW/EXPORT PARITY & ACCESSIBILITY
+==========================================================
+Date: 2026-11-05
+Type: Three confirmed defect fixes + cross-browser regression testing
+Baseline: HEAD cffabe9 (BC-02.4).
+Status: Implemented and tested. Awaiting QA review. Not committed.
+
+Classification used below:
+  CONFIRMED     measured in a real browser or Electron, or a direct code fact
+  NOT VERIFIED  not checked, with the reason
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+B5, B6 and B7 are fixed, and Preview and the exported page now agree in
+every tested scenario.
+
+- B5 (hidden media): the exported page kept playing video and audio
+  inside a target an interaction had hidden. Its runtime now pauses all
+  media in a target when it is hidden, and refuses playback anywhere
+  inside hidden content, including autoplay at load. On show it starts
+  only muted autoplay media, which is exactly what Preview does. Preview
+  already stopped hidden media by unmounting hidden content. Unchanged.
+- B6 (aria-expanded): Preview exposed no trigger state. Button and link
+  triggers now carry aria-expanded and aria-haspopup="dialog" in Preview,
+  derived by one helper that the export now uses too. The state is equal
+  at every step for all 13 triggers of the 8 built-in components.
+- B7 (reduced motion): under prefers-reduced-motion: reduce, Preview
+  shortened authored transitions to 0.01ms while the export kept 0.5s.
+  The export now has a scoped reduced-motion block for elements with an
+  authored transition, and Preview also drops the transition delay. Both
+  compute the same values in Chromium, Firefox and WebKit. With no
+  preference, nothing changes.
+
+Evidence:
+- The new parity spec fails on the old sources: B5 export, both B6 tests
+  and B7 reduce (4 failed, 2 passed). It passes with the fix.
+- New unit tests: 7 runtime (19 in that file), 5 helper (including a no-drift check
+  against the export), 6 Preview ARIA, 3 stylesheet.
+- Electron: 2 new tests pass.
+- B1, B2, B3, B4 and B8 specs still pass.
+
+No document, schema, store, persistence or Electron change.
+Recommendation: CLOSE BC-02.5 (section 15).
+
+
+2. B5 — ROOT CAUSE AND IMPLEMENTATION
+-------------------------------------
+Root cause (CONFIRMED):
+- Preview: DocumentNodeRenderer returns null for a runtime-hidden node.
+  The media element is removed, which pauses it (BC-02.2's
+  usePreviewMediaPlayback cleanup plus the browser's own removal steps).
+- Export: exportInteractionRuntime set element.hidden = true. The media
+  stayed in the document and kept playing, and audio stayed audible.
+- Reproduced on the old code: "v-loop while hidden should be paused" —
+  Received: false.
+
+Decision: keep both visibility mechanisms (the brief's "behavioral parity,
+not identical DOM"). DialogElement's open/close and focus restoration
+depend on Preview's unmount semantics, so moving Preview to a `hidden`
+attribute would be the rewrite the brief warns against.
+
+Implementation (export runtime only):
+- setVisible(token, false): pause() every <video>/<audio> in the target,
+  including the target itself and any depth.
+- setVisible(token, true): play() only media that is autoplay AND
+  currently muted, and not inside other still-hidden content.
+  - The export writes autoplay only for muted media (BC-02.2.1).
+  - The live `muted` check means media the user unmuted is never
+    auto-started with sound (unit-tested).
+  - Rejections are caught.
+- One capture-phase "play" listener on the document pauses any media
+  that starts while inside [hidden] or a closed <dialog>. This covers
+  autoplay inside a target hidden at load, and scripted play().
+
+Behavior now (both runtimes):
+  hide          every media element inside stops, at any depth
+  show          plain media stays paused; muted autoplay starts by its
+                own setting (not because it was playing before); unmuted
+                media never starts by itself
+  hidden at     nothing inside plays
+  load
+  position      Export keeps it (paused where it was). Preview restarts
+                from 0, because hidden content is re-created on show (the
+                existing, documented Preview unmount behavior; see 13).
+Edge cases tested:
+- video and audio directly inside, and audio three levels deep;
+- several media in one target;
+- hide → show → hide ×3;
+- autoplay on and off, muted and unmuted;
+- already paused, not yet loaded (the hidden-at-load target);
+- native controls (all fixtures have them);
+- a parent that is hidden.
+"Media removed while playing" is BC-02.2's unmount test (unchanged). In
+Preview the UI cannot delete anything.
+The document is unchanged and nothing goes into history (Undo stays
+disabled; the runtime never touches the document).
+
+
+3. B6 — ROOT CAUSE AND IMPLEMENTATION
+-------------------------------------
+Root cause (CONFIRMED): only the export knew trigger accessibility, in
+exportBehaviorAttributes plus buildExportBehaviors. The Canvas elements
+render no ARIA state at all. Old code: Preview snapshot had null wherever
+the export had "false"/"true"/"dialog".
+
+Which components need it (WAI-ARIA disclosure and dialog patterns, and the
+export's existing rules, which were kept, not invented):
+  Dropdown, Collapsible, Popover   toggle a target  → aria-expanded
+  Modal and Drawer openers         show a dialog    → aria-haspopup="dialog"
+  Drawer/Modal close, Tabs, Toast  show-only or hide-only → nothing
+    show/close, Alert dismiss      (they don't open and close one thing)
+Only <button> and <a> triggers get the state; a div trigger has no role
+to put it on.
+
+Implementation:
+- src/features/editor/utils/triggerAccessibility.ts:
+  resolveTriggerAccessibility(bindings, getTarget) returns
+  { expandsTargetId?, opensDialog }. The first toggled target that
+  exists is the one reported; a dialog counts if the trigger shows or
+  toggles it. It also exports EXPANDABLE_CONTROL_TAGS.
+- buildExportBehaviors and exportBehaviorAttributes now use it, so the
+  export output is unchanged (its existing tests pass), but Preview and
+  Export can no longer drift. A unit test compares the helper with the
+  export's descriptors for every built-in component.
+- src/features/canvas/hooks/usePreviewTriggerAria.ts: in Preview only,
+  aria-expanded = the expanded target's runtimeVisibility, and
+  aria-haspopup="dialog". The selectors return primitives, so only the
+  affected trigger re-renders. Design renders neither attribute.
+- ButtonElement and LinkElement spread it.
+
+aria-controls: the export writes it, using authored or generated ids;
+Preview does not, because Preview targets have no ids unless authored and
+hidden targets are unmounted. aria-expanded is the state assistive
+technology announces. aria-controls has little screen-reader support.
+Recorded as a known difference (section 13).
+
+
+4. B7 — ROOT CAUSE AND IMPLEMENTATION
+-------------------------------------
+Root cause (CONFIRMED): src/app/globals.css has a global reduced-motion
+rule (`*` gets transition-duration: 0.01ms !important), which also
+reaches the user's document on the Canvas. The export has no equivalent.
+Old code under reduce: Preview duration 1e-05s, Export 0.5s. The delay was
+not reset in either (0.2s), so a delayed state change would still wait.
+
+What can move in a Layoutry document: only an authored transition
+(property, duration, timing, delay). The model has no keyframe
+animations, entrance effects or smooth scrolling. Editor chrome motion
+(panels, menus) is unaffected and not part of the user's page.
+
+Implementation:
+- Export (printExportStylesheet): when any element has an authored
+  transition, one block at the end:
+    @media (prefers-reduced-motion: reduce) {
+      .ly-node-3, .ly-node-9 {
+        transition-duration: 0.01ms !important;
+        transition-delay: 0s !important;
+      }
+    }
+  Only those elements are listed, and the authored rules themselves are
+  unchanged (unit-tested).
+  Why override authored motion at all: the brief requires both runtimes
+  to respect the preference. The transitions are Layoutry-generated from
+  the Inspector, not hand-written CSS. Preview already did the same.
+- Preview (globals.css): inside the existing reduced-motion block,
+  `[data-document-surface] * { transition-delay: 0s !important; }`.
+  Scoped to the user's document, so editor chrome is unchanged.
+- No authored value changes; with no preference, nothing changes.
+
+
+5. PREVIEW / EXPORT COMPARISON
+------------------------------
+(Chromium, Firefox, WebKit; WebKit media: see 11)
+Scenario                       Preview              Export
+Media in target, hide          paused               paused (was: playing)
+Media, show again              plain stays paused   plain stays paused
+                               muted autoplay plays muted autoplay plays
+Position after hide/show       restarts at 0        kept
+Hidden-at-load muted autoplay  not playing          not playing
+aria-expanded, initial         same                 same
+aria-expanded, open/close/Esc  same, every step     same
+aria-haspopup="dialog"         Modal/Drawer openers same
+aria-controls                  not written          written
+Reduced motion: duration       1e-05s               1e-05s (was 0.5s)
+Reduced motion: delay          0s (was 0.2s)        0s (was 0.2s)
+Reduced motion: change after   new value            new value
+  100 ms
+No preference                  0.5s / 0.2s          0.5s / 0.2s
+Toggle works under reduce      yes                  yes
+
+
+6. CROSS-DEFECT INTERACTION TESTS
+---------------------------------
+e2e "cross-defect: an expandable panel with media, under reduced motion".
+In Preview and on the exported page, with reduced motion confirmed active:
+1. The trigger is aria-expanded="false".
+2. Click: "true", and the muted autoplay video in the panel plays.
+3. Click: "false", and the video is paused.
+4. Click: it plays again (by its own autoplay setting).
+5. Then in Preview: Exit Preview while it plays: it stops (B3), and no
+   aria state remains in Design.
+6. Re-enter: authored defaults (aria-expanded="false", panel hidden).
+7. Undo stays disabled.
+Also tested together in Electron: hidden media stops and aria-expanded
+follows the target.
+
+
+7. PREVIOUS DEFECT REGRESSION RESULTS
+-------------------------------------
+B1  forms spec 12/12 (Chromium in the full suite; Firefox, WebKit)
+B2  muted-only autoplay: media spec 8/8 (Chromium full suite, Firefox);
+    unmuted media never auto-started on show (unit)
+B3  pause on Preview exit: media spec, and cross-defect step 5
+B4  iframe sandbox: embed spec 29/29 (Chromium, Firefox, WebKit); export
+    sandbox unchanged; no allow= attribute, so fullscreen stays off
+B8  no Preview drag: forms spec B8 test, previewForms unit tests
+Electron: embed, forms and media desktop specs all pass in the full
+desktop run.
+
+
+8. ACCESSIBILITY VERIFICATION
+-----------------------------
+- Expanded/collapsed state: real DOM attributes compared at every step for
+  all 13 triggers (browser) and on every toggle (unit).
+- Keyboard activation: toggling back with Enter on the focused trigger
+  flips the state the same way in both. Escape closes an open dropdown
+  and sets "false" in both.
+- Focus order: unchanged; no tabindex was added.
+- Hidden content stays unreachable by keyboard in both: Preview unmounts
+  it, and the export uses [hidden] (display: none).
+- Labels and accessible names: unchanged (only attributes were added).
+- Reduced-motion users can operate everything: tested toggles.
+- Other issue noticed, not fixed (outside the three defects): Tabs have
+  no tab-role semantics, in either runtime. That was already documented
+  as intended in exportBehaviorAttributes.
+
+
+9. REDUCED-MOTION VERIFICATION
+------------------------------
+Playwright contextOptions.reducedMotion in a real browser:
+  reduce         Preview == Export: duration < 0.001s, delay 0s; an
+                 opacity change is complete after 100 ms in both
+  no-preference  Preview == Export: duration 0.5s, delay 0.2s,
+                 property opacity; after 100 ms the opacity has not
+                 changed yet in both (still inside the delay)
+Electron: emulateMedia no-preference → 0.5s/0.2s; reduce → <0.001s/0s;
+the toggle still works.
+
+
+10. ELECTRON VERIFICATION
+-------------------------
+New: e2e/desktop/preview-parity.spec.ts (real Electron, offline, media
+from app:// in a copy of the export):
+- the trigger is aria-expanded="true", then "false" when it hides the
+  panel;
+- the playing video and the muted autoplay video are paused when hidden;
+- showing again keeps the plain video paused;
+- the URL is unchanged, and Exit Preview leaves no aria state;
+- Undo stays disabled;
+- reduced motion: as section 9.
+No Electron security setting changed. The existing security spec passes
+in the full desktop run.
+
+
+11. EXACT TEST RESULTS
+----------------------
+New tests:
+  e2e/preview-export-parity.spec.ts            7 tests
+  e2e/desktop/preview-parity.spec.ts           2 tests
+  src/features/export/utils/exportInteractionRuntime.test.ts  +7 (19 total)
+  src/features/editor/utils/triggerAccessibility.test.ts      5 (new)
+  src/features/canvas/components/previewTriggerAria.test.tsx  6 (new)
+  src/features/export/utils/printExportStylesheet.test.ts     3 (new)
+  e2e/support/parityFixtures.ts               fixtures and media server
+Before (old sources, final spec): 4 failed (B7 reduce, B6 both, B5
+export), 2 passed (B5 Preview, B7 no-preference: both already correct).
+
+Final results (Windows 10, ELECTRON_RUN_AS_NODE stripped):
+  npm run typecheck                        passed, 0 errors
+  npm run lint (eslint .)                  passed, 0 problems
+  Vitest, full (--maxWorkers=4)            349 files; 5245 passed,
+                                           1 skipped (existing symlink
+                                           test), 0 failed
+  Playwright web suite, Chromium (full)    178 passed, 0 failed, 0 flaky
+                                           (includes the 7 new and the
+                                           B1/B2/B3/B4/B8 specs)
+  Parity spec, Firefox                     7/7
+  Parity spec, WebKit                      4/7. The 3 failures are the B5
+                                           media tests, each stopped at
+                                           "readyState >= 3, received 0":
+                                           ENVIRONMENTAL (Playwright's
+                                           Windows WebKit loads no media,
+                                           BC-02.2). B6, B7 and the B7 half
+                                           of the cross-defect checks pass.
+  Earlier in this checkpoint, same code:   forms 12/12 and embed 29/29 in
+                                           Firefox and WebKit; media spec
+                                           8/8 in Firefox
+  npm run build (production)               passed
+  npm run desktop:test (builds, then full) 64 passed, 2 skipped, 0 failed
+                                           (62 + 2 new; skips = opt-in
+                                           persistence benchmarks)
+
+Test changes made along the way (none weakens a check):
+- e2e/preview-media-lifecycle.spec.ts (BC-02.2): the assertion "the
+  exported HTML contains no .pause()" is now "contains no editor mode
+  (editorMode/exitPreview/enterPreview)". B5 deliberately adds pause() to
+  the export runtime for hidden targets, which the old regex would flag.
+  Its intent (no editor-only lifecycle in exports) is kept, and so are
+  its behavioral checks.
+- The same spec's "position advances" helper, and the desktop media
+  spec's, failed once when a 4-second looping clip wrapped from 3.998 s to
+  0.6 s. This is a pre-existing timing flake, not caused here. Both now
+  require the position to move by more than 0.2 s either way; a stuck
+  clip still fails.
+- In the new parity spec: a 120 s limit for the 13-trigger B6 test
+  (slower engines); export pages load with domcontentloaded (WebKit's
+  load event waits for media forever); and transitions are measured on
+  the front tab at 400 ms. Headless WebKit applies even a 0.01ms
+  transition only on a later rendering update, so a 100 ms sample could
+  not tell the two cases apart there. Reduced motion must still be
+  complete at 400 ms, and normal motion must still be mid-transition
+  then.
+
+
+12. MODIFIED FILES
+------------------
+Source (8 files modified, 2 new):
+  src/features/editor/utils/triggerAccessibility.ts            NEW
+  src/features/canvas/hooks/usePreviewTriggerAria.ts           NEW
+  src/features/canvas/components/document/elements/ButtonElement.tsx
+  src/features/canvas/components/document/elements/LinkElement.tsx
+  src/features/export/utils/buildExportBehaviors.ts   (uses the helper)
+  src/features/export/utils/exportBehaviorAttributes.ts (shared tag set)
+  src/features/export/utils/exportInteractionRuntime.ts (B5)
+  src/features/export/utils/printExportStylesheet.ts    (B7)
+  src/app/globals.css                                   (B7, Preview)
+Tests:
+  NEW  e2e/preview-export-parity.spec.ts, e2e/desktop/preview-parity.spec.ts,
+       e2e/support/parityFixtures.ts,
+       src/features/editor/utils/triggerAccessibility.test.ts,
+       src/features/canvas/components/previewTriggerAria.test.tsx,
+       src/features/export/utils/printExportStylesheet.test.ts
+  MOD  src/features/export/utils/exportInteractionRuntime.test.ts,
+       e2e/preview-media-lifecycle.spec.ts, e2e/desktop/preview-media.spec.ts
+Reports:
+  docs/reports/BC-02.5-Preview-Export-Parity-And-Accessibility.txt
+  changelogs/2026-11-05-preview-export-parity-BC-02.5.txt (gitignored)
+Not modified: document model, schema, store, persistence, Electron code,
+the media hook, iframe policy, form elements.
+
+
+13. KNOWN LIMITATIONS
+---------------------
+- Preview restarts media at 0 when hidden content is shown again (hidden
+  content is unmounted). The export keeps the position. Both stop
+  playback, which is the essential invariant. Keeping the position in
+  Preview would need hidden content to stay mounted, which DialogElement
+  is built against.
+- Muted autoplay restarting when its target is shown is a deliberate,
+  documented choice. It is what Preview already did, and the export now
+  matches it. If QA prefers "show never starts anything", it is one
+  condition in the runtime, plus suppressing the remount autoplay in
+  Preview.
+- aria-controls is written only by the export (section 3).
+- WebKit media: Playwright's Windows WebKit loads no media (BC-02.2), so
+  the B5 browser tests cannot run there. B6/B7 and every non-media test
+  run in WebKit.
+- MP4/H.264 not verified (codec missing in Playwright's Chromium).
+
+
+14. REMAINING RISKS
+-------------------
+- LOW: the capture "play" listener pauses any media inside [hidden] on the
+  exported page. The exported page has no other scripts, so nothing could
+  expect hidden media to play.
+- LOW: an author's own CSS cannot exist today. If custom CSS arrives
+  later, the reduced-motion block (scoped to elements with an authored
+  transition) should be revisited.
+- No new high-severity defects found.
+
+
+15. RECOMMENDATION
+------------------
+CLOSE BC-02.5.
+- B5: hidden media stops in both runtimes (shown failing on the old
+  export); it never resumes on show except muted autoplay, by its own
+  setting.
+- B6: aria-expanded and aria-haspopup are identical in Preview and Export
+  at every step, for every built-in component, from one shared helper.
+- B7: reduced motion computes identically and works the same in both,
+  with normal motion unchanged.
+- B1, B2, B3, B4 and B8 still pass. The document is never modified, and
+  no history or dirty state results.
+- Chromium, Firefox and Electron pass. WebKit passes everything it can
+  run; its media limitation is environmental.
+Decisions for QA:
+- Muted autoplay restarting when its target is shown (section 13).
+- aria-controls in Preview (section 3).
+
+
+BC-02 DEFECT REGISTER
+---------------------
+B1  Interactive forms                FIXED
+B2  Muted autoplay                   FIXED
+B3  Media continues after Preview    FIXED
+B4  Unsafe iframe navigation         FIXED
+B5  Hidden-element parity            FIXED in BC-02.5, pending QA
+B6  Missing aria-expanded            FIXED in BC-02.5, pending QA
+B7  Reduced-motion mismatch          FIXED in BC-02.5, pending QA
+B8  Preview dragging modifies doc    FIXED

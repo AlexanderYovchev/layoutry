@@ -4,6 +4,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { useEditableText } from "@/features/canvas/hooks/useEditableText";
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
+import { usePreviewTriggerAria } from "@/features/canvas/hooks/usePreviewTriggerAria";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
 import { resolveTextElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
@@ -34,6 +35,7 @@ export function LinkElement({ node, parentId, parentLayoutMode, parentFlowDispla
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const editable = useEditableText(node);
+  const triggerAria = usePreviewTriggerAria(node);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
   const recipe = resolveTextElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
 
@@ -44,6 +46,7 @@ export function LinkElement({ node, parentId, parentLayoutMode, parentFlowDispla
       id={node.htmlId}
       ref={mergeRefs<HTMLElement>(dropRef, dragRef, editable.elementRef)}
       {...documentNodeAttributes(node, parentId)}
+      {...triggerAria}
       {...editable.editableProps}
       className={cn(
         documentDefaultClasses(recipe.defaults),

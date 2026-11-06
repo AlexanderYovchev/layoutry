@@ -1,8 +1,6 @@
 import type { ExportBehaviors } from "@/features/export/types/exportBehavior";
 import type { ExportAttribute } from "@/features/export/types/exportIr";
-
-/** Tags whose own role makes `aria-expanded` / `aria-haspopup` meaningful. */
-const EXPANDABLE_CONTROL_TAGS: ReadonlySet<string> = new Set(["button", "a"]);
+import { EXPANDABLE_CONTROL_TAGS } from "@/features/editor/utils/triggerAccessibility";
 
 export interface ElementBehaviorAttributes {
   /** A generated id, printed in the id position (only for targets without a usable authored id). */

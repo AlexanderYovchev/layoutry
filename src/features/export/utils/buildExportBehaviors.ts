@@ -2,6 +2,7 @@ import { isSelectableElement } from "@/features/editor/rules/elementCapabilities
 import { getInteractions } from "@/features/editor/types/interactions";
 import { getInitialPreviewVisibility } from "@/features/editor/types/previewVisibility";
 import type { EditorElementNode } from "@/features/editor/types/document";
+import { resolveTriggerAccessibility } from "@/features/editor/utils/triggerAccessibility";
 import type { ExportBehaviors, ExportBehaviorTarget, ExportBehaviorTrigger } from "@/features/export/types/exportBehavior";
 import type { ExportDiagnostic } from "@/features/export/types/exportDiagnostic";
 
@@ -84,12 +85,15 @@ export function buildExportBehaviors(document: EditorElementNode, diagnostics: E
     const actions = bindings.map((binding) => ({ action: binding.action, targetToken: tokenByNodeId.get(binding.targetId) ?? 0 }));
     const toggled = actions.filter((entry) => entry.action === "toggle").map((entry) => entry.targetToken);
     const dismissibleTargetTokens = toggled.filter((token, index) => toggled.indexOf(token) === index && targetByToken.get(token)?.initiallyVisible === false);
+    // Shared with Preview (usePreviewTriggerAria), so both expose the same state.
+    const accessibility = resolveTriggerAccessibility(bindings, (nodeId) => nodesById.get(nodeId));
+    const expandsTargetToken = accessibility.expandsTargetId === undefined ? undefined : tokenByNodeId.get(accessibility.expandsTargetId);
     triggers.push({
       nodeId: node.id,
       actions,
       dismissibleTargetTokens,
-      ...(toggled.length > 0 ? { expandsTargetToken: toggled[0] } : {}),
-      opensDialog: actions.some((entry) => entry.action !== "hide" && targetByToken.get(entry.targetToken)?.kind === "dialog"),
+      ...(expandsTargetToken !== undefined ? { expandsTargetToken } : {}),
+      opensDialog: accessibility.opensDialog,
     });
     for (const descendant of preOrder(node).slice(1)) nodesInsideTriggers.add(descendant.id);
   }

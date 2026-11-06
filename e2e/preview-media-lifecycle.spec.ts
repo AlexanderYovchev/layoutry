@@ -75,7 +75,9 @@ const exitPreview = (page: Page) => page.getByRole("button", { name: "Exit Previ
 async function expectAdvancing(page: Page, nodeId: string) {
   await expect.poll(async () => (await mediaState(page, nodeId)).paused, { message: `${nodeId} should be playing` }).toBe(false);
   const start = (await mediaState(page, nodeId)).currentTime;
-  await expect.poll(async () => (await mediaState(page, nodeId)).currentTime, { message: `${nodeId} position should advance` }).toBeGreaterThan(start + 0.2);
+  // The 4 s fixture loops, so the position can wrap back to 0: "advancing"
+  // means it moved by more than 0.2 s either way (BC-02.5 flake fix).
+  await expect.poll(async () => Math.abs((await mediaState(page, nodeId)).currentTime - start), { message: `${nodeId} position should advance` }).toBeGreaterThan(0.2);
 }
 
 async function expectStopped(page: Page, nodeId: string) {
@@ -198,7 +200,10 @@ test("Export follows muted-only autoplay and has no editor pause logic", async (
   expect(result.ok).toBe(true);
   expect(result.diagnostics.filter((diagnostic) => diagnostic.code === "unmuted-autoplay").map((diagnostic) => diagnostic.nodeId)).toEqual(["v-sound", "a-sound"]);
   const html = result.files.find((file) => file.path.endsWith(".html"))?.content ?? "";
-  expect(html).not.toMatch(/\.pause\(\)/);
+  // No editor-only lifecycle: the exported page has no Design/Preview mode to
+  // leave. (Since BC-02.5 its runtime does pause media inside a hidden
+  // target, so the check is for the editor concept, not for pause() itself.)
+  expect(html).not.toMatch(/editorMode|exitPreview|enterPreview/);
   files.set("export.html", Buffer.from(html));
   await page.goto(`${base}export.html`);
   const attributes = (id: string) => page.locator(`#${id}`).evaluate((media: HTMLMediaElement) => ({ autoplay: media.hasAttribute("autoplay"), muted: media.hasAttribute("muted"), loop: media.loop, controls: media.controls }));

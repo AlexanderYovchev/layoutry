@@ -29,6 +29,14 @@ import type { ExportBehaviors } from "@/features/export/types/exportBehavior";
  * - Escape hides the first shown dismissible target in document order and,
  *   if focus was inside it, returns focus to its trigger.
  * - A dialog open at load is re-opened modally, as Preview does.
+ * - Media (BC-02.5, B5): hiding a target pauses every <video>/<audio> in
+ *   it (their position is kept), and media inside hidden content can't
+ *   start at all, whether by autoplay at load or by a script. Showing a
+ *   target starts only media that is muted autoplay, which is what
+ *   Preview's re-mounted content does (the export writes autoplay only
+ *   for muted media, BC-02.2.1). Anything else stays paused until the
+ *   user plays it. Preview gets the same result by unmounting hidden
+ *   content.
  * One delegated listener per event type; no per-element click handlers.
  */
 export const EXPORT_INTERACTION_RUNTIME = `(function () {
@@ -49,6 +57,15 @@ export const EXPORT_INTERACTION_RUNTIME = `(function () {
     return element.tagName === "DIALOG";
   }
 
+  function isHidden(element) {
+    return Boolean(element.closest("[hidden], dialog:not([open])"));
+  }
+  function mediaIn(element) {
+    var media = Array.prototype.slice.call(element.querySelectorAll("video, audio"));
+    if (element.matches("video, audio")) media.unshift(element);
+    return media;
+  }
+
   function setVisible(token, shown) {
     var element = targets[token];
     if (!element || visible[token] === shown) return;
@@ -59,6 +76,13 @@ export const EXPORT_INTERACTION_RUNTIME = `(function () {
     } else {
       element.hidden = !shown;
     }
+    mediaIn(element).forEach(function (media) {
+      if (!shown) media.pause();
+      else if (media.autoplay && media.muted && !isHidden(media)) {
+        var playing = media.play();
+        if (playing && playing.catch) playing.catch(function () {});
+      }
+    });
     (expanders[token] || []).forEach(function (trigger) {
       trigger.setAttribute("aria-expanded", shown ? "true" : "false");
     });
@@ -121,6 +145,14 @@ export const EXPORT_INTERACTION_RUNTIME = `(function () {
       else if (action === "toggle") setVisible(token, !visible[token]);
     });
   });
+
+  // Hidden media never plays: not by autoplay while its target is hidden
+  // at load, and not by a script while it stays hidden. Media events do
+  // not bubble, so this listens in the capture phase.
+  document.addEventListener("play", function (event) {
+    var media = event.target;
+    if (media instanceof HTMLMediaElement && isHidden(media)) media.pause();
+  }, true);
 
   window.addEventListener("keydown", function (event) {
     if (event.key !== "Escape" || event.defaultPrevented) return;

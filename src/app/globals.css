@@ -298,6 +298,17 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+
+  /*
+   * The user's document (BC-02.5, B7): an authored transition's delay
+   * would still hold back the state change, so it goes too. Together with
+   * the rule above, this is exactly what the exported page applies to its
+   * elements with an authored transition (printExportStylesheet's
+   * reduced-motion block), so Preview predicts the export.
+   */
+  [data-document-surface] * {
+    transition-delay: 0s !important;
+  }
 }
 
 /*

@@ -21,7 +21,11 @@ HTMLDialogElement.prototype.close = function () {
   if (!this.hasAttribute("open")) return;
   this.removeAttribute("open");
   this.dispatchEvent(new Event("close"));
-};`;
+};
+// BC-02.5: jsdom has no media playback; record play()/pause() per element id.
+window.__media = [];
+HTMLMediaElement.prototype.play = function () { window.__media.push("play:" + this.id); return Promise.resolve(); };
+HTMLMediaElement.prototype.pause = function () { window.__media.push("pause:" + this.id); };`;
 
 function page(children: EditorElementNode[]): EditorElementNode {
   return { id: "page-root", tag: "page", children };
@@ -59,6 +63,10 @@ function load(document: EditorElementNode) {
   };
   return {
     document: frameDocument,
+    media: (): string[] => {
+      const log: unknown = Reflect.get(frameDocument.defaultView ?? {}, "__media");
+      return Array.isArray(log) ? log.map(String) : [];
+    },
     element,
     click: (nodeId: string) => element(nodeId).dispatchEvent(new MouseEvent("click", { bubbles: true })),
     escape: () => (frameDocument.activeElement ?? frameDocument.body).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
@@ -239,5 +247,103 @@ describe("interaction runtime — safety", () => {
     for (const forbidden of ["eval(", "Function(", "innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "setTimeout", "setInterval", "</script", "<!--"]) {
       expect(EXPORT_INTERACTION_RUNTIME, forbidden).not.toContain(forbidden);
     }
+  });
+});
+
+describe("interaction runtime — media in hidden targets (BC-02.5, B5)", () => {
+  const clip = "https://example.com/clip.webm";
+  const media = (id: string, extra: Partial<EditorElementNode> = {}): EditorElementNode => ({ id, htmlId: id, tag: "video", src: clip, ...extra });
+  const document = (initiallyHidden: boolean) =>
+    page([
+      { id: "b-toggle", tag: "button", text: "Toggle", interactions: [{ id: "i-1", trigger: "click", action: "toggle", targetId: "panel" }] },
+      {
+        id: "panel",
+        tag: "div",
+        ...(initiallyHidden ? { initialPreviewVisibility: "hidden" as const } : {}),
+        children: [
+          media("v-plain"),
+          media("v-auto", { autoplay: true, muted: true }),
+          media("v-sound", { autoplay: true }),
+          { id: "deep", tag: "div", children: [{ id: "deeper", tag: "div", children: [{ id: "a-deep", htmlId: "a-deep", tag: "audio", src: clip }] }] },
+        ],
+      },
+    ]);
+
+  /** jsdom does not initialise the muted property from the muted attribute, as browsers do. */
+  function loadMuted(initiallyHidden: boolean) {
+    const loaded = load(document(initiallyHidden));
+    const auto = loaded.document.getElementById("v-auto") as HTMLMediaElement | null;
+    if (auto) auto.muted = true;
+    return loaded;
+  }
+
+  it("hiding a target pauses every video and audio in it, at any depth", () => {
+    const page = loadMuted(false);
+    page.click("b-toggle");
+    expect(page.shown("panel")).toBe(false);
+    expect(page.media().filter((entry) => entry.startsWith("pause:")).sort()).toEqual(["pause:a-deep", "pause:v-auto", "pause:v-plain", "pause:v-sound"]);
+  });
+
+  it("showing it again starts only muted autoplay media; nothing else resumes", () => {
+    const page = loadMuted(false);
+    page.click("b-toggle");
+    page.click("b-toggle");
+    expect(page.shown("panel")).toBe(true);
+    expect(page.media().filter((entry) => entry.startsWith("play:"))).toEqual(["play:v-auto"]);
+  });
+
+  it("repeated toggling pauses on every hide and plays muted autoplay on every show", () => {
+    const page = loadMuted(false);
+    for (let round = 0; round < 3; round++) {
+      page.click("b-toggle");
+      page.click("b-toggle");
+    }
+    expect(page.media().filter((entry) => entry === "pause:v-plain")).toHaveLength(3);
+    expect(page.media().filter((entry) => entry === "play:v-auto")).toHaveLength(3);
+    expect(page.media().filter((entry) => entry.startsWith("play:") && entry !== "play:v-auto")).toEqual([]);
+  });
+
+  it("media inside hidden content cannot start: a play event there is paused at once", () => {
+    const page = loadMuted(true);
+    const video = page.document.getElementById("v-auto");
+    if (!video) throw new Error("no video");
+    video.dispatchEvent(new Event("play"));
+    expect(page.media()).toEqual(["pause:v-auto"]);
+    page.click("b-toggle");
+    page.document.getElementById("v-plain")?.dispatchEvent(new Event("play"));
+    expect(page.media()).not.toContain("pause:v-plain");
+  });
+
+  it("never rewinds: hiding only pauses, it does not reset the position", () => {
+    const page = loadMuted(false);
+    const video = page.document.getElementById("v-plain") as HTMLMediaElement | null;
+    if (!video) throw new Error("no video");
+    Object.defineProperty(video, "currentTime", { value: 2.5, writable: true });
+    page.click("b-toggle");
+    page.click("b-toggle");
+    expect(video.currentTime).toBe(2.5);
+  });
+
+  it("the exported markup writes autoplay only for the muted video (BC-02.2.1 still holds)", () => {
+    const page = loadMuted(false);
+    expect(page.document.getElementById("v-auto")?.hasAttribute("autoplay")).toBe(true);
+    expect(page.document.getElementById("v-sound")?.hasAttribute("autoplay")).toBe(false);
+  });
+});
+
+describe("interaction runtime — media the user unmuted (BC-02.5 with BC-02.2.1)", () => {
+  it("is not auto-started with sound when its target is shown again", () => {
+    const loaded = load(
+      page([
+        { id: "b-toggle", tag: "button", text: "Toggle", interactions: [{ id: "i-1", trigger: "click", action: "toggle", targetId: "panel" }] },
+        { id: "panel", tag: "div", children: [{ id: "v-auto", htmlId: "v-auto", tag: "video", src: "https://example.com/clip.webm", autoplay: true, muted: true }] },
+      ]),
+    );
+    const video = loaded.document.getElementById("v-auto") as HTMLMediaElement | null;
+    if (!video) throw new Error("no video");
+    video.muted = false;
+    loaded.click("b-toggle");
+    loaded.click("b-toggle");
+    expect(loaded.media()).toEqual(["pause:v-auto"]);
   });
 });

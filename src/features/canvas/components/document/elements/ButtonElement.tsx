@@ -3,6 +3,7 @@
 import { useEditableText } from "@/features/canvas/hooks/useEditableText";
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
+import { usePreviewTriggerAria } from "@/features/canvas/hooks/usePreviewTriggerAria";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
 import { resolveTextElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
@@ -14,6 +15,7 @@ export function ButtonElement({ node, parentId, parentLayoutMode, parentFlowDisp
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const editable = useEditableText(node);
+  const triggerAria = usePreviewTriggerAria(node);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
   const recipe = resolveTextElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
 
@@ -23,6 +25,7 @@ export function ButtonElement({ node, parentId, parentLayoutMode, parentFlowDisp
       id={node.htmlId}
       ref={mergeRefs<HTMLElement>(dropRef, dragRef, editable.elementRef)}
       {...documentNodeAttributes(node, parentId)}
+      {...triggerAria}
       {...editable.editableProps}
       className={cn(
         documentDefaultClasses(recipe.defaults),

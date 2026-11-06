@@ -51,11 +51,14 @@ async function expectPlaying(page: Page, nodeId: string) {
     })
     .toBe(false);
   const start = (await mediaState(page, nodeId)).currentTime;
+  // The 4 s fixture loops, so the position can wrap back to 0: "advancing"
+  // means it moved by more than 0.2 s either way (BC-02.5 flake fix).
   await expect
-    .poll(async () => (await mediaState(page, nodeId)).currentTime, {
-      message: `${nodeId} position should advance`,
-    })
-    .toBeGreaterThan(start + 0.2);
+    .poll(
+      async () => Math.abs((await mediaState(page, nodeId)).currentTime - start),
+      { message: `${nodeId} position should advance` },
+    )
+    .toBeGreaterThan(0.2);
 }
 
 async function expectStopped(page: Page, nodeId: string) {
