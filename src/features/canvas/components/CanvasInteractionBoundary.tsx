@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { CanvasOverlay } from "@/features/canvas/components/overlay/CanvasOverlay";
 import { DocumentNodeRenderer } from "@/features/canvas/components/document/DocumentNodeRenderer";
+import { InteractionTargetsContext } from "@/features/canvas/components/document/previewRuntimeContext";
 import { isEventInsideRelationshipRegion, resolveRelationshipElements } from "@/features/canvas/utils/relationshipContainment";
 import { isSelectableElement } from "@/features/editor/rules/elementCapabilities";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { findDismissibleRelationships } from "@/features/editor/utils/dismissibleTargets";
+import { resolveInteractionTargets } from "@/features/editor/utils/interactionTargets";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
 interface CanvasInteractionBoundaryProps {
@@ -56,6 +58,19 @@ export function CanvasInteractionBoundary({
   const executeInteractionsForNode = useEditorStore((state) => state.executeInteractionsForNode);
   const exitPreview = useEditorStore((state) => state.exitPreview);
   const runtimeVisibility = useEditorStore((state) => state.runtimeVisibility);
+  const targetsByNodeId = useMemo(() => new Map(resolveInteractionTargets(documentModel).map((target) => [target.nodeId, target])), [documentModel]);
+  // Preview keeps hidden targets mounted (BC-02.5.1), like the exported
+  // page's [hidden]: this one rule is what stops displaying them. Hidden
+  // content then takes no space, receives no pointer events, is skipped by
+  // Tab and is out of the accessibility tree, while its runtime state
+  // (media position, typed values) survives. Node ids are generated from
+  // a fixed alphabet, which the filter enforces anyway.
+  const runtimeHiddenRule = isPreview
+    ? Object.entries(runtimeVisibility)
+        .filter(([nodeId, visible]) => !visible && /^[A-Za-z0-9_-]+$/.test(nodeId))
+        .map(([nodeId]) => `[data-document-surface] [data-node-id="${nodeId}"]{display:none!important}`)
+        .join("\n")
+    : "";
   const dismissRuntimeTarget = useEditorStore((state) => state.dismissRuntimeTarget);
 
   // Reveals the primary selected node whenever selection changes —
@@ -263,14 +278,17 @@ export function CanvasInteractionBoundary({
        * components/ui/Dialog.tsx) render in the browser's own top layer,
        * which no z-index of any kind can affect.
        */}
-      <div className="isolate">
-        <DocumentNodeRenderer
-          node={documentModel}
-          parentId={null}
-          parentLayoutMode="flow"
-          parentFlowDisplay="block"
-        />
-      </div>
+      {runtimeHiddenRule ? <style data-runtime-hidden="">{runtimeHiddenRule}</style> : null}
+      <InteractionTargetsContext.Provider value={targetsByNodeId}>
+        <div className="isolate">
+          <DocumentNodeRenderer
+            node={documentModel}
+            parentId={null}
+            parentLayoutMode="flow"
+            parentFlowDisplay="block"
+          />
+        </div>
+      </InteractionTargetsContext.Provider>
       <CanvasOverlay canvasRootRef={canvasRootRef} hoveredNodeId={hoveredNodeId} />
     </div>
   );

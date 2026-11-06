@@ -165,7 +165,9 @@ test("media hidden by an interaction during Preview is not left playing after ex
   await enterPreview(page);
   await expectAdvancing(page, "v-nested");
   await page.locator("[data-document-surface] button", { hasText: "Toggle media box" }).click();
-  await expect(page.locator('[data-document-surface] [data-node-id="v-nested"]')).toHaveCount(0);
+  // BC-02.5.1: hidden content stays mounted (as in the export) and is paused.
+  await expect(page.locator('[data-document-surface] [data-node-id="v-nested"]')).toBeHidden();
+  await expectStopped(page, "v-nested");
   await exitPreview(page);
   await expect(page.locator('[data-document-surface] [data-node-id="v-nested"]')).toHaveCount(1);
   await expectStopped(page, "v-nested");

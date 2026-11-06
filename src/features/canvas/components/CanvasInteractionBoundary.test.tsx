@@ -413,19 +413,25 @@ describe("CanvasInteractionBoundary", () => {
       HTMLDialogElement.prototype.close = originalClose;
     });
 
-    it("Open Button click mounts and opens the real Dialog; Close Button click closes and unmounts it", () => {
+    // BC-02.5.1: a hidden target stays mounted in Preview (as in the
+    // export), so the dialog is closed rather than absent while hidden.
+    it("Open Button click opens the real Dialog; Close Button click closes it (it stays in the DOM, closed)", () => {
       const modal = createModalNode();
       useEditorStore.setState((state) => ({ document: { ...state.document, children: [modal] } }));
       useEditorStore.getState().enterPreview();
-      renderInWorkspace(useEditorStore.getState().document);
+      const { container } = renderInWorkspace(useEditorStore.getState().document);
+      const dialog = () => container.querySelector("dialog");
 
-      expect(screen.queryByText("Modal content goes here.")).not.toBeInTheDocument();
+      expect(dialog()).not.toBeNull();
+      expect(dialog()?.hasAttribute("open")).toBe(false);
 
       fireEvent.click(screen.getByRole("button", { name: "Open Modal" }));
+      expect(dialog()?.hasAttribute("open")).toBe(true);
       expect(screen.getByText("Modal content goes here.")).toBeInTheDocument();
 
       fireEvent.click(screen.getByRole("button", { name: "Close" }));
-      expect(screen.queryByText("Modal content goes here.")).not.toBeInTheDocument();
+      expect(dialog()?.hasAttribute("open")).toBe(false);
+      expect(dialog()).not.toBeNull();
     });
 
     it("Escape while the Modal is open does NOT exit Preview — DialogElement's own stopPropagation claims the event before it ever bubbles up to CanvasInteractionBoundary's window listener", () => {

@@ -6,6 +6,8 @@ interface PreviewMediaPlaybackOptions {
   isPreview: boolean;
   /** The effective autoplay (getEffectiveAutoplay): authored autoplay AND muted. */
   autoplay: boolean;
+  /** The element, or an ancestor, is hidden by a Preview interaction (RuntimeHiddenContext). */
+  hidden?: boolean;
 }
 
 /**
@@ -34,18 +36,23 @@ interface PreviewMediaPlaybackOptions {
  *   project open/new, which reset `editorMode`), and on unmount. It does
  *   not rewind, and never writes playback state to the document.
  *
- * Runs only when `isPreview`/`autoplay` change, not on unrelated renders,
- * and attaches no event listeners.
+ * - Hidden by an interaction (BC-02.5.1): the element stays mounted, so the
+ *   cleanup pauses it and keeps its position. While hidden nothing starts
+ *   it. When shown again, muted autoplay resumes from that position, as on
+ *   the exported page; anything else stays paused.
+ *
+ * Runs only when `isPreview`/`autoplay`/`hidden` change, not on unrelated
+ * renders, and attaches no event listeners.
  */
-export function usePreviewMediaPlayback(mediaRef: RefObject<HTMLMediaElement | null>, { isPreview, autoplay }: PreviewMediaPlaybackOptions) {
+export function usePreviewMediaPlayback(mediaRef: RefObject<HTMLMediaElement | null>, { isPreview, autoplay, hidden = false }: PreviewMediaPlaybackOptions) {
   useEffect(() => {
     const media = mediaRef.current;
-    if (!media || !isPreview) return;
+    if (!media || !isPreview || hidden) return;
     if (autoplay && media.muted) {
       void Promise.resolve(media.play()).catch(() => {});
     }
     return () => {
       media.pause();
     };
-  }, [mediaRef, isPreview, autoplay]);
+  }, [mediaRef, isPreview, autoplay, hidden]);
 }

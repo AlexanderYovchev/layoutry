@@ -24,11 +24,13 @@ describe("DocumentNodeRenderer", () => {
       expect(screen.getByText("Hideable")).toBeInTheDocument();
     });
 
-    it("does not render a node (or its subtree) explicitly marked hidden while in Preview", () => {
+    // BC-02.5.1: a hidden node stays mounted (as in the export's DOM);
+    // CanvasInteractionBoundary's runtime-hidden rule stops displaying it.
+    it("keeps a node (and its subtree) explicitly marked hidden while in Preview mounted", () => {
       useEditorStore.setState({ editorMode: "preview", runtimeVisibility: { "content-1": false } });
       render(<DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />);
-      expect(screen.queryByText("Hideable")).not.toBeInTheDocument();
-      expect(document.querySelector('[data-node-id="content-1"]')).not.toBeInTheDocument();
+      expect(screen.getByText("Hideable")).toBeInTheDocument();
+      expect(document.querySelector('[data-node-id="content-1"]')).toBeInTheDocument();
     });
 
     it("renders normally in Preview when there is no explicit runtimeVisibility entry (default visible)", () => {

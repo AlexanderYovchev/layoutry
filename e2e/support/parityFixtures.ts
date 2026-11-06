@@ -64,6 +64,7 @@ const size = { preferredWidth: 200, preferredHeight: 112, offsetX: 0, offsetY: 0
 /**
  * Media inside interaction targets (B5):
  * - "Toggle panel" toggles a visible panel holding a plain looping video,
+ *   an unmuted autoplay video (never started by itself, BC-02.2.1),
  *   a muted autoplay video, and audio nested three levels deep;
  * - "Toggle hidden" toggles an initially hidden panel holding a muted
  *   autoplay video and a plain video.
@@ -86,6 +87,7 @@ export function hiddenMediaDocument(base: string): EditorElementNode {
             children: [
               { id: "v-loop", htmlId: "v-loop", tag: "video", src: clip, loop: true, dimensions: size },
               { id: "v-auto", htmlId: "v-auto", tag: "video", src: clip, autoplay: true, muted: true, loop: true, dimensions: size },
+              { id: "v-sound", htmlId: "v-sound", tag: "video", src: clip, autoplay: true, loop: true, dimensions: size },
               { id: "deep-1", tag: "div", children: [{ id: "deep-2", tag: "div", children: [{ id: "a-deep", htmlId: "a-deep", tag: "audio", src: tone, loop: true }] }] },
             ],
           },
@@ -110,9 +112,16 @@ function walk(node: EditorElementNode, visit: (node: EditorElementNode) => void)
   for (const child of node.children ?? []) walk(child, visit);
 }
 
-/** Every built-in interactive composition, each trigger given an html id (t-1, t-2, ...) so the same trigger can be found in Preview and on the exported page. */
+/** Every built-in interactive composition (two Dropdowns, one nested Collapsible), each trigger given an html id (t-1, t-2, ...) so the same trigger can be found in Preview and on the exported page. */
 export function componentsDocument(): { document: EditorElementNode; triggerIds: string[] } {
-  const children = [createDropdownButtonNode(), createCollapsibleNode(), createPopoverNode(), createDrawerNode(), createModalNode(), createBasicTabsNode(), createManualToastNode(), createDismissibleAlertNode()];
+  // A second Dropdown (two instances) and a Collapsible nested inside another
+  // one (BC-02.5.1: ids and aria-controls must stay unique and valid).
+  const outer = createCollapsibleNode();
+  const outerTargetId = outer.children?.find((child) => (child.interactions?.length ?? 0) > 0)?.interactions?.[0]?.targetId;
+  const outerContent = outer.children?.find((child) => child.id === outerTargetId);
+  if (!outerContent) throw new Error("collapsible without content");
+  outerContent.children = [...(outerContent.children ?? []), createCollapsibleNode()];
+  const children = [createDropdownButtonNode(), createDropdownButtonNode(), outer, createPopoverNode(), createDrawerNode(), createModalNode(), createBasicTabsNode(), createManualToastNode(), createDismissibleAlertNode()];
   const document: EditorElementNode = { id: "page-root", tag: "page", children: [{ id: "components", tag: "section", children }] };
   const triggerIds: string[] = [];
   walk(document, (node) => {

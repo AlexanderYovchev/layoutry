@@ -1,6 +1,6 @@
 import { isSelectableElement } from "@/features/editor/rules/elementCapabilities";
 import { getInteractions } from "@/features/editor/types/interactions";
-import { getInitialPreviewVisibility } from "@/features/editor/types/previewVisibility";
+import { documentPreOrder, resolveInteractionTargets } from "@/features/editor/utils/interactionTargets";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { resolveTriggerAccessibility } from "@/features/editor/utils/triggerAccessibility";
 import type { ExportBehaviors, ExportBehaviorTarget, ExportBehaviorTrigger } from "@/features/export/types/exportBehavior";
@@ -9,59 +9,19 @@ import type { ExportDiagnostic } from "@/features/export/types/exportDiagnostic"
 /** Elements a keyboard user can already focus and activate (Enter/Space fire click). */
 const NATIVELY_OPERABLE_TAGS: ReadonlySet<string> = new Set(["button", "a", "input", "select", "textarea"]);
 
-/** The authored-id rule export applies (buildExportDocument's identity()): non-empty, no whitespace, not the reserved prefix. */
-export function isUsableAuthoredId(htmlId: string | undefined): htmlId is string {
-  return htmlId !== undefined && htmlId !== "" && !/\s/.test(htmlId) && !htmlId.startsWith("ly-");
-}
-
-function preOrder(document: EditorElementNode): EditorElementNode[] {
-  const nodes: EditorElementNode[] = [];
-  const stack = [document];
-  for (let node = stack.pop(); node; node = stack.pop()) {
-    nodes.push(node);
-    if (node.children) for (let index = node.children.length - 1; index >= 0; index--) stack.push(node.children[index]);
-  }
-  return nodes;
-}
-
 /**
  * Derives the behavior descriptors (EXPORT-1.3) for a validated document:
  * which nodes are click triggers, which nodes can change visibility, and
  * which shown targets are dismissible — the exact model Preview executes.
  * Bindings to nodes that no longer exist are skipped, exactly as Preview's
- * executor skips them.
+ * executor skips them. Targets and their ids come from
+ * resolveInteractionTargets, which Preview uses too (BC-02.5.1).
  */
 export function buildExportBehaviors(document: EditorElementNode, diagnostics: ExportDiagnostic[]): ExportBehaviors {
-  const nodes = preOrder(document);
+  const nodes = documentPreOrder(document);
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const idCounts = new Map<string, number>();
-  for (const node of nodes) if (isUsableAuthoredId(node.htmlId)) idCounts.set(node.htmlId, (idCounts.get(node.htmlId) ?? 0) + 1);
-
-  // Every node any binding points at, plus every dialog that is open when
-  // the page loads (Preview shows it modally even without a binding).
-  const targetIds = new Set<string>();
-  for (const node of nodes) {
-    for (const binding of getInteractions(node)) if (nodesById.has(binding.targetId)) targetIds.add(binding.targetId);
-    if (node.tag === "dialog" && getInitialPreviewVisibility(node) !== "hidden") targetIds.add(node.id);
-  }
-
-  const targets: ExportBehaviorTarget[] = [];
-  const tokenByNodeId = new Map<string, number>();
-  for (const node of nodes) {
-    if (!targetIds.has(node.id)) continue;
-    const token = targets.length + 1;
-    tokenByNodeId.set(node.id, token);
-    const authoredIdUsable = isUsableAuthoredId(node.htmlId) && idCounts.get(node.htmlId) === 1;
-    const hasDuplicatedAuthoredId = isUsableAuthoredId(node.htmlId) && !authoredIdUsable;
-    targets.push({
-      token,
-      nodeId: node.id,
-      kind: node.tag === "dialog" ? "dialog" : "element",
-      initiallyVisible: getInitialPreviewVisibility(node) !== "hidden",
-      ...(authoredIdUsable ? { domId: node.htmlId } : hasDuplicatedAuthoredId ? {} : { domId: `ly-target-${token}` }),
-      generatedDomId: !authoredIdUsable && !hasDuplicatedAuthoredId,
-    });
-  }
+  const targets: ExportBehaviorTarget[] = resolveInteractionTargets(document);
+  const tokenByNodeId = new Map(targets.map((target) => [target.nodeId, target.token]));
   const targetByToken = new Map(targets.map((target) => [target.token, target]));
 
   const triggers: ExportBehaviorTrigger[] = [];
@@ -95,7 +55,7 @@ export function buildExportBehaviors(document: EditorElementNode, diagnostics: E
       ...(expandsTargetToken !== undefined ? { expandsTargetToken } : {}),
       opensDialog: accessibility.opensDialog,
     });
-    for (const descendant of preOrder(node).slice(1)) nodesInsideTriggers.add(descendant.id);
+    for (const descendant of documentPreOrder(node).slice(1)) nodesInsideTriggers.add(descendant.id);
   }
 
   return { triggers, targets, nodesInsideTriggers: nodes.filter((node) => nodesInsideTriggers.has(node.id)).map((node) => node.id) };

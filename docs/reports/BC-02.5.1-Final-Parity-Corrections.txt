@@ -1,0 +1,364 @@
+LAYOUTRY — BC-02.5.1: FINAL PREVIEW/EXPORT PARITY CORRECTIONS
+===============================================================
+Date: 2026-11-06
+Type: Targeted corrective implementation + regression tests
+Baseline: HEAD a51b9a2 (BC-02.5).
+Status: Implemented and tested. Awaiting QA review. Not committed.
+
+Classification used below:
+  CONFIRMED     measured in a real browser or Electron, or a direct code fact
+  NOT VERIFIED  not checked, with the reason
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Both differences QA found are corrected, and Preview and the exported page
+now behave the same in every tested scenario.
+
+A. Playback position: Preview now keeps hidden content mounted, as the
+   exported page keeps it in its DOM, and only stops displaying it.
+   - Hiding pauses every video and audio inside.
+   - Showing again finds them where they were. Ordinary media stays paused,
+     muted autoplay resumes from its position, and unmuted media never
+     starts.
+   - Before, Preview destroyed hidden content and re-created it at 0.
+B. aria-controls: Preview button and link triggers now name the elements
+   they control, using exactly the export's ids.
+   - One helper, resolveInteractionTargets, moved out of the export and now
+     shared, decides the ids.
+   - Because hidden targets stay mounted, every referenced id exists in
+     every state.
+   - The export now writes aria-controls only on button and link triggers,
+     the same as Preview; generic elements have no role to carry it.
+
+Evidence:
+- The new parity spec fails on the old Preview code at both corrections:
+  B5 "v-loop while hidden should be paused", and B6 "initial", with no
+  aria-controls in Preview. With the fix it passes, twice in a row.
+- One identical hide/show scenario runs against Preview and against the
+  exported page (3 cycles each).
+- Unit tests: 7 Canvas integration, 4 target-helper. Electron: 2/2.
+- B1, B2, B3, B4, B7 and B8 specs still pass.
+
+No schema, document, store-shape, persistence or Electron change.
+Recommendation: CLOSE BC-02.5 (section 13).
+
+
+2. PLAYBACK-POSITION ROOT CAUSE
+-------------------------------
+CONFIRMED (code fact + browser). DocumentNodeRenderer returned null for a
+node whose runtime visibility was false in Preview. Hiding a panel
+destroyed every element in it; showing it re-created fresh <video>/<audio>
+elements, which start at 0 (and muted autoplay restarted from 0).
+The exported page only sets `hidden`, so the same element keeps its
+position. The same unmount was why a Preview aria-controls could not be
+valid while collapsed: the target was not in the DOM at all.
+
+
+3. SELECTED MEDIA LIFECYCLE APPROACH
+------------------------------------
+Chosen: keep hidden content mounted (the first approach in the brief). Not
+done: a separate store of playback positions.
+Why this one:
+- It is the export's own model, so the two cannot drift.
+- It also makes aria-controls valid when collapsed (Correction B needs the
+  target to exist).
+- It keeps any other runtime state in a hidden panel (a typed field value,
+  an embed's page) exactly as the exported page does.
+- No new store state is needed.
+
+How:
+- DocumentNodeRenderer always renders the node and wraps it in
+  RuntimeHiddenContext (true when the node or an ancestor is hidden).
+  The wrapper is unconditional. A first version wrapped only when the
+  value changed; that changed the tree's shape on toggle and remounted
+  the subtree. Caught by the e2e test (positions came back as 0), and
+  fixed.
+- CanvasInteractionBoundary renders one <style data-runtime-hidden> in
+  Preview, with
+    [data-document-surface] [data-node-id="<id>"]{display:none!important}
+  for each runtime-hidden node:
+  - !important beats the elements' inline display;
+  - ids are generated from [A-Za-z0-9_-], and the filter enforces it;
+  - the desktop CSP's style-src 'unsafe-inline' allows it.
+  display:none means hidden content takes no space, receives no pointer
+  events, is skipped by Tab, and is out of the accessibility tree. This is
+  what [hidden] does on the exported page.
+- usePreviewMediaPlayback takes `hidden`. While hidden it never plays; the
+  effect cleanup pauses on hide, and does not rewind. On show, it plays
+  only effective (muted) autoplay that is still muted. Video/Audio also
+  drop the native autoplay attribute while hidden, so hidden-at-start
+  muted autoplay can't start by itself.
+- DialogElement: "open in Preview" is now `isPreview && !hidden` instead of
+  "is mounted". The same useLayoutEffect opens it with showModal() and
+  closes it with close() while still connected, so native focus
+  restoration is unchanged. A closed dialog stays in the DOM.
+Session scope: enterPreview/exitPreview still reset runtimeVisibility, so
+each Preview session starts from the authored visibility. Media elements
+are the same ones Design shows. As BC-02.2 decided, a position may remain
+on the same element across sessions; nothing is ever written to the
+document.
+
+
+4. AUTOPLAY RESUME / RESTART POLICY
+-----------------------------------
+One policy, both runtimes (Preview: the hook; Export: the runtime's
+setVisible):
+  hide                     pause everything inside; keep each position
+  show, ordinary media     stays paused at its position until the user
+                           plays it
+  show, muted autoplay     RESUMES from its kept position (it does not
+                           restart from 0)
+  show, unmuted autoplay   never starts (it has no effective autoplay)
+  hidden at start/load     nothing inside plays; showing starts only muted
+                           autoplay
+  user unmuted it earlier  not auto-started with sound (live muted check)
+Tested in both: after show, muted autoplay is playing again at a position
+>= its kept position (hidden mid-clip, so a restart at 0 would fail).
+
+
+5. ARIA-CONTROLS IMPLEMENTATION
+-------------------------------
+- src/features/editor/utils/interactionTargets.ts:
+  - resolveInteractionTargets(document) is the target and token logic
+    moved unchanged from the export's buildExportBehaviors, together with
+    isUsableAuthoredId and the pre-order walk.
+  - Targets come in document order. domId is the authored id when it is
+    usable and unique, otherwise `ly-target-<token>`, and absent for a
+    duplicated authored id.
+  - It depends only on the document, so ids are stable across renders and
+    state changes, and unique: authored ids may not use the reserved
+    `ly-` prefix.
+  - A unit test asserts the export's targets equal the helper's output.
+- Preview (render-only, no document change):
+  - CanvasInteractionBoundary computes the targets once per document
+    (InteractionTargetsContext).
+  - DocumentNodeRenderer passes a target without a usable id a derived
+    node with htmlId = its generated id, so the element renders that id.
+  - usePreviewTriggerAria adds aria-controls: the distinct domIds of the
+    trigger's targets, in binding order, exactly as the export.
+- Export: aria-controls is now written only on button/link triggers (the
+  same EXPANDABLE_CONTROL_TAGS as aria-expanded). Every built-in component
+  uses buttons, so their markup is unchanged. A generic element (a div
+  with a click interaction) no longer gets an aria-controls with no role
+  to attach it to.
+Which controls (from the components' actual bindings):
+  Dropdown, Collapsible, Popover  aria-controls + aria-expanded
+  Modal/Drawer open               aria-controls + aria-haspopup="dialog"
+  Modal/Drawer close, Tabs,       aria-controls only (show/hide, not one
+    Toast show/close, Alert         open/close relationship)
+    dismiss
+Design renders no generated id and no ARIA runtime state.
+
+
+6. PREVIEW / EXPORT PARITY EVIDENCE
+-----------------------------------
+e2e/preview-export-parity.spec.ts (local media, a real exported page on
+its own origin).
+
+hiddenMediaScenario runs the same steps on Preview and on the export:
+- two ordinary media started 0.7 s apart (independent positions);
+- muted autoplay playing; unmuted autoplay paused;
+- 3 rounds of hide → (all four media paused, not advancing) → show →
+  (ordinary ones paused at the same position ±0.05 s; unmuted still
+  paused; muted autoplay resumed at >= its kept position);
+- audio nested three levels deep is included.
+Preview additionally:
+- the hidden panel is in the DOM with display: none, and Tab skips it;
+- an initially hidden muted autoplay is paused, and starts only when
+  shown;
+- Exit Preview stops everything;
+- re-entering shows authored visibility again;
+- Undo stays disabled.
+
+B6 snapshot, at every step for 15 triggers (2 Dropdowns, a Collapsible
+nested in a Collapsible, Popover, Drawer, Modal, Tabs, Toast, Alert):
+- Preview equals Export on aria-controls, aria-expanded, aria-haspopup
+  and visibility;
+- in both, every aria-controls id exists exactly once, and no id is
+  duplicated, in every state;
+- toggling back with Enter and Escape is the same in both.
+
+Document integrity: two Preview sessions of hide/show, media and Escape
+leave the exported code identical (the export is a pure function of the
+document), the saved status unchanged, and Undo disabled.
+
+
+7. ACCESSIBILITY VERIFICATION
+-----------------------------
+- aria-controls references resolve to exactly one element, in collapsed
+  and expanded states (browser, both runtimes; unit).
+- aria-expanded stays in sync (unchanged from BC-02.5, re-run).
+- Keyboard: Enter toggles back; Escape closes the dropdown; the state
+  follows in both.
+- Hidden content is display: none: not focusable (Tab skips it, tested),
+  not clickable, not in the accessibility tree.
+- Labels are unchanged. A closed dialog stays closed and inert (native).
+- Focus restoration for dialogs: unchanged path (close() on a connected
+  dialog).
+
+
+8. PREVIOUS DEFECT REGRESSION RESULTS
+-------------------------------------
+B1  forms spec 12/12 in Firefox and WebKit (Chromium in the full suite):
+    typing, toggles, select, no submission, runtime values reset
+B2  media spec 8/8 (Chromium; Firefox): muted-only autoplay
+B3  media spec "leaving Preview pauses …", plus Exit Preview in the B5
+    scenario
+B4  embed spec 29/29 in Firefox and WebKit (Chromium in the full suite);
+    sandbox and export sandbox unchanged; no allow=fullscreen
+B5  parity scenario in Chromium, Firefox and Electron (position now kept
+    in both)
+B6  aria-expanded, aria-haspopup and aria-controls equal at every step;
+    unit
+B7  reduced-motion tests in Chromium, Firefox, WebKit and Electron
+B8  forms spec B8 test and previewForms unit tests (no Preview drag)
+One BC-02.2 test was updated to the new semantics: "media hidden … is not
+left playing after exit". The hidden media is now present and paused,
+where before it was absent. Its point (nothing plays after exit) is
+unchanged.
+
+
+9. EXACT TEST COUNTS
+--------------------
+New or changed tests:
+  e2e/preview-export-parity.spec.ts   8 tests: B5 rewritten as one shared
+                                      scenario (2); B6 extended with
+                                      aria-controls and validity; B7; the
+                                      cross-defect test; and a new
+                                      document-integrity test
+  e2e/desktop/preview-parity.spec.ts  2 tests (updated to the new
+                                      behavior)
+  src/features/canvas/components/previewHiddenRuntime.test.tsx   7 (new)
+  src/features/editor/utils/interactionTargets.test.ts           4 (new)
+  Existing tests updated to the new, approved behavior (hidden ≠ absent):
+    CanvasInteractionBoundary.test.tsx: the dialog closes and stays in the
+      DOM (was: unmounts)
+    DocumentNodeRenderer.test.tsx: a hidden node stays mounted (was: not
+      rendered)
+    e2e B7, cross-defect and desktop: toBeHidden() (was: toHaveCount(0))
+  Fixture: e2e/support/parityFixtures.ts gained an unmuted autoplay video,
+  a second Dropdown and a nested Collapsible.
+Before (HEAD Preview sources, final spec): 2 failed (B6 aria-controls, B5
+Preview position), 5 passed.
+
+Final results (Windows 10, ELECTRON_RUN_AS_NODE stripped):
+  npm run typecheck                        passed, 0 errors
+  npm run lint (eslint .)                  passed, 0 problems
+  Vitest, full (--maxWorkers=4)            351 files; 5256 passed,
+                                           1 skipped (existing symlink
+                                           test), 0 failed
+  Playwright web suite, Chromium (full)    179 passed, 0 failed, 0 flaky
+                                           (final run, after the BC-02.2
+                                           test update)
+  Firefox + WebKit (parity + forms +       94 passed, 4 failed
+    embed specs)
+      Firefox: all pass.
+      WebKit: the 4 failures are the media halves of the parity spec
+      (B5 Preview, B5 Export, cross-defect, document integrity), each
+      stopped at "readyState >= 3, received 0". ENVIRONMENTAL: Playwright's
+      Windows WebKit loads no media at all. Its B6/B7, forms and embed
+      tests pass.
+  Media spec, Firefox                      8/8 twice. One earlier run had
+                                           1 failure in BC-02.2's B3 test
+                                           ("v-plain position should
+                                           advance"): a timing flake on the
+                                           non-looping 4 s clip, which can
+                                           end while 8 media are checked one
+                                           after another. Not related to
+                                           this change; recorded as a
+                                           pre-existing flaky test.
+  npm run build (production)               passed
+  npm run desktop:test (builds, then full) 64 passed, 2 skipped, 0 failed
+                                           (skips = opt-in persistence
+                                           benchmarks)
+
+
+10. MODIFIED FILES
+------------------
+Source (11 modified, 3 new):
+  NEW  src/features/editor/utils/interactionTargets.ts  shared targets/ids
+  NEW  src/features/canvas/components/document/previewRuntimeContext.ts
+       RuntimeHiddenContext, InteractionTargetsContext
+  src/features/canvas/components/document/DocumentNodeRenderer.tsx
+       keep hidden nodes mounted; hidden context; generated target ids
+  src/features/canvas/components/CanvasInteractionBoundary.tsx
+       targets context; the runtime-hidden rule
+  src/features/canvas/components/document/elements/DialogElement.tsx
+       open state from runtime visibility, not mount
+  src/features/canvas/components/document/elements/VideoElement.tsx
+  src/features/canvas/components/document/elements/AudioElement.tsx
+       hidden → hook; no autoplay attribute while hidden
+  src/features/canvas/hooks/usePreviewMediaPlayback.ts  hidden option
+  src/features/canvas/hooks/usePreviewTriggerAria.ts    aria-controls
+  src/features/export/utils/buildExportBehaviors.ts     uses the helper
+  src/features/export/utils/exportBehaviorAttributes.ts aria-controls on
+                                                        button/link only
+Tests:
+  NEW  src/features/canvas/components/previewHiddenRuntime.test.tsx,
+       src/features/editor/utils/interactionTargets.test.ts
+  MOD  src/features/canvas/components/CanvasInteractionBoundary.test.tsx,
+       src/features/canvas/components/document/DocumentNodeRenderer.test.tsx,
+       e2e/preview-export-parity.spec.ts, e2e/desktop/preview-parity.spec.ts,
+       e2e/preview-media-lifecycle.spec.ts, e2e/support/parityFixtures.ts
+Reports:
+  docs/reports/BC-02.5.1-Final-Parity-Corrections.txt
+  changelogs/2026-11-06-final-parity-corrections-BC-02.5.1.txt (gitignored)
+Not modified: schema, document model, store actions, persistence, Electron
+code, export runtime and stylesheet (BC-02.5), iframe policy, form
+elements.
+
+
+11. KNOWN LIMITATIONS
+---------------------
+- A media position may remain across Preview sessions on the same element
+  (BC-02.2's policy, unchanged). A new session resets visibility, ARIA
+  state and form values, not where a clip was paused.
+- Content in a hidden panel keeps running as it does on the exported page:
+  an embedded page stays loaded, and a typed value stays. Previously
+  Preview discarded both on hide.
+- If focus is inside a panel when it is hidden, focus is lost (to the
+  body), as on the exported page.
+- A dialog inside a hidden non-dialog container closes, and is marked
+  hidden itself.
+- WebKit: the media halves of the parity spec cannot run (Playwright's
+  Windows WebKit loads no media; BC-02.2). B6, B7 and every non-media test
+  run there.
+- MP4/H.264 not verified.
+
+
+12. REMAINING RISKS
+-------------------
+- LOW: Preview now keeps the whole document mounted, which is what Design
+  already does, so there is no new DOM cost compared with Design.
+- LOW: the runtime-hidden rule is one generated <style>. A future custom
+  CSS feature with !important display rules would need to stay below it.
+- No high-severity defect found.
+
+
+13. RECOMMENDATION
+------------------
+CLOSE BC-02.5 (including BC-02.5.1).
+- Correction A: Preview keeps hidden media mounted and paused at its
+  position, like the exported page.
+  - The same scenario gives the same results in both: positions kept,
+    ordinary media stays paused, muted autoplay resumes, unmuted autoplay
+    never starts, and nested and multiple media are independent.
+  - It was shown failing on the old code.
+- Correction B: Preview and Export expose the same aria-controls,
+  aria-expanded and aria-haspopup at every step for 15 triggers,
+  including multiple and nested instances.
+  - Every referenced id exists exactly once, in every state.
+  - It was shown failing on the old code.
+- B1–B8 still pass; no document, dirty-state or history change.
+- Chromium, Firefox and Electron pass. WebKit passes everything except its
+  media tests, which is an environmental limitation.
+For QA: the export now omits aria-controls on non-button triggers
+(section 5); this is a small markup change for such custom triggers only.
+
+
+BC-02 DEFECT REGISTER
+---------------------
+B1 FIXED · B2 FIXED · B3 FIXED · B4 FIXED · B5 FIXED (position parity in
+BC-02.5.1) · B6 FIXED (aria-controls parity in BC-02.5.1) · B7 FIXED ·
+B8 FIXED — pending QA of BC-02.5.1.

@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef } from "react";
+import { useContext, useRef } from "react";
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { usePreviewMediaPlayback } from "@/features/canvas/hooks/usePreviewMediaPlayback";
+import { RuntimeHiddenContext } from "@/features/canvas/components/document/previewRuntimeContext";
 import { MediaInteractionShield } from "@/features/canvas/components/document/elements/MediaInteractionShield";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
@@ -63,7 +64,8 @@ export function AudioElement({ node, parentId, parentLayoutMode, parentFlowDispl
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
   const mediaRef = useRef<HTMLAudioElement>(null);
-  usePreviewMediaPlayback(mediaRef, { isPreview, autoplay: getEffectiveAutoplay(node) });
+  const isHidden = useContext(RuntimeHiddenContext);
+  usePreviewMediaPlayback(mediaRef, { isPreview, autoplay: getEffectiveAutoplay(node), hidden: isHidden });
   const recipe = resolveAudioElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
 
   return (
@@ -78,7 +80,7 @@ export function AudioElement({ node, parentId, parentLayoutMode, parentFlowDispl
         ref={mediaRef}
         src={node.src}
         controls={getMediaControls(node)}
-        autoPlay={isPreview && getEffectiveAutoplay(node)}
+        autoPlay={isPreview && !isHidden && getEffectiveAutoplay(node)}
         muted={node.muted}
         loop={node.loop}
         id={node.htmlId}

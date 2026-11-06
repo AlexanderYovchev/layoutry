@@ -2,12 +2,14 @@
 
 import {
   useCallback,
+  useContext,
   useLayoutEffect,
   useRef,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type Ref,
 } from "react";
+import { RuntimeHiddenContext } from "@/features/canvas/components/document/previewRuntimeContext";
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
@@ -85,6 +87,13 @@ export function DialogElement({ node, parentId, parentLayoutMode, parentFlowDisp
   }, []);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
   const dismissRuntimeTarget = useEditorStore((state) => state.dismissRuntimeTarget);
+  // BC-02.5.1: hidden content now stays mounted in Preview, so "mounted"
+  // no longer means "open". The dialog is open while Preview runs and
+  // neither it nor an ancestor is runtime-hidden. Each change re-runs the
+  // effect below: its cleanup close()s the still-connected dialog (native
+  // focus restoration as before) and the next run opens it again.
+  const isHidden = useContext(RuntimeHiddenContext);
+  const isPreviewOpen = isPreview && !isHidden;
 
   // Owns every imperative open/close transition (Part D/E/P). Reusing
   // the exact same `dismissRuntimeTarget` primitive Checkpoint 1.15.6.8.3
@@ -118,8 +127,10 @@ export function DialogElement({ node, parentId, parentLayoutMode, parentFlowDisp
     const dialogEl = dialogRef.current;
     if (!dialogEl) return;
 
-    if (isPreview) {
+    if (isPreviewOpen) {
       if (!dialogEl.open) dialogEl.showModal();
+    } else if (isPreview) {
+      if (dialogEl.open) dialogEl.close();
     } else {
       if (dialogEl.open) dialogEl.close();
       dialogEl.setAttribute("open", "");
@@ -150,7 +161,7 @@ export function DialogElement({ node, parentId, parentLayoutMode, parentFlowDisp
       if (dialogEl.open) dialogEl.close();
       else dialogEl.removeAttribute("open");
     };
-  }, [isPreview, node.id, dismissRuntimeTarget]);
+  }, [isPreview, isPreviewOpen, node.id, dismissRuntimeTarget]);
 
   // Backdrop click (Part F) — native `<dialog>` does not close itself on
   // a backdrop click; `event.target === dialogRef.current` is the

@@ -18,7 +18,7 @@ export interface ElementBehaviorAttributes {
  * Accessibility, derived only from what the bindings genuinely do (no
  * component-specific roles are invented — Basic Tabs, for instance, has no
  * tab keyboard model in the editor, so it gets no tab roles):
- * - `aria-controls` on every trigger, listing its targets' ids.
+ * - `aria-controls` on every button/link trigger, listing its targets' ids.
  * - `aria-expanded` on a button/link trigger that toggles a target
  *   (the disclosure pattern: Dropdown, Popover, Collapsible).
  * - `aria-haspopup="dialog"` on a button/link trigger that opens a dialog.
@@ -39,7 +39,10 @@ export function buildBehaviorAttributes(behaviors: ExportBehaviors, tagsByNodeId
     const tag = tagsByNodeId.get(trigger.nodeId) ?? "";
     const attributes = entry(trigger.nodeId).attributes;
     const controls = [...new Set(trigger.actions.map((action) => targetsByToken.get(action.targetToken)?.domId).filter((id): id is string => id !== undefined))];
-    if (controls.length > 0) attributes.push({ name: "aria-controls", value: controls.join(" ") });
+    // Only a button or link names what it controls (BC-02.5.1): a generic
+    // element has no role for assistive technology to attach it to. Preview
+    // writes the same attribute on the same triggers (usePreviewTriggerAria).
+    if (controls.length > 0 && EXPANDABLE_CONTROL_TAGS.has(tag)) attributes.push({ name: "aria-controls", value: controls.join(" ") });
     if (EXPANDABLE_CONTROL_TAGS.has(tag)) {
       if (trigger.expandsTargetToken !== undefined) {
         attributes.push({ name: "aria-expanded", value: targetsByToken.get(trigger.expandsTargetToken)?.initiallyVisible ? "true" : "false" });

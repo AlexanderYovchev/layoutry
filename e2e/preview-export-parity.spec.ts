@@ -76,92 +76,107 @@ async function start(media: Locator) {
   expect(await media.evaluate((element: HTMLMediaElement) => element.play().then(() => "playing", (error: Error) => error.name))).toBe("playing");
 }
 
-test.describe("B5: media in a hidden target stops", () => {
-  test("Preview: hiding pauses every video and audio inside, at any depth; showing never resumes them", async ({ page }) => {
-    await openInEditor(page, hiddenMediaDocument(server.base), "v-loop");
-    await enterPreview(page);
-    const loop = page.locator(`${surface} #v-loop`);
-    const auto = page.locator(`${surface} #v-auto`);
-    const deep = page.locator(`${surface} #a-deep`);
-    for (const media of [loop, auto, deep]) await waitLoaded(media);
-    await page.getByRole("button", { name: "Toggle panel" }).click();
-    await page.getByRole("button", { name: "Toggle panel" }).click();
-    await waitLoaded(loop);
-    await waitLoaded(deep);
+interface Side {
+  name: string;
+  page: Page;
+  /** CSS scope prefix for the document's elements. */
+  scope: string;
+}
+
+/**
+ * B5 + BC-02.5.1, one scenario for both runtimes, so parity is by
+ * construction: hiding stops every media element at any depth and keeps
+ * each one's position; showing resumes nothing ordinary, resumes muted
+ * autoplay from where it stopped, and never starts unmuted media.
+ */
+async function hiddenMediaScenario({ name, page, scope }: Side) {
+  const at = (id: string) => page.locator(`${scope}#${id}`);
+  const loop = at("v-loop");
+  const auto = at("v-auto");
+  const sound = at("v-sound");
+  const deep = at("a-deep");
+  const toggle = page.getByRole("button", { name: "Toggle panel" });
+  for (const media of [loop, auto, sound, deep]) await waitLoaded(media);
+
+  // Two ordinary elements started at different moments, so their positions differ.
+  await page.locator(`${scope}#b-panel`).focus();
+  await start(loop);
+  await page.waitForTimeout(700);
+  await start(deep);
+  await expectPlaying(loop, `${name} v-loop`);
+  await expectPlaying(deep, `${name} a-deep`);
+  await expectPlaying(auto, `${name} v-auto`);
+  expect((await readMedia(sound)).paused, `${name}: unmuted autoplay never starts`).toBe(true);
+
+  for (let round = 0; round < 3; round++) {
+    // Hide while muted autoplay is well inside the 4 s clip, so "resumed" and
+    // "restarted" can be told apart (the clip loops).
+    await expect.poll(async () => { const time = (await readMedia(auto)).time; return time > 0.8 && time < 2.8; }, { timeout: 10_000 }).toBe(true);
+    await toggle.click();
+    await expect(loop, `${name} panel hidden`).toBeHidden();
+    const kept: Record<string, number> = {};
+    for (const [label, media] of [["v-loop", loop], ["a-deep", deep], ["v-auto", auto], ["v-sound", sound]] as const) {
+      kept[label] = await expectStopped(media, `${name} ${label} while hidden (round ${round})`);
+    }
+    if (round === 0) expect(Math.abs((kept["v-loop"] ?? 0) - (kept["a-deep"] ?? 0)), `${name}: independent positions`).toBeGreaterThan(0.3);
+
+    await toggle.click();
+    await expect(loop, `${name} panel shown`).toBeVisible();
+    // Ordinary media: still paused, at the same position.
+    expect(await expectStopped(loop, `${name} v-loop after show`)).toBeCloseTo(kept["v-loop"] ?? -1, 1);
+    expect(await expectStopped(deep, `${name} a-deep after show`)).toBeCloseTo(kept["a-deep"] ?? -1, 1);
+    // Unmuted autoplay: never started by being shown.
+    expect((await readMedia(sound)).paused, `${name} v-sound after show`).toBe(true);
+    // Muted autoplay: resumes from its position (it does not restart from 0).
+    await expect.poll(async () => (await readMedia(auto)).paused, { message: `${name} v-auto resumes` }).toBe(false);
+    expect((await readMedia(auto)).time, `${name} v-auto resumed from ${kept["v-auto"]}`).toBeGreaterThanOrEqual((kept["v-auto"] ?? 0) - 0.05);
+    // Play the ordinary ones again, as a user would, before the next round.
     await start(loop);
     await start(deep);
-    await expectPlaying(loop, "v-loop");
-    await expectPlaying(deep, "a-deep");
-    await expectPlaying(auto, "v-auto");
-    const handles = [await loop.elementHandle(), await auto.elementHandle(), await deep.elementHandle()];
+  }
+}
 
+test.describe("B5 + BC-02.5.1: media in a hidden target", () => {
+  test("Preview: hiding pauses and keeps positions; showing resumes only muted autoplay", async ({ page }) => {
+    await openInEditor(page, hiddenMediaDocument(server.base), "v-loop");
+    await enterPreview(page);
+    await hiddenMediaScenario({ name: "Preview", page, scope: `${surface} ` });
+
+    // Hidden content stays mounted but is not displayed, focusable or clickable.
     await page.getByRole("button", { name: "Toggle panel" }).click();
-    await expect(page.locator(`${surface} [data-node-id="d-panel"]`)).toHaveCount(0);
-    for (const handle of handles) {
-      const paused = await handle?.evaluate((element: HTMLMediaElement) => element.paused);
-      expect(paused).toBe(true);
-    }
+    const panel = page.locator(`${surface} [data-node-id="d-panel"]`);
+    await expect(panel).toHaveCount(1);
+    await expect(panel).toBeHidden();
+    expect(await panel.evaluate((element) => getComputedStyle(element).display)).toBe("none");
+    await page.locator(`${surface} #b-panel`).focus();
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.closest('[data-node-id="d-panel"]') === null)).toBe(true);
 
-    for (let round = 0; round < 3; round++) {
-      await page.getByRole("button", { name: "Toggle panel" }).click();
-      await waitLoaded(loop);
-      // Preview re-creates hidden content when it is shown again, so plain media starts over, paused.
-      await expectStopped(loop, "v-loop after show");
-      await expectStopped(deep, "a-deep after show");
-      // Muted autoplay starts by its own setting (BC-02.2.1), not because it was playing before.
-      await expectPlaying(auto, "v-auto after show");
-      await page.getByRole("button", { name: "Toggle panel" }).click();
-      await expect(page.locator(`${surface} [data-node-id="d-panel"]`)).toHaveCount(0);
-    }
-
-    // An initially hidden target has no media running; showing it starts only muted autoplay.
-    await expect(page.locator(`${surface} #v-hidden-auto`)).toHaveCount(0);
+    // An initially hidden target: nothing inside plays; showing it starts only muted autoplay.
+    await expect(page.locator(`${surface} #v-hidden-auto`)).toBeHidden();
+    await waitLoaded(page.locator(`${surface} #v-hidden-auto`));
+    expect((await readMedia(page.locator(`${surface} #v-hidden-auto`))).paused).toBe(true);
     await page.getByRole("button", { name: "Toggle hidden" }).click();
     await expectPlaying(page.locator(`${surface} #v-hidden-auto`), "v-hidden-auto");
-    await waitLoaded(page.locator(`${surface} #v-hidden-plain`));
     await expectStopped(page.locator(`${surface} #v-hidden-plain`), "v-hidden-plain");
 
+    // Leaving Preview stops everything; re-entering is a fresh session (authored visibility).
+    await exitPreview(page);
+    for (const id of ["v-loop", "v-auto", "a-deep", "v-hidden-auto"]) await expectStopped(page.locator(`${surface} #${id}`), `${id} after Exit Preview`);
+    await enterPreview(page);
+    await expect(page.locator(`${surface} #v-loop`)).toBeVisible();
+    await expect(page.locator(`${surface} #v-hidden-auto`)).toBeHidden();
+    expect((await readMedia(page.locator(`${surface} #v-hidden-auto`))).paused).toBe(true);
     await exitPreview(page);
     await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
   });
 
-  test("Export: hiding pauses every video and audio inside and keeps their position; showing resumes only muted autoplay", async ({ page }) => {
+  test("Export: the same scenario gives the same results", async ({ page }) => {
     await openExport(page, hiddenMediaDocument(server.base), "hidden-media");
-    const loop = page.locator("#v-loop");
-    const auto = page.locator("#v-auto");
-    const deep = page.locator("#a-deep");
+    await hiddenMediaScenario({ name: "Export", page, scope: "" });
     const hiddenAuto = page.locator("#v-hidden-auto");
-    for (const media of [loop, auto, deep, hiddenAuto]) await waitLoaded(media);
-
-    // Muted autoplay inside a target that is hidden at load does not run while hidden.
-    await page.waitForTimeout(800);
-    expect(await readMedia(hiddenAuto)).toEqual({ paused: true, time: 0 });
-
-    await page.locator("body").click({ position: { x: 5, y: 5 } });
-    await start(loop);
-    await start(deep);
-    await expectPlaying(loop, "v-loop");
-    await expectPlaying(deep, "a-deep");
-    await expectPlaying(auto, "v-auto");
-
-    await page.getByRole("button", { name: "Toggle panel" }).click();
-    await expect(page.locator("#v-loop")).toBeHidden();
-    const kept: Record<string, number> = {};
-    for (const [label, media] of [["v-loop", loop], ["v-auto", auto], ["a-deep", deep]] as const) {
-      kept[label] = await expectStopped(media, `${label} while hidden`);
-      expect(kept[label], `${label} keeps its position`).toBeGreaterThan(0);
-    }
-
-    for (let round = 0; round < 3; round++) {
-      await page.getByRole("button", { name: "Toggle panel" }).click();
-      await expect(page.locator("#v-loop")).toBeVisible();
-      expect(await expectStopped(loop, "v-loop after show")).toBe(kept["v-loop"]);
-      expect(await expectStopped(deep, "a-deep after show")).toBe(kept["a-deep"]);
-      await expectPlaying(auto, "v-auto after show");
-      await page.getByRole("button", { name: "Toggle panel" }).click();
-      await expectStopped(auto, "v-auto hidden again");
-    }
-
+    await waitLoaded(hiddenAuto);
+    expect((await readMedia(hiddenAuto)).paused).toBe(true);
     await page.getByRole("button", { name: "Toggle hidden" }).click();
     await expectPlaying(hiddenAuto, "v-hidden-auto after show");
     await expectStopped(page.locator("#v-hidden-plain"), "v-hidden-plain after show");
@@ -169,7 +184,7 @@ test.describe("B5: media in a hidden target stops", () => {
 });
 
 interface AriaSnapshot {
-  [triggerId: string]: { expanded: string | null; haspopup: string | null; visible: boolean };
+  [triggerId: string]: { controls: string | null; expanded: string | null; haspopup: string | null; visible: boolean };
 }
 
 async function ariaSnapshot(page: Page, scope: string, triggerIds: string[]): Promise<AriaSnapshot> {
@@ -177,11 +192,32 @@ async function ariaSnapshot(page: Page, scope: string, triggerIds: string[]): Pr
   for (const id of triggerIds) {
     const trigger = page.locator(`${scope} #${id}`);
     const count = await trigger.count();
-    snapshot[id] = count === 0 ? { expanded: null, haspopup: null, visible: false } : { expanded: await trigger.getAttribute("aria-expanded"), haspopup: await trigger.getAttribute("aria-haspopup"), visible: await trigger.isVisible() };
+    snapshot[id] = count === 0 ? { controls: null, expanded: null, haspopup: null, visible: false } : { controls: await trigger.getAttribute("aria-controls"), expanded: await trigger.getAttribute("aria-expanded"), haspopup: await trigger.getAttribute("aria-haspopup"), visible: await trigger.isVisible() };
   }
   return snapshot;
 }
 
+
+/**
+ * aria-controls validity (BC-02.5.1), in any state: every id a trigger
+ * references exists exactly once in the rendered document, and no id is
+ * used twice. Hidden targets count, because they stay in the DOM.
+ */
+async function expectValidRelationships(page: Page, scope: string, label: string) {
+  const problems = await page.evaluate((rootSelector) => {
+    const root = document.querySelector(rootSelector);
+    if (!root) return ["no document root"];
+    const found: string[] = [];
+    const counts = new Map<string, number>();
+    for (const element of Array.from(root.querySelectorAll("[id]"))) counts.set(element.id, (counts.get(element.id) ?? 0) + 1);
+    for (const [id, count] of counts) if (count > 1) found.push(`duplicate id ${id}`);
+    for (const trigger of Array.from(root.querySelectorAll("[aria-controls]"))) {
+      for (const id of (trigger.getAttribute("aria-controls") ?? "").split(" ")) if (counts.get(id) !== 1) found.push(`${trigger.id} controls missing ${id}`);
+    }
+    return found;
+  }, scope === "body" ? "body" : scope);
+  expect(problems, label).toEqual([]);
+}
 test.describe("B6: aria-expanded in Preview matches the exported page", () => {
   test("every trigger of every built-in component, initially and after each open and close", async ({ page, context }) => {
     test.setTimeout(120_000);
@@ -195,13 +231,17 @@ test.describe("B6: aria-expanded in Preview matches the exported page", () => {
       const preview = await ariaSnapshot(page, surface, triggerIds);
       const exportedState = await ariaSnapshot(exported, "body", triggerIds);
       expect(preview, label).toEqual(exportedState);
+      await expectValidRelationships(page, surface, `Preview ${label}`);
+      await expectValidRelationships(exported, "body", `Export ${label}`);
       return preview;
     };
 
     const initial = await both("initial");
-    // The disclosure triggers (Dropdown, Collapsible, Popover toggle a target) report a state; the
+    // The disclosure triggers (2 Dropdowns, 2 Collapsibles, Popover toggle a target) report a state; the
     // Modal opener announces a dialog. Show/hide-only triggers (Drawer, Tabs, Toast, Alert) get none.
-    expect(Object.values(initial).filter((entry) => entry.expanded !== null).length).toBe(3);
+    expect(Object.values(initial).filter((entry) => entry.expanded !== null).length).toBe(5);
+    // Every button trigger names what it controls (BC-02.5.1), with its own ids.
+    expect(Object.values(initial).every((entry) => entry.controls !== null)).toBe(true);
     expect(Object.values(initial).some((entry) => entry.haspopup === "dialog")).toBe(true);
     expect(Object.values(initial).filter((entry) => entry.expanded !== null).every((entry) => entry.expanded === "false" || entry.expanded === "true")).toBe(true);
 
@@ -247,6 +287,8 @@ test.describe("B6: aria-expanded in Preview matches the exported page", () => {
     await page.keyboard.press("Escape");
     await exported.keyboard.press("Escape");
     expect((await both("dropdown closed by Escape"))["t-1"]?.expanded).toBe("false");
+    await exitPreview(page);
+    await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
     await exported.close();
   });
 
@@ -313,7 +355,7 @@ for (const reducedMotion of ["reduce", "no-preference"] as const) {
       // The interaction itself works the same either way.
       await page.getByRole("button", { name: "Toggle box" }).click();
       await exported.getByRole("button", { name: "Toggle box" }).click();
-      await expect(page.locator(`${surface} #d-motion`)).toHaveCount(0);
+      await expect(page.locator(`${surface} #d-motion`)).toBeHidden();
       await expect(exported.locator("#d-motion")).toBeHidden();
       await exported.close();
 
@@ -362,9 +404,37 @@ test.describe("cross-defect: an expandable panel with media, under reduced motio
     await expect(page.locator(`${surface} [aria-expanded]`)).toHaveCount(0);
     await enterPreview(page);
     await expect(page.locator(`${surface} #b-hidden`)).toHaveAttribute("aria-expanded", "false");
-    await expect(page.locator(`${surface} #v-hidden-auto`)).toHaveCount(0);
+    await expect(page.locator(`${surface} #v-hidden-auto`)).toBeHidden();
     await exitPreview(page);
     await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
     await exported.close();
   });
+});
+
+test("document integrity: a Preview session with hide/show, media and Escape changes nothing authored", async ({ page }) => {
+  await openInEditor(page, hiddenMediaDocument(server.base), "v-loop");
+  const exportedCode = async () => {
+    await page.getByRole("button", { name: "Export Code" }).click();
+    const code = page.getByRole("dialog", { name: "Export Code" }).getByTestId("export-code");
+    await expect(code).toBeVisible();
+    const text = (await code.textContent()) ?? "";
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Export Code" })).toHaveCount(0);
+    return text;
+  };
+  const before = await exportedCode();
+  const status = await page.locator("[data-project-status]").getAttribute("data-project-status");
+  for (let session = 0; session < 2; session++) {
+    await enterPreview(page);
+    await waitLoaded(page.locator(`${surface} #v-loop`));
+    await start(page.locator(`${surface} #v-loop`));
+    await page.getByRole("button", { name: "Toggle panel" }).click();
+    await page.getByRole("button", { name: "Toggle hidden" }).click();
+    await page.getByRole("button", { name: "Toggle panel" }).click();
+    await page.keyboard.press("Escape");
+    if (await page.getByRole("button", { name: "Exit Preview" }).count()) await exitPreview(page);
+  }
+  expect(await exportedCode()).toBe(before);
+  await expect(page.locator("[data-project-status]")).toHaveAttribute("data-project-status", status ?? "");
+  await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
 });

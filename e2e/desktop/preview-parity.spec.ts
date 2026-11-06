@@ -42,16 +42,22 @@ test.afterEach(async () => {
 });
 
 const surface = "[data-document-surface]";
+const time = (media: Locator) =>
+  media.evaluate((element: HTMLMediaElement) => element.currentTime);
 const paused = (media: Locator) =>
   media.evaluate((element: HTMLMediaElement) => element.paused);
 
-test("hiding a target stops its media, and the trigger's aria-expanded follows it", async () => {
+test("hiding a target stops its media and keeps its position; aria-expanded and aria-controls follow it", async () => {
   const { page } = layoutry;
   await importDocument(page, hiddenMediaDocument(""), "v-loop");
   const url = page.url();
   await page.getByRole("button", { name: "Enter Preview" }).click();
   const trigger = page.locator(`${surface} #b-panel`);
   await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  const panel = page.locator(`${surface} [data-node-id="d-panel"]`);
+  const controls = await trigger.getAttribute("aria-controls");
+  expect(controls).toMatch(/^ly-target-\d+$/);
+  expect(await panel.getAttribute("id")).toBe(controls);
 
   const loop = page.locator(`${surface} #v-loop`);
   const auto = page.locator(`${surface} #v-auto`);
@@ -70,27 +76,32 @@ test("hiding a target stops its media, and the trigger's aria-expanded follows i
       ),
     ),
   ).toBe("playing");
-  const handles = [await loop.elementHandle(), await auto.elementHandle()];
+  await expect.poll(() => time(loop)).toBeGreaterThan(0.5);
 
   await trigger.click();
   await expect(trigger).toHaveAttribute("aria-expanded", "false");
-  await expect(page.locator(`${surface} [data-node-id="d-panel"]`)).toHaveCount(
-    0,
-  );
-  for (const handle of handles)
-    expect(
-      await handle?.evaluate((element: HTMLMediaElement) => element.paused),
-    ).toBe(true);
+  // Still in the DOM (so aria-controls stays valid), just not displayed.
+  await expect(panel).toHaveCount(1);
+  await expect(panel).toBeHidden();
+  expect(await panel.getAttribute("id")).toBe(controls);
+  await expect.poll(() => paused(loop)).toBe(true);
+  await expect.poll(() => paused(auto)).toBe(true);
+  const kept = await time(loop);
+  expect(kept).toBeGreaterThan(0);
 
   await trigger.click();
   await expect(trigger).toHaveAttribute("aria-expanded", "true");
-  await expect
-    .poll(() => paused(page.locator(`${surface} #v-loop`)))
-    .toBe(true);
+  await expect(panel).toBeVisible();
+  // Ordinary media stays paused where it was; muted autoplay resumes.
+  expect(await paused(loop)).toBe(true);
+  expect(await time(loop)).toBeCloseTo(kept, 1);
+  await expect.poll(() => paused(auto)).toBe(false);
   expect(page.url()).toBe(url);
 
   await page.getByRole("button", { name: "Exit Preview" }).click();
+  await expect.poll(() => paused(auto)).toBe(true);
   await expect(page.locator(`${surface} [aria-expanded]`)).toHaveCount(0);
+  await expect(page.locator(`${surface} [aria-controls]`)).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Undo", exact: true }),
   ).toBeDisabled();
@@ -119,6 +130,6 @@ test("authored motion follows prefers-reduced-motion in the desktop Preview", as
 
   // Still operable with reduced motion.
   await page.getByRole("button", { name: "Toggle box" }).click();
-  await expect(box).toHaveCount(0);
+  await expect(box).toBeHidden();
   await page.emulateMedia({ reducedMotion: null });
 });
