@@ -1,0 +1,872 @@
+LAYOUTRY — BC-02.6 FINAL DYNAMIC PREVIEW REGRESSION & MILESTONE CLOSURE
+=========================================================================
+Date: 2026-11-06
+Checkpoint: BC-02.6 (final regression audit for BC-02, Dynamic Component
+Preview)
+Type: audit. One new regression spec; no product code changed.
+Status: complete, NOT committed. Waiting for ChatGPT QA.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+All eight BC-02 defects (B1–B8) are still fixed. They were checked on the
+committed tree, each on its own and in combination.
+
+New evidence comes from one new spec, e2e/bc02-final-regression.spec.ts,
+which adds three things:
+- A component matrix. All nine built-in interactive components are
+  driven step by step: by click, repeated clicks, Enter, Space, Escape
+  and a Tab walk. At every step one full runtime snapshot from Preview
+  is compared with the same snapshot from the exported page.
+- An 18-step combined workflow, run under both reduced-motion settings.
+  One project goes through Design → Preview → Design → Preview → Export
+  → save → reload → reopen. Document, history and storage integrity are
+  checked along the way.
+- A repeated-session lifecycle measurement over 25 Preview sessions
+  (Chromium, Chrome DevTools Protocol).
+
+It passes in Chromium and Firefox. In WebKit it passes everything except
+the media steps. Those were skipped with an explicit "not verified" note:
+the WebKit build Playwright uses on Windows still cannot load any media,
+and this run confirmed that again.
+
+Full suites (exact counts, and where each failure comes from, in
+section 13):
+- Typecheck, lint and production build: clean.
+- Vitest: 5256 passed, 1 skipped.
+- Chromium: 183/183 passed.
+- Electron: 63 passed, 1 failed, 2 skipped. The failure is an
+  intermittent window-close test, and it fails on the pre-BC-02 build as
+  well.
+- Firefox: 178 passed, 4 failed. Three of the failures fail identically
+  on the pre-BC-02 commit. The fourth is a BC-02.5.1 media test that
+  passed in the first full run and 3/3 times in isolation (load
+  flakiness).
+- WebKit: 159 passed, 23 failed.
+  - 12 failures are the known media limitation.
+  - 8 also fail on the pre-BC-02 commit.
+  - 3 pass when rerun (flaky).
+- No failure in any environment comes from BC-02 code.
+
+New findings:
+- No new defect in B1–B8.
+- No high- or medium-severity issue.
+- One low-severity accessibility observation, already a documented
+  limitation. When a control hides its own container (the Toast's Close
+  button, the Alert's Dismiss button), focus is not moved anywhere
+  useful. Depending on the browser it falls to the page or stays on the
+  now-hidden button. This happens in both runtimes and is not a BC-02
+  regression.
+
+Recommendation: CLOSE BC-02 (section 17).
+
+
+2. GIT WORKING-TREE STATUS
+--------------------------
+Before the audit, `git status --short` printed nothing: the tree was
+clean on main.
+
+HEAD is 84cf261 fix(preview): keep hidden content mounted and share
+aria-controls ids with Export (BC-02.5.1). Every BC-02 checkpoint is
+committed:
+
+  Commit   Checkpoint
+  61fa9de  BC-02.2
+  0dbfcda  BC-02.2.1
+  eef1bbb  BC-02.3
+  cffabe9  BC-02.4
+  a51b9a2  BC-02.5
+  84cf261  BC-02.5.1
+
+The audit therefore ran against the committed state.
+
+After the audit, these files changed:
+- NEW e2e/bc02-final-regression.spec.ts. This is the only tracked change.
+  It contains no product code.
+- docs/reports/BC-02.6-Final-Dynamic-Preview-Regression.txt (this
+  report).
+- changelogs/2026-11-06-final-dynamic-preview-regression-BC-02.6.txt
+  (gitignored).
+- A temporary playwright.cross-temp.config.ts was created for the
+  Firefox and WebKit runs, then deleted.
+
+
+3. B1–B8 VERIFICATION MATRIX
+----------------------------
+Column key:
+- Ch / Ff / Wk: web Chromium / Firefox / WebKit.
+- El: Electron.
+- PASS: verified in this run.
+- NV: not verified, because of the WebKit media limitation (section 14).
+- -: no test for that environment.
+
+B1 Forms in Preview
+  Typing, checkbox, radio, select: PASS Ch Ff Wk El.
+    Covered by preview-forms.spec (14 tests), the combined workflow, and
+    desktop preview-forms.
+  Values reset between sessions: PASS Ch Ff Wk El.
+    combined step 14; preview-forms "a new Preview session…".
+  Submission cannot navigate the editor: PASS Ch Ff Wk El.
+    Enter key and Send button in the combined workflow; preview-forms
+    submit tests; desktop.
+  Design editing intact: PASS Ch Ff Wk.
+    preview-forms "Design: a click selects…"; combined "Design drag +
+    Undo".
+  No project change: PASS Ch Ff Wk El.
+    Exported code, saved status and Undo are unchanged; nothing is
+    stored.
+
+B2 Muted autoplay
+  Muted autoplay starts in Preview: PASS Ch Ff El; NV Wk.
+    preview-media-lifecycle; combined (c-auto, cv-auto); desktop.
+  Unmuted autoplay never starts: PASS Ch Ff El; NV Wk.
+    Not played, not muted, no native autoplay attribute.
+  Same policy in Preview and Export: PASS Ch Ff; NV Wk.
+    Export test in preview-media-lifecycle; the combined workflow runs
+    the same scenario on both sides.
+  Authored fields unchanged: PASS Ch Ff Wk.
+    Unit tests; the exported code and the stored document are unchanged
+    after Preview.
+
+B3 Media lifecycle
+  Pauses on Preview exit: PASS Ch Ff El; NV Wk.
+    combined step 11 (6 media elements).
+  Nothing plays in Design: PASS Ch Ff El; NV Wk.
+    Design checks; lifecycle "playing = 0" after every 5 sessions.
+  Repeated sessions don't leak: PASS Ch Ff El.
+    25-session lifecycle measurement (Chromium); 3-session lifecycle
+    spec.
+  Deletion, source change, project switch: PASS (Vitest).
+    usePreviewMediaPlayback.test covers delete, delete parent, open or
+    create another project, replace source, and unmount.
+
+B4 Iframe security
+  Approved sandbox, editor and export: PASS Ch Ff Wk El.
+    Tokens: allow-forms allow-popups allow-scripts, plus
+    allow-same-origin for cross-origin embeds.
+  No parent or top navigation: PASS Ch Ff Wk El.
+    Hostile frame: automatic escape, script top, target=_top,
+    target=_parent; editor URL and window marker intact.
+  Unsafe schemes blocked: PASS Ch Ff Wk + Vitest.
+    embed-safety "…embed source is not loaded" (one test per scheme);
+    exportUrlPolicy tests.
+  Same- and cross-origin isolation: PASS Ch Ff Wk.
+    embed-safety (both origins, redirects, compatibility widget).
+  Electron navigation protection: PASS El.
+    desktop security (navigation, popups, permissions, no Node, CSP);
+    desktop embed-safety.
+  Fullscreen disabled: PASS Ch Ff Wk.
+    No allow / allowfullscreen attribute; document.fullscreenEnabled is
+    false inside the embed (combined).
+
+B5 Hidden content
+  Hiding pauses nested media: PASS Ch Ff El; NV Wk.
+    parity B5; combined (media nested 2 levels deep in a Collapsible).
+  Position preserved: PASS Ch Ff El; NV Wk.
+    Two clips at different positions; each one's position is kept.
+  Ordinary media stays paused on show: PASS Ch Ff El; NV Wk.
+  Muted autoplay resumes from its position: PASS Ch Ff El; NV Wk.
+  Unmuted media never starts: PASS Ch Ff El; NV Wk.
+  Preview equals Export: PASS Ch Ff; NV Wk.
+    The same scenario function runs against both runtimes.
+  Hidden content is not displayed and not re-created: PASS Ch Ff Wk.
+    toBeHidden; the same media element survives hide/show and new
+    sessions (combined).
+
+B6 Accessibility state
+  aria-expanded initial and runtime: PASS Ch Ff Wk El.
+    Matrix: all 15 triggers at every step.
+  aria-controls points at existing unique ids: PASS Ch Ff Wk El.
+    Matrix checks at every step; combined.
+  Multiple and nested instances: PASS Ch Ff Wk.
+    Two Dropdowns; a nested Collapsible.
+  aria-haspopup: PASS Ch Ff Wk.
+    "dialog" on the Modal and Drawer openers only.
+  Preview equals Export: PASS Ch Ff Wk.
+    Full snapshot equality at every step.
+
+B7 Reduced motion
+  "reduce" respected: PASS Ch Ff Wk El.
+    parity B7; combined (reduce): computed duration < 1 ms, delay 0 s.
+  Preview equals Export computed transition: PASS Ch Ff Wk.
+  Normal motion preserved: PASS Ch Ff Wk.
+    combined (no-preference): 0.5 s / 0.2 s / opacity.
+  Interaction works without motion: PASS Ch Ff Wk El.
+
+B8 Preview drag
+  Nothing moves in Preview: PASS Ch Ff Wk.
+    preview-forms (flow and free layout); combined step 9. The pointer
+    is now checked to land on the element first, so a drag test cannot
+    pass by missing its target.
+  Free-layout coordinates unchanged: PASS Ch Ff Wk.
+    The exported code is identical after a Preview drag.
+  No Undo entry and no dirty state: PASS Ch Ff Wk.
+  Design drag still works: PASS Ch Ff Wk.
+    combined: a Design drag changes the export and Undo restores it.
+
+
+4. INTERACTIVE COMPONENT MATRIX
+-------------------------------
+Inventory (from the factories in src/features/editor/factories):
+- Dropdown (buttonCompositions)
+- Collapsible, Tabs, Modal, Drawer (interactionCompositions)
+- Dismissible Alert, Toast, Popover (feedbackCompositions)
+
+All eight components BC-02.1 identified are implemented. The four plain
+Alert variants (Info, Success, Warning, Error) have no interaction, so
+they are not in the matrix.
+
+The fixture holds two Dropdown instances and a Collapsible nested inside
+another one, so 9 components with 15 triggers in total. Ids t-1 … t-15
+are given in document order.
+
+How each component is driven, in both runtimes at once:
+- Pointer: three rounds over all of its triggers that are visible.
+- Keyboard: Enter, then Space, on every trigger that can be reached.
+- Escape: after opening the component with its first trigger.
+- After every action, one in-page snapshot is compared between Preview
+  and the exported page. It records:
+  - every trigger's aria-expanded, aria-controls and aria-haspopup, and
+    whether it is visible;
+  - whether each of the 12 targets is visible;
+  - how many dialogs are open;
+  - in the keyboard steps, which element has focus.
+- Also checked at every step: no duplicate id, and every aria-controls
+  id exists exactly once.
+
+Steps compared, and what Escape does:
+
+  Component                    Triggers  Steps  Escape
+  Dropdown                         1       5    closes
+  Dropdown (2nd)                   1       5    closes
+  Collapsible + nested             2       7    n/a (1)
+  Popover                          1       5    closes
+  Drawer (dialog)                  2      10    closes
+  Modal (dialog)                   2      10    closes
+  Tabs                             3      15    n/a (2)
+  Toast                            2      10    n/a (2)
+  Dismissible Alert                1       2    n/a (3)
+
+Notes:
+- (1) The content starts open. Its first action closes it, so there is
+  nothing for Escape to close.
+- (2) Shown content is not a disclosure (no aria-expanded), so Escape
+  doesn't apply.
+- (3) It hides itself and can't come back.
+
+Initial ARIA, the same in Preview and Export:
+- Dropdowns, Collapsibles, Popover: aria-expanded
+  (false / false / true / true / false) plus aria-controls.
+- Modal and Drawer openers: aria-haspopup="dialog" plus aria-controls,
+  no aria-expanded.
+- Close buttons, Tabs, Toast, Alert: aria-controls only.
+- Tabs: each tab controls all three panels.
+
+Tab walk, initially and with a Dropdown open, in both runtimes:
+- Order: t-1, t-2, t-3, t-4, t-5, t-6, t-8, t-10, t-11, t-12, t-13,
+  t-15. That is 12 stops; Chromium and Firefox are identical.
+- Hidden triggers (both Close buttons, the Toast's Close) are never
+  reached, and no stop is ever inside hidden content.
+- With the Dropdown open, its three links are added: 15 stops in
+  Chromium. WebKit doesn't put links in the Tab order by default (as
+  Safari), so it stays at 12 stops in both runtimes.
+
+No document change: the exported code, saved status and Undo were the
+same before and after the whole matrix.
+
+Exceptions by component:
+- Tabs have no tablist/tab semantics in either runtime (documented in
+  BC-02.5, intended).
+- Toast and Alert: focus is lost when a control hides itself
+  (finding N1, section 15).
+- WebKit: when a native dialog is closed with its Close button or with
+  Escape, focus stays on the hidden dialog or Close button instead of
+  returning to the opener. This happens in both runtimes and is WebKit's
+  own dialog behavior.
+- Intended difference: with nothing dismissible open, Escape in Preview
+  exits Preview. The exported page has no mode to exit. Verified at the
+  end of the matrix.
+
+
+5. COMBINED END-TO-END SCENARIO
+-------------------------------
+Test: "BC-02.6 combined workflow, prefers-reduced-motion: reduce" and
+the same test with "no-preference".
+
+The project contains:
+- A form with a text field, a checkbox, a select and a Send button.
+- A Dropdown.
+- A Collapsible whose content holds:
+  - a muted autoplay video;
+  - an ordinary video;
+  - an unmuted autoplay video;
+  - an audio element nested one more level down.
+- Top-level media: a muted autoplay video, an ordinary video and audio.
+- A hostile cross-origin iframe (the BC-02.3 attack page with ?auto=1,
+  which tries to escape as soon as it loads).
+- A free-layout container with one child.
+- A box with an authored transition and its toggle button.
+
+Steps; the results are the same for both motion settings:
+
+1. Open in Design. Nothing plays; Undo is disabled.
+2. Enter Preview. Muted autoplay starts; ordinary media and unmuted
+   autoplay don't.
+3. Forms:
+   - Typing, the checkbox and the select all work.
+   - Enter in the text field and a click on Send do not navigate the
+     editor.
+4. Dropdown:
+   - A click opens it, Enter closes it, Space opens it, Escape closes
+     it.
+   - aria-expanded follows each step; aria-controls equals the menu's
+     id.
+5. Collapsible with media: two clips are started at different moments,
+   then the content is hidden.
+   - All media pause, and each keeps its own position.
+   - Shown again, ordinary media stays paused at its position, muted
+     autoplay resumes (it doesn't restart), and unmuted media stays
+     paused.
+   - It is the same media element throughout; it is never re-created.
+6. Accessibility relationships are valid: unique ids, and every
+   aria-controls target exists.
+7. Hostile iframe:
+   - The sandbox is exactly the approved one, with no allow and no
+     allowfullscreen.
+   - fullscreenEnabled is false inside the frame.
+   - Script-top, target=_top and target=_parent attempts, plus the
+     automatic escape, all fail.
+   - The editor URL and a window marker are unchanged.
+8. Drag in Preview:
+   - The pointer is confirmed to land on the free child before the drag.
+   - Nothing moves; this is checked through the exported code later.
+9. Motion:
+   - The computed transition is correct for the setting.
+   - The toggle still works, and aria-expanded becomes false.
+10. Exit Preview:
+    - All 6 media elements pause and stop advancing.
+    - No aria-expanded, aria-controls or ly-target-* id remains in
+      Design.
+11. Integrity:
+    - The exported code is byte-identical, the saved status is
+      unchanged and Undo is disabled.
+    - Both IndexedDB databases (layoutry-projects and
+      layoutry-recovery) contain neither the typed text, nor any
+      ly-target id, nor runtimeVisibility.
+12. Re-enter Preview: everything is back to the authored state.
+    - Text "Ada", checkbox off, select "m".
+    - Dropdown closed, Collapsible open, motion box shown.
+    - Muted autoplay plays again; unmuted autoplay doesn't.
+    - The media element is still the same one across sessions (no
+      remount).
+13. No editor console or page errors in Chromium and Firefox. In WebKit,
+    two kinds of browser-originated reports were classified separately:
+    - The sandbox reporting each blocked navigation: 8 per run. This is
+      the protection working.
+    - WebKit's own built-in media-control script throwing a "Temporal"
+      error while formatting the time of media it couldn't load: 2–3
+      per run. This is environmental (section 14), not editor code.
+14. Export: the exported page is opened on its own loopback origin and
+    the same functions are run on it.
+    - Forms, Dropdown, Collapsible media and the hostile iframe behave
+      the same.
+    - The page URL and its window marker are unchanged.
+    - Trigger relationships equal Preview's.
+    - The computed transition equals Preview's.
+    - The motion toggle works.
+15. Save, reload, reopen:
+    - Ctrl+S → "saved".
+    - The stored document deep-equals the authored document.
+    - After a reload and Ctrl+O → open, the project exports
+      byte-identically.
+    - Undo is disabled, and the typed text is still not stored.
+16. Design still edits: a Design drag of the free child changes the
+    export, Undo becomes enabled, and Undo restores the export exactly.
+17. Network: no request left the editor, media and embed origins.
+
+Results:
+
+  Environment            reduce               no-preference
+  Chromium               PASS                 PASS
+  Firefox                PASS                 PASS
+  WebKit                 PASS (media NV)      PASS (media NV)
+
+
+6. CANVAS / PREVIEW / EXPORT PARITY
+-----------------------------------
+Compared through actual browser behavior, by the same scenario functions
+run against both runtimes:
+- Visibility: equal at every matrix step, for all 12 targets.
+- Interaction state (aria-expanded, open dialogs): equal at every step.
+- Media playback, position preservation and autoplay policy: equal
+  (Chromium, Firefox).
+- Accessibility attributes: equal, and so is the Tab order.
+- Reduced motion: equal computed transitions under both settings.
+- Form defaults: the same authored values. Typing works the same way.
+- Safe iframes: the same sandbox tokens, no fullscreen grant, and escape
+  attempts fail on both.
+
+Intended differences, confirmed and not defects:
+- Preview never submits a form, which protects the editor. The exported
+  page submits normally.
+- Preview's runtime state resets with every session. The exported page
+  resets on reload.
+- Escape with nothing open exits Preview. The exported page has no mode.
+- Focus after a pointer click can differ, because the editor canvas does
+  not focus the clicked button the way the exported page does. Focus is
+  therefore compared only in the keyboard steps, where it is equal.
+- The exported page runs independently of the editor (no Design mode,
+  nothing pauses it on exit).
+
+
+7. DOCUMENT AND UNDO INTEGRITY
+------------------------------
+Every test that enters Preview captures the state before and after. The
+evidence uses existing repository mechanisms:
+- The Export Code dialog text. This is a pure function of the document,
+  so identical text means an identical document.
+- The data-project-status attribute.
+- The Undo button.
+- Direct IndexedDB reads.
+
+Results:
+- Authored HTML and CSS unchanged: the exported code is identical after
+  the matrix, after the combined Preview sessions, and after 25
+  lifecycle sessions.
+- Structure unchanged: same exported code; the stored document
+  deep-equals the authored one.
+- Dirty state unchanged: data-project-status is the same before and
+  after.
+- Undo/Redo: no entry from any Preview session. It is disabled
+  throughout and enabled only by a real Design edit.
+- Autosave/recovery pollution: none. The recovery database and project
+  database contain no typed value, generated id or runtime visibility.
+- Runtime values in saved projects: none. Saved and reopened, the
+  export is identical and the typed value is absent.
+- Vitest: previewHiddenRuntime.test checks that the document,
+  persistedDocument and past are the same objects (===) after Preview.
+
+
+8. ACCESSIBILITY AUDIT
+----------------------
+Passing within scope:
+- Keyboard operation: Enter and Space work on every reachable trigger of
+  every component (matrix). Escape closes open disclosures and dialogs.
+- Focus behavior: native dialogs take focus on open, and in Chromium
+  and Firefox focus returns to the opener on close. It is the same in
+  both runtimes.
+- aria-expanded and aria-controls are valid at every step, with no
+  duplicate ids.
+- Hidden content can't be reached: the Tab walk never stops on a hidden
+  element; hidden content is display:none in both runtimes.
+- Dialog semantics: a native <dialog> opened with showModal(), and
+  aria-haspopup="dialog" on its opener.
+- Reduced motion: respected, and every interaction stays usable.
+
+Findings, by severity:
+- N1, LOW, known: focus is lost when a control hides its own container
+  (Toast Close, Alert Dismiss). See section 15.
+- N2, LOW, WebKit only, browser behavior: after a native dialog closes,
+  focus doesn't return to its opener. Seen in both runtimes.
+- Known and intended (BC-02.5): Tabs have no tablist/tab/tabpanel
+  roles.
+No accessibility redesign was attempted.
+
+
+9. SECURITY AUDIT
+-----------------
+- Iframe sandbox:
+  - Unchanged: src/lib/iframeSandbox.ts gives allow-forms allow-popups
+    allow-scripts, plus allow-same-origin only for cross-origin embeds.
+  - Verified in the editor (Design and Preview), on the exported page,
+    and in Electron.
+- Top-level navigation:
+  - Blocked from script, target=_top, target=_parent, an automatic
+    escape on load, popups and redirects.
+  - The control test proves the attack page is real: without the
+    sandbox, it takes the page over.
+- Unsafe iframe URLs: javascript:, data:, blob:, file: and about: embeds
+  are not loaded. The exportUrlPolicy tests cover the variants.
+- Safe form handling: Preview never submits, and a form inside an embed
+  navigates only its own frame.
+- Electron context isolation:
+  - desktop/main/main.ts keeps contextIsolation: true,
+    nodeIntegration: false, sandbox: true and webSecurity: true.
+  - The desktop security spec checks that neither the editor nor an
+    embed can reach Node or the file system.
+- Electron navigation:
+  - will-navigate and will-frame-navigate guards stay in place; window
+    opening is denied; permission requests are denied.
+  - CSP is enforced and eval is impossible. The fuses spec passes.
+- No privileged API is reachable from an embed (desktop security and
+  embed-safety specs).
+No protection was weakened. No new security finding.
+
+
+10. PERFORMANCE AND LIFECYCLE
+-----------------------------
+Test: "BC-02.6 lifecycle: repeated Preview sessions" (Chromium, CDP).
+- Each session: enter Preview; Collapsible hide and show; Dropdown open
+  and close; type into a field; exit.
+- 5 warm-up sessions, then a measurement every 5 sessions, after two
+  forced garbage collections.
+
+Run 1 (session 5, 10, 15, 20, 25):
+
+  Measure               Values at each sample
+  JS event listeners    1020 1020 1020 1020 1020
+  DOM nodes             5024 5024 5024 5024 5024
+  Active intervals      1 1 1 1 1   (instrumented)
+  JS heap used, MB      19.6 19.8 20.0 20.1 19.1
+  Media playing         0 0 0 0 0   (after every exit)
+
+Run 2 (during the full Chromium suite, 4 workers in parallel):
+  JS event listeners    1019 at every sample
+  DOM nodes             5024 at every sample
+  Active intervals      1 at every sample
+  JS heap used, MB      19.5 19.7 19.9 19.0 19.3
+  Media playing         0 at every sample
+
+Run 3 (the final run of the spec):
+  JS event listeners    1019 at every sample
+  DOM nodes             5024 at every sample
+  Active intervals      1 at every sample
+  JS heap used, MB      19.5 19.8 20.0 20.2 19.2
+  Media playing         0 at every sample
+
+The assertion thresholds are deliberately loose:
+- listeners: no more than +10 over the warm-up value;
+- nodes: no more than +150;
+- intervals: no growth;
+- heap: below 1.25 × the warm-up value + 5 MB.
+The measured deltas were exactly 0 for listeners, nodes and intervals.
+
+Observations:
+- Listeners, nodes and intervals were exactly flat across 20 sessions
+  after warm-up, in every run. The heap moved within about 1 MB with no
+  trend.
+- This is evidence that per-session growth is bounded. It is not proof
+  that there are no leaks: CDP counts are coarse, and only Chromium
+  exposes them.
+- No unnecessary remounting: the same media element survives hide/show
+  and new sessions. The iframe's identity is kept across sessions
+  (embed-safety spec).
+- No unbounded timers: the instrumented setInterval count stayed at 1
+  (the dev server's own).
+- React console errors: none in the editor in any browser (combined
+  workflow).
+- Unexpected network requests: none (combined workflow).
+- Stale interaction state: none. Every new session starts from the
+  authored state (combined step 12, and the lifecycle end check).
+
+
+11. BROWSER-SPECIFIC RESULTS
+----------------------------
+This is the first time the full web suite ran in Firefox and WebKit.
+Earlier BC-02 checkpoints ran only the BC-02 specs there.
+
+Every failure outside the BC-02 specs was checked against the pre-BC-02
+commit 019d6ca. That commit was checked out in a temporary git worktree,
+served by its own dev server, and run with the same specs and browsers.
+The worktree was removed afterwards. The same check was done for the one
+Electron failure.
+
+Chromium:
+- Everything passes, including all BC-02 specs and the new spec.
+
+Firefox:
+- Every BC-02 spec passes, including all media tests.
+- The one exception is the BC-02.5.1 B5 Preview test, under full-suite
+  load in the second full run (classified below).
+- Failures in the second full run:
+  - export-workflow "copies the exact text…": PRE-EXISTING / ENVIRONMENT.
+    Playwright Firefox has no clipboard-read permission. It fails the
+    same way on 019d6ca.
+  - export-workflow "is fully keyboard operable…": PRE-EXISTING. It
+    fails the same way on 019d6ca (Export Code dialog, Tab order;
+    outside BC-02).
+  - inspector-final-regression "50 edit sessions leave no window
+    listeners…": PRE-EXISTING. 63 listeners against a budget of 50, the
+    same on 019d6ca (Inspector, outside BC-02).
+  - preview-export-parity "B5 … Preview": FLAKY under load.
+    - It passed in the first full Firefox run and 3/3 times in
+      isolation.
+    - The failing step: a muted autoplay video was playing (not paused)
+      but advanced only 0.12 s in 5 s while 4 browsers ran at once.
+      That is a decoder stall, not a policy failure.
+- Also failed in the first full run only:
+  - export-workflow "downloads a single HTML file…": FLAKY. It passed on
+    019d6ca, and passed 1 of 2 isolated reruns on HEAD. When it failed,
+    the downloaded file was the starter project, because the export ran
+    before the import finished. That is a timing race in the test's
+    setup (Export dialog, outside BC-02).
+  - The new spec's combined test in Firefox: a TEST timing issue, now
+    fixed (section 15). It passed 6/6 afterwards.
+
+WebKit (Playwright's WebKit on Windows):
+- Media tests: ENVIRONMENT, 12 failures, all waiting for media that
+  never loads (readyState stays 0):
+  - all 8 tests in preview-media-lifecycle;
+  - the 4 media tests in preview-export-parity.
+  The new spec's media steps are explicitly marked "not verified".
+- Same failure on 019d6ca: PRE-EXISTING, 8 failures:
+  - export-interactions "keyboard-operable" (WebKit doesn't Tab to
+    buttons);
+  - export-workflow "opens … focus restored";
+  - export-workflow "copies…" (no clipboard permission);
+  - export-workflow "downloads a single HTML file…" (WebKit cannot load
+    the downloaded file:// page);
+  - export-workflow "downloads separate files…";
+  - inspector-color-slider-commit "native color picker commits once";
+  - inspector-live-color-font-size "native picker commits once";
+  - sequential-text-editing.
+- FLAKY, 3 failures in the full run, all outside BC-02:
+  - export-workflow "keyboard operable": 1/2 on rerun.
+  - export-workflow "dark theme": 2/2 on rerun.
+  - inspector-final-regression "50 edit sessions": 2/2 on rerun.
+  For comparison, 019d6ca had its own flaky WebKit failure
+  (inspector-final-regression "Position offsets"), which passed here.
+- B6, B7, B8, forms, embeds and the matrix all pass in WebKit, as do
+  the non-media parts of the combined workflow.
+
+Browser behavior noted while auditing, not defects:
+- Firefox keeps activeElement on the last element when Tab leaves the
+  page.
+- WebKit doesn't Tab to links.
+- WebKit doesn't return focus to a dialog's opener.
+- WebKit reports sandbox-blocked navigations as page errors.
+
+
+12. ELECTRON RESULTS
+--------------------
+`npm run desktop:test` (build + the real Electron suite, serial):
+63 passed, 1 failed, 2 skipped.
+- The 2 skipped are the opt-in persistence benchmark and soak.
+- Every BC-02 desktop spec passes:
+  - preview-media: muted autoplay, pause on exit, offline media;
+  - preview-forms;
+  - preview-parity: hidden media keeps its position, aria-expanded and
+    aria-controls, reduced motion;
+  - embed-safety: hostile embed, escape on load in Design.
+- security, fuses, editor, export, files, projects and recovery: all
+  pass.
+
+The failure: lifecycle "a saved (or untouched) project closes at once,
+with no prompt at all". The app did not exit within 15 s of a window
+close request. Classified as PRE-EXISTING and FLAKY:
+- HEAD: failed 2/3 in isolation. Rebuilt with webpack, to compare like
+  with like, it failed 3/6.
+- Pre-BC-02 commit 019d6ca, desktop built in the worktree with webpack:
+  failed 4/6 when the test ran on its own (it passed 3/3 when run as
+  part of the whole lifecycle file).
+- BC-02 changed nothing under desktop/, nothing in the project/close
+  code, and no desktop-build configuration. Its only next.config change
+  is the web-only frame headers, which the desktop output: "export"
+  build doesn't use.
+- It passed in the BC-02.5.1 desktop run.
+- The project's close and exit timing should get its own look, outside
+  BC-02 (section 16).
+
+
+13. EXACT TEST COUNTS AND COMMANDS
+----------------------------------
+Environment: Windows 10 Pro, Node, Playwright 1.61.1, Next 16.2.10
+(Turbopack dev server), 4 web workers. ELECTRON_RUN_AS_NODE was removed
+for every Electron run.
+
+  Command                                     Result
+  npm run typecheck                           EXIT 0
+  npm run lint                                EXIT 0
+  npx vitest run --maxWorkers=4               5256 passed, 1 skipped
+                                              (5257; pre-existing symlink
+                                              skip)
+  npx playwright test --project=chromium      183 passed (full suite)
+  npx playwright test -c <temp> firefox       run 1: 177 passed, 5
+                                              failed, 1 skipped
+                                              run 2 (final spec): 178
+                                              passed, 4 failed, 1 skipped
+  npx playwright test -c <temp> webkit        159 passed, 23 failed, 1
+                                              skipped
+  npm run build                               EXIT 0 (static routes /,
+                                              /_not-found, icons)
+  env -u ELECTRON_RUN_AS_NODE
+    npm run desktop:test                      63 passed, 1 failed, 2
+                                              skipped
+
+Skipped tests: the 1 skipped web test per browser is the new Chromium-
+only lifecycle test, skipped in Firefox and WebKit. In Chromium it ran,
+so the 183 includes it.
+
+The new spec (e2e/bc02-final-regression.spec.ts), final code:
+
+  Browser    Result                            Notes
+  Chromium   4 passed                          matrix, combined ×2,
+                                               lifecycle
+  Firefox    3 passed, 1 skipped               6/6 over 2 repeats
+                                               (lifecycle is Chromium-
+                                               only)
+  WebKit     3 passed, 1 skipped               combined media steps
+                                               annotated NOT VERIFIED
+
+Targeted reruns, for classification:
+
+  Test                                            Result
+  Firefox export-workflow:139, HEAD               1 of 2 passed
+  WebKit export-workflow:239, HEAD                1 of 2 passed
+  WebKit export-workflow:279, HEAD                2 of 2 passed
+  WebKit inspector-final-regression:618, HEAD     2 of 2 passed
+  Firefox preview-export-parity:140, HEAD         3 of 3 passed
+  Same six non-BC-02 specs, Firefox + WebKit,     102 passed, 12 failed
+    on 019d6ca (worktree)                         (list in section 11)
+  Electron lifecycle "closes at once"             HEAD 1/3; HEAD
+                                                  webpack 3/6;
+                                                  019d6ca 2/6 passed
+
+<temp> is a temporary playwright.cross-temp.config.ts, which spread
+playwright.config.ts with Desktop Firefox and Desktop Safari projects.
+It was deleted after the audit.
+
+The earlier per-checkpoint figure of "4 WebKit media failures" came
+from running only the parity spec there. With the full suite, all 12
+WebKit media tests show the same limitation.
+
+
+14. KNOWN LIMITATIONS
+---------------------
+- WebKit media (environmental, rechecked):
+  - Playwright's WebKit on Windows still loads no media; readyState
+    never reaches 3.
+  - Its built-in media controls throw a "Temporal.Duration" RangeError
+    while formatting the unknown duration. That is WebKit's own script,
+    seen in its stack (performScheduledLayout / commitProperty /
+    format).
+  - The media steps of the new spec are skipped there with an explicit
+    "not verified" note, and the four older media tests fail there as
+    before. Neither is counted as passing.
+  - Media behavior in Safari is therefore NOT VERIFIED by automation.
+- MP4/H.264: not verified (Playwright's Chromium has no H.264). The
+  policy does not depend on the codec.
+- A media position can remain across Preview sessions on the same
+  element. This is the BC-02.2 policy, unchanged.
+- Hidden panels keep running, as on the exported page: an embed stays
+  loaded and a typed value stays.
+- No allow= on embeds, so embedded fullscreen stays off (BC-02.3
+  decision).
+- Browser autofill and a real OS clipboard paste: not verified
+  (BC-02.4).
+- The lifecycle measurement runs in Chromium only (CDP).
+
+
+15. NEW DEFECTS
+---------------
+No new defect was found in B1–B8, and none of high or medium severity.
+
+N1 LOW — focus is lost when a control hides its own container.
+- Affects: the Toast's Close button, the Dismissible Alert's Dismiss
+  button (and any authored control that hides its own ancestor).
+- Environment: Preview and Export, every browser.
+- Symptom: after activation, focus falls to the page, or stays on the
+  now-hidden button, depending on the browser and the runtime. A keyboard
+  user must Tab again from wherever the browser resumes.
+- Regression from BC-02? No. BC-02.5.1 already documented it ("If focus
+  is inside a panel when it is hidden, focus is lost (to the body), as
+  on the exported page"). Before BC-02.5.1, Preview lost focus too,
+  through unmounting.
+- Test: recorded on every run by the matrix as a "focus-finding"
+  annotation. It is not an assertion, because there is no approved
+  target behavior yet.
+- Blocks closure? No. It is low severity, it occurs in both runtimes,
+  and there is no approved requirement.
+- Corrective checkpoint (suggested, outside BC-02): a small focus
+  management rule. When a trigger hides the element that contains focus,
+  move focus to a sensible place (the trigger's opener, or the next
+  focusable element), the same way in Preview and Export.
+
+N2 LOW — WebKit doesn't return focus to the dialog's opener.
+- Environment: WebKit only, in both runtimes.
+- Cause: WebKit's own <dialog> behavior. Layoutry uses native
+  showModal() / close().
+- Blocks closure? No.
+
+Test-side corrections made while writing the new spec (not product
+defects):
+- The exported page needed the editor's viewport, so its media is on
+  screen.
+- Escape with nothing open exits Preview by design. The matrix now
+  presses Escape only after opening something.
+- The Tab walk had to stop when focus leaves the page (Firefox).
+- WebKit doesn't Tab to links.
+- The muted autoplay resume check is now read immediately after showing,
+  with hiding done while the clip is between 0.8 and 2.0 s. Before this,
+  a 4 s clip could loop past its end during the other checks and read
+  as "restarted" (seen once in Firefox). The Preview and Export results
+  are the same with the corrected check.
+- Drags now confirm, before moving the mouse, that the pointer is on the
+  element. In the first version the free child was below the visible
+  canvas, so a drag could miss it.
+
+
+16. REMAINING RISKS
+-------------------
+- LOW: Safari media behavior can't be automated on this platform. It
+  was verified in Chromium, Firefox and Electron, and the logic is the
+  same code path.
+- LOW: N1 focus loss on self-dismissal.
+- LOW: the hidden-content rule is one generated <style> with !important.
+  A future custom-CSS feature must stay below it (BC-02.5.1).
+- LOW: an embed with allow-same-origin can do anything inside its own
+  frame (inherent; BC-02.3).
+- No high-severity regressions remain.
+
+
+17. FINAL RECOMMENDATION
+------------------------
+CLOSE BC-02 — Dynamic Component Preview.
+
+Closure criteria:
+- B1–B8 all remain fixed: MET (section 3).
+- Preview/Export parity for supported behavior: MET.
+  - Step-by-step snapshot equality for 9 components.
+  - Shared scenarios for forms, media, embeds and motion.
+- Canvas editing intact: MET.
+  - Design selection, Design drag + Undo.
+  - The Inspector suites pass in Chromium.
+- Project state and Undo unaffected by Preview: MET (section 7).
+- Security protections effective: MET (section 9). Nothing was weakened.
+- Accessibility within scope: MET (section 8).
+  - Two LOW findings that don't block closure.
+- Media lifecycle and autoplay correct: MET in Chromium, Firefox and
+  Electron.
+  - NOT VERIFIED in WebKit (environment, documented).
+- Browser and Electron tests pass, apart from documented limitations:
+  MET. Every remaining failure is:
+  - environmental (WebKit media, clipboard permissions);
+  - pre-existing, failing identically on the pre-BC-02 commit;
+  - or flaky (passes on rerun).
+  None of them is in BC-02 code (section 11).
+- No unresolved high-severity regression: MET.
+
+Suggested follow-ups, outside BC-02; none blocks closure:
+1. A focus-management rule for self-dismissing controls (N1).
+2. Investigate the intermittent Electron close-exit timing (lifecycle
+   spec); it also fails before BC-02.
+3. Firefox/WebKit health of the non-BC-02 web specs:
+   - clipboard permission handling;
+   - Export Code dialog keyboard order;
+   - the Inspector listener budget in Firefox/WebKit;
+   - the download test's import race.
+4. The open D6 hint from BC-02.2.1: an Inspector note that autoplay
+   needs Muted.
+
+Stop condition kept: nothing was committed or pushed, BC-03 was not
+started, and no product code was changed.
+
+
+Recommended commit message:
+
+  test(preview): add BC-02 final regression suite (component matrix, combined workflow, lifecycle)
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+Stage only e2e/bc02-final-regression.spec.ts and this report. The
+changelog is gitignored.

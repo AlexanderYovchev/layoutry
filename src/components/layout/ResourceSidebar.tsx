@@ -94,12 +94,21 @@ export function ResourceSidebar({
          * section, library search/filter and Structure tree state all
          * survive a collapse; display:none also takes it out of the tab
          * order and the accessibility tree.
+         *
+         * Expanded, it must be a flex container (BC-03.2): it is what
+         * hands the card's height down to ResourceContextPanel's flex-1,
+         * and from there to each list's min-h-0 flex-1 overflow-y-auto
+         * region. As a plain block, that chain had no height limit, so the
+         * lists grew to their full length, were clipped here and could
+         * never scroll (BC-03-B1). Focus scrolling then moved this
+         * clipped box instead, hiding the header and search (BC-03-B2).
+         * `hidden` and `flex` both set display, so exactly one applies.
          */}
         <div
           id={contentId}
           className={cn(
             "min-w-0 flex-1 overflow-hidden",
-            collapsed && "hidden",
+            collapsed ? "hidden" : "flex",
             // Fade the content in after an expand toggle only (not on page
             // load): it appears once the width transition is under way.
             !collapsed &&
@@ -111,6 +120,7 @@ export function ResourceSidebar({
             section={activeSection}
             structureContent={structureContent}
             onActivateCard={onActivateCard}
+            collapsed={collapsed}
           />
         </div>
       </div>

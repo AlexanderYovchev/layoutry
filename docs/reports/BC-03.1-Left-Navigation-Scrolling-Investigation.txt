@@ -1,0 +1,480 @@
+LAYOUTRY — BC-03.1 LEFT NAVIGATION SCROLLING INVESTIGATION
+==========================================================
+Date: 2026-11-06
+Checkpoint: BC-03.1 (read-only investigation, reproduction and plan)
+Status: complete. No product code changed. Nothing committed.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+BC-03 is real, and it is a layout defect, not an event-handling one.
+
+The Resource panel's content area has no bounded height, so the
+Elements, Components and Structure lists never scroll. Content below
+the panel's bottom edge is clipped and can't be reached with the mouse
+wheel, a trackpad, a scrollbar, PageDown or End.
+
+At the default 1440 × 900 window:
+- the panel card is 748 px tall;
+- the Elements list is 4,027 px tall;
+- the Components list is 2,365 px tall;
+- so roughly 3,450 px and 1,800 px are unreachable.
+
+This happens at every supported viewport, in Chromium, Firefox, WebKit
+and the Electron app.
+
+Root cause, a single line: in ResourceSidebar.tsx, the wrapper around
+ResourceContextPanel is a block box (display: block) inside the panel
+card's flex row. ResourceContextPanel's own flex-1 and min-h-0, and the
+chain below it down to the list's overflow-y-auto region, therefore
+never receive a height limit. Every level grows to its full content
+height, and the wrapper's overflow-hidden clips it.
+
+A second symptom has the same cause. Keyboard focus (Tab through the
+tiles) and the Structure tree's scrollIntoView on selection scroll that
+clipped wrapper programmatically. That pushes the section title, the
+search box and the filter chips out of view, and the user has no way
+to scroll back.
+
+The candidate fix was validated on the live page without changing
+product code, by injecting display: flex on that wrapper.
+- It restores scrolling for all three lists.
+- It keeps the header in place for keyboard and Structure selection.
+- It preserves drag-to-insert from a scrolled list.
+- It keeps the Workspace, Inspector and document unaffected.
+- It shows a normal 15 px scrollbar in Electron without covering any
+  tile.
+
+Confirmed defects:
+- BC-03-B1, HIGH: lists don't scroll; most library content is
+  unreachable.
+- BC-03-B2, MEDIUM: focus and selection scroll the clipped wrapper and
+  hide the panel header.
+- BC-03-B3, LOW, appears only once B1 is fixed: collapsing and
+  re-expanding the panel keeps the list's scroll position differently
+  in each browser.
+
+Recommendation: fix B1 and B2 together in one small checkpoint
+(BC-03.2), and take a product decision on B3 there (section 16).
+
+
+2. CURRENT NAVIGATION ARCHITECTURE
+----------------------------------
+Shell, src/components/layout/AppShell.tsx:
+- The root is `flex h-dvh flex-col overflow-hidden`. The document itself
+  never scrolls.
+- The middle row is `flex min-h-0 flex-1 overflow-x-auto py-2`. It holds
+  the ResourceSidebar (aside "Resource panel"), the Workspace
+  (main "Workspace", its own overflow-y-auto) and the InspectorPanel
+  (aside "Inspector panel").
+- Panel widths:
+  - Resource: default 280, minimum 220, maximum 520 px. Collapsed it is
+    a 66 px rail, and it can be hidden from the View menu.
+  - Inspector: minimum 260 px.
+  - Workspace: minimum 420 px.
+  - Minimum supported viewport width: 900 px. Below it,
+    UnsupportedViewportNotice replaces the editor.
+
+Resource panel:
+- ResourceSidebar.tsx: an aside containing the card. The card is a flex
+  row holding:
+  - ResourceNavigationRail.tsx: 56 px wide, a vertical tablist of 6
+    sections, with the collapse button at the bottom (mt-auto);
+  - a content wrapper (the defect, see section 3);
+  - ResizeHandle.
+- ResourceContextPanel.tsx: the section header (title plus
+  description), then a tabpanel holding one of:
+  - ResourceCatalogPanel.tsx for Elements and Components: search box,
+    a horizontally scrolling filter-chip row, and the results region
+    (`min-h-0 flex-1 overflow-y-auto`) with memoized CatalogTileGroups
+    and CatalogCard tiles that support drag and click;
+  - for Structure, Templates, Assets and Favorites: a
+    `min-h-0 flex-1 overflow-y-auto p-3` div holding StructurePanel /
+    StructureTree, or a placeholder.
+- The Structure panel shares the same broken chain. It has its own
+  scroll region, which never gets a height.
+- Switching sections remounts the catalog (keyed by section), so the
+  search, filter and scroll position reset. This is intended: it is
+  commented in the code.
+
+Drag: EditorApp wraps the shell in a dnd-kit DndContext
+(PointerSensor; autoScroll with y-threshold 0.2).
+
+
+3. SCROLL-CONTAINER HIERARCHY (measured at 1440 × 900, Chromium)
+-----------------------------------------------------------------
+  aside[Resource panel]          flex row             height 748 (bounded by the shell)
+   └ card                        flex row, overflow-hidden   748
+      ├ rail                     flex column          748 (fits: about 324 px needed)
+      └ content wrapper          display:BLOCK, overflow-hidden   746   ← defect
+         └ ResourceContextPanel  flex column, flex-1 (ignored: parent is not flex)   4,204 (Elements)
+            ├ header             shrink-0
+            └ tabpanel           flex-1 min-h-0       content height
+               └ results region  overflow-y-auto      scrollHeight = clientHeight = 4,027
+                                                       → it never overflows, never scrolls
+
+Wheel events over the list reach no scrollable element:
+- the region doesn't overflow;
+- overflow-hidden is not user-scrollable;
+- the document can't scroll.
+So nothing moves, and nothing chains to the Workspace or Inspector
+either (measured: 0 everywhere).
+
+An overflow-hidden box can still be scrolled programmatically by focus
+and scrollIntoView, which is defect B2.
+
+History:
+- accd7cc (2026-07-13): ResourceContextPanel was a direct flex child of
+  the card, so its height was bounded.
+- 19fc6ee (2026-07-14, resizable panels): the block wrapper was
+  introduced, and the height chain broke. It went unnoticed because
+  every section was then a short placeholder.
+- 9495fe8 (2026-10-19, searchable library, about 100 tiles): the
+  defect became visible.
+- 45346c0 (UI-1.6, collapse): the wrapper kept its classes and gained
+  the conditional `hidden`.
+
+For comparison, the Inspector card uses the correct pattern
+(`flex min-h-0 flex-1 flex-col overflow-hidden`) and scrolls normally.
+
+
+4. CONFIRMED DEFECTS
+--------------------
+BC-03-B1 — HIGH — Resource panel lists do not scroll; content below the
+panel is unreachable
+- Region: Elements and Components results, and the Structure tree.
+  Templates, Assets and Favorites are short placeholders and are not
+  affected today.
+- Environment: every supported viewport; Chromium, Firefox, WebKit;
+  Electron (default, maximized, restored, 1280 × 700).
+- Expected: the list area scrolls vertically inside the panel, below a
+  fixed header, search box and filters.
+- Actual: no scrolling at all. The list is clipped at the panel's bottom
+  edge.
+  - Mouse wheel, trackpad, PageDown and End have no effect.
+  - There is no scrollbar.
+  - Only tiles that are already visible can be dragged or clicked.
+  - Unreachable: 1,615–2,095 px of 42 Components tiles, 3,277–3,757 px
+    of 58 Elements tiles, and Structure rows below the fold (with a
+    60-section document, 3,940 px of tree in a 748 px card).
+- Root cause: section 3. The content wrapper in ResourceSidebar.tsx is
+  display: block.
+- Files: src/components/layout/ResourceSidebar.tsx (the wrapper);
+  ResourceContextPanel.tsx and ResourceCatalogPanel.tsx have the correct
+  flex/min-h-0/overflow chain, which is simply cut off at the wrapper.
+
+BC-03-B2 — MEDIUM — focus and Structure selection scroll the clipped
+wrapper and hide the panel header
+- Region: the whole content area: section title, search box, filter
+  chips.
+- Steps:
+  1. Open Components.
+  2. Focus the first tile.
+  3. Press Tab 41 times.
+  Or, with a long document: open Structure and select the last element
+  on the canvas, or press End in the tree.
+- Expected: the list scrolls to show the focused or selected item; the
+  header, search and filters stay in place.
+- Actual: the browser scrolls the overflow-hidden wrapper instead (by
+  1,796–2,081 px for Tab; 3,207–3,519 px for a Structure selection).
+  The focused item is visible, but the title, search box and filters
+  have scrolled out of the card. The wheel can't bring them back; only
+  moving focus to the search field does.
+- Environment: Chromium, Firefox, WebKit (same numbers).
+- Root cause: the same unbounded chain. With no scrollable list, the
+  nearest scroll container that the browser can scroll programmatically
+  is the clipped wrapper.
+- Files: as B1. StructureTree.tsx:110 (scrollIntoView({ block:
+  "nearest" })) is correct and needs no change.
+
+BC-03-B3 — LOW — after the B1 fix, collapse and expand restore the list
+position inconsistently
+- Not observable today: nothing scrolls.
+- With the candidate fix: scroll the Components list, collapse the
+  panel, then expand it. The position is:
+  - Firefox: kept exactly (1732 → 1732);
+  - WebKit: reset to 0 (1796 → 0);
+  - Chromium: partly kept (1732 → 917).
+- Cause: the collapsed content is display: none (intended, to remove it
+  from the tab order and the accessibility tree), and each browser
+  treats a box's scroll offset differently while it isn't rendered.
+- Needs a product decision: keep the position (save and restore
+  scrollTop around a collapse) or accept a reset.
+
+Not defects:
+- Intentional: switching sections resets the search, filter and scroll
+  position (catalog keyed by section).
+- Intentional: the filter chips scroll horizontally (commented: avoids 7
+  rows of chips).
+- Intentional: the content stays mounted while collapsed.
+- Supported-viewport limit: below 900 px wide (for example 768 × 768),
+  the editor shows the "works best on a larger screen" notice by design.
+  Electron enforces a 900 × 600 minimum content size.
+- Works today: the navigation rail (6 tabs plus collapse) fits at the
+  smallest supported height (needs about 324 px; the card is 448 px at
+  600 px tall).
+- Works today: dragging a visible tile onto the canvas inserts it.
+
+
+5. REPRODUCTION STEPS (B1)
+--------------------------
+1. Open the editor (web or desktop) at any supported size, for example
+   1440 × 900.
+2. The Resource panel shows Elements. Put the mouse over the tile list
+   and scroll down. Nothing moves; there is no scrollbar.
+3. Elements ends visually partway through its list. The remaining
+   categories (about 3,400 px of tiles) can't be reached.
+4. Open Components and repeat: the same result.
+5. Import or build a long page, open Structure and scroll the tree:
+   nothing moves.
+Evidence: the probe measurements, sections 3, 7 and 8.
+
+
+6. ROOT CAUSES
+--------------
+B1 and B2: one cause. The content wrapper in
+src/components/layout/ResourceSidebar.tsx is a block box:
+
+  <div id={contentId} className={cn("min-w-0 flex-1 overflow-hidden",
+       collapsed && "hidden", …)}>
+
+A block box doesn't pass its stretched height on to a child's flex-1,
+so ResourceContextPanel ("flex min-w-0 flex-1 flex-col overflow-hidden")
+sizes to its content.
+
+B3: display: none on collapse, combined with differing browser handling
+of scroll offsets on non-rendered boxes. It surfaces only once lists can
+scroll.
+
+Ruled out:
+- Event handling: no wheel listeners or preventDefault on the panel.
+- dnd-kit: its autoScroll only acts during a drag.
+- The rail.
+- The Workspace and Inspector.
+- Viewport rules.
+
+
+7. RESPONSIVE FINDINGS (Chromium; Firefox and WebKit identical)
+---------------------------------------------------------------
+  Viewport     Card height  Elements list  Components list  Last tile reachable
+  1920×1080        928        4,027          2,365              no
+  1440×900         748        4,027          2,365              no
+  1280×800         648        4,027          2,365              no
+  1024×768         616        4,027          2,365              no
+  768×768        unsupported-width notice (by design, < 900 px)
+  1440×600         448        4,027          2,365              no
+  1280×600         448        4,027          2,365              no
+
+The defect is not viewport-dependent; it is worst at short heights.
+
+- Panel width: resizing the panel to 395 px (handle dragged +120 px)
+  doesn't help in the current build. With the fix, the list keeps
+  scrolling after a resize, and the @container grid moves between one
+  and two columns as designed.
+- Collapse and expand: no layout problem. See B3 for the scroll
+  position.
+- Hiding the panel from the View menu: unmounted, by design.
+
+
+8. BROWSER AND ELECTRON FINDINGS
+--------------------------------
+Chromium, Firefox and WebKit (Playwright 1.61.1) give the same numbers:
+- the list never scrolls;
+- Tab scrolls the wrapper by about 1,796 px at 1440 × 900;
+- a Structure selection scrolls it by 3,207 px.
+With the candidate fix, all three:
+- scroll to the end (1,796 px at 1440 × 900; 2,096 px at 1280 × 600);
+- show the last tile;
+- keep the wrapper at 0 and the header visible;
+- insert tile 42 of 42 by drag from the scrolled list;
+- scroll the Structure tree to its last row by wheel, by selection and
+  by End.
+The only difference between browsers is B3.
+
+Electron (desktop build of HEAD, real window):
+- Default window, content 1424 × 861: card 709 px; list 2,365 px with
+  clientHeight 2,365, so it doesn't scroll. A wheel of 1,200 px moves
+  nothing.
+- Maximized (1920 × 1017) and restored: the same.
+- setContentSize(1280, 700): card 548 px; the same.
+- With the fix applied through CSSOM (allowed by the desktop CSP):
+  - clientHeight 359, scrollHeight 2,369;
+  - the wheel reaches the end (scrollTop 2,010);
+  - the last tile becomes visible;
+  - the Workspace scroll stays 0.
+- Scrollbar: Electron draws the real 15 px Windows scrollbar.
+  - The grid narrows to make room, and no tile sits under the scrollbar.
+  - Headless Playwright browsers report a 0 px (overlay) scrollbar, so
+    only Electron confirms this.
+- Security settings and the CSP are unaffected: nothing was changed.
+
+
+9. ACCESSIBILITY FINDINGS
+-------------------------
+- B2 is the main accessibility impact. A keyboard user tabbing through
+  the library, or using the Structure tree, loses sight of the section
+  title, search and filters, with no way to scroll them back except by
+  moving focus.
+- B1 prevents mouse and trackpad users from reaching most content.
+  Keyboard users can reach every tile, but only through B2's behavior.
+- Correct today:
+  - the rail is a vertical tablist with roving tabindex, arrow keys and
+    aria-controls;
+  - the filter chips are a radio group;
+  - the collapse button has aria-expanded and aria-controls;
+  - the focus rings use focus-visible outlines;
+  - collapsed content leaves the tab order (display: none).
+- With the fix, a focused tile scrolls into view inside the list, and
+  the header stays.
+- Text truncation (line-clamp-2) and hover states are unchanged.
+- Only the light theme exists for the editor chrome; nothing
+  theme-specific is involved.
+
+
+10. PERFORMANCE OBSERVATIONS
+----------------------------
+- The catalog is about 100 drag-enabled tiles, memoized
+  (CatalogTileGroups with React.memo and a stable callback through a
+  ref). It doesn't re-render on editor state changes.
+- With the fix (Chromium, 1440 × 900, Elements): 30 wheel events over
+  about 1 s gave 0 long tasks (> 50 ms), in 3 of 3 runs.
+- No resize-time calculations on the panel beyond the existing
+  width-clamping hook. No scroll listeners.
+- No evidence that virtualization is needed. None is recommended.
+
+
+11. PROPOSED FIXES (smallest reliable)
+--------------------------------------
+B1 + B2 — one change in ResourceSidebar.tsx: make the content wrapper a
+flex container while expanded.
+
+  className={cn("min-w-0 flex-1 overflow-hidden",
+                collapsed ? "hidden" : "flex", …)}
+
+- Use `collapsed ? "hidden" : "flex"`, not both classes. Tailwind's
+  hidden and flex both set display and would conflict.
+- This is exactly what was validated on the live page (section 8).
+- Keep overflow-hidden: once its height is bounded, the wrapper has
+  nothing to scroll, so B2 disappears (measured: wrapper scrollTop stays
+  0).
+- No change to ResourceContextPanel, ResourceCatalogPanel,
+  StructureTree, the rail, the Workspace or the Inspector.
+- An equivalent alternative is h-full on ResourceContextPanel. Not
+  recommended: it relies on percentage height through a flex item,
+  while the flex fix matches the card's own pattern and the Inspector's.
+
+B3 — needs a decision:
+- (a) Recommended: keep the list position. Save the region's scrollTop
+  when the panel collapses and restore it on expand. That is small, and
+  local to ResourceCatalogPanel and the Structure region.
+- (b) Accept a reset to top. Document it, and make it consistent by
+  setting scrollTop to 0 on expand.
+
+
+12. REGRESSION TESTING STRATEGY
+-------------------------------
+This is a layout defect, so jsdom (Vitest) can't detect it: it has no
+layout. That is why the current suite (143 relevant unit tests, 18 + 36
+browser tests, 9 Electron tests, all passing) never caught it.
+
+Playwright (Chromium, Firefox and WebKit), at 1440 × 900 and at the
+minimum height 1280 × 600:
+1. For Elements, Components and Structure: the scroll region's
+   clientHeight fits inside the panel card, and scrollHeight is greater
+   than clientHeight.
+2. A mouse wheel over the list reaches the end, and the last tile is
+   inside the card.
+3. Tab through every tile: the wrapper stays at scrollTop 0, and the
+   header and search stay visible.
+4. Drag the last tile from the scrolled list onto the canvas: the node
+   is inserted.
+5. A Structure tree with a long document: wheel to the last row;
+   selecting the last canvas element and pressing End keep the header.
+6. Isolation: with the Inspector pre-scrolled, a wheel over the list
+   leaves the Inspector, Workspace and document scroll unchanged, and
+   vice versa.
+7. Resize the panel, then wheel: it still scrolls.
+8. B3: the scroll position after collapse and expand, per the decision.
+
+Electron: one desktop check at the default size and at 1280 × 700. The
+list scrolls, and the 15 px scrollbar covers no tile.
+
+Vitest, optional and cheap: assert that the wrapper is display flex
+when expanded and hidden when collapsed. This documents intent; it
+doesn't replace the layout tests.
+
+All evidence-gathering probes for this report were temporary and have
+been deleted. Copies are kept outside the repository (scratchpad).
+
+
+13. RECOMMENDED IMPLEMENTATION CHECKPOINTS
+------------------------------------------
+- BC-03.2 (one checkpoint): the B1+B2 fix (one class change) plus the
+  regression tests above, and B3 per the user's decision. It is small
+  enough not to split.
+- BC-03.3 is needed only if QA asks for UX extras that are not defects,
+  for example scroll-shadow cues. None is required.
+
+
+14. KNOWN LIMITATIONS OF THIS INVESTIGATION
+-------------------------------------------
+- A real trackpad and a real OS scrollbar drag weren't automated.
+  Trackpad scrolling generates the same wheel events, which were
+  tested. Scrollbar dragging can't happen today because there is no
+  scrollbar; with the fix it is a native scrollbar.
+- Headless browsers use overlay scrollbars (0 px). The real 15 px
+  Windows scrollbar was checked only in Electron.
+- "Scrolling while the Canvas is zoomed" was not tested on its own.
+  The Workspace is an independent scroll container, and a wheel over
+  the list reached it in no state (it stayed at 0).
+- Windows 10 only. No macOS or Linux, and no high-DPI or multi-monitor
+  setup (machine limits).
+- The Templates, Assets and Favorites sections are placeholders today.
+  They share the fixed chain, so future content will scroll correctly.
+
+
+15. GIT WORKING-TREE STATUS
+---------------------------
+HEAD is 84cf261 (BC-02.5.1).
+
+Untracked, from BC-02.6 (not committed yet; awaiting the user's commit;
+not touched by BC-03.1):
+- docs/reports/BC-02.6-Final-Dynamic-Preview-Regression.txt
+- e2e/bc02-final-regression.spec.ts
+
+BC-03.1 adds:
+- this report;
+- changelogs/2026-11-06-left-navigation-investigation-BC-03.1.txt
+  (gitignored).
+
+No product or test file was modified. The temporary probe specs and the
+temporary cross-browser config were deleted.
+
+Commands run, with results:
+- npx playwright test (temporary probe spec), Chromium: all probe tests
+  passed (they measure, they don't assert).
+- The same probes in Firefox and WebKit through a temporary config: 14
+  passed; per-browser reruns for B3.
+- npx playwright test -c playwright.desktop.config.ts (temporary desktop
+  probe): 1 passed.
+- npx vitest run src/components/layout src/components/ui/resizable
+  src/features/editor/components/structure: 16 files, 143 passed.
+- npx playwright test --project=chromium panel-collapse, smoke,
+  menu-bar, canvas-theme-isolation, accessibility: 18 passed.
+- The same five specs in Firefox and WebKit: 36 passed.
+- Electron editor.spec + launch.spec: 9 passed.
+- npx tsc --noEmit and eslint on the probes: clean.
+
+
+16. RECOMMENDATION FOR BC-03.2
+------------------------------
+Proceed with BC-03.2 as a single implementation checkpoint:
+1. ResourceSidebar.tsx: the content wrapper becomes
+   `collapsed ? "hidden" : "flex"`. This fixes B1 and B2.
+2. Add the Playwright regression spec (section 12) in all three browsers
+   and one Electron check. Confirm that the new tests fail on the
+   current code.
+3. B3: user decision. Recommended: keep the list position across
+   collapse and expand.
+4. Rerun the panel, collapse, accessibility and drag-insert suites.
+No redesign, no virtualization, and no change to other panels.

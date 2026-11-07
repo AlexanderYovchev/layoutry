@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { ResourceCatalogPanel } from "@/components/layout/ResourceCatalogPanel";
 import { ResourcePlaceholderMessage } from "@/components/layout/ResourcePlaceholderMessage";
+import { ResourceScrollRegion } from "@/components/layout/ResourceScrollRegion";
 import type { CatalogCardPlaceholder } from "@/components/layout/creationToolbarCategories";
 import type { ResourcePanelSection } from "@/components/layout/resourcePanelSections";
 
@@ -8,12 +9,15 @@ interface ResourceContextPanelProps {
   section: ResourcePanelSection;
   structureContent?: ReactNode;
   onActivateCard?: (card: CatalogCardPlaceholder) => void;
+  /** The Resource panel is collapsed (this content is display:none); the lists keep their scroll position across it. */
+  collapsed?: boolean;
 }
 
 export function ResourceContextPanel({
   section,
   structureContent,
   onActivateCard,
+  collapsed = false,
 }: ResourceContextPanelProps) {
   const catalogId =
     section.id === "elements" || section.id === "components"
@@ -46,9 +50,16 @@ export function ResourceContextPanel({
             catalogId={catalogId}
             label={section.label}
             onActivateCard={onActivateCard}
+            collapsed={collapsed}
           />
         ) : (
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          // Keyed by section for the same reason as the catalog: a new
+          // section is a new scroll region and starts at the top.
+          <ResourceScrollRegion
+            key={section.id}
+            hidden={collapsed}
+            className="min-h-0 flex-1 overflow-y-auto p-3"
+          >
             {section.id === "structure" ? (
               structureContent
             ) : (
@@ -57,7 +68,7 @@ export function ResourceContextPanel({
                 description={section.description}
               />
             )}
-          </div>
+          </ResourceScrollRegion>
         )}
       </div>
     </div>

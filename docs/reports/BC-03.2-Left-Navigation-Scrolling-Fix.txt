@@ -1,0 +1,495 @@
+LAYOUTRY — BC-03.2 LEFT NAVIGATION SCROLLING FIX & REGRESSION TESTING
+=====================================================================
+Date: 2026-11-07
+Checkpoint: BC-03.2 (targeted implementation and regression tests)
+Status: complete, NOT committed. Waiting for ChatGPT QA.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+The Resource panel's Elements, Components and Structure lists now
+scroll inside the panel. Every tile and tree row can be reached with the
+mouse wheel, the keyboard and by dragging. The panel's title, search box
+and filter chips stay in place.
+
+- Collapsing and expanding the panel keeps the active list's position:
+  the same item is at the top, within 2 px, in Chromium, Firefox, WebKit
+  and Electron.
+- Switching sections still starts the new section at the top.
+- Dragging from a scrolled list still inserts exactly what a click
+  inserts, and Undo restores the document.
+- The Canvas, Inspector and page never scroll as a side effect.
+
+One regression was introduced by the scroll fix, and fixed in this
+checkpoint. The full Electron suite caught it (the persistence soak test
+failed 3 of 3 times). With the lists scrollable, dnd-kit's drag
+auto-scroll began scrolling the list while a tile was dragged out of it,
+by 94 px per drag, so the next drag started on the search box. It is
+fixed with dnd-kit's own canScroll option, and a regression test now
+covers it.
+
+The changes:
+- 4 product files changed and 1 component added:
+  - one class in ResourceSidebar;
+  - a ResourceScrollRegion component used by the two list owners;
+  - an auto-scroll opt-out in EditorApp.
+- No change to the document model, Canvas drag architecture, Inspector,
+  Workspace or Electron security.
+
+The new browser spec fails against the BC-03.1 code: 20 of its first 22
+tests fail, and the auto-scroll test fails without the canScroll change.
+Everything passes after the fix. Section 12 has the counts.
+
+Recommendation: CLOSE BC-03 (section 16).
+
+
+2. ROOT CAUSE CONFIRMATION
+--------------------------
+Confirmed as found in BC-03.1.
+
+The content wrapper in src/components/layout/ResourceSidebar.tsx was a
+block box inside the panel card's flex row. ResourceContextPanel's
+flex-1, and the list regions' min-h-0 flex-1 overflow-y-auto, therefore
+never received a height limit. The lists grew to their full content
+height and were clipped by the wrapper's overflow-hidden (B1). Focus
+scrolling then scrolled that clipped box, hiding the header (B2).
+
+Making the wrapper a flex container restores the chain. No min-height:
+0 had to be added anywhere:
+- the wrapper and ResourceContextPanel are row flex items, stretched on
+  the cross axis;
+- the tabpanel, the catalog root and both list regions already had
+  min-h-0;
+- ResourceContextPanel already had min-w-0.
+
+Measured on the old code with the new spec (Chromium):
+- the lists never scroll;
+- Tab and selection scroll the wrapper and hide the controls;
+- B3 can't even be exercised;
+- 20 of 22 tests fail.
+
+
+3. EXACT IMPLEMENTATION CHANGES
+-------------------------------
+A. src/components/layout/ResourceSidebar.tsx (fix A, which fixes B1 and
+   B2):
+
+     - collapsed && "hidden",
+     + collapsed ? "hidden" : "flex",
+
+   It also passes collapsed={collapsed} to ResourceContextPanel. The
+   comment explains the height chain. Tailwind's hidden and flex both
+   set display, so exactly one applies.
+
+B. NEW src/components/layout/ResourceScrollRegion.tsx (fix C, plus fix B
+   hardening): the scroll container of a Resource list. It renders a div
+   with the caller's id and classes. Section 5 describes the mechanism.
+   It adds:
+   - [overflow-anchor:none];
+   - a keyboard-focus reveal;
+   - the data-no-drag-autoscroll marker.
+
+C. src/components/layout/ResourceCatalogPanel.tsx: the results div
+   becomes <ResourceScrollRegion id={resultsId} hidden={collapsed}> with
+   identical classes. There is a new optional `collapsed` prop.
+
+D. src/components/layout/ResourceContextPanel.tsx: the
+   Structure/placeholder div becomes <ResourceScrollRegion
+   key={section.id} hidden={collapsed}> with identical classes. It is
+   keyed by section, as the catalog already was, so a new section is a
+   new region and starts at the top. There is a new optional `collapsed`
+   prop, passed on to the catalog.
+
+E. src/features/editor/components/EditorApp.tsx (fix for the regression
+   in section 7):
+   - The inline autoScroll config becomes a module constant,
+     AUTO_SCROLL_OPTIONS, with the same threshold { x: 0, y: 0.2 } and
+     acceleration 10.
+   - It adds canScroll, which skips any element with
+     data-no-drag-autoscroll.
+   - It is a module-level function, so it is stable: dnd-kit lists
+     canScroll in its effect dependencies.
+
+Not changed:
+- no position: fixed, no fixed heights, no viewport-dependent numbers;
+- no global wheel handling, no overscroll-behavior;
+- no virtualization;
+- no ARIA additions.
+
+
+4. SCROLL-CONTAINER ARCHITECTURE AFTER THE FIX
+----------------------------------------------
+  aside[Resource panel]            flex row, height from the shell row
+   └ card                          flex row, overflow-hidden
+      ├ rail                       flex column (6 tabs + collapse), unchanged
+      └ content wrapper            FLEX (expanded) / hidden (collapsed), overflow-hidden
+         └ ResourceContextPanel    flex column, flex-1, min-w-0, overflow-hidden
+            ├ header (title, description)       shrink-0: never scrolls
+            └ tabpanel             flex column, min-h-0, flex-1
+               ├ Elements/Components: search + filter chips (shrink-0)
+               │   └ ResourceScrollRegion: results, overflow-y-auto   ← the only vertical scroller
+               └ Structure/others: ResourceScrollRegion, overflow-y-auto  ← the only vertical scroller
+
+There is exactly one vertical scrollbar per section, and no nested
+scrollbars. The filter chips keep their own horizontal scroll row
+(intended, unchanged).
+
+Wheel at either end of a list doesn't chain anywhere:
+- the wrapper and card are overflow-hidden, so not user-scrollable;
+- the document is fixed (h-dvh overflow-hidden).
+So no overscroll-behavior was needed; this is measured in section 6.
+
+
+5. SCROLL-POSITION RESTORATION MECHANISM
+----------------------------------------
+How collapse works: AppShell sets collapsed; ResourceSidebar keeps the
+content mounted and gives the wrapper display:none (UI-1.6). The
+regions are therefore neither unmounted nor resized: they lose their
+rendered box. Browsers then disagree on the scroll offset (BC-03.1:
+Firefox kept it, WebKit reset it to 0, Chromium kept part of it).
+
+ResourceScrollRegion:
+- Remember: a passive "scroll" listener writes element.scrollTop into a
+  ref, only while clientHeight > 0. A box that isn't rendered reports a
+  meaningless offset.
+  - No React state, so scrolling triggers no render.
+  - The listener is added once per region and removed on unmount
+    (unit-tested).
+- Restore: useLayoutEffect on `hidden`. When the region becomes visible,
+  the DOM already has display:flex, so it has layout. The remembered
+  offset is written back before paint.
+  - No timers, no animation-frame delays, no loop: it writes once per
+    expand. The scroll event it causes stores the same value.
+- overflow-anchor: none on the region.
+  - The expand animates the panel width (240 ms), so the offset is
+    restored while the list is still narrow and its tiles are taller.
+  - With scroll anchoring, the browser then moved the offset as the
+    list widened, to keep the narrow layout's top tile. Measured in
+    Chromium: 900 → 532 (Elements), 473 (Components), 836 (Structure).
+  - With anchoring off, the offset stays, and at the final width the
+    same item is back at the top. No list here changes content above
+    the visible area while the user is scrolled, so anchoring has
+    nothing else to do.
+- Scope:
+  - The position is per region instance, so per section.
+  - It isn't stored in the document, Zustand, localStorage or history.
+  - There is no autosave trigger and no Undo entry. Section 6 has the
+    integrity test.
+- Section switching: both regions are keyed by section, so a switch
+  creates a fresh region at scrollTop 0. This is the established
+  behavior, now deterministic for Structure and the placeholders too.
+
+
+6. BROWSER TEST EVIDENCE
+------------------------
+New spec: e2e/resource-panel-scrolling.spec.ts, 23 tests per browser.
+
+All measurements are on the real layout: scrollHeight, clientHeight,
+scrollTop, getBoundingClientRect, elementFromPoint. The input is real:
+mouse.wheel, keyboard and mouse drags.
+
+Every layout check asserts, through expectPanelIntact:
+- the list lies inside the panel card;
+- the title, search and filters are fully inside the card;
+- the wrapper, context panel, document and Workspace are at scrollTop 0;
+- no horizontal overflow in the card or the list;
+- the page itself is not scrollable.
+
+B1, reachability:
+- Elements and Components at 1920×1080, 1440×900, 1280×800, 1024×768,
+  1440×600 and 1280×600: the list overflows, the wheel reaches
+  scrollHeight − clientHeight, the last tile is inside the list, and
+  wheeling back reaches 0.
+- Structure with a 60-section page: the wheel reaches the last row.
+
+B2, keyboard and selection:
+- Tab through every enabled tile of Elements (40) and Components (41) at
+  1280×600. Every focused tile is fully visible in the list, allowing
+  only for its own focus scale of 3%. The controls stay put, and the
+  list follows focus.
+- Shift+Tab back up the list.
+- With focus in a list, PageDown scrolls it, End reaches the bottom, and
+  Home returns to 0, for both catalogs.
+- Structure: selecting the last element on the canvas reveals its row;
+  End and Home in the tree reveal the last and first rows; the controls
+  stay put.
+
+B3, collapse and expand:
+- For Elements, Components and Structure, part-way and at the end:
+  scrollTop is kept within 2 px, and the same first visible item is at
+  the top after expanding.
+
+Section switching:
+- Elements → Components, Components → Structure, Structure → Elements
+  and Structure → Assets each start at 0, and revisiting starts at 0.
+
+Isolation:
+- With the Inspector pre-scrolled, wheeling past both ends of the list
+  leaves the Inspector, Workspace and page unchanged.
+- Wheeling over the Inspector and over the Workspace leaves the list
+  unchanged.
+
+Width:
+- Dragging the resize handle to 520 px and to 220 px at 1280×600: still
+  bounded and reachable, with no horizontal overflow.
+
+Unsupported width: 768×768 still shows the notice.
+
+Integrity: scrolling, Tab and collapse/expand leave the exported code,
+the project status and the Undo state unchanged.
+
+Before and after, Chromium:
+- On the old code, 20 of the first 22 tests failed. The 2 that passed
+  check behavior that must not change (the unsupported-width notice and
+  document integrity).
+- The auto-scroll test fails without the canScroll change, in Chromium,
+  Firefox and WebKit.
+- After the fix, all 23 pass.
+
+Test corrections made while writing the spec (test mistakes, not
+product changes):
+- Disabled "not available yet" tiles are not in the Tab order.
+- A focused tile is scaled by 3%.
+- The canvas click in the Structure test scrolls the Workspace itself.
+- The wheel helper now stops at the list's edge, not at the first pause
+  in smooth scrolling.
+- The drag tests initially passed on the old code, because Playwright's
+  scroll-into-view moved the clipped wrapper. They now require that the
+  list itself scrolled and the panel stayed intact.
+
+
+7. DRAG-AND-DROP REGRESSION RESULTS
+-----------------------------------
+Test "the last tile, dragged from the bottom of the list" (Elements and
+Components):
+1. Wheel to the end of the list.
+2. The lowest enabled tile is fully visible and under the pointer.
+3. Drag it onto the bottom of the page sheet:
+   - the exported code equals the exported code from clicking the same
+     tile, so it is the same component in the same place;
+   - the list's scrollTop is unchanged after the drop, so no jump;
+   - the new node exists on the canvas, and clicking it selects it (one
+     aria-selected row in Structure);
+   - Undo restores the exported code exactly.
+Result: it passes in all three browsers.
+
+Regression found and fixed in this checkpoint:
+- Found by e2e/desktop/persistence-soak.spec.ts: 3 of 3 failed on the
+  first fixed build, and it passed in BC-02.6.
+- Diagnosis (temporary probe): dragging the Container tile from an
+  unscrolled list moved the list 0 → 94 → 184 px. The second drag then
+  started on the search field and inserted nothing.
+- Cause: dnd-kit auto-scroll scrolls the dragged item's scrollable
+  ancestors when the pointer is in their edge band (y-threshold 0.2).
+  The path to the Canvas crosses the list's bottom band. Before BC-03.2
+  the list had nothing to scroll, so this was invisible.
+- Fix: canScroll in EditorApp skips regions marked
+  data-no-drag-autoscroll. Nothing is ever dropped into these lists, and
+  the Structure tree has no drag support.
+- New test, "dragging a tile out of an unscrolled list never scrolls the
+  list":
+  - it drags three times from the same spot, dwelling in the edge band;
+  - it samples scrollTop at every step of every drag;
+  - the list stays at 0 and all three drags insert.
+  - It fails without the fix.
+  - Soak after the fix: 3 of 3 passed. Full desktop suite: passed.
+- One WebKit-only behavior was found on the way, also present before
+  BC-03.2: a new drag started within milliseconds of the previous drop
+  is ignored (dnd-kit's drop animation is still running).
+  - The same test fails identically on the old product code in WebKit.
+  - A 500 ms pause between drags (person-paced) makes it reliable in
+    WebKit; Chromium and Firefox don't need it.
+  - It isn't a scrolling issue and was left as a note (section 14).
+
+
+8. RESPONSIVE LAYOUT RESULTS
+----------------------------
+- The six required viewports: all pass in Chromium, Firefox and WebKit
+  (section 6).
+- 768×768: the unsupported-width notice is preserved.
+- Panel width at 220 and 520 px: pass. Collapse/expand, the resize
+  handle and the existing panel-collapse spec: pass.
+- No horizontal overflow, no overlapping controls, no clipped content.
+- The Canvas and Inspector layouts are unchanged: their specs pass and
+  the files are untouched.
+
+
+9. ACCESSIBILITY RESULTS
+------------------------
+- Tabs, the filter radio group, search and the collapse button: semantics
+  are unchanged, and no ARIA was added.
+- Focus indicators: unchanged (focus-visible outlines and scale), and
+  the focused tile is fully visible.
+- Keyboard focus is scrolled into view consistently:
+  - Chromium and WebKit do it natively.
+  - Firefox scrolls a newly focused element only when it is entirely out
+    of view, so a tile half-hidden at the edge stayed half-hidden.
+    ResourceScrollRegion handles :focus-visible focus with
+    scrollIntoView({ block: "nearest" }). Pointer focus is excluded, so
+    a press never scrolls the list under a starting drag.
+- PageDown, End and Home work natively when focus is in a list (tested).
+  Structure Home and End are the tree's own keys.
+- Collapsed content is display:none, as before. It is out of the tab
+  order, so no focus trap.
+- Scrollbars are native: 15 px in Electron (classic Windows), and no
+  tile sits under them.
+
+
+10. ELECTRON RESULTS
+--------------------
+New test: e2e/desktop/resource-panel-scrolling.spec.ts, real window,
+built app, offline.
+- For Elements and Components:
+  - bounded by the panel;
+  - overflowing, so scrollable;
+  - real scrollbar width > 0 (15 px measured in BC-03.1);
+  - no tile under the scrollbar;
+  - the wheel reaches the last tile;
+  - the title and search stay visible;
+  - the Workspace scroll stays 0.
+- Collapse/expand: the position is kept within 2 px.
+- Maximize and restore: still bounded and scrollable, nothing under the
+  scrollbar, controls visible.
+- 3 of 3 runs passed.
+- Full desktop suite on the final code: 65 passed, 2 skipped (the opt-in
+  benchmarks). The persistence soak passes again.
+
+
+11. PERFORMANCE OBSERVATIONS
+----------------------------
+Temporary probe (deleted): 30 wheel events over a list, at 1440×900.
+
+  Browser    List        Long tasks             Panel DOM mutations   Time to next frame
+  Chromium   Elements    0                      0                     0–0.1 ms
+             Components  0                      0
+  Firefox    both        API not available      0                     0.4–0.7 ms
+  WebKit     both        API not available      0                     0.2–0.5 ms
+
+- "0 DOM mutations in the panel while scrolling" means scrolling causes
+  no re-render that touches the DOM. By construction there is no React
+  state update per scroll event: the position is a ref.
+- No scroll feedback loop: one write per expand.
+- No listener build-up: one listener per region, removed on unmount
+  (unit-tested). The lifecycle of the regions follows the existing
+  section keying.
+- No virtualization, which isn't needed (about 100 memoized tiles).
+- WebKit's longer total time (6–8 s) is Playwright's WebKit dispatching
+  wheel events slowly; the per-frame cost is small.
+
+
+12. FULL TEST COUNTS
+--------------------
+Final code; commands run from the repository root.
+
+  npm run typecheck                            EXIT 0
+  npm run lint                                 EXIT 0
+  npx vitest run --maxWorkers=4                5262 passed, 1 skipped
+                                               (5263; +6 new; the skip
+                                               is the existing symlink
+                                               test)
+  npx playwright test --project=chromium       206 passed (full suite:
+                                               183 + 23 new)
+  npx playwright test -c <temp> (Firefox +     82 passed
+    WebKit): resource-panel-scrolling,          (23×2 new + 36 existing)
+    panel-collapse, smoke, menu-bar,
+    canvas-theme-isolation, accessibility
+  npm run build                                EXIT 0
+  env -u ELECTRON_RUN_AS_NODE npm run          65 passed, 2 skipped
+    desktop:test                               (opt-in benchmarks)
+
+Targeted:
+
+  Run                                          Result
+  New spec on the old product code, Chromium   20 failed, 2 passed (of
+                                               the first 22)
+  Auto-scroll test without canScroll           fails in Chromium,
+                                               Firefox and WebKit
+  persistence-soak before the auto-scroll fix  3 failed of 3
+  persistence-soak after the fix               3 passed of 3
+  Desktop resource-panel-scrolling             3 passed of 3
+
+<temp> is a temporary playwright.cross-temp.config.ts (Firefox and
+WebKit projects), deleted afterwards.
+
+No pre-existing failure appeared in these runs. The full Firefox and
+WebKit suites were not rerun here: BC-02.6 documented their existing,
+unrelated failures. The cross-browser set covers every spec that touches
+the Resource panel.
+
+
+13. MODIFIED FILES
+------------------
+Modified:
+- src/components/layout/ResourceSidebar.tsx
+- src/components/layout/ResourceContextPanel.tsx
+- src/components/layout/ResourceCatalogPanel.tsx
+- src/features/editor/components/EditorApp.tsx
+
+Created:
+- src/components/layout/ResourceScrollRegion.tsx
+- src/components/layout/ResourceScrollRegion.test.tsx (6 tests)
+- e2e/resource-panel-scrolling.spec.ts (23 tests)
+- e2e/desktop/resource-panel-scrolling.spec.ts (1 test)
+- docs/reports/BC-03.2-Left-Navigation-Scrolling-Fix.txt (this report)
+- changelogs/2026-11-07-left-navigation-scrolling-fix-BC-03.2.txt
+  (gitignored)
+
+Moved and deleted: none. The temporary probes and the temporary config
+were deleted.
+
+Untracked from earlier checkpoints, untouched, awaiting the user's
+commit:
+- docs/reports/BC-02.6-Final-Dynamic-Preview-Regression.txt
+- e2e/bc02-final-regression.spec.ts
+- docs/reports/BC-03.1-Left-Navigation-Scrolling-Investigation.txt
+
+
+14. KNOWN LIMITATIONS
+---------------------
+- A real trackpad and dragging the OS scrollbar were not automated.
+  Trackpads produce wheel events (tested); the scrollbar is native.
+- Headless browsers use 0 px overlay scrollbars. The real 15 px
+  scrollbar was measured only in Electron.
+- The long-task API exists only in Chromium; Firefox and WebKit were
+  measured through DOM mutations and frame timing.
+- WebKit (before and after BC-03.2): a new drag started within
+  milliseconds of a drop is ignored. No person can do that. Noted, not
+  changed.
+- Hiding the panel through the View menu unmounts it, so the position
+  resets. That is by design (UI-1.6), and different from collapse.
+- Windows 10 only (machine limits).
+
+
+15. REMAINING DEFECTS
+---------------------
+- BC-03-B1: FIXED.
+- BC-03-B2: FIXED.
+- BC-03-B3: FIXED (keep the position, the approved behavior).
+- Drag auto-scroll of the list, introduced by the B1 fix: FIXED in this
+  checkpoint, with a regression test.
+- No other defect found. No high-severity issue remains.
+
+
+16. RECOMMENDATION
+------------------
+CLOSE BC-03. Every acceptance criterion in the brief is met:
+- the three lists scroll and all content is reachable;
+- the header, search and filters stay accessible;
+- keyboard navigation works;
+- collapse and expand preserve the position;
+- switching sections resets it;
+- drag-and-drop works;
+- the Canvas and Inspector stay independent;
+- the responsive layouts are intact;
+- Electron is verified;
+- there are no document or history changes;
+- no high-severity defect remains.
+
+Recommended commit message:
+
+  fix(shell): make Resource panel lists scroll and keep their position across collapse
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+Stage only the BC-03.2 files listed in section 13. Don't stage the
+changelog.

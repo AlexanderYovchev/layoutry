@@ -13,6 +13,7 @@ import {
 import { Search, SearchX, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CatalogCard } from "@/components/layout/CatalogCard";
+import { ResourceScrollRegion } from "@/components/layout/ResourceScrollRegion";
 import { categoryAppearance } from "@/components/layout/creationToolbarCategoryAppearance";
 import type { CatalogCardPlaceholder } from "@/components/layout/creationToolbarCategories";
 import {
@@ -28,6 +29,8 @@ interface ResourceCatalogPanelProps {
   /** The Resource panel section's label, e.g. "Elements" — used for the search field's name and messages. */
   label: string;
   onActivateCard?: (card: CatalogCardPlaceholder) => void;
+  /** The Resource panel is collapsed; the results keep their scroll position across it. */
+  collapsed?: boolean;
 }
 
 /**
@@ -41,6 +44,7 @@ export function ResourceCatalogPanel({
   catalogId,
   label,
   onActivateCard,
+  collapsed = false,
 }: ResourceCatalogPanelProps) {
   const groups = useMemo(
     () => buildResourceCatalogGroups(catalogId),
@@ -199,8 +203,9 @@ export function ResourceCatalogPanel({
           : ""}
       </p>
 
-      <div
+      <ResourceScrollRegion
         id={resultsId}
+        hidden={collapsed}
         className="@container min-h-0 flex-1 overflow-y-auto px-3 pt-1 pb-4"
       >
         {visibleGroups.length === 0 ? (
@@ -226,7 +231,7 @@ export function ResourceCatalogPanel({
             onActivate={handleActivateCard}
           />
         )}
-      </div>
+      </ResourceScrollRegion>
     </div>
   );
 }

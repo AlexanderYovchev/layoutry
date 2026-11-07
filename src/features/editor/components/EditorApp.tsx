@@ -39,6 +39,24 @@ interface ActiveDragPreview {
  */
 const POINTER_SENSOR_OPTIONS = { activationConstraint: { distance: 4 } };
 
+/**
+ * Drag auto-scroll (dnd-kit) scrolls the dragged item's scrollable
+ * ancestors when the pointer nears their edges. A Resource panel list
+ * opts out (data-no-drag-autoscroll, set by ResourceScrollRegion).
+ *
+ * Since BC-03.2 those lists really scroll, and dragging a tile out of one
+ * towards the Canvas crosses the list's lower edge band, so dnd-kit
+ * scrolled the list under the pointer (measured: 94 px per drag, which
+ * then made the next drag start on the search field). Nothing is ever
+ * dropped into these lists, so auto-scrolling them has no use. The
+ * threshold and acceleration are unchanged.
+ */
+const AUTO_SCROLL_OPTIONS = {
+  threshold: { x: 0, y: 0.2 },
+  acceleration: 10,
+  canScroll: (element: Element) => !(element instanceof HTMLElement && element.dataset.noDragAutoscroll !== undefined),
+};
+
 interface EditorAppProps {
   /**
    * PROJECT-1.2 — project UI supplied by the project feature's
@@ -159,7 +177,7 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
     <DndContext
       sensors={sensors}
       collisionDetection={pointerWithin}
-      autoScroll={{ threshold: { x: 0, y: 0.2 }, acceleration: 10 }}
+      autoScroll={AUTO_SCROLL_OPTIONS}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveDrag(null)}
