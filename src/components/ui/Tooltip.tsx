@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { cn } from "@/lib/utils";
 
 interface TooltipProps {
@@ -18,6 +18,18 @@ interface TooltipProps {
    * where a downward tooltip would cover the status bar.
    */
   placement?: "bottom" | "top";
+  /**
+   * Keeps the tooltip hidden even while its trigger is hovered or
+   * focused: the caller dismissed it (e.g. with Escape, WCAG 1.4.13).
+   */
+  suppressed?: boolean;
+  /**
+   * A horizontal shift in px, measured by the caller, that keeps the
+   * tooltip inside a container narrower than the tooltip's natural reach.
+   */
+  offsetX?: number;
+  /** The tooltip element itself, so the caller can measure it. */
+  tooltipRef?: Ref<HTMLSpanElement>;
 }
 
 export function Tooltip({
@@ -25,6 +37,9 @@ export function Tooltip({
   children,
   align = "start",
   placement = "bottom",
+  suppressed = false,
+  offsetX = 0,
+  tooltipRef,
 }: TooltipProps) {
   return (
     <span className="group relative inline-flex">
@@ -40,7 +55,12 @@ export function Tooltip({
        * accessibility tree entirely.
        */}
       <span
+        ref={tooltipRef}
         aria-hidden="true"
+        // Runtime-measured, so an inline style rather than a class.
+        style={
+          offsetX === 0 ? undefined : { transform: `translateX(${offsetX}px)` }
+        }
         // w-max + max-w-48 (not whitespace-nowrap): a short label keeps its
         // natural single-line width, but a longer one (e.g. an Inspector
         // property's plain-language help text) wraps at 192px instead of
@@ -50,7 +70,9 @@ export function Tooltip({
         // left edge would still overflow the panel's own scrollable
         // container on its left side and get clipped there.
         className={cn(
-          "rounded-control-sm bg-fg-primary text-surface-panel shadow-elevated ease-studio pointer-events-none absolute z-50 w-max max-w-48 px-2 py-1 text-xs opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100",
+          "rounded-control-sm bg-fg-primary text-surface-panel shadow-elevated ease-studio pointer-events-none absolute z-50 w-max max-w-48 px-2 py-1 text-xs opacity-0 transition-opacity duration-150",
+          !suppressed &&
+            "group-focus-within:opacity-100 group-hover:opacity-100",
           align === "start" ? "left-0" : "right-0",
           placement === "bottom" ? "top-full mt-1.5" : "bottom-full mb-1.5",
         )}

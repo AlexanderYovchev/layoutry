@@ -1,0 +1,562 @@
+LAYOUTRY — BC-04.2: INTERACTION CONTROLS GUIDANCE & TARGET SELECTION
+=====================================================================
+Date: 2026-11-08
+Type: Targeted UX implementation + behavioral correction + regression tests
+Base: HEAD 27a33f4 (BC-04.1 report untracked, unchanged)
+Status: implemented and validated; NOT committed
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+The Interactions section of the Inspector now explains itself, asks for an
+explicit target, and fails safely:
+
+- A one-line description opens the section: what an interaction does, where
+  to set it up, and how to test it (Preview), with exported pages behaving the
+  same.
+- Initial state, Action and Target each have a help icon. It is the
+  existing Inspector help pattern. Each control is described by its help
+  for screen readers, the icon is reachable by Tab, and Escape now hides
+  the tooltip.
+- Two notes appear only when they apply:
+  - a keyboard note, for click interactions on elements keyboard users
+    can't activate;
+  - an "initially hidden" note, while Initial state is Hidden.
+- "Add Interaction" no longer picks the first element on the page (U1).
+  - The new row shows "Select an element…" and does nothing until a
+    target is chosen.
+  - Choosing it adds the complete interaction as one Undo step.
+  - An unfinished interaction never reaches the document, Preview, the
+    export or the saved file.
+- Target names no longer show internal ids:
+  - duplicates are told apart by their text ("Paragraph — Details"), or
+    by position ("Section (1 of 2)");
+  - the selected element itself is marked "(this element)".
+- A missing target shows "The target was deleted. Choose another element."
+  It is marked invalid, keeps the binding unchanged, and is repaired by
+  choosing a replacement.
+
+Two real defects were found and fixed along the way:
+- D1, pre-existing, HIGH:
+  - Pasting a copied trigger after its target was deleted (or undone)
+    inserted a binding to a missing element.
+  - Saving, autosave snapshots and Export Code validation all reject
+    such a document ("An interaction targets element …, which does not
+    exist"). The project then silently could not be saved.
+  - Paste now applies the existing rule "deleting a target removes the
+    interactions aimed at it".
+  - Proven by tests that fail on HEAD.
+- D2, found live, MEDIUM:
+  - At the Inspector's narrowest width (260 px), help tooltips (192 px
+    wide) ran up to 10 px past the panel and window edge.
+  - This affects every Inspector help icon, not only the new ones.
+  - The help icon now measures its tooltip and shifts it back inside the
+    Inspector.
+
+No schema, file-format, export-output or Preview-runtime change.
+
+Recommendation: CLOSE BC-04 (section 17).
+
+
+2. EXACT UI COPY IMPLEMENTED
+----------------------------
+All strings live in src/features/inspector/utils/interactionGuidanceCopy.ts.
+Unit and browser tests import them, so the copy can't drift from its tests.
+
+Section description (always, when the section is open):
+  "Clicking this element can show, hide or toggle another element. Set it
+   up here, then try it in Preview; your exported page works the same."
+  - Adapted from BC-04.1 section 10.
+  - "Set it up here" is new: it covers section 5 of the brief (Design
+    configures, Preview tests, Export runs).
+
+Initial state help (BC-04.1 wording, unchanged):
+  "Whether this element is visible when the page first loads, in Preview
+   and on your exported page. In Design it always stays visible so you can
+   edit it."
+
+Initial state note (only while Hidden):
+  "Starts hidden in Preview and on your exported page. It stays visible
+   here so you can edit it. An interaction on another element can show
+   it."
+  - Extended from BC-04.1: brief section 7 requires saying it stays
+    editable in Design.
+
+Action help (BC-04.1 wording, unchanged):
+  "Show makes the target visible. Hide hides it. Toggle switches between
+   the two each time this element is clicked."
+
+Target help:
+  "The element that is shown or hidden when this element is clicked. It
+   can be another element or this one."
+  - Reworded: it states that the clicked element and the target can
+    differ, as section 4 of the brief requires.
+
+Keyboard note (BC-04.1 wording, unchanged):
+  "Keyboard users can't click this element. Use a Button or Link for
+   interactions everyone can use."
+
+New interaction, Target placeholder: "Select an element…"
+New interaction, note under it:
+  "Choose a target to finish this interaction. Until then it does nothing."
+
+Missing target:
+  - option: "Missing target" (unchanged);
+  - error, which replaces "Target no longer exists.": "The target was
+    deleted. Choose another element."
+
+Unchanged labels:
+- "Interactions", "Initial state", "Visible", "Hidden", "On Click", "Action";
+- "Show", "Hide", "Toggle", "Target", "Add Interaction", "Remove interaction".
+
+No unsupported trigger, action or animation is mentioned anywhere.
+
+
+3. HELP-ICON IMPLEMENTATION
+---------------------------
+Reuses the existing InspectorPropertyRow `help` prop (Tooltip + HelpCircle).
+No tooltip library and no dependency were added.
+
+The icon button was extracted from InspectorPropertyRow into
+InspectorHelpButton.tsx, unchanged in look, with three additions:
+- Description: a new optional `helpId` on InspectorPropertyRow renders a
+  hidden copy of the help text with that id.
+  - The control references it with aria-describedby. Initial state,
+    Action and Target are each read with their help.
+  - A hidden copy is used because a button's aria-label is not reliably
+    used as a description (jsdom's computation ignores it).
+- Escape (WCAG 1.4.13) hides the tooltip while it shows on hover or focus,
+  without moving focus.
+  - The Escape is consumed. Otherwise the editor's own Escape would clear
+    the selection and empty the Inspector.
+  - A second Escape is the editor's again.
+  - If a text field has focus while the pointer rests on an icon, the
+    tooltip hides but the field keeps its Escape (e.g. numeric fields'
+    restore).
+  - The tooltip returns once pointer and focus have both left.
+- Containment (D2): on hover or focus, the tooltip is measured against its
+  nearest scrolling ancestor, the Inspector's content area without its
+  scrollbar.
+  - It is shifted sideways to stay 4 px inside (inline translateX: a
+    runtime-measured value).
+
+Tooltip.tsx gained three optional props: `suppressed`, `offsetX` and
+`tooltipRef`. All default to the old behavior, so every other tooltip is
+unchanged.
+
+The help icon was already a focusable button named by its text, so help
+was never hover-only. Every existing InspectorPropertyRow help (15 rows)
+gains the Escape and containment fixes for free. Their markup is otherwise
+identical.
+
+
+4. CONDITIONAL GUIDANCE BEHAVIOR
+--------------------------------
+Keyboard note:
+- When it shows: the element has at least one interaction (finished or
+  being set up) and its tag isn't natively operable.
+- Natively operable tags: button, a, input, select, textarea.
+- The rule (NATIVELY_OPERABLE_TAGS / isKeyboardOperableTrigger) moved
+  from the export's buildExportBehaviors into
+  editor/utils/triggerAccessibility.ts. The Export dialog's
+  "non-operable-trigger" warning and the Inspector note now use the same
+  function.
+  - A unit test runs the export over 11 tags and asserts the warning set
+    equals the rule.
+- Rendered semantics checked:
+  - links always export with an href (default "#"), so they are focusable;
+  - nodes have no "disabled" field, so no tag is conditionally inert.
+- It disappears when the last interaction is removed or a draft is
+  discarded.
+- No tabIndex, role, key handler or synthetic button behavior was added.
+
+Initial-hidden note:
+- Below Initial state, only while it is Hidden.
+- Informational style: the existing px-0.5 text-[11px] text-fg-secondary
+  note, no warning color.
+- Also part of the select's description.
+- Visibility behavior is unchanged.
+
+Description: always present when the section is open. It costs no space
+while collapsed (the section still starts collapsed for unconfigured
+elements).
+
+
+5. TARGET SELECTION: BEFORE AND AFTER
+-------------------------------------
+Before (HEAD):
+- "Add Interaction" immediately created { action: toggle, targetId:
+  candidates[0] }, the first element of the page.
+- On the starter page, the hero heading targeted its own Section, so one
+  Preview click hid it.
+
+After:
+- "Add Interaction" adds an unfinished row:
+  - Action = Toggle;
+  - Target = "Select an element…" (a disabled, selected placeholder),
+    aria-required;
+  - described by "Choose a target to finish…".
+  - Focus moves to the Target select, and the Add button is hidden while
+    the row is unfinished.
+- Choosing a target calls addInteraction once, with the chosen Action.
+  - It is one history entry, and focus stays on the new row's Target.
+- The trash button discards an unfinished row without touching history.
+  Focus returns to Add Interaction.
+- An unfinished row is dropped when:
+  - another element is shown in the Inspector;
+  - Preview starts (the Inspector is replaced in Preview);
+  - the Inspector unmounts.
+- Removing a finished interaction moves focus to Add Interaction (or to
+  the unfinished row's Target, if one is open). Before, focus fell to
+  <body>.
+- Several interactions stay independent; a test proves a new one never
+  changes an existing one.
+
+Target labels (U5), limited to this selector:
+- Names come from getElementDisplayName (the Structure names).
+- Repeated names get the element's text, Structure's "Option — Bulgaria"
+  style. Texts over 24 characters are cut with "…".
+- Names still shared after that get "(n of N)" in document order.
+- The selected element is marked "(this element)".
+- Starter page: Section (1 of 2), Heading (this element), Paragraph,
+  Primary Button, Section (2 of 2), Image.
+- The Target select is capped at 160 px (max-w-40), so long names can't
+  widen the panel.
+
+
+6. SCHEMA AND PERSISTENCE IMPACT
+--------------------------------
+None. Why no schema change was needed:
+- The schema requires targetId to match NODE_ID_PATTERN.
+- checkDocumentIntegrity, run on open, save and recovery snapshots,
+  rejects a binding whose target doesn't exist.
+- So an empty or null target can't be represented safely without a
+  .layoutry format change.
+- The unfinished interaction is therefore Inspector-only state, and the
+  document only ever holds complete bindings.
+
+Consequences:
+- Existing projects open unchanged. Valid targets are kept exactly
+  (tested: unit "keeps an existing interaction's target exactly as saved";
+  e2e "an existing project's interactions open unchanged").
+- Nothing to migrate; older builds read new files as before.
+- Known limitation (section 15): an unfinished row is not saved and is
+  lost on selection change or Preview.
+
+The paste fix (D1) keeps the existing invariant that editor documents
+always pass checkDocumentIntegrity. Before the fix, that invariant could
+be broken by an ordinary copy → delete → paste.
+
+
+7. MISSING-TARGET HANDLING
+--------------------------
+How a binding to a missing element could arise:
+- Deleting or cutting a target already removed the bindings aimed at it
+  (removeInteractionsTargeting, the established product rule).
+- Opening a file with a dangling binding is rejected.
+- The one path that produced one was paste (D1):
+  - the clipboard keeps a copied trigger's external target id unchanged;
+  - so copy button → delete its panel (or Undo past the panel's creation)
+    → paste inserted a binding to nothing.
+  - Measured: checkDocumentIntegrity then reports "An interaction targets
+    element "panel-1", which does not exist", which makes serializeProject
+    throw ("callers should treat that as a bug").
+  - Fixed: pasteClipboard runs the new pure command
+    removeInteractionsWithMissingTargets on the result, inside the same
+    single history entry.
+  - Bindings whose target still exists, and self or internal targets, are
+    kept. Undo removes the paste in one step.
+- Preview's executor and the export already skip missing targets. That is
+  unchanged.
+
+Inspector display (defensive, for any remaining path):
+- The select shows the disabled "Missing target" option and is
+  aria-invalid.
+- It is described by its help and by the error.
+- The error is role="alert": "The target was deleted. Choose another
+  element."
+- The binding is never deleted or retargeted by the Inspector.
+- Choosing a replacement repairs it, and the error disappears.
+- The old empty "Missing target" option was selectable in principle and
+  could have written targetId "". It is now disabled, and "" is ignored.
+
+
+8. ACCESSIBILITY VERIFICATION
+-----------------------------
+Measured in Chromium, Firefox, WebKit and Electron unless noted:
+- Help icons:
+  - focusable buttons named by the help text;
+  - the tooltip shows on hover and on keyboard focus;
+  - Escape hides it, keeps focus and keeps the selection, and a second
+    Escape clears the selection as before;
+  - each control's accessible description = its help (jsdom
+    toHaveAccessibleDescription).
+- Form labels: every select keeps its aria-label. The unfinished Target
+  has aria-required. The missing Target has aria-invalid plus a
+  description.
+- Focus is never lost:
+  - Add → focus on Target;
+  - choose → focus on that row's Target;
+  - discard or remove → focus on Add Interaction.
+  - Unit and e2e tests cover this, including WebKit, which doesn't focus
+    clicked buttons.
+- No keyboard trap: Tab order is Interactions header → Initial state help
+  → Initial state → Remove → Action help → Action → Target help → Target
+  → Add Interaction.
+- Visible focus indicators: unchanged (focus-visible outlines).
+- Contrast: notes use the existing text-fg-secondary note token, the same
+  as the Autoplay and Protection notes. No new colors.
+- Reduced motion: nothing new animates. The tooltip keeps its existing
+  150 ms opacity fade. Offsets are applied instantly.
+- No unsupported ARIA: role="tooltip" was deliberately not added. The
+  tooltip stays aria-hidden, as before.
+- Narrow width (260 px Inspector minimum, Chromium/Firefox/WebKit):
+  - every note, select and help icon stays inside the section, with no
+    sideways scrolling;
+  - all 5 help tooltips stay inside the Inspector (this failed before the
+    D2 fix: right edge 1609.9 vs. the panel's 1600).
+- Electron: the tooltip stays inside the content area beside the real
+  15 px scrollbar.
+- Visual review (Chromium screenshots, temporary probe, deleted): open,
+  unfinished, finished and Hidden, and tooltip states. Same typography,
+  spacing, dashed Add button and dividers as before.
+- Light/dark: only the light editor theme is live (see BC-04.1). New
+  elements use the same tokens and dark: variants as their neighbors.
+
+
+9. PREVIEW/EXPORT PARITY RESULTS
+--------------------------------
+e2e/interaction-guidance.spec.ts, a real editor:
+
+- An unfinished interaction on the button:
+  - the Export Code output is byte-identical to before;
+  - clicking the trigger in Preview changes nothing (Heading, Button,
+    Panel, Other = shown, shown, hidden, shown).
+- Finished interactions on the button: Toggle → Panel, and Hide →
+  Paragraph "Unrelated".
+
+| State             | Preview (Canvas) | Exported page |
+| ----------------- | ---------------- | ------------- |
+| at load           | [T, T, F, T]     | [T, T, F, T]  |
+| after one click   | [T, T, T, F]     | [T, T, T, F]  |
+| after two clicks  | [T, T, F, F]     | [T, T, F, F]  |
+
+- The heading is never affected in either.
+- Electron, starter page:
+  - before a target is chosen, a heading click hides nothing (BC-04.1: it
+    hid its section);
+  - after choosing Paragraph, it toggles the paragraph.
+- Existing parity specs are unchanged and pass: export-interactions,
+  preview-export-parity, bc02-final-regression (section 13).
+
+
+10. UNDO/REDO RESULTS
+---------------------
+- Unit:
+  - discarding a draft leaves the document reference identical;
+  - an Action change on a draft pushes no history;
+  - choosing the target pushes exactly 1 entry; Undo removes it and Redo
+    restores it (the section re-renders both ways);
+  - paste after a deleted target: Undo returns the exact pre-paste
+    document.
+- e2e (3 browsers):
+  - two finished interactions; Undo → 1 row, Undo → 0 rows, and the
+    Export Code output equals the original;
+  - Redo → 1, Redo → 2, with the second Target value restored;
+  - Remove then Undo restores 2 rows;
+  - Initial state Hidden → Visible → Undo restores the Hidden note.
+
+
+11. CROSS-BROWSER TEST RESULTS
+------------------------------
+Through a temporary playwright.cross-temp.config.ts (Firefox + WebKit,
+deleted afterwards):
+
+| Run                                                              | Result                          |
+| ---------------------------------------------------------------- | ------------------------------- |
+| e2e/interaction-guidance.spec.ts, Firefox, --repeat-each=2       | 8 passed                        |
+| e2e/interaction-guidance.spec.ts, WebKit, --workers=1 --repeat-each=2 | 8 passed                   |
+| e2e/interaction-guidance.spec.ts, Firefox + WebKit, 4 workers    | 8 passed                        |
+| export-interactions + accessibility, Firefox + WebKit            | 25 passed, 1 failed (see below) |
+
+- The single 4-worker run is the third run, after the fixes below.
+- The export-interactions + accessibility result is identical to BC-04.1.
+- The failure is WebKit export-interactions:296 "keyboard-operable",
+  pre-existing and environmental:
+  - WebKit doesn't Tab to buttons by default;
+  - it fails identically on the pre-BC-02 code (BC-02.6).
+
+WebKit under parallel load (environmental, documented):
+- With 4 WebKit workers, some editor clicks intermittently time out in
+  Playwright's "waiting for element to be visible, enabled and stable".
+- Measured with a temporary probe:
+  - two animation frames take 290–440 ms in WebKit on this machine even
+    with 1 worker, before anything is selected (the new section isn't even
+    mounted);
+  - with 4 workers, 350–750 ms, and once a page.evaluate didn't return
+    within 3 s.
+- The app state was correct at each failure. Logged with 1 worker:
+  Undo/Redo states and rows went 2 → 1 → 0 → 1 → 2 exactly as expected.
+- So the spec is run serially in WebKit, where it passes every time.
+- Test-only adjustments, no assertion weakened:
+  - the opacity checks accept >0.9 / <0.1 (WebKit under load leaves a
+    0.98 end value);
+  - the exported page opens last in its test;
+  - the resize drag ends inside the window (Firefox mishandles a move past
+    the edge).
+
+
+12. ELECTRON RESULTS
+--------------------
+NEW e2e/desktop/interaction-guidance.spec.ts, on the built static export
+(npm run desktop:build, ELECTRON_RUN_AS_NODE stripped):
+- the description;
+- Tab to the Initial state help, with the tooltip shown inside the
+  Inspector's content area beside the real scrollbar;
+- Escape hides it, keeps focus and keeps the selection;
+- Add on the hero heading:
+  - Target focused and empty, with the exact option list;
+  - keyboard note and required note shown;
+- Preview: the heading click changes nothing;
+- choosing Paragraph: Preview toggles it hidden, then shown.
+Result: 1 passed. Relevant desktop specs, run with it on the same build, are listed in section 13.
+
+
+13. EXACT TEST COUNTS
+---------------------
+Commands and results (all on the final code):
+
+| Command | Result |
+| --- | --- |
+| npx tsc --noEmit -p . | 0 errors |
+| npx eslint . | 0 problems |
+| npx prettier --check (new files and Tooltip.tsx) | clean |
+| npx vitest run --maxWorkers=4 (5 changed test files) | 115 passed |
+| npx vitest run --maxWorkers=4 (full suite) | 353 files: 5296 passed, 1 skipped, 0 failed |
+| npx playwright test e2e/interaction-guidance.spec.ts --project=chromium --repeat-each=2 | 8 passed |
+| npx playwright test --project=chromium (full suite) | 210 passed, 0 failed |
+| Firefox / WebKit runs | see section 11 |
+| npm run build (production) | succeeded |
+| npm run desktop:build | succeeded |
+| npx playwright test -c playwright.desktop.config.ts interaction-guidance inspector-live-edit editor preview-parity export resource-panel-scrolling | 14 passed |
+
+Notes on these runs:
+- Prettier: the other edited files were not Prettier-clean at HEAD; they
+  were left in their existing style to avoid unrelated reformatting.
+- The 115 changed-file tests: section 40, help button 5, commands,
+  trigger rule, store.
+- The full Chromium suite includes the new spec and every existing spec.
+- The full desktop suite (benchmarks and soak) was not run. Only the
+  relevant specs listed above were.
+
+Regression proof:
+- D1: on HEAD's useEditorStore.ts, 2 of the 3 new paste tests fail; they
+  pass with the fix.
+- D2: the narrow-width e2e failed before the fix (tooltip right edge
+  1609.9 vs. 1600) and passes after.
+
+
+14. MODIFIED FILES
+------------------
+Product code:
+- src/features/inspector/components/InspectorInteractionsSection.tsx
+  - description, help, notes, unfinished row, focus handling;
+  - target labels and missing-target state.
+- src/features/inspector/components/InspectorHelpButton.tsx (NEW)
+  - help icon, extracted, with description id, Escape and containment.
+- src/features/inspector/components/InspectorPropertyRow.tsx
+  - uses InspectorHelpButton; new optional helpId.
+- src/features/inspector/utils/interactionGuidanceCopy.ts (NEW): the
+  approved copy.
+- src/components/ui/Tooltip.tsx: optional suppressed, offsetX, tooltipRef.
+- src/features/editor/utils/triggerAccessibility.ts
+  - NATIVELY_OPERABLE_TAGS + isKeyboardOperableTrigger (moved from
+    export).
+- src/features/export/utils/buildExportBehaviors.ts: imports the shared
+  rule; same output.
+- src/features/editor/commands/interactionCommands.ts
+  - removeInteractionsWithMissingTargets (NEW function).
+- src/features/editor/stores/useEditorStore.ts: pasteClipboard applies it.
+
+Tests:
+- src/features/inspector/components/InspectorInteractionsSection.test.tsx
+  - 3 tests updated (old default target, id-suffix labels, old
+    missing-target copy), 22 added.
+- src/features/inspector/components/InspectorHelpButton.test.tsx (NEW, 5).
+- src/features/editor/commands/interactionCommands.test.ts (+2).
+- src/features/editor/utils/triggerAccessibility.test.ts (+2).
+- src/features/editor/stores/useEditorStore.interactions.test.ts (+3).
+- e2e/interaction-guidance.spec.ts (NEW, 4).
+- e2e/desktop/interaction-guidance.spec.ts (NEW, 1).
+
+Reports:
+- this file;
+- changelogs/2026-11-08-interaction-guidance-and-target-selection-BC-04.2.txt
+  (gitignored).
+
+Temporary (deleted): playwright.cross-temp.config.ts,
+e2e/zz-bc042-visual-probe.spec.ts.
+
+
+15. KNOWN LIMITATIONS
+---------------------
+- An unfinished interaction lives only in the Inspector:
+  - it is not saved;
+  - it is discarded when another element is selected, on entering
+    Preview, or with Escape (which clears the selection).
+  - This is deliberate (no schema change), but a user could lose a
+    half-set-up row.
+- The Initial state "Hidden" is still not marked on the Canvas or in
+  Structure (U3 visual). Only explained in the Inspector; a design
+  question for a later checkpoint.
+- Target names are clearer but still generic for unnamed, textless
+  elements ("Section (1 of 2)"); there is no Canvas picker.
+- Escape for a tooltip shown only by hover is caught at window level while
+  the pointer rests on the icon. In a text field, the field keeps its
+  Escape.
+- Help remains a tooltip.
+  - Touch: tapping focuses the icon, which shows it.
+  - Screen readers: the help is the button's name and the control's
+    description.
+- WebKit on this machine is frame-starved under parallel load (section
+  11). The new spec is reliable when run serially there.
+- No study with real users; copy follows the approved BC-04.1 proposal.
+- Windows 10 only, light theme only, as in earlier checkpoints.
+
+
+16. REMAINING DEFECTS
+---------------------
+- None new of high or medium severity.
+- Pre-existing, unchanged:
+  - WebKit export-interactions:296 (environmental, Tab to buttons);
+  - the WebKit ignore-drag-right-after-drop behavior (BC-03.2).
+- D1 (paste dangling binding, HIGH) and D2 (help tooltip overflow at the
+  narrowest width, MEDIUM) are fixed, with tests that fail on HEAD and pass
+  now.
+
+
+17. RECOMMENDATION
+------------------
+CLOSE BC-04.
+
+Every acceptance criterion in brief section 15 is met:
+- The section explains its purpose.
+- Initial state, Action and Target have accessible help (mouse, keyboard,
+  Escape, screen-reader description).
+- Users are told to test in Preview, and that exported pages behave the
+  same.
+- Keyboard limitations are stated by the same rule the export uses.
+- Initial-hidden behavior is explained.
+- New interactions require an explicit target, and an unfinished one has
+  no effect anywhere.
+- Existing interactions are unchanged and backward-compatible, with no
+  schema change.
+- Missing targets are clear, repairable and safe; the one path that
+  created them (paste) is fixed.
+- Preview and Export keep parity.
+- Undo/Redo and persistence are correct.
+- No Inspector or Canvas regressions (full suites, section 13).
+- No high-severity defect remains.
+
+Not committed, BC-05 not started, no new interaction types.
+Waiting for ChatGPT QA.

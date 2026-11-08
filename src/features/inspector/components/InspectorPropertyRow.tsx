@@ -1,9 +1,8 @@
 "use client";
 
-import { HelpCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { Tooltip } from "@/components/ui/Tooltip";
+import { InspectorHelpButton } from "@/features/inspector/components/InspectorHelpButton";
 import { InspectorPropertyStateDot } from "@/features/inspector/components/InspectorPropertyStateDot";
 import { isInactivePropertyState, type PropertyState } from "@/features/inspector/types/propertyState";
 
@@ -13,6 +12,8 @@ interface InspectorPropertyRowProps {
   labelHtmlFor?: string;
   /** Short plain-language guidance shown via a small help icon — kept optional so the panel never fills permanently with prose. */
   help?: string;
+  /** An id for the help text, so the row's control can reference it with aria-describedby. */
+  helpId?: string;
   state?: PropertyState;
   /** Validation message — implies an invalid state and renders beneath the row. */
   error?: string;
@@ -42,6 +43,7 @@ export function InspectorPropertyRow({
   label,
   labelHtmlFor,
   help,
+  helpId,
   state,
   error,
   disabled = false,
@@ -68,13 +70,7 @@ export function InspectorPropertyRow({
         {label}
       </label>
       {effectiveState && <InspectorPropertyStateDot state={effectiveState} />}
-      {help && (
-        <Tooltip label={help}>
-          <button type="button" aria-label={help} className="rounded-full text-fg-muted transition-colors duration-150 hover:text-fg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
-            <HelpCircle aria-hidden="true" className="size-3" />
-          </button>
-        </Tooltip>
-      )}
+      {help && <InspectorHelpButton help={help} descriptionId={helpId} />}
     </div>
   );
 

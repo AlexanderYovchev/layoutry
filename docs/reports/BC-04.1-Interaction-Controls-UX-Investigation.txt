@@ -1,0 +1,573 @@
+LAYOUTRY — BC-04.1 INTERACTION CONTROLS UX INVESTIGATION
+=======================================================
+Date: 2026-11-08
+Checkpoint: BC-04.1 (read-only UX and technical investigation)
+Status: complete. No product code changed. Nothing committed.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Layoutry's interaction controls work correctly but are not explained.
+They live in one place, the Inspector's "Interactions" section, which is
+shown for every single selected element except the page.
+
+They do one thing: when this element is clicked, show, hide or toggle
+one element (the target). There is also an "Initial state" control, set
+to Visible or Hidden. Everything behaves as implemented, the same way
+in Preview and in the exported page, in Chromium, Firefox, WebKit and
+Electron.
+
+The section gives a beginner no guidance:
+- no description;
+- no help icon (0 found, although the Inspector already has a help-icon
+  pattern used by 15 other rows);
+- no hint that interactions only run in Preview and on the exported
+  page.
+
+Four behaviors that matter are invisible until something goes wrong:
+- The default target. "Add Interaction" targets the first element on
+  the page. On the starter page that is the clicked heading's own parent
+  section; for the first element on a page, it is the element itself.
+  The very first click in Preview can therefore hide the button the user
+  just clicked, with no way back until Preview is left.
+- "Initial state: Hidden" has no visible effect in Design: no badge on
+  the canvas, no marker in Structure.
+- Click interactions on non-buttons (headings, paragraphs, boxes) can't
+  be used from the keyboard. This is reported, but only later, in the
+  Export dialog.
+- A target that starts hidden and is toggled also closes on an outside
+  click or Escape. Nothing says so.
+
+Recommended approach: progressive disclosure, built from patterns the
+Inspector already has. No new component, state or dependency.
+- One short inline description at the top of the section.
+- The existing help icon (InspectorPropertyRow `help`) on Initial state,
+  Action and Target.
+- Two conditional inline notes, shown only when they apply: the
+  keyboard-access note and the hidden-at-start note.
+
+Exact copy is in section 10.
+
+BC-04 fits in one implementation checkpoint (BC-04.2) for the
+explanations. The default-target behavior is a small usability fix, not
+copy. It is recommended as an optional, separately approved part of
+BC-04.2, or as BC-04.3 (section 17).
+
+
+2. CURRENT INTERACTION CONTROL LOCATION
+---------------------------------------
+- Entry point: the Inspector section "Interactions"
+  (src/features/inspector/components/InspectorInteractionsSection.tsx).
+  It is mounted by InspectorNodeSummary.tsx:133 for every single
+  selection except the document root.
+  - It is the 2nd section, after Identity. At 1440×900 its header sits
+    at y = 493 px in a 748 px Inspector, so it is visible without
+    scrolling.
+  - It is collapsed when the element has nothing configured, and opens
+    automatically once something is configured.
+- Not shown:
+  - for multi-selection (verified);
+  - for the page root (verified);
+  - in Preview, where the Inspector is replaced by "Previewing authored
+    behavior. Exit Preview to select and edit elements again."
+    (InspectorContent.tsx:81).
+- Scope: element-specific, available for every element type. It isn't
+  global, component-specific or gated by capability.
+- Related entry points, outside the Inspector:
+  - "Interactive" sections in the Elements and Components libraries
+    (creationToolbarCategories.ts): Button, Dialog, Collapsible, Basic
+    Tabs; plus Modal, Drawer, Popover, Toast and Dismissible Alert under
+    other sections.
+  - These insert prebuilt compositions whose interactions are already
+    configured.
+  - Their descriptions are shown as visible text in the toolbar menus
+    and as a hover-only title on the panel tiles, and some are technical
+    (section 8).
+- Runtime and export:
+  - Preview: CanvasInteractionBoundary.tsx, usePreviewTriggerAria.ts,
+    previewRuntimeContext.ts.
+  - Export: buildExportBehaviors.ts, exportBehaviorAttributes.ts,
+    exportInteractionRuntime.ts.
+- Model: src/features/editor/types/interactions.ts (InteractionBinding
+  { id, trigger: "click", action, targetId }) and previewVisibility.ts.
+- Store: addInteraction, updateInteraction, removeInteraction and
+  setInitialPreviewVisibility, all undoable.
+
+
+3. EXISTING USER WORKFLOW (observed in the running app)
+-------------------------------------------------------
+1. Select an element on the Canvas.
+2. The Inspector shows "Interactions", collapsed. Opening it shows:
+     Initial state [Visible ▾]
+     [+ Add Interaction]
+   There is nothing else: no description and no help.
+3. Click "Add Interaction". A row appears:
+     On Click                                      [trash]
+     Action  [Toggle ▾]   (Show / Hide / Toggle)
+     Target  [<first element on the page> ▾]
+4. Choose a Target from the list of every element:
+   - generic names (Heading, Button, Container, Paragraph…);
+   - an internal id added when names repeat, for example "Section
+     (section-1)" or "Paragraph (p-detail)";
+   - the element itself and its ancestors are included.
+5. To make a panel start hidden: select the panel, open its own
+   Interactions section, and set Initial state to Hidden. The Canvas
+   doesn't change. Nothing on the panel or in Structure says it is
+   hidden at start, or that a button controls it.
+6. Test: clicking the button in Design only selects it. The user has to
+   know to press "Enter Preview". There, the panel starts hidden, a click
+   shows it, and a click elsewhere hides it again (light dismiss).
+7. Export: the exported page behaves the same. If the trigger is not a
+   button, link or form control, the Export dialog shows: "Warning: This
+   <h1> runs click interactions but cannot be focused or activated from
+   the keyboard; use a button for keyboard access."
+8. Edit: change Action or Target in place. Remove: the trash button
+   ("Remove interaction"). Undo restores it.
+9. Switching between elements: the section keeps its open state, and
+   each element shows its own bindings correctly.
+
+
+4. ACTUAL SUPPORTED INTERACTION CAPABILITIES
+--------------------------------------------
+Trigger: click only (InteractionTrigger = "click"). The UI shows it as
+fixed text "On Click", not as a choice.
+
+  Action  Effect when the trigger is clicked
+  Show    Target becomes visible (a dialog opens modally)
+  Hide    Target becomes hidden (a dialog closes)
+  Toggle  Target switches between visible and hidden
+
+- Targets: any element except the page root, including the trigger
+  itself, its ancestors and its descendants.
+- Several bindings per element are allowed and run in order. Tabs use
+  three bindings per tab.
+- Initial state: Visible (the default) or Hidden. It applies when
+  Preview starts and when the exported page loads. Design always shows
+  the element. Dialogs use it as open or closed.
+- Trigger element types:
+  - every selectable element;
+  - buttons, links and form fields are keyboard-operable;
+  - other elements run on click only, and the export warns
+    (non-operable-trigger).
+- Light dismiss: a target that starts hidden and is opened by Toggle
+  closes on an outside click or Escape, in both Preview and Export.
+  Dialogs use native Escape and backdrop behavior.
+- Accessibility, generated automatically on button and link triggers:
+  - aria-expanded for toggled disclosures;
+  - aria-controls;
+  - aria-haspopup="dialog".
+- Preview: runs only in Preview. Runtime state resets each session and
+  is never saved (BC-02).
+- Export:
+  - data-ly-* attributes;
+  - a small script (inline, or script.js);
+  - the hidden attribute for elements that start hidden;
+  - no CSS changes.
+- Explanations that exist today:
+  - Inspector: none.
+  - Catalog descriptions, for example "Native dialog element — …
+    opens/closes via generic show/hide/toggle interactions in Preview".
+  - The Preview Inspector message.
+  - The Export dialog warning.
+  - "Remove interaction" (aria-label plus native title).
+- Not implemented, so not to be described as available: hover, focus,
+  submit, keyboard or timer triggers; navigate, scroll, animate or
+  open-URL actions; conditions; sequences.
+
+
+5. CONFIRMED USABILITY PROBLEMS (demonstrated)
+----------------------------------------------
+BC-04-U1, MEDIUM: the default target is the first element on the page.
+- Reproduced: on the starter page in Electron, adding an interaction to
+  the hero heading defaults to "Section (section-1)", its own parent.
+- In a page whose first element is the trigger, the target is the
+  trigger itself. In Preview, one click hid the heading; it can't be
+  clicked back (Chromium, Firefox, WebKit).
+- Cause: handleAdd uses candidates[0], in InspectorInteractionsSection.
+- Explanations alone can't fix this. It is a small behavior change and
+  needs approval (section 17).
+
+BC-04-U2, MEDIUM: the section explains nothing.
+- There is no description, no help icon, and no mention that it works
+  only in Preview and on the exported page, or how to test it.
+- Measured: 0 help icons in the section. 15 other Inspector rows use
+  the help pattern.
+- In Design, a click on a trigger only selects it, with no hint.
+
+BC-04-U3, MEDIUM: "Initial state" is unexplained and invisible in
+Design.
+- Setting Hidden changes nothing on the Canvas (the element is still
+  visible, opacity 1).
+- There is no marker in Structure, and no text saying it applies in
+  Preview and on the exported page.
+- A beginner reads it as broken. An experienced user may confuse it
+  with CSS display or visibility.
+
+BC-04-U4, LOW–MEDIUM: keyboard access is reported too late.
+- A click interaction on a heading, paragraph or box can't be used by
+  keyboard users.
+- The only notice is an Export-dialog warning, not shown where the
+  choice is made.
+
+BC-04-U5, LOW: Target names are hard to tell apart.
+- Generic type names, with internal ids for duplicates ("Section
+  (section-1)").
+- The trigger itself and its ancestors are offered without a hint of
+  the consequence. Long lists in big pages.
+
+BC-04-U6, LOW: light dismiss is undocumented.
+- A target that starts hidden and is opened by Toggle closes on an
+  outside click or Escape. That is correct and accessible, but
+  surprising if not explained.
+
+Hypotheses, not demonstrated (no user study was done):
+- "Toggle" may be unfamiliar to beginners.
+- The word "Interactions" alone may not suggest "click to show/hide".
+
+
+6. BEGINNER USABILITY FINDINGS
+------------------------------
+Can a user with basic HTML/CSS knowledge answer these questions from
+the interface?
+
+  Question                              Today        After the proposal
+  What is an interaction?               No           Yes (description)
+  Why add one?                          No           Yes
+  Which element should I select?        Unclear      Yes (description + keyboard note)
+  What triggers it?                     Yes ("On Click")    Yes
+  What happens?                         Partly (Show/Hide/Toggle unexplained)    Yes (Action help)
+  Which element is affected?            Partly (Target names)    Better (Target help; U5 remains)
+  How do I test it?                     No (must know Preview)    Yes ("Try it in Preview")
+  Will it work after export?            No           Yes (description)
+  How do I edit or remove it?           Yes (in-place, trash, Undo)    Yes
+  Does it change my HTML/CSS?           No           Partly (Initial state help; no CSS change)
+
+
+7. EXPERIENCED-USER CONSIDERATIONS
+----------------------------------
+- Keep the section compact:
+  - one description line, once per section, never repeated per
+    interaction row;
+  - help behind icons;
+  - conditional notes only when they apply.
+- No confirmation dialogs, no extra clicks, no onboarding.
+- The section stays collapsed for unconfigured elements, so the
+  description costs no space until the user opens it.
+- Measured footprint of the proposal at the default 300 px Inspector:
+  about 3 lines of 11 px text for the description, plus at most two
+  conditional notes of 2 lines each. The existing Autoplay and
+  Protection notes use the same size.
+
+
+8. COMPARISON OF UX OPTIONS
+---------------------------
+A. Contextual tooltip on the "Interactions" header.
+   - Beginner clarity: low. A hover-only hint on a collapse toggle.
+   - Discoverability: low.
+   - Accessibility: poor. Tooltip.tsx is aria-hidden and visual only.
+     The header is a toggle button; overloading its name is wrong.
+   - Clutter: none. Complexity: trivial.
+   - Consistency: tooltips are used for icon buttons, not section
+     headers.
+   - Compact windows: fine. Touch: no hover, so it is unavailable.
+   - Verdict: not recommended alone.
+
+B. Inline explanation inside the section.
+   - Beginner clarity: high. Discoverability: high (visible when open).
+   - Accessibility: good. It is plain text, read in order.
+   - Clutter: small (one line). Complexity: trivial.
+   - Consistency: matches the existing
+     `px-0.5 text-[11px] text-fg-secondary` notes (Autoplay, Protection,
+     Layout, Position).
+   - Maintenance: one string. Compact windows: wraps.
+   - Verdict: recommended for the "what and how to test" message.
+
+C. Contextual help icons, the existing InspectorPropertyRow `help` prop.
+   - Beginner clarity: high, on demand. Discoverability: medium (a
+     visible "?" icon).
+   - Accessibility:
+     - The help is a focusable button whose accessible name is the help
+       text, and the tooltip shows on hover and on focus, so keyboard
+       users get it.
+     - It can't be dismissed with Escape (an existing gap; WCAG 1.4.13).
+   - Clutter: minimal. Complexity: trivial. Consistency: exact (15
+     rows already use it).
+   - Compact windows: fine (max-w-48 wraps).
+   - Verdict: recommended for Initial state, Action and Target.
+
+D. (Additional) Conditional notes, shown only when relevant.
+   - Keyboard note: when the element has interactions and isn't a
+     button, link or form field. It reuses the export's own rule, so the
+     Inspector and Export agree.
+   - Hidden-at-start note: when Initial state is Hidden.
+   - Beginner clarity: high, at the moment it matters. Clutter: zero
+     when it doesn't apply.
+   - Verdict: recommended. It addresses U3 and U4 without new UI types.
+
+Recommended: B + C + D. A isn't needed.
+
+
+9. RECOMMENDED UX APPROACH
+--------------------------
+Inside InspectorInteractionsSection only:
+1. A description paragraph as the first line of the section body:
+   always present when the section is open, the same for every element.
+2. The help prop on the Initial state, Action and Target rows.
+3. A keyboard note below the interaction rows, when the element has at
+   least one binding and isn't keyboard-operable.
+4. A hidden-at-start note below Initial state, when it is Hidden.
+5. A clearer error text for a missing target.
+
+Labels unchanged ("Interactions", "Initial state", "On Click", "Action",
+"Target", "Add Interaction", "Show/Hide/Toggle"), so muscle memory, docs
+and tests stay valid. The help explains them instead.
+
+Optional and separate (needs approval, because it is behavior):
+- U1: default the new binding's target to a sensible element instead of
+  the first on the page. The smallest safe rule: the first element that
+  is neither the trigger nor one of its ancestors, falling back to the
+  current behavior.
+- U3 visual: a small "Hidden at start" marker in Structure or on the
+  Canvas. A larger design question, so BC-04.3 or later.
+- U5: friendlier Target labels. Use the element's text, for example
+  "Button “Show details”", instead of an internal id suffix. BC-04.3 or
+  later.
+
+
+10. EXACT PROPOSED UI COPY
+--------------------------
+Section description, always shown when the section is open:
+  "Clicking this element can show, hide or toggle another element.
+   Try it in Preview; it works the same on your exported page."
+
+Initial state, help:
+  "Whether this element is visible when the page first loads, in Preview
+   and on your exported page. In Design it always stays visible so you
+   can edit it."
+
+Initial state note, only when Hidden:
+  "Hidden when the page loads. An interaction on another element can
+   show it."
+
+Action, help:
+  "Show makes the target visible. Hide hides it. Toggle switches between
+   the two each time this element is clicked."
+
+Target, help:
+  "The element that is shown or hidden. It can be any element on the
+   page, even this one."
+
+Keyboard note, only when interactions exist on an element that isn't a
+button, link or form field:
+  "Keyboard users can't click this element. Use a Button or Link for
+   interactions everyone can use."
+
+Missing target (replaces "Target no longer exists."):
+  "The target was deleted. Choose another element."
+
+Unchanged: "Interactions", "Initial state", "Visible", "Hidden", "On
+Click", "Action", "Show", "Hide", "Toggle", "Target", "Add Interaction",
+"Remove interaction".
+
+Optional catalog wording (toolbar menu text and tile titles), in plain
+language and accurate:
+- Dialog: "A pop-up window. Open or close it with a Show, Hide or Toggle
+  interaction in Preview."
+- Basic Tabs: "Click a tab to switch panels in Preview. Tab keyboard
+  navigation isn't supported yet."
+- Modal: "Open and Close buttons around a pop-up window. It opens in
+  Preview."
+
+Not promised anywhere: other triggers, other actions, animations.
+
+
+11. ACCESSIBILITY FINDINGS
+--------------------------
+- Keyboard order inside the section is logical: Initial state → Remove
+  interaction → Action → Target → Add Interaction (measured).
+  - Minor: the destructive Remove comes before Action. It is acceptable
+    (it sits in the row header), but worth noting.
+- Focus visibility: every control has focus-visible outlines.
+- Screen reader:
+  - the section header is a button with aria-expanded and aria-controls
+    under an h3;
+  - the selects have aria-labels;
+  - Remove has aria-label "Remove interaction". Its title (native
+    tooltip) is mouse-only, but redundant.
+- Proposed help:
+  - Plain-text notes are read in order.
+  - The help icons are focusable buttons named by the help text, so
+    tooltip content is never hover-only.
+  - Recommended: associate each row's help with its control, so the
+    help is read when the select gets focus.
+- Escape: the existing CSS tooltip can't be dismissed with Escape. Its
+  focus or hover is the only way to show it (WCAG 1.4.13). This is a
+  pre-existing, global pattern, not specific to BC-04. It is noted, not
+  in scope unless QA asks.
+- Reduced motion: the tooltip uses a 150 ms opacity transition. The
+  proposal adds no motion.
+- Touch and pointer independence: tapping a help icon focuses it, so
+  the tooltip shows. Notes need no interaction.
+- Accessibility outcome of interactions themselves: only button and
+  link triggers get aria-expanded and aria-controls (BC-02.5/02.5.1).
+  The keyboard note (U4) makes that rule visible to users.
+
+
+12. TECHNICAL FEASIBILITY
+-------------------------
+- Reuse:
+  - InspectorPropertyRow `help` prop (existing; Tooltip + HelpCircle);
+  - the inline note style;
+  - the existing `error` prop for the missing target;
+  - design tokens (text-fg-secondary, text-[11px]).
+- Keyboard rule: NATIVELY_OPERABLE_TAGS lives in
+  export/utils/buildExportBehaviors.ts. The Inspector should use the
+  same rule. Recommended: move it to a small shared editor utility, next
+  to EXPANDABLE_CONTROL_TAGS in editor/utils/triggerAccessibility.ts,
+  and import it from both, so Inspector and Export can't disagree.
+- New state: none. Every note is derived from the node (tag,
+  interactions, initial visibility).
+- Dependencies: none.
+- U1 (optional): a pure function choosing the default target, plus a
+  unit test.
+- Likely files:
+  - src/features/inspector/components/InspectorInteractionsSection.tsx
+    (+ its .test.tsx);
+  - src/features/editor/utils/triggerAccessibility.ts (+ test);
+  - src/features/export/utils/buildExportBehaviors.ts (import only);
+  - optional: src/components/layout/creationToolbarCategories.ts (copy).
+
+
+13. TEST EVIDENCE
+-----------------
+Temporary probes (deleted):
+- e2e/zz-bc041-probe.spec.ts, the full journey:
+  - section snapshot (text, controls, accessible names, help icons);
+  - default target;
+  - Design, Preview and Export behavior;
+  - edit, remove and Undo;
+  - switching between elements;
+  - Tab order;
+  - multi-selection.
+- e2e/desktop/zz-bc041-desktop-probe.spec.ts: the starter page in the
+  Electron window.
+
+Measured, identical in Chromium, Firefox and WebKit:
+- Section collapsed by default; text "Initial state Visible Hidden Add
+  Interaction"; 0 help icons.
+- After Add Interaction: Action = Toggle, Target = "Heading" (the first
+  element on the page, unrelated to the selected button).
+- Heading as trigger with the default target: the target is itself; in
+  Preview the heading was hidden after one click.
+- Panel set to Hidden: Design visible = true, opacity 1, no "hidden"
+  text on the Canvas; Structure rows unchanged.
+- Preview: hidden at start → visible after the click → hidden after a
+  click elsewhere.
+- Export dialog: no problems for a button trigger. For the h1 trigger:
+  "Warning: This <h1> runs click interactions but cannot be focused or
+  activated from the keyboard; use a button for keyboard access."
+- Remove → bindings gone. Undo → restored. Multi-selection → section
+  absent.
+
+Electron (built HEAD 27a33f4):
+- Starter hero heading → default target "Section (section-1)" (its
+  parent).
+- Target list: "Section (section-1), Heading, Paragraph, Primary
+  Button, Section (section-2), Image".
+
+Existing tests run:
+- npx vitest run (13 interaction, preview-visibility, export-behavior,
+  tooltip and property-row test files): 193 passed.
+- npx playwright test --project=chromium export-interactions,
+  bc02-final-regression, preview-export-parity, accessibility: 25
+  passed.
+- The same export-interactions and accessibility specs in Firefox and
+  WebKit (temporary config, deleted): 25 passed, 1 failed.
+  - The failure is WebKit export-interactions:296, "keyboard-operable".
+  - It is pre-existing and environmental: WebKit doesn't Tab to buttons
+    by default.
+  - BC-02.6 showed it fails identically on the pre-BC-02 commit.
+
+
+14. PROPOSED IMPLEMENTATION CHECKPOINT(S)
+-----------------------------------------
+BC-04.2 — Interaction controls explanation (one checkpoint).
+
+Changes:
+- the description, the three help texts, the two conditional notes and
+  the missing-target copy (section 10);
+- the shared keyboard-operable rule.
+
+Acceptance criteria:
+- The description is visible whenever the section is open, for every
+  element type, with the exact approved copy.
+- The Initial state, Action and Target help is reachable by mouse,
+  keyboard (Tab to the icon) and touch, and has accessible names.
+- The keyboard note appears only for non-operable triggers that have
+  interactions. It never appears for button, a, input, select or
+  textarea, and disappears when the last interaction is removed. It
+  agrees with the Export warning (same rule, same set of tags).
+- The hidden-at-start note appears only when Initial state is Hidden.
+- No label, behavior, document, history or export output changes:
+  exported code is identical before and after.
+- Existing tests still pass.
+
+Regression tests:
+- Vitest: InspectorInteractionsSection
+  - description present;
+  - help on three rows;
+  - keyboard note shown or hidden by tag and binding count;
+  - hidden note shown or hidden by state;
+  - missing-target text.
+- Vitest: the shared rule is used by buildExportBehaviors (a diagnostic
+  parity test).
+- Playwright, 3 browsers:
+  - select an element, open the section;
+  - description visible;
+  - Tab reaches the help icons and the tooltip shows on focus;
+  - the notes toggle as the configuration changes;
+  - the Inspector width stays without horizontal overflow at 260 px.
+
+Optional, BC-04.2b or BC-04.3, after approval:
+- U1 default target (behavior; with a unit test and an e2e check that
+  the starter page's heading no longer targets its own section).
+- U5 Target labels.
+- U3 Design marker.
+- Catalog copy.
+
+
+15. KNOWN LIMITATIONS
+---------------------
+- No study with real users; beginner findings are expert analysis plus
+  measured behavior.
+- The existing tooltip pattern can't be dismissed with Escape. It is
+  global and was not changed.
+- Light and dark: only the light theme is live for the editor chrome;
+  the section uses tokens and zinc dark: variants.
+- Windows 10 only. Compact windows were checked only at the supported
+  minimum.
+
+
+16. GIT WORKING-TREE STATUS
+---------------------------
+Before the investigation, the tree was clean. HEAD is 27a33f4 (BC-03.2);
+BC-02.6, BC-03.1 and BC-03.2 are committed.
+
+After:
+- this report;
+- changelogs/2026-11-08-interaction-controls-investigation-BC-04.1.txt
+  (gitignored).
+No product or test file was changed. The probes and the temporary
+config were deleted.
+
+
+17. RECOMMENDATION FOR BC-04.2
+------------------------------
+Proceed with BC-04.2 as a single checkpoint: the copy and help of
+sections 9–10, using the existing help-icon and inline-note patterns,
+plus the shared keyboard rule. Small, no new state, no dependencies.
+
+Decision needed from the user or QA: include U1, the default-target fix
+(a small behavior change; the most likely cause of a beginner's first
+"it's broken" moment), in BC-04.2, or schedule it as BC-04.3.
+Recommended: include it, with its own tests.

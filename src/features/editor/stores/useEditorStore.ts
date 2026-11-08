@@ -33,6 +33,7 @@ import {
   addInteraction as addInteractionCommand,
   removeInteraction as removeInteractionCommand,
   removeInteractionsTargeting,
+  removeInteractionsWithMissingTargets,
   setInitialPreviewVisibility as setInitialPreviewVisibilityCommand,
   updateInteraction as updateInteractionCommand,
 } from "@/features/editor/commands/interactionCommands";
@@ -1756,9 +1757,12 @@ export const useEditorStore = create<EditorState>()((set) => ({
         destinationParentId,
         cloneNodeWithFreshIds(sourceNode),
       );
+      // A pasted trigger may still point at a target deleted since the
+      // copy; that binding is removed, as deleting the target would have.
+      const document = removeInteractionsWithMissingTargets(insertNode(state.document, destinationParentId, clone));
       return {
         ...pushHistory(state),
-        document: insertNode(state.document, destinationParentId, clone),
+        document,
         selection: selectionFromSingle(clone.id),
       };
     }),

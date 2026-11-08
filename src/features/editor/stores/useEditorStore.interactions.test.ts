@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createBasicTabsNode, createCollapsibleNode, createDrawerNode } from "@/features/editor/factories/interactionCompositions";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
+import { DEFAULT_PROJECT_LIMITS } from "@/features/project/rules/projectLimits";
+import { checkDocumentIntegrity } from "@/features/project/utils/checkDocumentIntegrity";
 import { useEditorStore } from "./useEditorStore";
 
 const initialState = useEditorStore.getState();
@@ -501,6 +503,64 @@ describe("Interaction & Preview foundation — store integration (Checkpoint 1.1
 
       expect(findNodeById(useEditorStore.getState().document, dialog.id)).toBeUndefined();
       expect(findNodeById(useEditorStore.getState().document, openButton.id)?.interactions).toBeUndefined();
+    });
+  });
+  describe("Paste after the target was deleted (BC-04.2)", () => {
+    function setupTriggerAndPanel() {
+      useEditorStore.setState((state) => ({
+        document: {
+          ...state.document,
+          children: [
+            { id: "button-1", tag: "button", text: "Open", interactions: [{ id: "int-1", trigger: "click", action: "toggle", targetId: "panel-1" }] },
+            { id: "panel-1", tag: "div", initialPreviewVisibility: "hidden" },
+          ],
+        },
+      }));
+    }
+
+    function pastedButton() {
+      return useEditorStore.getState().document.children!.find((child) => child.tag === "button" && child.id !== "button-1");
+    }
+
+    it("keeps a pasted trigger's binding to an external target that still exists", () => {
+      setupTriggerAndPanel();
+      useEditorStore.getState().selectElement("button-1");
+      useEditorStore.getState().copySelection();
+      useEditorStore.getState().pasteClipboard();
+
+      expect(pastedButton()?.interactions).toEqual([{ id: expect.any(String), trigger: "click", action: "toggle", targetId: "panel-1" }]);
+    });
+
+    it("drops a pasted binding whose target was deleted since the copy, so the document stays valid and can be saved", () => {
+      setupTriggerAndPanel();
+      useEditorStore.getState().selectElement("button-1");
+      useEditorStore.getState().copySelection();
+      useEditorStore.getState().selectElement("panel-1");
+      useEditorStore.getState().deleteSelection();
+      useEditorStore.getState().selectElement("button-1");
+      useEditorStore.getState().pasteClipboard();
+
+      expect(pastedButton()).toBeDefined();
+      expect(pastedButton()?.interactions).toBeUndefined();
+      expect(checkDocumentIntegrity(useEditorStore.getState().document, DEFAULT_PROJECT_LIMITS)).toBeNull();
+    });
+
+    it("the same after undoing past the target's creation; undo then removes the paste in one step", () => {
+      useEditorStore.setState((state) => ({ document: { ...state.document, children: [{ id: "button-1", tag: "button", text: "Open" }] } }));
+      useEditorStore.getState().insertElement(useEditorStore.getState().document.id, { id: "panel-1", tag: "div" });
+      useEditorStore.getState().addInteraction("button-1", { trigger: "click", action: "show", targetId: "panel-1" });
+      useEditorStore.getState().selectElement("button-1");
+      useEditorStore.getState().copySelection();
+      useEditorStore.getState().undo();
+      useEditorStore.getState().undo();
+      const beforePaste = useEditorStore.getState().document;
+
+      useEditorStore.getState().pasteClipboard();
+      expect(pastedButton()?.interactions).toBeUndefined();
+      expect(checkDocumentIntegrity(useEditorStore.getState().document, DEFAULT_PROJECT_LIMITS)).toBeNull();
+
+      useEditorStore.getState().undo();
+      expect(useEditorStore.getState().document).toBe(beforePaste);
     });
   });
 });

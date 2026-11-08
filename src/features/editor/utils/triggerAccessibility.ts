@@ -29,3 +29,17 @@ export function resolveTriggerAccessibility(bindings: readonly InteractionBindin
     opensDialog: live.some((binding) => binding.action !== "hide" && getTarget(binding.targetId)?.tag === "dialog"),
   };
 }
+
+/**
+ * Elements a keyboard user can already focus and activate: Enter or Space
+ * fires their click (links always render an href). Moved here from the
+ * export's buildExportBehaviors (BC-04.2), so the Export dialog's
+ * "non-operable-trigger" warning and the Inspector's keyboard note use the
+ * same rule and can't disagree.
+ */
+export const NATIVELY_OPERABLE_TAGS: ReadonlySet<string> = new Set(["button", "a", "input", "select", "textarea"]);
+
+/** True when a click trigger with this tag can also be used from the keyboard. */
+export function isKeyboardOperableTrigger(tag: string): boolean {
+  return NATIVELY_OPERABLE_TAGS.has(tag);
+}

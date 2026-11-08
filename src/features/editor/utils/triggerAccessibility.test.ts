@@ -3,9 +3,11 @@ import { createDropdownButtonNode } from "@/features/editor/factories/buttonComp
 import { createDismissibleAlertNode, createManualToastNode, createPopoverNode } from "@/features/editor/factories/feedbackCompositions";
 import { createBasicTabsNode, createCollapsibleNode, createDrawerNode, createModalNode } from "@/features/editor/factories/interactionCompositions";
 import type { EditorElementNode } from "@/features/editor/types/document";
+import type { ExportDiagnostic } from "@/features/export/types/exportDiagnostic";
+import { buildExportBehaviors } from "@/features/export/utils/buildExportBehaviors";
 import { buildExportDocument } from "@/features/export/utils/buildExportDocument";
 import { findNodeById } from "./findNodeById";
-import { resolveTriggerAccessibility } from "./triggerAccessibility";
+import { isKeyboardOperableTrigger, resolveTriggerAccessibility } from "./triggerAccessibility";
 
 const lookup = (root: EditorElementNode) => (nodeId: string) => findNodeById(root, nodeId);
 
@@ -64,5 +66,28 @@ describe("resolveTriggerAccessibility (BC-02.5, B6)", () => {
       expect(result.expandsTargetId, trigger.nodeId).toBe(trigger.expandsTargetToken === undefined ? undefined : nodeIdByToken.get(trigger.expandsTargetToken));
       expect(result.opensDialog, trigger.nodeId).toBe(trigger.opensDialog);
     }
+  });
+});
+
+describe("isKeyboardOperableTrigger (BC-04.2)", () => {
+  it("is true only for natively focusable, activatable tags", () => {
+    for (const tag of ["button", "a", "input", "select", "textarea"]) expect(isKeyboardOperableTrigger(tag), tag).toBe(true);
+    for (const tag of ["h1", "p", "div", "section", "img", "li", "span", "label", "dialog"]) expect(isKeyboardOperableTrigger(tag), tag).toBe(false);
+  });
+
+  it("agrees with the export's non-operable-trigger warning, so the Inspector note and the Export dialog can't disagree", () => {
+    const tags = ["button", "a", "input", "select", "textarea", "h1", "p", "div", "section", "img", "li"];
+    const root: EditorElementNode = {
+      id: "page-root",
+      tag: "page",
+      children: [
+        { id: "target", tag: "div" },
+        ...tags.map((tag): EditorElementNode => ({ id: `trigger-${tag}`, tag, interactions: [{ id: `int-${tag}`, trigger: "click", action: "toggle", targetId: "target" }] })),
+      ],
+    };
+    const diagnostics: ExportDiagnostic[] = [];
+    buildExportBehaviors(root, diagnostics);
+    const warned = new Set(diagnostics.filter((diagnostic) => diagnostic.code === "non-operable-trigger").map((diagnostic) => diagnostic.nodeId));
+    for (const tag of tags) expect(warned.has(`trigger-${tag}`), tag).toBe(!isKeyboardOperableTrigger(tag));
   });
 });

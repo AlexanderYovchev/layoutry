@@ -176,3 +176,27 @@ export function remapInteractionTargets(node: EditorElementNode, idMap: Readonly
     interactions: interactionsChanged ? nextInteractions : node.interactions,
   };
 }
+
+/**
+ * Strips every binding whose target doesn't exist anywhere in `root`
+ * (BC-04.2): the same rule as removeInteractionsTargeting ("an
+ * interaction aimed at a deleted element is removed with it"), applied
+ * where the deletion happened earlier. Paste needs it: the clipboard keeps
+ * a copied trigger's bindings to EXTERNAL targets unchanged (see
+ * remapInteractionTargets), so copying a button, then deleting its target
+ * (or undoing past its creation), then pasting, would otherwise insert a
+ * binding to nothing — a document checkDocumentIntegrity rejects, so it
+ * could no longer be saved. Returns the same root when nothing dangles.
+ */
+export function removeInteractionsWithMissingTargets(root: EditorElementNode): EditorElementNode {
+  const nodeIds = new Set<string>();
+  const targetIds = new Set<string>();
+  const stack = [root];
+  for (let node = stack.pop(); node; node = stack.pop()) {
+    nodeIds.add(node.id);
+    for (const binding of getInteractions(node)) targetIds.add(binding.targetId);
+    if (node.children) stack.push(...node.children);
+  }
+  const missing = new Set([...targetIds].filter((targetId) => !nodeIds.has(targetId)));
+  return removeInteractionsTargeting(root, missing);
+}

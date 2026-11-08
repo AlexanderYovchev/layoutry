@@ -2,12 +2,9 @@ import { isSelectableElement } from "@/features/editor/rules/elementCapabilities
 import { getInteractions } from "@/features/editor/types/interactions";
 import { documentPreOrder, resolveInteractionTargets } from "@/features/editor/utils/interactionTargets";
 import type { EditorElementNode } from "@/features/editor/types/document";
-import { resolveTriggerAccessibility } from "@/features/editor/utils/triggerAccessibility";
+import { isKeyboardOperableTrigger, resolveTriggerAccessibility } from "@/features/editor/utils/triggerAccessibility";
 import type { ExportBehaviors, ExportBehaviorTarget, ExportBehaviorTrigger } from "@/features/export/types/exportBehavior";
 import type { ExportDiagnostic } from "@/features/export/types/exportDiagnostic";
-
-/** Elements a keyboard user can already focus and activate (Enter/Space fire click). */
-const NATIVELY_OPERABLE_TAGS: ReadonlySet<string> = new Set(["button", "a", "input", "select", "textarea"]);
 
 /**
  * Derives the behavior descriptors (EXPORT-1.3) for a validated document:
@@ -34,7 +31,7 @@ export function buildExportBehaviors(document: EditorElementNode, diagnostics: E
       diagnostics.push({ code: "unsupported-trigger", severity: "warning", nodeId: node.id, message: `Click interactions on <${node.tag}> never run in Preview, so they were not exported.` });
       continue;
     }
-    if (!NATIVELY_OPERABLE_TAGS.has(node.tag)) {
+    if (!isKeyboardOperableTrigger(node.tag)) {
       diagnostics.push({
         code: "non-operable-trigger",
         severity: "warning",

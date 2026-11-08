@@ -3,6 +3,7 @@ import {
   addInteraction,
   removeInteraction,
   removeInteractionsTargeting,
+  removeInteractionsWithMissingTargets,
   remapInteractionTargets,
   setInitialPreviewVisibility,
   updateInteraction,
@@ -251,5 +252,41 @@ describe("remapInteractionTargets", () => {
     const root: EditorElementNode = { id: "root", tag: "div", children: [{ id: "p-1", tag: "p", text: "Hi" }] };
     const result = remapInteractionTargets(root, new Map([["unrelated", "id"]]));
     expect(result).toBe(root);
+  });
+});
+
+describe("removeInteractionsWithMissingTargets (BC-04.2)", () => {
+  it("removes only bindings whose target is absent, anywhere in the tree", () => {
+    const root: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [
+        {
+          id: "button-1",
+          tag: "button",
+          interactions: [
+            { id: "keep", trigger: "click", action: "show", targetId: "panel" },
+            { id: "drop", trigger: "click", action: "hide", targetId: "gone" },
+          ],
+        },
+        { id: "wrap", tag: "div", children: [{ id: "link-1", tag: "a", interactions: [{ id: "drop-2", trigger: "click", action: "toggle", targetId: "gone-too" }] }] },
+        { id: "panel", tag: "div" },
+      ],
+    };
+
+    const result = removeInteractionsWithMissingTargets(root);
+
+    expect(result.children![0].interactions!.map((binding) => binding.id)).toEqual(["keep"]);
+    expect(result.children![1].children![0].interactions).toBeUndefined();
+    expect(result.children![2]).toBe(root.children![2]);
+  });
+
+  it("returns the same root when every target exists, including a self-target", () => {
+    const root: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [{ id: "h-1", tag: "h1", interactions: [{ id: "self", trigger: "click", action: "toggle", targetId: "h-1" }] }],
+    };
+    expect(removeInteractionsWithMissingTargets(root)).toBe(root);
   });
 });
