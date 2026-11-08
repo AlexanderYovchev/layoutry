@@ -6,6 +6,7 @@ import type { HistoryEntry } from "@/features/editor/types/history";
 // The pure matcher only (not the project feature's index, which would pull
 // ProjectWorkspace -> EditorApp -> Inspector into a cycle).
 import { matchProjectShortcut } from "@/features/project/hooks/useProjectKeyboardShortcuts";
+import { isResetCovering } from "@/features/inspector/utils/inspectorResetScope";
 
 /** A parse result — wrapped so a legitimately-null value (a "Mixed" slider) is never confused with "not parseable". */
 export interface ParsedDraft<T> {
@@ -72,7 +73,8 @@ const FORCE_RESYNC: unique symbol = Symbol("force-resync");
  *        field shows its pre-edit value again; the caller's message stays,
  *        explaining why. (With live off, a rejected final commit keeps
  *        the draft and the message, as before BC-01.3.)
- *   Escape
+ *   Escape, or pointerdown on a reset button covering this field (BC-05.2;
+ *   see utils/inspectorResetScope.ts)
  *     -> cancel: the pre-session document is restored and the
  *        transaction cancelled, so an unset property stays unset.
  * A session whose net effect is nothing records nothing (see
@@ -263,6 +265,13 @@ export function useInspectorEditSession<T>(options: InspectorEditSessionOptions<
     function handlePointerDown(event: PointerEvent) {
       const input = inputRef.current;
       if (input && event.target instanceof Node && input.contains(event.target)) return;
+      // BC-05.2: pressing the reset of this very property (its row, or its
+      // section) discards the draft instead of committing it, so the reset
+      // is the only Undo step and Undo returns to the value before the edit.
+      if (input && isResetCovering(event.target, input)) {
+        endSession("cancel");
+        return;
+      }
       endSession("commit");
     }
     // Project commands refuse to run while any transaction is open

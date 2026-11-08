@@ -183,3 +183,21 @@ describe("setFlexChildSettings / setGridChildSettings", () => {
     );
   });
 });
+
+describe("removing a Flex item / Grid item record (BC-05.2)", () => {
+  const root: EditorElementNode = {
+    id: "root",
+    tag: "page",
+    children: [{ id: "item", tag: "div", flexChild: { grow: 1, shrink: 1, basis: "auto", alignSelf: "auto" }, gridChild: { columnStart: 2, columnSpan: 1, rowStart: "auto", rowSpan: 1 } }],
+  };
+
+  it("undefined deletes the key rather than storing undefined, and leaves the other record alone", () => {
+    const withoutFlex = setFlexChildSettings(root, "item", undefined).children![0];
+    expect(withoutFlex).not.toHaveProperty("flexChild");
+    expect(withoutFlex.gridChild).toEqual(root.children![0].gridChild);
+
+    const withoutGrid = setGridChildSettings(root, "item", undefined).children![0];
+    expect(withoutGrid).not.toHaveProperty("gridChild");
+    expect(withoutGrid.flexChild).toEqual(root.children![0].flexChild);
+  });
+});

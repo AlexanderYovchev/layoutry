@@ -130,7 +130,7 @@ describe("InspectorBoxShadowSection", () => {
     setupNode({ id: "container-1", tag: "div", boxShadow });
     render(<InspectorBoxShadowSection node={{ id: "container-1", tag: "div", boxShadow }} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Reset geometry" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset shadow offset, blur and spread" }));
 
     const layer = committedNode()?.boxShadow?.[0];
     expect(layer?.offsetX).toBeUndefined();

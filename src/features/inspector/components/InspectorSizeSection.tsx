@@ -21,6 +21,13 @@ interface InspectorSizeSectionProps {
 
 const SIZE_UNITS = ["px"] as const;
 
+// BC-05.2: Width and Height are one stored record (ElementDimensions: both
+// axes, plus the resize offsets), and the project format has no way to keep
+// one axis while returning the other to Auto. Both reset buttons therefore
+// say what they do. Independent per-axis reset needs a format change
+// (deferred, see the BC-05.2 report).
+const RESET_SIZE_LABEL = "Reset width and height";
+
 // A rendered size within this many pixels of the preferred size counts as
 // "not constrained" — guards against reporting a parent constraint from
 // harmless subpixel rounding between the stored value and getBoundingClientRect.
@@ -172,7 +179,7 @@ export function InspectorSizeSection({ node, isFreeChild }: InspectorSizeSection
           label="Width"
           variant="stack"
           state={!isFreeChild && node.dimensions === undefined ? "unset" : "set"}
-          reset={!isFreeChild && <InspectorResetButton onReset={resetSize} disabled={node.dimensions === undefined} label="Reset width" />}
+          reset={!isFreeChild && <InspectorResetButton onReset={resetSize} disabled={node.dimensions === undefined} label={RESET_SIZE_LABEL} />}
         >
           <InspectorNumericValueControl
             ariaLabel="Width"
@@ -188,7 +195,7 @@ export function InspectorSizeSection({ node, isFreeChild }: InspectorSizeSection
           label="Height"
           variant="stack"
           state={!isFreeChild && node.dimensions === undefined ? "unset" : "set"}
-          reset={!isFreeChild && <InspectorResetButton onReset={resetSize} disabled={node.dimensions === undefined} label="Reset height" />}
+          reset={!isFreeChild && <InspectorResetButton onReset={resetSize} disabled={node.dimensions === undefined} label={RESET_SIZE_LABEL} />}
         >
           <InspectorNumericValueControl
             ariaLabel="Height"

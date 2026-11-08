@@ -1,0 +1,568 @@
+LAYOUTRY — BC-05.2: CSS RESET CONSISTENCY & INSPECTOR COVERAGE
+================================================================
+Date: 2026-11-08
+Type: Targeted bug fixes + reset coverage + regression tests
+Base: HEAD fa1ddc7 (BC-05.1 report untracked)
+Status: implemented and validated; NOT committed
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Fixed:
+- BC-05-C (reset while typing):
+  - Pressing the reset of the property being typed in now discards the
+    draft.
+  - The reset is one Undo step, and Undo returns to the value before the
+    edit.
+  - Covers numeric fields, colour text fields and slider value boxes, for
+    row-level and section-level resets.
+- BC-05-D (keyboard focus): a keyboard reset now moves focus to the
+  property's own control, instead of dropping it to <body>. This applies to
+  all ~70 existing reset buttons and every new one.
+- BC-05-E (layout coverage):
+  - Content Layout, per property:
+    - Flex: Direction, Wrap, Justify content, Align items, Gap, Row gap,
+      Column gap;
+    - Grid: Columns, Rows, Row gap, Column gap.
+  - Flex item, per field (Grow, Shrink, Basis, Align self) plus "Reset
+    flex item".
+  - Grid item, per field (Column/Row start, Column/Row span) plus "Reset
+    grid item".
+- BC-05-F (Transform): per-field reset for Translate X, Translate Y,
+  Rotate and Scale, which keeps the other fields. "Reset transform" is
+  kept.
+- Copy: the box-shadow resets are named in full ("Reset shadow color",
+  "Reset shadow offset, blur and spread"), and width/height (below).
+
+Blocked, documented, not hidden — BC-05-B (independent width/height
+reset):
+- Width and height are one stored record (ElementDimensions:
+  preferredWidth + preferredHeight + resize offsets, all required by the
+  schema).
+- The canvas resolver always writes both together.
+- "Auto width with a fixed height" can't be represented without a project
+  format change, which this checkpoint forbids (section 19 of the brief).
+- What was done:
+  - Both reset buttons now say what they do: "Reset width and height"
+    (before: "Reset width"/"Reset height", which each cleared both);
+  - tests pin that behavior;
+  - min/max constraints are verified isolated (they already were).
+- Options are in section 17. A decision is needed.
+
+No schema or format change. Spacing zero-value semantics are untouched
+(BC-05.3).
+
+QA recommendation: ready for QA, with BC-05-B open pending a format
+decision (section 21).
+
+
+2. ROOT CAUSES OF FIXED DEFECTS
+-------------------------------
+- BC-05-C:
+  - useInspectorEditSession ends an open session on any pointerdown
+    outside its input, with "commit" (BC-01.3).
+  - A reset button press therefore committed the half-typed draft as its
+    own merged history entry, before the reset's entry.
+  - Measured in BC-05.1: 40 → type 55 → Reset; Undo → 55.
+- BC-05-D:
+  - InspectorResetButton is disabled and invisible when there's nothing
+    to reset (opacity-0, pointer-events-none).
+  - Activating it usually makes it disabled, so the browser drops focus
+    to <body>.
+- BC-05-E:
+  - The flowLayout container settings, flexChild and gridChild are full
+    records (every field required).
+  - Their sections had no notion of "authored", and the commands couldn't
+    remove the item records.
+- BC-05-F:
+  - The section exposed only the whole-group reset, although
+    withTransformField/normalizeTransformSettings already supported
+    per-field removal.
+
+
+3. WIDTH/HEIGHT ISOLATION CHANGES
+---------------------------------
+Model (unchanged):
+- EditorElementNode.dimensions = { preferredWidth, preferredHeight,
+  offsetX, offsetY }, all required (editorDocumentSchema).
+- elementDimensionsStyle writes width + height + flex-shrink: 0 together.
+- Committing one axis in the Inspector seeds the other from the rendered
+  size. That was the documented Checkpoint 5.7 audit decision.
+
+Done:
+- Both reset buttons are now labelled "Reset width and height" (accessible
+  name and tooltip).
+- A code comment records why.
+- Behavior is unchanged: removing the record returns both axes to Auto,
+  and the offsets to 0. Free children keep no size reset, because their
+  geometry is required.
+- Min/Max Width/Height: each resets only its own field. Verified by unit
+  test (reset Min width keeps Max width, Min height and Max height; reset
+  Max height keeps the rest; Undo restores).
+- Size constraints are a separate record, untouched by the size reset
+  (tested).
+
+Not done: true per-axis reset (blocker, section 17).
+
+Test combinations from brief §4, as they apply to the current model:
+1. Both authored: the reset clears both, as the label says (unit).
+2/3. Only one authored: impossible in this model, because both axes are
+   always stored together.
+4. Repeated reset: the second press is impossible (the button is
+   disabled once there's no record).
+5. Undo/Redo: restores the whole record (existing tests plus history
+   semantics).
+6. Free layout: no size reset (existing test).
+7. Constraint isolation: tested.
+
+
+4. ACTIVE-EDIT TRANSACTION POLICY
+---------------------------------
+Policy:
+- A reset that covers the field being edited cancels the edit (Escape
+  semantics), then removes the value.
+- Any other reset, or anything else, commits the edit as before.
+
+"Covers":
+- New markers: each InspectorResetButton carries data-inspector-reset.
+- The components that can hold one carry data-inspector-reset-scope:
+  InspectorPropertyRow, InspectorSegmentedRow, InspectorNumberFieldRow,
+  InspectorColorFieldShell, InspectorSection.
+- A reset covers its nearest scope:
+  - its row;
+  - or the whole section, for a section-level reset such as "Reset
+    transform" or "Reset flex item".
+- utils/inspectorResetScope.ts (isResetCovering).
+
+Where:
+- useInspectorEditSession's capture-phase pointerdown handler:
+  - if the target is a covering reset → endSession("cancel");
+  - otherwise "commit", unchanged.
+- Cancel is the existing BC-01 path:
+  - restore the pre-session document;
+  - cancelTransaction, so no entry is recorded;
+  - the draft resyncs.
+- Then the click performs the reset as one ordinary history entry.
+- No new history mechanism was added.
+
+Coverage (every control built on useInspectorEditSession):
+- InspectorNumericValueControl (Typography sizes, Transform, Size,
+  Position, Filters, etc.);
+- InspectorNumberFieldRow (Flex/Grid gaps, Flex item, Grid item);
+- InspectorSliderField's exact-value box (Gap, Opacity, etc.);
+- InspectorColorFieldShell's text field (all colours).
+
+Other controls:
+- Native colour picker: commits only on its change event, one entry; no
+  open session to collide with.
+- Slider drag: the pointer is captured by the slider, so a reset can't be
+  pressed mid-drag.
+- Segmented controls and selects: one-shot commits.
+
+Guarantees and evidence (unit tests in InspectorResetBehavior.test.tsx,
+plus e2e):
+- No intermediate entry: typed 55 + Reset → history +1 only.
+- No stale value:
+  - the field shows the reset value;
+  - a later blur commits nothing (history unchanged).
+- No duplicate commit: as above.
+- Undo restores the pre-edit authored value (20 / 40 / #112233 / gap 12);
+  Redo reapplies the reset.
+- An unset property typed into and reset ends unset, with zero history.
+- A reset of a different property still commits the draft first (2
+  entries). That is deliberate: moving on keeps the edit.
+- Escape then Reset: Escape restores, then the reset removes; 1 entry.
+- Enter commits as before.
+- Keyboard: Tab from the field to Reset commits on blur (the BC-01
+  rule); the reset is then its own step.
+- Selection change: the session commits as before (BC-01). Reset
+  controls follow the newly selected element (e2e "selection changes").
+- Regression proof: with the committed (HEAD) hook, 5 of these unit tests
+  fail; with the fix they pass.
+
+Text-based CSS fields (background image URL, font family): they don't
+use live edit sessions (commit on Enter/blur), so there is no draft to
+discard.
+
+
+5. KEYBOARD FOCUS BEHAVIOR
+--------------------------
+InspectorResetButton:
+- On a keyboard activation (Enter/Space: a click with detail 0), after
+  the reset renders:
+  - if focus was lost (body, or the now-disabled button), it moves to
+    the covered scope's control, via resetFocusTarget.
+- resetFocusTarget picks the first selected segmented option or
+  text/number/select field in document order (not the native colour
+  input).
+  - For a section-level reset, that is the section's first property.
+  - It never picks a reset button or a help icon, and skips a collapsed
+    (inert) section body, falling back to the section header.
+- A pointer click leaves focus alone, so no surprise focus ring for mouse
+  users.
+- If the button is still enabled after the reset, focus stays on it.
+
+Measured:
+- Chromium, Firefox, WebKit, Electron: Enter on "Reset font size" → the
+  Font size field is focused.
+- Space on "Reset text alignment" → focus stays in the Align row (its
+  selected option).
+- Shift+Tab / Tab from there stay inside the Inspector. No trap.
+- Disabled reset buttons stay out of the Tab order (native disabled), as
+  before.
+- No artificial keep-visible.
+
+
+6. FLEXBOX/GRID RESET COVERAGE
+------------------------------
+Semantics:
+- These are full records: every field is stored and always written to
+  CSS by resolveFlowLayoutStyle / resolveFlexOrGridChildStyle.
+- "Authored" = differs from the model default (DEFAULT_FLEX_SETTINGS,
+  DEFAULT_GRID_SETTINGS, DEFAULT_FLEX_CHILD_SETTINGS,
+  DEFAULT_GRID_CHILD_SETTINGS, now exported from types/flowLayout.ts).
+- Reset writes that default: exactly what the getters return when nothing
+  was ever set, so the CSS equals the never-edited state.
+
+| Section | Control | State field | Reset |
+| --- | --- | --- | --- |
+| Content Layout (Flex) | Direction | flex.direction | "Reset direction" → row |
+| | Wrap | flex.wrap | → nowrap |
+| | Justify content | flex.justifyContent | → start |
+| | Align items | flex.alignItems | → stretch |
+| | Gap (linked) | rowGap + columnGap | "Reset gap" → 0/0 |
+| | Row gap / Column gap (unlinked) | one each | own reset → 0 |
+| Content Layout (Grid) | Columns | grid.columns | → 2 |
+| | Rows | grid.rows | → auto |
+| | Row gap / Column gap | one each | → 16 |
+| Flex item | Grow, Shrink, Basis, Align self | flexChild.* | per field → 0, 1, auto, auto |
+| | (section) | flexChild | "Reset flex item" removes the record |
+| Grid item | Column start, Column span, Row start, Row span | gridChild.* | per field → auto, 1, auto, 1 |
+| | (section) | gridChild | "Reset grid item" removes the record |
+
+Notes on the table:
+- Grid model defaults are Layoutry's (2 columns, 16 px gaps), not CSS
+  initial values. They are what a container gets on switching to Grid.
+- Flex/Grid item: once every field is back at its default, the record
+  itself is removed.
+  - It matters for Flex: a resized element WITHOUT a record doesn't
+    shrink (resolveFlexOrGridChildStyle), so removing the record, rather
+    than writing shrink 1, restores the original behavior.
+- The commands setFlexChildSettings / setGridChildSettings now accept
+  undefined and delete the key.
+- Basis and Column/Row start "Fixed" toggles resync when reset.
+
+Structural exceptions (no reset, by design):
+- Layout mode (Flow/Free), Display (Block/Flex/Grid): structural choices
+  of how children are laid out; there is no override to remove.
+- Resize contents, Snap: editor behavior, not CSS.
+- Align content: in the model, but no control exists. Not added (no new
+  CSS controls).
+- Order, explicit grid templates and grid-column/row strings: not
+  implemented in the repository, so not added.
+
+Component stamped values: compositions (cards, button groups, etc.) stamp
+flex settings as authored data. Their resets return to the model default,
+consistent with how every other group treats stamped values. Undo
+restores.
+
+
+7. TRANSFORM RESET GRANULARITY
+------------------------------
+- Representation: structured TransformSettings { translateX?, translateY?,
+  rotateDeg?, scale? }. No string parsing.
+- Per-field reset uses the existing withTransformField(current, field,
+  undefined) → normalizeTransformSettings (drops the field and identity
+  values, collapses to undefined).
+- Each row shows the "set" state dot and its own reset.
+- "Reset transform" (section) is kept.
+- Multi-selection "Reset transform" (bulk) is unchanged.
+- Skew and other operations: not implemented in the repository.
+
+Measured:
+- Rotate 20 + Scale 1.5 → Reset rotate → computed transform =
+  matrix(1.5, 0, 0, 1.5, 0, 0) (scale only), and the Scale field still
+  shows 1.5.
+- Undo restores the rotation; Redo removes it again.
+- Electron: Rotate 15 + Scale 2 → reset → matrix(2, 0, 0, 2, 0, 0).
+
+
+8. RESET COPY AND ACCESSIBILITY
+-------------------------------
+Wording rule: "Reset <property>", unchanged for existing buttons. New:
+- "Reset direction", "Reset wrap", "Reset justify content", "Reset align
+  items", "Reset gap", "Reset row gap", "Reset column gap";
+- "Reset columns", "Reset rows";
+- "Reset grow", "Reset shrink", "Reset basis", "Reset align self", "Reset
+  flex item";
+- "Reset column start", "Reset column span", "Reset row start", "Reset
+  row span", "Reset grid item";
+- "Reset translate X", "Reset translate Y", "Reset rotate", "Reset scale".
+
+Renamed, ambiguous outside their section:
+- "Reset color" (box shadow) → "Reset shadow color";
+- "Reset geometry" → "Reset shadow offset, blur and spread";
+- "Reset width"/"Reset height" → "Reset width and height" (section 3).
+
+No permanent explanatory text was added. The BC-05.1 explanatory sentence
+("Reset removes your value…") wasn't placed: there is no shared
+section-help slot, and per-row prose is excluded by the brief. Left for
+QA to decide.
+
+Accessibility:
+- Accessible names via aria-label, with a matching title tooltip.
+- Disabled state is native disabled (hidden, out of Tab order, announced
+  as dimmed if reached by virtual cursor), as before.
+- Keyboard activation with Enter and Space; focus restoration (section 5).
+- New rows use the existing state dot (aria-hidden) plus sr-only state
+  text.
+- Reset never collapses a section.
+- Compact width: at the Inspector's 260 px minimum, every input, button
+  and enabled reset in Flex item, Content Layout (Flex, Grid) and Grid
+  item stays inside the panel (e2e, 3 browsers).
+- No motion added; no new ARIA.
+
+
+9. SOURCE FILES CHANGED
+-----------------------
+Product:
+- src/features/inspector/utils/inspectorResetScope.ts (NEW): scope
+  markers, isResetCovering, resetFocusTarget.
+- src/features/inspector/components/InspectorResetButton.tsx: marker,
+  keyboard focus restoration.
+- src/features/inspector/hooks/useInspectorEditSession.ts: covering reset
+  → cancel.
+- src/features/inspector/components/InspectorPropertyRow.tsx,
+  InspectorSegmentedRow.tsx, InspectorSection.tsx,
+  InspectorColorFieldShell.tsx: scope marker. InspectorSegmentedRow also
+  marks its help button.
+- src/features/inspector/components/InspectorNumberFieldRow.tsx: optional
+  state + reset slots and the scope marker. Unchanged structure when they
+  aren't passed.
+- src/features/inspector/components/InspectorHelpButton.tsx: help marker.
+- src/features/inspector/components/InspectorLayoutSection.tsx: Flex/Grid
+  resets.
+- src/features/inspector/components/InspectorFlexChildSection.tsx,
+  InspectorGridChildSection.tsx: per-field and record resets.
+- src/features/inspector/components/InspectorTransformSection.tsx:
+  per-field resets.
+- src/features/inspector/components/InspectorSizeSection.tsx: honest
+  label.
+- src/features/inspector/components/InspectorBoxShadowSection.tsx: two
+  labels.
+- src/features/editor/types/flowLayout.ts: the four DEFAULT_* constants
+  exported.
+- src/features/editor/commands/flowLayoutCommands.ts: item setters accept
+  undefined.
+- src/features/editor/stores/useEditorStore.ts: setFlexChildSettings /
+  setGridChildSettings accept undefined.
+
+Tests:
+- NEW src/features/inspector/components/InspectorResetBehavior.test.tsx
+  (19).
+- NEW src/features/inspector/utils/inspectorResetScope.test.tsx (3).
+- InspectorResetButton.test.tsx (+4).
+- flowLayoutCommands.test.ts (+1).
+- Updated:
+  - InspectorSizeSection.test.tsx (new label);
+  - InspectorBoxShadowSection.test.tsx (new label);
+  - InspectorFlexChildSection/GridChildSection/LayoutSection tests: row
+    lookup by the scope marker instead of getByText().closest("div"),
+    which now hits the state wrapper. Assertions unchanged.
+- NEW e2e/inspector-reset.spec.ts (5).
+- NEW e2e/desktop/inspector-reset.spec.ts (1).
+
+
+10. SCHEMA/PERSISTENCE IMPACT
+-----------------------------
+None:
+- No schema, format version or migration change.
+- Removing flexChild/gridChild produces documents identical in shape to
+  never-edited nodes. The key is deleted, never stored as undefined.
+- Saved projects open unchanged. Reset state survives save/reopen (e2e).
+
+
+11. CANVAS/PREVIEW/EXPORT PARITY EVIDENCE
+-----------------------------------------
+e2e/inspector-reset.spec.ts (Chromium, Firefox, WebKit):
+- Typography:
+  - font size 40 + letter spacing 2 → reset both → the Export Code output
+    is byte-identical to the untouched page;
+  - Preview font size = Design (30px).
+- Transform, Background, Border:
+  - reset rotate (scale kept), reset scale, set and reset background
+    colour, set and reset border width (the default 1 px border and its
+    colour return);
+  - the Export is byte-identical to the original.
+- Layout document:
+  - after resets of Direction, Gap (with Undo), Grow, Flex item, Columns
+    and Column start, Preview's computed flex-direction, align-self and
+    grid-template-columns equal Design's;
+  - the Export contains flex-direction: row and repeat(2, minmax(0, 1fr)),
+    no longer contains align-self: flex-end, and adds no
+    initial/unset/revert/inherit declarations (count equals the
+    pre-reset export).
+- Save/reopen: reset state persists (font size back to the rendered 30,
+  no reset available).
+
+
+12. UNDO/REDO TEST EVIDENCE
+---------------------------
+- Unit:
+  - each reset = 1 entry;
+  - Undo restores the exact previous group (toEqual) for Transform
+    (rotate), Flex item (record), Size constraints, colour and gap;
+  - Redo reapplies.
+- e2e:
+  - font size reset Undo → 40, Redo → 30;
+  - while typing: Undo → 40 (not 55), Undo → 30, Redo → 40;
+  - transform Undo/Redo; gap Undo.
+
+
+13. UNIT TEST COUNTS
+--------------------
+| Command | Result |
+| --- | --- |
+| npx vitest run --maxWorkers=4 InspectorResetBehavior, inspectorResetScope, InspectorResetButton | 19 + 3 + 6 passed |
+| npx vitest run --maxWorkers=4 src/features/inspector src/features/editor/commands src/features/editor/stores | all passed after test updates (see below) |
+| npx vitest run --maxWorkers=4 (full suite) | 355 files: 5323 passed, 1 skipped, 0 failed |
+
+Notes:
+- InspectorResetButton: 6 passed = 2 existing + 4 new.
+- The second row's suite was 1865 tests before the new files were added;
+  13 failures, all expected test-structure or label updates.
+- New unit tests: 27.
+
+
+14. BROWSER TEST COUNTS
+-----------------------
+| Command | Result |
+| --- | --- |
+| npx playwright test e2e/inspector-reset.spec.ts --project=chromium --repeat-each=2 | 10 passed |
+| Firefox: e2e/inspector-reset.spec.ts | 5 passed |
+| WebKit (--workers=1): e2e/inspector-reset.spec.ts | 5 passed |
+| Full Chromium suite: npx playwright test --project=chromium | 215 passed, 0 failed (210 before + the 5 new) |
+| Firefox: inspector-live-numeric, inspector-live-color-font-size, inspector-color-slider-commit | 44 passed |
+| WebKit (--workers=1): the same three specs | 42 passed, 2 failed |
+
+The 2 WebKit failures are pre-existing and environmental:
+- the native colour-picker tests, color-slider-commit:126 and
+  live-color-font-size:164;
+- Playwright's WebKit build on Windows has no colour input;
+- recorded as E2 in the BC-01.6 report (61/63 there);
+- the native picker path was not changed by this checkpoint.
+
+Firefox and WebKit ran through a temporary config, deleted afterwards.
+WebKit runs serially on this machine; see the BC-04.2 frame-starvation
+finding.
+
+
+15. ELECTRON TEST COUNTS
+------------------------
+npx playwright test -c playwright.desktop.config.ts inspector-reset
+inspector-live-edit interaction-guidance editor (ELECTRON_RUN_AS_NODE
+stripped, after npm run desktop:build): 8 passed, 0 failed.
+- inspector-reset: 1, new.
+- inspector-live-edit, interaction-guidance, editor: 7, existing.
+
+
+16. BUILD/TYPECHECK/LINT RESULTS
+--------------------------------
+- npx tsc --noEmit -p .: 0 errors.
+- npx eslint .: 0 problems.
+- Prettier:
+  - new files formatted;
+  - InspectorHelpButton.tsx (Prettier-clean at HEAD) kept clean;
+  - other edited files weren't Prettier-clean at HEAD and keep their
+    style;
+  - fontFamilyCatalog.ts warning: pre-existing, untouched.
+- npm run build (production): succeeded.
+- npm run desktop:build: succeeded.
+- Full Chromium Playwright: 215 passed.
+- Electron: 8 passed.
+
+
+17. KNOWN LIMITATIONS
+---------------------
+- BC-05-B blocker: per-axis width/height reset needs dimensions to allow
+  one axis to be absent. Options:
+  (a) optional preferredWidth/preferredHeight in the schema + resolver +
+      resize engine + Inspector.
+      - Backward-compatible read; older builds can't read new files;
+        needs a format version bump and migration tests.
+      - Medium-large: the resize engine and the free-layout conversion
+        read both axes.
+  (b) Keep the atomic model, with one "Reset size" control instead of two
+      identical buttons.
+      - Small; honest; no format change.
+  Recommended: (b) now. Schedule (a) only if per-axis Auto sizing is a
+  product goal.
+- Two buttons share the name "Reset width and height". Duplicate names are
+  legal but repetitive for screen readers. Option (b) would remove the
+  duplicate.
+- The explanatory reset sentence from BC-05.1 isn't shown anywhere (no
+  shared slot without per-row prose).
+- Layout field "authored" = differs from the model default: a value
+  deliberately set to the default reads as not set. This is inherent to
+  full-record models.
+- Multi-selection: unchanged.
+  - Bulk resets still exist only for Transform and Transition.
+  - The other bulk sections have none (BC-05.1 R6).
+- WebKit specs run serially (environment).
+
+
+18. DEFERRED BC-05.3 SPACING ISSUE
+----------------------------------
+Unchanged:
+- spacing EdgeValues are required numbers; 0 = no declaration;
+- Margin/Padding reset still writes ZERO_EDGES;
+- no serialization or migration change.
+
+BC-05.2 doesn't make it worse:
+- Spacing rows now carry the scope marker (InspectorPropertyRow), so
+  typing in Padding and pressing "Reset padding" discards the draft.
+- The keyboard reset focuses the Padding field.
+
+Dependencies for BC-05.3:
+- isSet for spacing must switch from "non-zero" to "present";
+- the reset should remove the edge or group rather than write ZERO_EDGES;
+- the scope/focus infrastructure here needs no change.
+
+
+19. REMAINING DEFECTS
+---------------------
+- BC-05-B: open (format decision).
+- BC-05.1 R1 (spacing zero): deferred to BC-05.3.
+- BC-05.1 R6 (bulk reset coverage): documented, not in scope.
+- R7 (authored border replaces the default border): a UX note, unchanged.
+- No new defects found.
+
+
+20. GIT WORKING-TREE STATUS
+---------------------------
+HEAD fa1ddc7. Nothing committed.
+- 24 modified files (section 9).
+- New:
+  - inspectorResetScope.ts and its test;
+  - InspectorResetBehavior.test.tsx;
+  - e2e/inspector-reset.spec.ts;
+  - e2e/desktop/inspector-reset.spec.ts;
+  - this report;
+  - the BC-05.1 report (untracked).
+- The changelog is gitignored.
+- The temporary playwright.cross-temp.config.ts was deleted.
+
+
+21. QA RECOMMENDATION
+---------------------
+Ready for QA.
+
+BC-05-C, D, E and F are fixed, with tests in 3 browsers + Electron.
+Parity and persistence were verified, and there is no format change.
+
+BC-05-B can't be met within the "no format change" rule. It is documented
+with options (section 17). Please decide:
+(b) a single honest "Reset size" (recommended, small), or
+(a) a format change for per-axis sizing.
+
+Then proceed to BC-05.3 (spacing zero-value semantics).

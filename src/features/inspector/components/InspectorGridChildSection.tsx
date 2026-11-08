@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { InspectorNumberFieldRow } from "@/features/inspector/components/InspectorNumberFieldRow";
+import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { InspectorSegmentedRow } from "@/features/inspector/components/InspectorSegmentedRow";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
-import { getGridChildSettings } from "@/features/editor/types/flowLayout";
+import { DEFAULT_GRID_CHILD_SETTINGS, getGridChildSettings } from "@/features/editor/types/flowLayout";
 import type { GridChildSettings } from "@/features/editor/types/flowLayout";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -52,10 +53,40 @@ export function InspectorGridChildSection({ node }: InspectorGridChildSectionPro
     setGridChildSettings(node.id, { ...gridChild, ...patch });
   }
 
+  // BC-05.2 reset, as in InspectorFlexChildSection: a field is authored when
+  // the record exists and differs from the model default; resetting writes
+  // the default back, and the record is removed once nothing differs.
+  const isAuthored = (field: keyof GridChildSettings) => node.gridChild !== undefined && node.gridChild[field] !== DEFAULT_GRID_CHILD_SETTINGS[field];
+  const stateOf = (field: keyof GridChildSettings) => (isAuthored(field) ? "set" : "unset");
+
+  function resetField(field: keyof GridChildSettings) {
+    const next: GridChildSettings = { ...gridChild, [field]: DEFAULT_GRID_CHILD_SETTINGS[field] };
+    const allDefault = (Object.keys(DEFAULT_GRID_CHILD_SETTINGS) as (keyof GridChildSettings)[]).every((key) => next[key] === DEFAULT_GRID_CHILD_SETTINGS[key]);
+    if (field === "columnStart") setColumnStartFixed(false);
+    if (field === "rowStart") setRowStartFixed(false);
+    setGridChildSettings(node.id, allDefault ? undefined : next);
+  }
+
+  function resetAll() {
+    setColumnStartFixed(false);
+    setRowStartFixed(false);
+    setGridChildSettings(node.id, undefined);
+  }
+
+  const fieldReset = (field: keyof GridChildSettings, label: string) => (
+    <InspectorResetButton onReset={() => resetField(field)} disabled={!isAuthored(field)} label={`Reset ${label}`} />
+  );
+
   return (
-    <InspectorSection label="Grid item" defaultOpen>
+    <InspectorSection
+      label="Grid item"
+      defaultOpen
+      actions={<InspectorResetButton onReset={resetAll} disabled={node.gridChild === undefined} label="Reset grid item" />}
+    >
       <InspectorSegmentedRow
         label="Column start"
+        state={stateOf("columnStart")}
+        reset={fieldReset("columnStart", "column start")}
         options={START_MODE_OPTIONS}
         activeOption={columnStartFixed ? "Fixed" : "Auto"}
         onSelect={(option) => {
@@ -75,11 +106,15 @@ export function InspectorGridChildSection({ node }: InspectorGridChildSectionPro
       <InspectorNumberFieldRow
         live
         label="Column span"
+        state={stateOf("columnSpan")}
+        reset={fieldReset("columnSpan", "column span")}
         value={gridChild.columnSpan}
         onCommit={(value) => commit({ columnSpan: Math.max(1, Math.round(value)) })}
       />
       <InspectorSegmentedRow
         label="Row start"
+        state={stateOf("rowStart")}
+        reset={fieldReset("rowStart", "row start")}
         options={START_MODE_OPTIONS}
         activeOption={rowStartFixed ? "Fixed" : "Auto"}
         onSelect={(option) => {
@@ -99,6 +134,8 @@ export function InspectorGridChildSection({ node }: InspectorGridChildSectionPro
       <InspectorNumberFieldRow
         live
         label="Row span"
+        state={stateOf("rowSpan")}
+        reset={fieldReset("rowSpan", "row span")}
         value={gridChild.rowSpan}
         onCommit={(value) => commit({ rowSpan: Math.max(1, Math.round(value)) })}
       />

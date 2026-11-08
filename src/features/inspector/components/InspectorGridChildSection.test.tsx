@@ -32,9 +32,9 @@ describe("InspectorGridChildSection", () => {
   it("shows the default auto placement and span-1 values when gridChild is unset", () => {
     setup({ id: "heading-1", tag: "h1" });
 
-    const columnStartRow = screen.getByText("Column start").closest("div")!;
+    const columnStartRow = screen.getByText("Column start").closest<HTMLElement>("[data-inspector-reset-scope]")!;
     expect(within(columnStartRow).getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "true");
-    const rowStartRow = screen.getByText("Row start").closest("div")!;
+    const rowStartRow = screen.getByText("Row start").closest<HTMLElement>("[data-inspector-reset-scope]")!;
     expect(within(rowStartRow).getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByLabelText("Column span")).toHaveValue(1);
     expect(screen.getByLabelText("Row span")).toHaveValue(1);
@@ -48,7 +48,7 @@ describe("InspectorGridChildSection", () => {
     // useEditorStore's "clamps against the resolved default grid" behavior.
     setup({ id: "heading-1", tag: "h1" });
 
-    const columnStartRow = screen.getByText("Column start").closest("div")!;
+    const columnStartRow = screen.getByText("Column start").closest<HTMLElement>("[data-inspector-reset-scope]")!;
     fireEvent.click(within(columnStartRow).getByRole("button", { name: "Fixed" }));
     expect(screen.getByLabelText("Column start value")).toHaveValue(1);
 
@@ -63,7 +63,7 @@ describe("InspectorGridChildSection", () => {
   it("switching Row start to Fixed reveals a track field defaulting to 1 and commits it", () => {
     setup({ id: "heading-1", tag: "h1" });
 
-    const rowStartRow = screen.getByText("Row start").closest("div")!;
+    const rowStartRow = screen.getByText("Row start").closest<HTMLElement>("[data-inspector-reset-scope]")!;
     fireEvent.click(within(rowStartRow).getByRole("button", { name: "Fixed" }));
 
     const input = screen.getByLabelText("Row start value");
@@ -77,7 +77,7 @@ describe("InspectorGridChildSection", () => {
   it("switching Column start back to Auto clears the fixed value and hides the field", () => {
     setup({ id: "heading-1", tag: "h1", gridChild: { columnStart: 3, columnSpan: 1, rowStart: "auto", rowSpan: 1 } });
 
-    const columnStartRow = screen.getByText("Column start").closest("div")!;
+    const columnStartRow = screen.getByText("Column start").closest<HTMLElement>("[data-inspector-reset-scope]")!;
     fireEvent.click(within(columnStartRow).getByRole("button", { name: "Auto" }));
 
     const node = useEditorStore.getState().document.children?.find((c) => c.id === "heading-1");
@@ -107,7 +107,7 @@ describe("InspectorGridChildSection", () => {
     // even after node B (with real Fixed placement) becomes selected.
     const { rerender } = render(<InspectorGridChildSection node={{ id: "a", tag: "h1" }} />);
 
-    let columnStartRow = screen.getByText("Column start").closest("div")!;
+    let columnStartRow = screen.getByText("Column start").closest<HTMLElement>("[data-inspector-reset-scope]")!;
     expect(within(columnStartRow).getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByLabelText("Column start value")).not.toBeInTheDocument();
 
@@ -121,10 +121,10 @@ describe("InspectorGridChildSection", () => {
       />,
     );
 
-    columnStartRow = screen.getByText("Column start").closest("div")!;
+    columnStartRow = screen.getByText("Column start").closest<HTMLElement>("[data-inspector-reset-scope]")!;
     expect(within(columnStartRow).getByRole("button", { name: "Fixed" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByLabelText("Column start value")).toHaveValue(3);
-    const rowStartRow = screen.getByText("Row start").closest("div")!;
+    const rowStartRow = screen.getByText("Row start").closest<HTMLElement>("[data-inspector-reset-scope]")!;
     expect(within(rowStartRow).getByRole("button", { name: "Fixed" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByLabelText("Row start value")).toHaveValue(2);
   });

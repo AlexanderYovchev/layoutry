@@ -106,6 +106,7 @@ export function InspectorHelpButton({
     >
       <button
         type="button"
+        data-inspector-help=""
         aria-label={help}
         onPointerEnter={() => {
           keepInside();

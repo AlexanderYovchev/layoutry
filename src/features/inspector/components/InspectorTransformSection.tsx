@@ -45,6 +45,20 @@ export function InspectorTransformSection({ node }: InspectorTransformSectionPro
     setElementTransform(node.id, withTransformField(transform, field, next));
   }
 
+  // BC-05.2: each field resets on its own. withTransformField removes it
+  // (normalizeTransformSettings drops identity values) and keeps the others;
+  // the transform collapses to undefined once nothing is left.
+  const fieldRow = (field: keyof TransformSettings, label: string) => ({
+    state: transform?.[field] !== undefined ? ("set" as const) : ("unset" as const),
+    reset: (
+      <InspectorResetButton
+        onReset={() => setElementTransform(node.id, withTransformField(transform, field, undefined))}
+        disabled={transform?.[field] === undefined}
+        label={`Reset ${label}`}
+      />
+    ),
+  });
+
   const hasChildren = (node.children?.length ?? 0) > 0;
   const hasBlockingRotateOrScale = transform?.rotateDeg !== undefined || transform?.scale !== undefined;
   const showAncestorHint = hasChildren && hasBlockingRotateOrScale;
@@ -54,7 +68,7 @@ export function InspectorTransformSection({ node }: InspectorTransformSectionPro
       label="Transform"
       actions={<InspectorResetButton onReset={() => setElementTransform(node.id, undefined)} disabled={!transform} label="Reset transform" />}
     >
-      <InspectorPropertyRow label="Translate X">
+      <InspectorPropertyRow label="Translate X" {...fieldRow("translateX", "translate X")}>
         <InspectorNumericValueControl
           ariaLabel="Translate X"
           value={transform?.translateX ?? 0}
@@ -63,7 +77,7 @@ export function InspectorTransformSection({ node }: InspectorTransformSectionPro
         <span className="text-xs text-zinc-500 dark:text-zinc-400">px</span>
       </InspectorPropertyRow>
 
-      <InspectorPropertyRow label="Translate Y">
+      <InspectorPropertyRow label="Translate Y" {...fieldRow("translateY", "translate Y")}>
         <InspectorNumericValueControl
           ariaLabel="Translate Y"
           value={transform?.translateY ?? 0}
@@ -72,7 +86,7 @@ export function InspectorTransformSection({ node }: InspectorTransformSectionPro
         <span className="text-xs text-zinc-500 dark:text-zinc-400">px</span>
       </InspectorPropertyRow>
 
-      <InspectorPropertyRow label="Rotate">
+      <InspectorPropertyRow label="Rotate" {...fieldRow("rotateDeg", "rotate")}>
         <InspectorNumericValueControl
           ariaLabel="Rotate"
           value={transform?.rotateDeg ?? 0}
@@ -81,7 +95,7 @@ export function InspectorTransformSection({ node }: InspectorTransformSectionPro
         <span className="text-xs text-zinc-500 dark:text-zinc-400">°</span>
       </InspectorPropertyRow>
 
-      <InspectorPropertyRow label="Scale">
+      <InspectorPropertyRow label="Scale" {...fieldRow("scale", "scale")}>
         <InspectorNumericValueControl
           ariaLabel="Scale"
           value={transform?.scale ?? 1}

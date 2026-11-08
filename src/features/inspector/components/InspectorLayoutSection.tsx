@@ -5,6 +5,7 @@ import { InspectorBooleanToggle } from "@/features/inspector/components/Inspecto
 import { InspectorLinkToggle } from "@/features/inspector/components/InspectorLinkToggle";
 import { InspectorNumberFieldRow } from "@/features/inspector/components/InspectorNumberFieldRow";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
+import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
 import { InspectorSliderField } from "@/features/inspector/components/InspectorSliderField";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { InspectorSegmentedRow } from "@/features/inspector/components/InspectorSegmentedRow";
@@ -12,6 +13,8 @@ import { useConvertContainerToFreeLayout } from "@/features/editor/hooks/useConv
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { getLayoutMode, resolveChildResizePolicy } from "@/features/editor/types/layout";
 import {
+  DEFAULT_FLEX_SETTINGS,
+  DEFAULT_GRID_SETTINGS,
   getFlexContainerSettings,
   getFlowLayoutSettings,
   getGridContainerSettings,
@@ -180,22 +183,39 @@ function FlexContainerControls({ node, onChange }: FlexContainerControlsProps) {
     setGapLinked(flex.rowGap === flex.columnGap);
   }
 
+  // BC-05.2 reset: these settings are a full record (every field always
+  // stored, and always written to CSS), so "authored" means "differs from the
+  // model default" and reset writes that default back — the same values a
+  // container gets before its Flex settings are ever edited.
+  type FlexField = keyof typeof DEFAULT_FLEX_SETTINGS;
+  const flexState = (...fields: FlexField[]) => (fields.some((field) => flex[field] !== DEFAULT_FLEX_SETTINGS[field]) ? "set" : "unset");
+  const flexReset = (label: string, ...fields: FlexField[]) => {
+    const patch = Object.fromEntries(fields.map((field) => [field, DEFAULT_FLEX_SETTINGS[field]]));
+    return <InspectorResetButton onReset={() => onChange({ ...flex, ...patch })} disabled={flexState(...fields) === "unset"} label={`Reset ${label}`} />;
+  };
+
   return (
     <>
       <InspectorSegmentedRow
         label="Direction"
+        state={flexState("direction")}
+        reset={flexReset("direction", "direction")}
         options={DIRECTION_OPTIONS}
         activeOption={flex.direction === "column" ? "Column" : "Row"}
         onSelect={(option) => onChange({ ...flex, direction: DIRECTION_LABEL_TO_VALUE[option] })}
       />
       <InspectorSegmentedRow
         label="Wrap"
+        state={flexState("wrap")}
+        reset={flexReset("wrap", "wrap")}
         options={WRAP_OPTIONS}
         activeOption={flex.wrap === "wrap" ? "Wrap" : "No wrap"}
         onSelect={(option) => onChange({ ...flex, wrap: WRAP_LABEL_TO_VALUE[option] })}
       />
       <InspectorSegmentedRow
         label="Justify content"
+        state={flexState("justifyContent")}
+        reset={flexReset("justify content", "justifyContent")}
         help="Controls how children are spaced along the container's main direction."
         options={JUSTIFY_OPTIONS}
         activeOption={JUSTIFY_VALUE_TO_LABEL[flex.justifyContent]}
@@ -203,6 +223,8 @@ function FlexContainerControls({ node, onChange }: FlexContainerControlsProps) {
       />
       <InspectorSegmentedRow
         label="Align items"
+        state={flexState("alignItems")}
+        reset={flexReset("align items", "alignItems")}
         help="Controls how children line up across the container, perpendicular to its main direction."
         options={ALIGN_OPTIONS}
         activeOption={ALIGN_VALUE_TO_LABEL[flex.alignItems]}
@@ -211,6 +233,8 @@ function FlexContainerControls({ node, onChange }: FlexContainerControlsProps) {
       <InspectorPropertyRow
         label="Gap"
         variant="stack"
+        state={flexState("rowGap", "columnGap")}
+        reset={flexReset("gap", "rowGap", "columnGap")}
         secondary={<InspectorLinkToggle linked={gapLinked} onToggle={() => setGapLinked((prev) => !prev)} />}
       >
         {gapLinked ? (
@@ -228,12 +252,16 @@ function FlexContainerControls({ node, onChange }: FlexContainerControlsProps) {
             <InspectorNumberFieldRow
               live
               label="Row gap"
+              state={flexState("rowGap")}
+              reset={flexReset("row gap", "rowGap")}
               value={flex.rowGap}
               onCommit={(value) => onChange({ ...flex, rowGap: Math.max(0, value) })}
             />
             <InspectorNumberFieldRow
               live
               label="Column gap"
+              state={flexState("columnGap")}
+              reset={flexReset("column gap", "columnGap")}
               value={flex.columnGap}
               onCommit={(value) => onChange({ ...flex, columnGap: Math.max(0, value) })}
             />
@@ -252,16 +280,27 @@ interface GridContainerControlsProps {
 function GridContainerControls({ node, onChange }: GridContainerControlsProps) {
   const grid = getGridContainerSettings(node);
 
+  // BC-05.2 reset, as for Flex: authored = differs from the model default.
+  type GridField = keyof typeof DEFAULT_GRID_SETTINGS;
+  const gridState = (field: GridField) => (grid[field] !== DEFAULT_GRID_SETTINGS[field] ? "set" : "unset");
+  const gridReset = (label: string, field: GridField) => (
+    <InspectorResetButton onReset={() => onChange({ ...grid, [field]: DEFAULT_GRID_SETTINGS[field] })} disabled={gridState(field) === "unset"} label={`Reset ${label}`} />
+  );
+
   return (
     <>
       <InspectorSegmentedRow
         label="Columns"
+        state={gridState("columns")}
+        reset={gridReset("columns", "columns")}
         options={GRID_COLUMN_OPTIONS}
         activeOption={String(grid.columns)}
         onSelect={(option) => onChange({ ...grid, columns: Number(option) as GridTrackPreset })}
       />
       <InspectorSegmentedRow
         label="Rows"
+        state={gridState("rows")}
+        reset={gridReset("rows", "rows")}
         options={GRID_ROW_OPTIONS}
         activeOption={grid.rows === "auto" ? "Auto" : String(grid.rows)}
         onSelect={(option) =>
@@ -271,12 +310,16 @@ function GridContainerControls({ node, onChange }: GridContainerControlsProps) {
       <InspectorNumberFieldRow
         live
         label="Row gap"
+        state={gridState("rowGap")}
+        reset={gridReset("row gap", "rowGap")}
         value={grid.rowGap}
         onCommit={(value) => onChange({ ...grid, rowGap: Math.max(0, value) })}
       />
       <InspectorNumberFieldRow
         live
         label="Column gap"
+        state={gridState("columnGap")}
+        reset={gridReset("column gap", "columnGap")}
         value={grid.columnGap}
         onCommit={(value) => onChange({ ...grid, columnGap: Math.max(0, value) })}
       />

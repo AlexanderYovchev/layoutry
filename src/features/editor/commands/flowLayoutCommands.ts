@@ -94,16 +94,30 @@ export function setGridContainerSettings(
 export function setFlexChildSettings(
   root: EditorElementNode,
   nodeId: string,
-  flexChild: FlexChildSettings,
+  flexChild: FlexChildSettings | undefined,
 ): EditorElementNode {
-  return recurse(root, nodeId, (node) => ({ ...node, flexChild }));
+  // undefined removes the record (BC-05.2 "Reset flex item"): an absent
+  // record is not the same as a default one — a resized element without a
+  // record does not shrink (resolveFlexOrGridChildStyle).
+  return recurse(root, nodeId, (node) => {
+    if (flexChild !== undefined) return { ...node, flexChild };
+    const next = { ...node };
+    delete next.flexChild;
+    return next;
+  });
 }
 
 /** Sets one node's own grid-item placement (column/row start + span) — column/row bounds are clamped by the caller (see useEditorStore), which can cheaply look up the parent's current track count; this command just applies whatever it's given. */
 export function setGridChildSettings(
   root: EditorElementNode,
   nodeId: string,
-  gridChild: GridChildSettings,
+  gridChild: GridChildSettings | undefined,
 ): EditorElementNode {
-  return recurse(root, nodeId, (node) => ({ ...node, gridChild }));
+  // undefined removes the record (BC-05.2 "Reset grid item").
+  return recurse(root, nodeId, (node) => {
+    if (gridChild !== undefined) return { ...node, gridChild };
+    const next = { ...node };
+    delete next.gridChild;
+    return next;
+  });
 }

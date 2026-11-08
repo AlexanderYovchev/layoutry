@@ -1,0 +1,786 @@
+LAYOUTRY — BC-05.1: CSS PROPERTY RESET/DEFAULT INVESTIGATION
+==============================================================
+Date: 2026-11-08
+Type: Read-only investigation (no product code changed, not committed)
+Base: HEAD fa1ddc7 (BC-04.2 committed), clean working tree
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Layoutry already has per-property reset, and it already follows the proposed
+principle. Resetting removes the authored value from the document model, and
+the element falls back to its natural look.
+
+- Coverage: a shared InspectorResetButton (Checkpoint 4.1) is used about 70
+  times across 30 Inspector files. Most CSS properties can be reset
+  individually.
+- Fallback: removing a declaration falls back through two layers:
+  - Layoutry's per-element default styles (e.g. a heading's 30 px size,
+    a button's padding), applied as classes on the Canvas and printed
+    verbatim in Export;
+  - then the Preflight base reset and inheritance.
+- Parity: Canvas, Preview and Export use the same layers, so a reset
+  behaves the same in all three.
+- Measured on font size:
+  - reset returns the Export output byte-for-byte to the original;
+  - one Undo step each way;
+  - Preview matches;
+  - the result survives save and reopen.
+
+What BC-05 actually needs is to close gaps and fix inconsistencies, not to
+build reset from scratch:
+
+| ID | Severity | Type | Finding |
+| -- | -------- | ---- | ------- |
+| R1 | HIGH | Confirmed defect | Spacing treats 0 as "not set". A button (or any element with default padding) shows Padding 0 while rendering 8/16 px; typing 0 does nothing; Reset stays hidden. |
+| R2 | MEDIUM | Confirmed defect | "Reset width" and "Reset height" both clear the whole size record. Resetting height also removes the width (measured: 300 px → auto). |
+| R3 | MEDIUM | Confirmed defect | Clicking Reset during a live edit first commits the uncommitted draft as its own Undo step. The first Undo lands on a value the user never confirmed (measured: 40 → typed 55 → Reset; Undo → 55, Undo → 40). |
+| R4 | MEDIUM | Confirmed accessibility defect | After a keyboard reset, the button disables and hides itself; focus falls to <body>. Affects every reset button. |
+| R5 | MEDIUM | Missing functionality | No reset at all for Layout (flex/grid container), Flex item, Grid item. Transform and Transition reset only as a whole. |
+| R6 | LOW–MEDIUM | Missing functionality | Multi-selection offers reset only for Transform and Transition (whole group). The 9 other bulk sections have none. |
+| R7 | LOW | UX risk, by design | Authoring any border part replaces the container's whole default border (all sides, and the default colour). Setting a width also changes the colour. Reset restores it correctly. |
+| R8 | LOW | UX | Reset is invisible until a value is set, so it is only discovered after editing. The state dot is the only cue. |
+
+Responsive styling doesn't exist: there are no breakpoints, the menu item is
+disabled, and the only @media rule is a built-in default. Responsive scope is
+out of scope for BC-05.
+
+Recommendation: two implementation checkpoints, then a closing audit
+(section 17).
+
+
+2. CURRENT CSS INSPECTOR ARCHITECTURE
+-------------------------------------
+Data flow (source of truth = the typed document model, never the DOM):
+
+  Inspector control
+    → section handler (with*Field helper in editor/types/*.ts)
+    → store action (useEditorStore set*/set*Live, history-aware)
+    → command (editor/commands/*Commands.ts, immutable,
+      no-op = same root)
+    → EditorElementNode.<group>
+    → canvas resolver (canvas/utils/resolve*Style.ts)
+      + elementStyleRecipes.ts default classes
+    → Canvas inline style
+    → export builder (buildExportDocument → printExportStylesheet:
+      the same default declarations as classes, then authored element
+      rules)
+
+Each part:
+- Storage:
+  - one optional group per concern on EditorElementNode: typography,
+    background, border, borderRadius, boxShadow, filters, display,
+    position, transform, transition;
+  - plus spacing, dimensions, sizeConstraints, aspectRatio, flowLayout,
+    flexChild, gridChild, mediaFit and shape.
+  - No CSS strings are stored.
+- Reading:
+  - InspectorXSection reads node.<group> through get* helpers (e.g.
+    getElementSpacing, getFlexChildSettings), which supply model
+    defaults.
+- Updating:
+  - with*Field(current, field, value) returns the next group;
+  - the section calls one store action, which pushes one history entry.
+  - Live controls (sliders, colour, scrubbing) use the set*Live
+    variants plus begin/commitTransaction (BC-01, Checkpoint 4.3.1).
+- Removing:
+  - with*Field(current, field, undefined) deletes the key, and collapses
+    the group to undefined once it is empty;
+  - this is a consistent convention in typography, background, border,
+    border radius, display, position, filters, media fit, size
+    constraints, transform and transition, and normalizeBoxShadowSettings
+    does the same for shadows.
+- Authored check:
+  - presence of the field in the model ("set" property state, blue dot,
+    visible reset button);
+  - spacing is the exception: "non-zero" (R1).
+- Displaying defaults:
+  - useRenderedTypography reads getComputedStyle from the Canvas element
+    for font size, line height and letter spacing only;
+  - useRenderedNodeSize does the same for unset width/height;
+  - every other control shows the model value or an empty or placeholder
+    state.
+- Persisting:
+  - serializeProject writes canonical JSON;
+  - absent fields stay absent, so a reset survives save/reopen (measured).
+- History:
+  - documented as one action, one entry; live sessions are one entry per
+    session (useInspectorEditSession, begin/commitTransaction).
+- Default layer:
+  - canvas/utils/documentDefaultStyles.ts (heading, paragraph, button,
+    link, container-border/-radius/-padding/-flow, button-shadow,
+    control-*);
+  - elementStyleRecipes.ts decides per node which defaults apply. Several
+    yield only while a whole group is absent:
+    - container-border while !node.border;
+    - container-radius / control-radius while !node.borderRadius;
+    - container-padding while !node.spacing;
+    - container-flow while !node.flowLayout;
+    - button-shadow while !node.boxShadow;
+    - link-underline while textDecorationLine is undefined.
+- Export:
+  - exportBaseStylesheet = Preflight reset + page surface;
+  - then default-style classes; then per-element authored rules.
+  - It never scrapes the DOM.
+
+
+3. PROPERTY COVERAGE INVENTORY
+------------------------------
+Columns:
+- Property: the control as it appears in the Inspector.
+- Stored as: the authored value in the model.
+- Unset shows: what the control displays when nothing is authored.
+- Reset today: the existing reset control, if any.
+- Side effects: what else a reset touches.
+- Recommended: the reset BC-05 should provide.
+- Effort: implementation complexity, S/M/L.
+No property has responsive scope (section 7).
+
+Typography (InspectorTypographySection), single selection.
+Reset removes the field; the default class or inheritance applies.
+
+| Property | Stored as | Unset shows | Reset today | Side effects | Recommended | Effort |
+| -------- | --------- | ----------- | ----------- | ------------ | ----------- | ------ |
+| Font family | typography.fontFamily | placeholder | "Reset font family" | none | keep | — |
+| Font size | typography.fontSize {value,unit} | COMPUTED (useRenderedTypography) | "Reset font size" | none | keep | — |
+| Font weight | segmented | no selection | "Reset font weight" | none | keep | — |
+| Style | segmented | no selection | "Reset font style" | none | keep | — |
+| Decoration | segmented | no selection | "Reset text decoration" | none | keep | — |
+| Text color | colour | empty swatch | "Reset text color" | none | keep | — |
+| Align | segmented | no selection | "Reset text alignment" | none | keep | — |
+| Line height | value/unitless | COMPUTED | "Reset line height" | none | keep | — |
+| Letter spacing | value | COMPUTED | "Reset letter spacing" | none | keep | — |
+
+Notes on Typography:
+- Decoration: resetting it also restores the link underline default
+  (intended).
+- Unset weight and alignment show no selection, not the inherited value
+  (UX note, section 12).
+
+Spacing (InspectorSpacingSection):
+
+| Property | Stored as | Unset shows | Reset today | Side effects | Recommended | Effort |
+| -------- | --------- | ----------- | ----------- | ------------ | ----------- | ------ |
+| Margin (4 sides, link toggle) | spacing.margin, all numbers, 0 = "not set" | MODEL 0 | "Reset margin" writes ZERO_EDGES (all 4 sides) | the spacing group never returns to undefined | see below | M |
+| Padding (4 sides) | spacing.padding, same | MODEL 0, even where the default renders 8/16 px (R1) | "Reset padding" writes ZERO_EDGES; disabled while the default padding renders | an explicit 0 can't be authored | see below | M |
+
+Recommended for Spacing:
+- Per-edge optional values (absent = not set, 0 = explicit 0).
+- Reset removes the group (Margin or Padding); per-side reset is optional.
+- Unset sides show the computed value as a placeholder.
+- This is a document-model change; it needs approval (section 6).
+
+Size (InspectorSizeSection):
+
+| Property | Stored as | Unset shows | Reset today | Side effects | Recommended | Effort |
+| -------- | --------- | ----------- | ----------- | ------------ | ----------- | ------ |
+| Width | dimensions {preferredWidth, preferredHeight, offsetX, offsetY}, one record written by resize | empty, auto | "Reset width" clears ALL dimensions | clears height and offsets too (R2) | see below | S (rename) / M (split) |
+| Height | same record | empty, auto | "Reset height" clears ALL dimensions | clears width (R2) | see below | S / M |
+| Min/Max Width/Height | sizeConstraints.{field} | empty | per field | none | keep | — |
+| Resize proportions | aspectRatioLocked | — | "Reset resize proportions" | none | keep | — |
+| Aspect ratio | aspectRatio | — | "Reset aspect ratio" | none | keep | — |
+
+Recommended for Width and Height, one of:
+(a) Honest labelling: one "Reset size" control, since width and height
+    are one stored unit.
+(b) Per-axis optional values. Needs a model change and resize-handle
+    review.
+Free-layout children have no size reset, which is correct: their geometry
+is required.
+
+Layout, container (InspectorLayoutSection: Layout mode, Display,
+Direction, Wrap, Justify, Align items, Gap/Row/Column gap, Columns, Rows,
+Resize contents, Snap):
+
+| Property | Stored as | Unset shows | Reset today | Side effects | Recommended | Effort |
+| -------- | --------- | ----------- | ----------- | ------------ | ----------- | ------ |
+| All of the above | flowLayout {display, flex?, grid?}: full records with required fields; model defaults (flex gap 0, grid 2 columns, 16 px gaps) are Layoutry presets, not CSS initial values | model values | none | — | see below | M |
+
+Recommended for Layout:
+- A section-level "Reset layout" that resets the active mode's settings
+  (flex or grid) to the model defaults.
+- Not per field: every field is always present, so per-field "removal"
+  isn't representable, and writing CSS initial values would be wrong
+  (e.g. grid columns).
+- Display (block/flex/grid) and Layout mode (flow/free) are structural
+  choices; don't reset them implicitly.
+- New containers stamp flowLayout, so removing it would re-apply only the
+  legacy container-flow default. Avoid.
+
+Flex item and Grid item (InspectorFlexChildSection, InspectorGridChildSection):
+
+| Property | Stored as | Unset shows | Reset today | Side effects | Recommended | Effort |
+| -------- | --------- | ----------- | ----------- | ------------ | ----------- | ------ |
+| Grow, Shrink, Basis, Align self | flexChild: full record | model defaults | none | — | "Reset flex item" removes flexChild | S |
+| Column/row start, span | gridChild: full record | model defaults | none | — | "Reset grid item" removes gridChild | S |
+
+Why removing the record, not writing defaults (flex item):
+- The resolver treats an absent record differently: a resized element
+  gets shrink 0 when flexChild is absent.
+- Writing default values would therefore change layout.
+
+Background:
+
+| Property | Stored as | Unset shows | Reset today | Side effects | Recommended | Effort |
+| -------- | --------- | ----------- | ----------- | ------------ | ----------- | ------ |
+| Background color | background.color | empty | yes | none (button default background returns) | keep | — |
+| Image, size, position, repeat, attachment | background.* | — | each has its own reset | none | keep | — |
+| Gradient | background.gradient | — | "Reset gradient" (button always enabled, but the row only exists while a gradient is set) | none | keep | — |
+
+Border and radius:
+
+| Property | Stored as | Unset shows | Reset today | Side effects | Recommended | Effort |
+| -------- | --------- | ----------- | ----------- | ------------ | ----------- | ------ |
+| Border width/style/color (unified or per side) | border.{side}.{field} | — | "Reset border width/style/color" (per field, for the target sides); "Reset border" (all) | default container border yields to ANY authored border (R7) | keep; explain (section 12) | — |
+| Radius (all or per corner, presets) | borderRadius | — | "Reset radius" (corner/all), "Reset border radius" | default radius yields to any authored radius | keep | — |
+
+Effects:
+
+| Property | Stored as | Unset shows | Reset today | Side effects | Recommended | Effort |
+| -------- | --------- | ----------- | ----------- | ------------ | ----------- | ------ |
+| Box shadow (layers, geometry, colour, inset) | boxShadow layers | — | per field, geometry, colour, whole shadow | default button-shadow returns only when the list is removed, by design | keep | — |
+| Visual effects (opacity, blur, brightness, contrast, grayscale, hue rotate, invert, saturation, sepia) | filters.{field} | — | per field + "Reset effects" | none | keep | — |
+| Transform (translate X/Y, rotate, scale) | transform.{field} | model values | whole-group "Reset transform" only | none | add per-field reset (with*Field already exists) | S |
+| Transition (property, duration, timing, delay) | transition record | — | whole group only | none | keep whole group (one authored unit) | — |
+
+Display & Visibility:
+
+| Property | Stored as | Unset shows | Reset today | Side effects | Recommended | Effort |
+| -------- | --------- | ----------- | ----------- | ------------ | ----------- | ------ |
+| Display, Visibility, Cursor, Pointer Events, User Select | display.{field} | — | per row + "Reset display settings" | none | keep | — |
+| Overflow (all or X/Y) | display.overflow* | — | per axis + "Reset overflow" | authored overflow replaces the text clip default (by design) | keep | — |
+
+Position:
+
+| Property | Stored as | Unset shows | Reset today | Side effects | Recommended | Effort |
+| -------- | --------- | ----------- | ----------- | ------------ | ----------- | ------ |
+| Mode | position.mode | — | "Reset position" | none | keep | — |
+| Offsets (all or per side) | position.offsets | — | per offset + "Reset offsets" | none | keep | — |
+| Z-index | position.zIndex | — | "Reset z-index" | none | keep | — |
+
+Media and shape:
+
+| Property | Stored as | Unset shows | Reset today | Side effects | Recommended | Effort |
+| -------- | --------- | ----------- | ----------- | ------------ | ----------- | ------ |
+| Object fit, object position | mediaFit | — | each | none | keep | — |
+| Shape | shape preset | — | "Reset shape" writes "none" (= the unset preset) | none | keep | — |
+
+Non-CSS rows with the same reset pattern (identity, link, form-control,
+option, media text fields) are out of BC-05 scope.
+
+No animation controls exist. Responsive and breakpoint controls don't
+exist.
+
+
+4. EXISTING RESET CAPABILITIES
+------------------------------
+InspectorResetButton.tsx:
+- a 24×24 px RotateCcw icon button;
+- aria-label and title "Reset <property>";
+- disabled + opacity-0 + pointer-events-none while there's nothing to
+  reset. It is invisible but still in the accessibility tree as a
+  disabled button.
+- Its documented contract: "remove the explicit value and let the
+  document model's own default/inherited behavior take over… never a
+  guessed browser default."
+
+It is placed in InspectorPropertyRow's `reset` slot (row level), or in
+InspectorSection's `actions` (section level, e.g. "Reset transform").
+
+The property-state model (types/propertyState.ts) already defines unset,
+set, inherited, mixed, invalid, not-applicable and overridden. Only "set"
+(blue dot) is common; "inherited" is defined but barely used.
+
+Reset is therefore already conditional (the proposal's option C), driven by
+authored state rather than hover.
+
+
+5. AUTHORED vs COMPUTED vs INHERITED SEMANTICS
+----------------------------------------------
+- Authored: a field present in the node's model group. It is the only
+  thing a reset should remove.
+- Layoutry default: documentDefaultStyles declarations, applied as Canvas
+  classes and Export classes, e.g. heading font-size 1.875rem, button
+  padding-inline 1rem.
+  - Neither CSS initial values nor browser user-agent defaults: Preflight
+    removes those first.
+- Inherited: values from ancestors (e.g. page surface colour, font family).
+- Computed: what getComputedStyle reports. It is shown only for font size,
+  line height, letter spacing (and auto size), as the field value while
+  unset, without the "set" state.
+
+Measured: heading, unset font size → field 30, computed 30px, Reset
+hidden. That is correct: the computed value isn't labelled authored.
+
+CSS keywords:
+- initial, inherit, unset and revert are never written by the editor, and
+  aren't representable in the model.
+- They are not needed. "Remove the authored value" already yields the
+  cascade result, consistently in all three renderers.
+- Writing "initial" would bypass Layoutry's default layer, e.g. a button
+  would lose its padding.
+- Writing "revert" would behave differently on the Canvas (Tailwind
+  layers) and on the exported page.
+
+
+6. RECOMMENDED RESET BEHAVIOR
+-----------------------------
+Adopt the proposed principle, with precise wording:
+
+  "Reset removes the property's authored value from the element, so the
+   element shows Layoutry's default for that element type, or what it
+   inherits. Reset never writes a CSS keyword or a guessed browser value."
+
+Rules:
+1. Reset removes the smallest independently stored unit:
+   - one field (typography, background, display, filters, position,
+     size constraints, media fit);
+   - one side field or corner (border, radius);
+   - one shadow field.
+2. Where the model stores a full record:
+   - Layout: write the model's documented defaults for the active mode.
+   - Flex item, Grid item: remove the record.
+   - Transition: the whole group.
+   - Width/Height: the size record (honest label), unless the model is
+     split.
+3. A reset that removes the last field collapses the group to undefined.
+   This already happens everywhere except spacing. It is what makes
+   group-level defaults (container border, radius, padding; button shadow;
+   link underline) come back.
+4. Structural or required settings are not resettable:
+   - Free-layout child geometry;
+   - Layout mode (flow/free);
+   - Display mode of a container with children laid out by it;
+   - the page root.
+5. One reset = one history entry (section 9).
+6. Reset never changes another property:
+   - R2 violates this;
+   - R7 is a visual consequence of the default layer, not a model change.
+
+Spacing exception (R1):
+- The model can't express "not set" separately from 0. Fixing it needs:
+  - optional edge values (or an `undefined` group meaning not set);
+  - the resolver emitting 0 when 0 is explicit;
+  - the Inspector showing computed values for unset sides.
+- This is a model change. Saved projects stay readable: existing numbers
+  stay numbers.
+- Whether an existing stored 0 means "explicit 0" or "not set" needs a
+  decision.
+  - Recommended: treat stored 0 as "not set", which preserves today's
+    rendering exactly.
+  - Only a newly typed 0 becomes explicit.
+- The schema/format impact needs approval (standing rule).
+
+
+7. RESPONSIVE SCOPE ANALYSIS
+----------------------------
+- There are no breakpoints, device modes or per-viewport styles in the
+  document model.
+- "Responsive Breakpoints" in the Project menu is a disabled placeholder
+  (applicationMenus.ts).
+- The only @media rule in Canvas or Export is the built-in legacy-body
+  padding (documentDefaultStyles "legacy-body", width >= 40rem). It isn't
+  authorable.
+- Scope for removal today: the element's single authored style set.
+- Future rule, documented for when breakpoints exist: reset at a
+  non-base breakpoint should remove that breakpoint's override only, so
+  the base value applies again. Keep the reset command scope-aware by
+  design (a `scope` argument defaulting to base), but don't build
+  breakpoints in BC-05.
+
+
+8. COMPOSITE/SHORTHAND RISKS
+----------------------------
+- Margin/Padding:
+  - group-level reset writes all four sides to 0;
+  - no per-side reset;
+  - 0 = unset (R1);
+  - legacy containers (no spacing group): after a padding edit and reset,
+    the spacing group remains, so the legacy p-8 default does not return.
+  - Low impact, because every new container stamps spacing.
+- Border:
+  - per-field, per-side reset is safe: the model only stores longhands;
+  - the resolver writes longhands;
+  - default container border yields to any authored border (R7).
+  - Resetting the last authored field returns the default (measured:
+    1px zinc → 4px dark → reset → 1px zinc).
+- Border radius:
+  - corner or all; same yield rule (container-radius/control-radius).
+- Background:
+  - colour, image, gradient and image sub-fields are independent;
+  - resetting the image keeps the colour.
+  - Gradient reset returns to "Color" source (withBackgroundGradientReset).
+- Box shadow:
+  - layered; per-layer field, geometry or colour resets stay within the
+    layer;
+  - "Reset shadow" removes the list, so the button default shadow
+    returns;
+  - all-disabled layers deliberately keep the default suppressed.
+- Transform:
+  - one transform CSS value from four fields;
+  - only whole-group reset today;
+  - per-field reset is safe (withTransformField + normalizeTransformSettings).
+- Size:
+  - width and height share one record (R2).
+- Flex item:
+  - removing the record ≠ writing defaults, because of resized shrink
+    handling (section 3).
+- Shorthand/longhand conflict (known lesson): resolvers already avoid
+  mixing shorthand and longhand. Reset must keep removing model fields,
+  never inline "longhand: unset".
+
+
+9. UNDO/REDO AND LIVE-EDIT RISKS
+--------------------------------
+Measured (Chromium, starter heading):
+- Plain reset: set 40 → Reset → Undo → 40 → Undo → 30. Redo ×2 → 30.
+  One entry per reset.
+- R3, reset during an active live edit:
+  - set 40, then type 55 in Font size (live preview 55);
+  - click Reset → 30.
+  - Undo → 55, Undo → 40, Undo → 30.
+  - The pointerdown on Reset blurs the field, which commits the draft
+    first as its own entry.
+  - Expected: the reset discards the open draft. One Undo should return to
+    the last committed value (40).
+- Escape still restores the last committed value (60 typed → Escape →
+  44), and the selection is kept. Unchanged from BC-01.
+- R4: after a keyboard reset, focus = <body> (the button becomes
+  disabled).
+
+Recommended behavior:
+- Reset cancels any open edit session for the same property (Escape
+  semantics), then commits the removal as one entry.
+- After reset, focus moves to the property's main control. This also
+  fixes R4.
+- A reset that changes nothing (already unset) pushes no history. This is
+  already guaranteed by commands returning the same root.
+- Composite reset (group or "all sides") = one entry. Undo restores every
+  part at once.
+
+Required tests:
+- Unit (store):
+  - reset = 1 entry;
+  - Undo restores the exact previous group (deep-equal);
+  - no-op reset = 0 entries.
+- Component:
+  - reset with a focused field and dirty draft → 1 entry, Undo → last
+    committed value;
+  - reset while a slider or colour transaction is open (begin without
+    commit) → no merge into the open transaction;
+  - focus after reset is on the property's control.
+- e2e (3 browsers + Electron):
+  - typed draft + Reset click;
+  - keyboard reset (Tab, Enter) keeps focus in the Inspector;
+  - Undo/Redo of a group reset restores all sides or corners together.
+
+
+10. PREVIEW/EXPORT PARITY FINDINGS
+----------------------------------
+- Export prints the same default-style declarations the Canvas applies,
+  as classes. Authored element rules follow at equal specificity, so
+  removing an authored value lets the default win in both places.
+- Export omits removed declarations, generates no fallback for them, and
+  adds no normalization beyond the Preflight base (exportBaseStylesheet)
+  and structural styles (Free host position: relative, flex/grid item
+  min-width/min-height 0, the grid item 100% fill).
+- Measured:
+  - set font size 40 → the Export contains "font-size: 40px";
+  - Reset → the whole Export Code output is byte-identical to the
+    untouched page;
+  - Preview computed font size = Design (30px).
+- Cases where removal changes layout noticeably (expected, explain them in
+  the UI):
+  - group-level defaults returning (container border, radius, padding;
+    button shadow; link underline);
+  - flex item record removal on a resized element (shrink → 0);
+  - size reset returning to the default (paragraph-prose max-width 65ch
+    returns once dimensions are removed).
+
+
+11. UX OPTIONS COMPARISON
+-------------------------
+| Option | Discoverability | Beginners | Density | Accessibility | Touch/keyboard | Consistency | Complexity | Scales |
+| ------ | --------------- | --------- | ------- | ------------- | -------------- | ----------- | ---------- | ------ |
+| A. Permanent per-row icon | high | clear | ~70 extra icons, cluttered | good | good | partly (the reset slot exists) | low | poor visually |
+| B. Context menu | low; hidden, power-user | poor | none | needs a full menu implementation and a keyboard entry point (Shift+F10) | weak on touch | no row menus exist today | high | good |
+| C. Conditional icon (when authored) — CURRENT | medium: appears exactly when meaningful, with the blue "set" dot | good once something is set | minimal | good, if focus is fixed (R4) | good: no hover dependency | already everywhere | done | good |
+| C + hover/focus | adds no information (nothing to reset) | — | — | — | hover-only cues are rejected | — | — | — |
+
+Recommendation: keep C (state-driven, not hover-driven), and add:
+- a uniform "set" dot on every resettable row (most rows already have one);
+- a short sentence in the section help or tooltip: "Changed values show a
+  reset button."
+- section-level reset only where the model stores a record (Layout, Flex
+  item, Grid item, Transition).
+Don't add a context menu in BC-05.
+
+
+12. RECOMMENDED RESET CONTROL DESIGN
+------------------------------------
+Keep InspectorResetButton: 24 px, RotateCcw, row reset slot.
+
+Exact wording:
+- Tooltip and accessible label: "Reset <property>". Existing pattern, e.g.
+  "Reset font size".
+- Section-level: "Reset layout", "Reset flex item", "Reset grid item".
+- Size (if not split): "Reset size". It replaces "Reset width"/"Reset
+  height", which wrongly imply one axis.
+- State text (existing PROPERTY_STATE_DESCRIPTIONS, plain language):
+  - set: "Explicitly set";
+  - unset: "Not set — using the default";
+  - inherited: "Inherited from a parent".
+- Unset value hint, new: computed values shown for unset properties are
+  placeholders, not authored values.
+  - Recommended wording in help: "Shows what the element uses now. Type
+    a value to set it."
+- Reset help, new, one sentence in the Inspector section description or
+  tooltip: "Reset removes your value, so the element goes back to its
+  default look or what it inherits from its parent."
+- Breakpoint wording, for the future only: "Reset this breakpoint's value.
+  The element then uses the value from larger screens."
+- Not resettable (structural): no button; help explains, e.g. Layout mode:
+  "Changes how children are placed; it has no default to return to."
+- Never label a computed value "default" or "set".
+
+
+13. ACCESSIBILITY CONSIDERATIONS
+--------------------------------
+- Keyboard:
+  - reset is a native button reachable by Tab when enabled; disabled
+    buttons are skipped (correct).
+  - R4: after activation, focus is lost to <body>. Fix: move focus to the
+    row's control.
+- Screen readers:
+  - aria-label "Reset <property>";
+  - the row's state is read via the sr-only state text.
+  - The disabled, invisible button stays in the accessibility tree as
+    "Reset X, dimmed". Acceptable, but rendering nothing when there's
+    nothing to reset would be quieter. Optional.
+- Tooltip: native title (mouse-only), redundant with the aria-label. The
+  Inspector help pattern (BC-04.2) could be reused if a visible tooltip is
+  wanted.
+- Touch target: 24×24 px. This meets WCAG 2.2 AA 2.5.8 (24 px).
+- Contrast:
+  - text-fg-muted icon, accent on hover;
+  - the focus-visible outline is the accent colour.
+- Reduced motion: colour transition only, no movement.
+- Compact widths: the reset slot reserves 24 px (invisible when disabled),
+  so rows don't shift when it appears (good). Verify at the 260 px minimum
+  when adding new section-level buttons.
+- No new ARIA is needed. Avoid aria-describedby duplication; the state
+  text already exists.
+
+
+14. MULTI-SELECTION STATUS
+--------------------------
+Supported (Checkpoint 1.15.x): InspectorMultiNodeSummary with Bulk sections.
+
+Measured with heading + paragraph selected, 11 sections: Typography,
+Background, Border, Border Radius, Size, Display, Position, Filters,
+Transition, Transform, Spacing.
+
+- "mixed" property state exists (amber dot); sharedValue.ts resolves
+  shared vs mixed.
+- Bulk reset exists only for Transform and Transition (whole group across
+  the selection, guarded by Style Protection as one atomic mutation).
+- Recommendation: per-property bulk reset is feasible:
+  - with*Field per node inside the existing guardedBulkStyleMutation;
+  - one history entry;
+  - "partial authored" (set on some nodes) → button enabled; reset
+    removes it where present.
+- Schedule it after single-selection is complete (BC-05.3). Don't redesign
+  multi-selection.
+
+
+15. TEST EVIDENCE AND COUNTS
+----------------------------
+Temporary probe e2e/zz-bc051-reset-probe.spec.ts (Chromium, deleted):
+6 tests, all ran.
+
+| Scenario | Measured |
+| -------- | -------- |
+| A, heading font size | unset field 30 / computed 30px / reset hidden; set 40 → Export contains 40px; Reset → field 30, Export identical to original; Undo → 40, Undo → 30, Redo ×2 → 30; Preview 30px |
+| B, live session | draft 55 + Reset → 30; Undo → 55 (R3), → 40, → 30; Escape restore OK |
+| C, button padding | unset field 0 vs rendered 8px/16px; typing 0 → still 8px/16px; 4 → 4px; Reset → 8px/16px; Reset disabled while default padding renders (R1) |
+| D, size | Width 300 (height field 36); "Reset height" → width empty, computed 466.5px (R2) |
+| D, section border | 1px zinc → width 4 → 4px near-black (R7) → Reset → 1px zinc |
+| E, save/reopen | font size 40 kept; line height reset kept (unset, reset hidden, computed 48px = 1.2×) |
+| F, keyboard reset | focus → BODY (R4); multi-selection reset buttons = ["Reset transition", "Reset transform"] (R6) |
+
+Existing tests (unchanged code):
+
+| Command | Result |
+| ------- | ------ |
+| npx vitest run --maxWorkers=4 src/features/inspector src/features/editor/commands src/features/editor/types src/features/canvas/utils | 152 files, 2284 passed, 0 failed |
+| npx playwright test e2e/inspector-*.spec.ts e2e/preview-export-parity.spec.ts e2e/export-visual-parity.spec.ts --project=chromium | 80 passed |
+| npx playwright test -c playwright.desktop.config.ts inspector-live-edit interaction-guidance (Electron, ELECTRON_RUN_AS_NODE stripped) | 2 passed |
+
+Notes:
+- The Electron build was made from the same code as HEAD (built during
+  BC-04.2, five minutes before its commit; no code changed since).
+- Firefox/WebKit were not run for this read-only investigation; reset
+  logic is model-level and browser-independent. BC-05.2 must run them.
+- No failures, so nothing to attribute to earlier checkpoints.
+
+
+16. DEFECT/RISK REGISTER
+------------------------
+R1, HIGH — Spacing can't express "not set" vs 0; the Inspector shows 0 for
+default padding. (confirmed defect)
+- Repro: select the starter "Primary Button" → Spacing shows Padding 0,
+  but it renders 8/16 px. Type 0 → no change. Reset hidden.
+- Root cause:
+  - EdgeValues are required numbers;
+  - elementPositionStyle emits nothing for 0;
+  - isSet = any non-zero;
+  - reset writes ZERO_EDGES.
+- Affected: spacing on every element with default padding (button,
+  text/controls, legacy containers).
+- Fix: optional edges (or explicit-zero support) + computed placeholders
+  + reset removes the group. Needs approval of the model change.
+- Tests: resolver emits padding 0 when explicit; reset removes;
+  old files render identically; e2e on a button.
+
+R2, MEDIUM — "Reset width"/"Reset height" clear both axes and offsets.
+(confirmed defect)
+- Repro: heading → Width 300 → "Reset height" → width back to auto.
+- Root cause: both call setElementDimensions(id, undefined); dimensions is
+  one record.
+- Fix: one honestly labelled "Reset size" (S), or split the axes (M,
+  model change).
+- Tests: each reset changes only what its label says.
+
+R3, MEDIUM — Reset during a live edit records the uncommitted draft first.
+(confirmed defect)
+- Repro: Font size 40 → type 55 (no Enter) → click Reset → Undo shows 55.
+- Root cause: the blur commit of useInspectorEditSession runs before the
+  reset click.
+- Affected: all live numeric and colour fields with an adjacent reset.
+- Fix: reset cancels the field's open session (as Escape does) before
+  removing.
+- Tests: section 9.
+
+R4, MEDIUM — Keyboard reset loses focus. (confirmed accessibility defect)
+- Repro: set a value → Tab to Reset → Enter → focus on <body>.
+- Root cause: the reset button becomes disabled (hidden) after
+  activation.
+- Affected: every InspectorResetButton (~70).
+- Fix: on reset, focus the row's primary control. Shared: InspectorResetButton
+  or InspectorPropertyRow.
+- Tests: component + e2e focus assertions.
+
+R5, MEDIUM — No reset for Layout, Flex item, Grid item; Transform is whole
+group only. (missing functionality)
+- Fix: section-level record resets (Layout defaults, remove
+  flexChild/gridChild); per-field transform reset.
+- Tests: resolver output after reset; layout parity Canvas/Export.
+
+R6, LOW–MEDIUM — Multi-selection lacks per-property reset. (missing
+functionality)
+- Fix: bulk reset per field via guardedBulkStyleMutation, one entry.
+
+R7, LOW — Any authored border or radius replaces the whole default border
+or radius. (UX risk, by design)
+- Repro: section → Border width 4 → colour changes from zinc-100 to
+  near-black.
+- Root cause: container-border yields to any node.border (documented
+  4.4/4.5 decision to avoid phantom shorthand sides).
+- Fix: UX only. When a default border exists, prefill the unset fields
+  from the default, or explain it ("Your border replaces the default
+  border"). Needs a design decision. Not a reset bug: reset restores the
+  default correctly.
+
+R8, LOW — Reset is only visible after a value is set. (UX)
+- Fix: wording and set-dot consistency (section 11). No permanent icons.
+
+
+17. RECOMMENDED IMPLEMENTATION CHECKPOINTS
+------------------------------------------
+BC-05.2 — Shared reset semantics and safety, no model change:
+- R3: reset cancels the open edit session, then removes, as one entry.
+- R4: focus moves to the row control after reset (shared component).
+- R2: honest "Reset size" (or the split, if approved later).
+- R5: reset for Flex item, Grid item and Layout (section level); per-field
+  Transform reset.
+- Wording (section 12).
+- Tests: store/history unit tests, component tests, e2e in 3 browsers +
+  Electron, Export parity.
+
+BC-05.3 — Spacing explicit-zero model (R1), only if the model change is
+approved:
+- optional edges, resolver, computed placeholders, group reset removes;
+- persistence and back-compat tests (old files render identically);
+- also the multi-selection bulk resets (R6), if desired.
+
+BC-05.4 — Final regression and parity audit; close BC-05.
+
+R7 is a separate UX decision. Don't bundle it.
+
+If spacing is not approved, BC-05.2 + BC-05.4 suffice.
+
+
+18. EXACT SOURCE FILES LIKELY TO CHANGE
+---------------------------------------
+BC-05.2:
+- src/features/inspector/components/InspectorResetButton.tsx (focus
+  target / callback)
+- src/features/inspector/components/InspectorPropertyRow.tsx (reset slot
+  focus wiring)
+- src/features/inspector/hooks/useInspectorEditSession.ts (cancel on
+  reset)
+- src/features/inspector/components/InspectorNumericValueControl.tsx and
+  InspectorColorFieldShell.tsx (session cancel)
+- src/features/inspector/components/InspectorSizeSection.tsx (R2)
+- src/features/inspector/components/InspectorFlexChildSection.tsx,
+  InspectorGridChildSection.tsx, InspectorLayoutSection.tsx (R5)
+- src/features/inspector/components/InspectorTransformSection.tsx (R5)
+- store actions/commands only if a record removal action is missing:
+  useEditorStore.ts, flowLayoutCommands.ts
+- tests beside each, plus new e2e (e.g. e2e/inspector-reset.spec.ts) and
+  an Electron spec.
+
+BC-05.3 (if approved):
+- src/features/editor/types/spacing.ts
+- src/features/canvas/utils/elementDimensionsStyle.ts
+- src/features/inspector/components/InspectorSpacingSection.tsx
+- InspectorBulkSpacingSection.tsx
+- editorDocumentSchema.ts
+- project fixtures and migration tests
+
+
+19. KNOWN LIMITATIONS
+---------------------
+- Probe ran in Chromium only. Electron coverage is the existing Inspector
+  specs.
+- The computed-value display was checked for typography and spacing only.
+  Other unset controls show empty or model values by design.
+- No user study. UX recommendations are expert analysis plus measured
+  behaviour.
+- The legacy-container spacing default issue (section 8) was reasoned from
+  code, not reproduced. Starter containers stamp spacing.
+- Windows 10, light theme only.
+
+
+20. GIT WORKING-TREE STATUS
+---------------------------
+HEAD fa1ddc7.
+- No product files modified.
+- The temporary probe was deleted.
+- New: this report (untracked); the changelog (gitignored).
+
+
+21. RECOMMENDATION FOR BC-05.2
+------------------------------
+Proceed with BC-05.2 as in section 17:
+- reset cancels open edits (R3);
+- keeps focus (R4);
+- honest size reset (R2);
+- record-level resets for Layout, Flex item and Grid item, plus per-field
+  Transform (R5);
+- clearer wording.
+All within the existing model and InspectorResetButton.
+
+Decide separately whether to approve the spacing model change (R1, HIGH)
+for BC-05.3. It is the only way to fix the misleading "Padding 0" and to
+allow an explicit zero.

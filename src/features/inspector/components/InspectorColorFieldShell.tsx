@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
 import { useInspectorEditSession } from "@/features/inspector/hooks/useInspectorEditSession";
 import { isValidCssColor } from "@/features/editor/utils/cssColor";
+import { resetScopeProps } from "@/features/inspector/utils/inspectorResetScope";
 
 interface InspectorColorFieldShellProps {
   /** A CSS color string (any valid syntax), or null when unset. */
@@ -188,7 +189,7 @@ export function InspectorColorFieldShell({
   const pickerLabel = `Choose ${label.toLowerCase()}`;
 
   return (
-    <div className="flex items-center gap-1">
+    <div {...resetScopeProps} className="flex items-center gap-1">
       <span className="relative inline-flex size-6 shrink-0">
         {isEditable ? (
           <>

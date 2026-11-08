@@ -293,7 +293,7 @@ export function InspectorBoxShadowSection({ node }: InspectorBoxShadowSectionPro
                 state={colorError ? "invalid" : selectedLayer.color ? "set" : "unset"}
                 error={colorError}
                 reset={
-                  <InspectorResetButton onReset={handleResetColor} disabled={!selectedLayer.color} label="Reset color" />
+                  <InspectorResetButton onReset={handleResetColor} disabled={!selectedLayer.color} label="Reset shadow color" />
                 }
               >
                 <InspectorColorFieldShell
@@ -307,7 +307,7 @@ export function InspectorBoxShadowSection({ node }: InspectorBoxShadowSectionPro
 
               <div className="flex items-center justify-between gap-2 text-xs">
                 <span className="text-zinc-500 dark:text-zinc-400">Geometry</span>
-                <InspectorResetButton onReset={handleResetGeometry} disabled={!hasGeometry} label="Reset geometry" />
+                <InspectorResetButton onReset={handleResetGeometry} disabled={!hasGeometry} label="Reset shadow offset, blur and spread" />
               </div>
 
               {GEOMETRY_FIELDS.map(({ field, label }) => {

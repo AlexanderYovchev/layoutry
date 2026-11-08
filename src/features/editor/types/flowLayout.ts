@@ -61,7 +61,7 @@ export interface GridChildSettings {
   rowSpan: number;
 }
 
-const DEFAULT_FLEX_SETTINGS: FlexContainerSettings = {
+export const DEFAULT_FLEX_SETTINGS: FlexContainerSettings = {
   direction: "row",
   wrap: "nowrap",
   justifyContent: "start",
@@ -70,7 +70,7 @@ const DEFAULT_FLEX_SETTINGS: FlexContainerSettings = {
   columnGap: 0,
 };
 
-const DEFAULT_GRID_SETTINGS: GridContainerSettings = {
+export const DEFAULT_GRID_SETTINGS: GridContainerSettings = {
   columns: 2,
   rows: "auto",
   rowGap: 16,
@@ -79,14 +79,14 @@ const DEFAULT_GRID_SETTINGS: GridContainerSettings = {
 
 const DEFAULT_FLOW_LAYOUT: FlowLayoutSettings = { display: "block" };
 
-const DEFAULT_FLEX_CHILD_SETTINGS: FlexChildSettings = {
+export const DEFAULT_FLEX_CHILD_SETTINGS: FlexChildSettings = {
   grow: 0,
   shrink: 1,
   basis: "auto",
   alignSelf: "auto",
 };
 
-const DEFAULT_GRID_CHILD_SETTINGS: GridChildSettings = {
+export const DEFAULT_GRID_CHILD_SETTINGS: GridChildSettings = {
   columnStart: "auto",
   columnSpan: 1,
   rowStart: "auto",

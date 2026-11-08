@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { InspectorHelpButton } from "@/features/inspector/components/InspectorHelpButton";
 import { InspectorPropertyStateDot } from "@/features/inspector/components/InspectorPropertyStateDot";
 import { isInactivePropertyState, type PropertyState } from "@/features/inspector/types/propertyState";
+import { resetScopeProps } from "@/features/inspector/utils/inspectorResetScope";
 
 interface InspectorPropertyRowProps {
   label: string;
@@ -75,7 +76,7 @@ export function InspectorPropertyRow({
   );
 
   return (
-    <div className={cn("flex flex-col gap-1", effectivelyDisabled && "pointer-events-none opacity-50")}>
+    <div {...resetScopeProps} className={cn("flex flex-col gap-1", effectivelyDisabled && "pointer-events-none opacity-50")}>
       {variant === "row" ? (
         <div className="flex items-center justify-between gap-2 text-xs">
           {labelRow}

@@ -228,7 +228,7 @@ describe("InspectorLayoutSection — Flow display: Block/Flex/Grid (Checkpoint 3
 
   it("changing the Columns preset dispatches setGridContainerSettings", () => {
     setup({ id: "section-1", tag: "section", flowLayout: { display: "grid" } });
-    const columnsRow = screen.getByText("Columns").closest("div")!;
+    const columnsRow = screen.getByText("Columns").closest<HTMLElement>("[data-inspector-reset-scope]")!;
     fireEvent.click(within(columnsRow).getByRole("button", { name: "3" }));
 
     const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
@@ -237,7 +237,7 @@ describe("InspectorLayoutSection — Flow display: Block/Flex/Grid (Checkpoint 3
 
   it("changing Rows to a numeric preset (not Auto) dispatches setGridContainerSettings", () => {
     setup({ id: "section-1", tag: "section", flowLayout: { display: "grid" } });
-    const rowsRow = screen.getByText("Rows").closest("div")!;
+    const rowsRow = screen.getByText("Rows").closest<HTMLElement>("[data-inspector-reset-scope]")!;
     fireEvent.click(within(rowsRow).getByRole("button", { name: "2" }));
 
     const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");

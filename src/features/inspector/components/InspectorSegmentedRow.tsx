@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { InspectorPropertyStateDot } from "@/features/inspector/components/InspectorPropertyStateDot";
 import type { PropertyState } from "@/features/inspector/types/propertyState";
+import { resetScopeProps } from "@/features/inspector/utils/inspectorResetScope";
 
 interface InspectorSegmentedRowProps {
   label: string;
@@ -62,6 +63,7 @@ export function InspectorSegmentedRow({
 
   return (
     <div
+      {...resetScopeProps}
       className={cn(
         "flex flex-wrap gap-x-2 text-xs",
         stacked
@@ -79,7 +81,7 @@ export function InspectorSegmentedRow({
           {state && <InspectorPropertyStateDot state={state} />}
           {help && (
             <Tooltip label={help}>
-              <button type="button" aria-label={help} className="rounded-full text-fg-muted transition-colors duration-150 hover:text-fg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+              <button type="button" data-inspector-help="" aria-label={help} className="rounded-full text-fg-muted transition-colors duration-150 hover:text-fg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
                 <HelpCircle aria-hidden="true" className="size-3" />
               </button>
             </Tooltip>

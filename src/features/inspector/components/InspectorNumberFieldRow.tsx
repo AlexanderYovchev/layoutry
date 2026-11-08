@@ -1,9 +1,12 @@
 "use client";
 
-import { useId, useRef, type KeyboardEvent } from "react";
+import { useId, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
+import { InspectorPropertyStateDot } from "@/features/inspector/components/InspectorPropertyStateDot";
 import { useInspectorEditSession } from "@/features/inspector/hooks/useInspectorEditSession";
+import type { PropertyState } from "@/features/inspector/types/propertyState";
+import { resetScopeProps } from "@/features/inspector/utils/inspectorResetScope";
 
 interface InspectorNumberFieldRowProps {
   label: string;
@@ -16,6 +19,10 @@ interface InspectorNumberFieldRowProps {
    * really delete rows. Callers opt in only for CSS properties.
    */
   live?: boolean;
+  /** Property-state dot next to the label (BC-05.2), as InspectorPropertyRow and InspectorSegmentedRow show it. */
+  state?: PropertyState;
+  /** Reset affordance after the field (BC-05.2) — typically an InspectorResetButton. */
+  reset?: ReactNode;
 }
 
 function formatDraft(value: number): string {
@@ -42,7 +49,7 @@ function parseFiniteNumber(draft: string): { value: number } | null {
  * hook carries forward (no double commit from Enter's own blur, no commit
  * without an edit), and optionally its live mode.
  */
-export function InspectorNumberFieldRow({ label, value, onCommit, live = false }: InspectorNumberFieldRowProps) {
+export function InspectorNumberFieldRow({ label, value, onCommit, live = false, state, reset }: InspectorNumberFieldRowProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const session = useInspectorEditSession<number>({
@@ -64,21 +71,43 @@ export function InspectorNumberFieldRow({ label, value, onCommit, live = false }
     }
   }
 
+  const labelElement = (
+    <label htmlFor={inputId} className="text-zinc-500 dark:text-zinc-400">
+      {label}
+    </label>
+  );
+  const inputElement = (
+    <input
+      ref={inputRef}
+      id={inputId}
+      type="number"
+      value={session.draft}
+      onChange={session.handleChange}
+      onBlur={session.handleBlur}
+      onKeyDown={handleKeyDown}
+      className={cn(inspectorFieldClassName, "min-w-16 px-2 text-right")}
+    />
+  );
+
   return (
-    <div className="flex items-center justify-between gap-2 text-xs">
-      <label htmlFor={inputId} className="text-zinc-500 dark:text-zinc-400">
-        {label}
-      </label>
-      <input
-        ref={inputRef}
-        id={inputId}
-        type="number"
-        value={session.draft}
-        onChange={session.handleChange}
-        onBlur={session.handleBlur}
-        onKeyDown={handleKeyDown}
-        className={cn(inspectorFieldClassName, "min-w-16 px-2 text-right")}
-      />
+    <div {...resetScopeProps} className="flex items-center justify-between gap-2 text-xs">
+      {/* The wrappers appear only with a state or reset, so rows without them keep their original structure. */}
+      {state ? (
+        <div className="flex min-w-0 items-center gap-1">
+          {labelElement}
+          <InspectorPropertyStateDot state={state} />
+        </div>
+      ) : (
+        labelElement
+      )}
+      {reset ? (
+        <div className="flex items-center gap-1">
+          {inputElement}
+          {reset}
+        </div>
+      ) : (
+        inputElement
+      )}
     </div>
   );
 }

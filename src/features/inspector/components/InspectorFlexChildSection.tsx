@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { InspectorNumberFieldRow } from "@/features/inspector/components/InspectorNumberFieldRow";
+import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { InspectorSegmentedRow } from "@/features/inspector/components/InspectorSegmentedRow";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
-import { getFlexChildSettings } from "@/features/editor/types/flowLayout";
+import { DEFAULT_FLEX_CHILD_SETTINGS, getFlexChildSettings } from "@/features/editor/types/flowLayout";
 import type { AlignSelf, FlexChildSettings } from "@/features/editor/types/flowLayout";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
@@ -59,22 +60,56 @@ export function InspectorFlexChildSection({ node }: InspectorFlexChildSectionPro
     setFlexChildSettings(node.id, { ...flexChild, ...patch });
   }
 
+  // BC-05.2 reset: a field is authored when the record exists and the field
+  // differs from the model default. Resetting writes the default back; once
+  // every field is at its default the record is removed, because an absent
+  // record is what the element had before any edit (a resized element only
+  // stops shrinking without one — see resolveFlexOrGridChildStyle).
+  const isAuthored = (field: keyof FlexChildSettings) => node.flexChild !== undefined && node.flexChild[field] !== DEFAULT_FLEX_CHILD_SETTINGS[field];
+  const stateOf = (field: keyof FlexChildSettings) => (isAuthored(field) ? "set" : "unset");
+
+  function resetField(field: keyof FlexChildSettings) {
+    const next: FlexChildSettings = { ...flexChild, [field]: DEFAULT_FLEX_CHILD_SETTINGS[field] };
+    const allDefault = (Object.keys(DEFAULT_FLEX_CHILD_SETTINGS) as (keyof FlexChildSettings)[]).every((key) => next[key] === DEFAULT_FLEX_CHILD_SETTINGS[key]);
+    if (field === "basis") setBasisFixed(false);
+    setFlexChildSettings(node.id, allDefault ? undefined : next);
+  }
+
+  function resetAll() {
+    setBasisFixed(false);
+    setFlexChildSettings(node.id, undefined);
+  }
+
+  const fieldReset = (field: keyof FlexChildSettings, label: string) => (
+    <InspectorResetButton onReset={() => resetField(field)} disabled={!isAuthored(field)} label={`Reset ${label}`} />
+  );
+
   return (
-    <InspectorSection label="Flex item" defaultOpen>
+    <InspectorSection
+      label="Flex item"
+      defaultOpen
+      actions={<InspectorResetButton onReset={resetAll} disabled={node.flexChild === undefined} label="Reset flex item" />}
+    >
       <InspectorNumberFieldRow
         live
         label="Grow"
+        state={stateOf("grow")}
+        reset={fieldReset("grow", "grow")}
         value={flexChild.grow}
         onCommit={(value) => commit({ grow: Math.max(0, value) })}
       />
       <InspectorNumberFieldRow
         live
         label="Shrink"
+        state={stateOf("shrink")}
+        reset={fieldReset("shrink", "shrink")}
         value={flexChild.shrink}
         onCommit={(value) => commit({ shrink: Math.max(0, value) })}
       />
       <InspectorSegmentedRow
         label="Basis"
+        state={stateOf("basis")}
+        reset={fieldReset("basis", "basis")}
         options={BASIS_MODE_OPTIONS}
         activeOption={basisFixed ? "Fixed" : "Auto"}
         onSelect={(option) => {
@@ -93,6 +128,8 @@ export function InspectorFlexChildSection({ node }: InspectorFlexChildSectionPro
       )}
       <InspectorSegmentedRow
         label="Align self"
+        state={stateOf("alignSelf")}
+        reset={fieldReset("alignSelf", "align self")}
         options={ALIGN_SELF_OPTIONS}
         activeOption={ALIGN_SELF_VALUE_TO_LABEL[flexChild.alignSelf]}
         onSelect={(option) => commit({ alignSelf: ALIGN_SELF_LABEL_TO_VALUE[option] })}

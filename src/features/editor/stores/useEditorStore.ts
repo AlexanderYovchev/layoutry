@@ -383,9 +383,10 @@ interface EditorState {
   setElementMargin: (nodeId: string, margin: EdgeValues) => void;
   /** The containment-critical one: re-normalizes a Free container's direct children into its new (padding-adjusted) content bounds in the same atomic write — see spacingCommands.setElementPadding. */
   setElementPadding: (nodeId: string, padding: EdgeValues) => void;
-  setFlexChildSettings: (nodeId: string, settings: FlexChildSettings) => void;
+  /** `undefined` removes the record (BC-05.2 "Reset flex item"). */
+  setFlexChildSettings: (nodeId: string, settings: FlexChildSettings | undefined) => void;
   /** Column/row start+span are clamped to the parent's current Grid track counts before being applied — see the implementation for why that happens here rather than in the pure command. */
-  setGridChildSettings: (nodeId: string, settings: GridChildSettings) => void;
+  setGridChildSettings: (nodeId: string, settings: GridChildSettings | undefined) => void;
   /** A node's own object-fit/object-position for intrinsic media (Checkpoint 3.5.1, restructured in Checkpoint 5.6 — see types/mediaFit.ts's own doc comment). `undefined` clears it entirely (see withMediaFitField/withMediaFitPosition/clearMediaFitPosition). */
   setMediaFitSettings: (nodeId: string, settings: MediaFitSettings | undefined) => void;
   /** A node's own text styling (Checkpoint 4.2) — see resolveTypographyStyle. `undefined` clears it entirely (see withTypographyField). */
@@ -1182,7 +1183,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
       const parent = parentId ? findNodeById(state.document, parentId) : undefined;
       const grid = parent ? getGridContainerSettings(parent) : undefined;
 
-      const clamped: GridChildSettings = grid ? clampGridChildPlacement(settings, grid) : settings;
+      const clamped: GridChildSettings | undefined = settings && grid ? clampGridChildPlacement(settings, grid) : settings;
 
       return guardedStyleMutation(state, nodeId, (document) => setGridChildSettingsCommand(document, nodeId, clamped));
     }),

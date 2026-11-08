@@ -3,6 +3,7 @@
 import { ChevronDown } from "lucide-react";
 import { useId, useState, type MouseEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { resetScopeProps } from "@/features/inspector/utils/inspectorResetScope";
 
 interface InspectorSectionProps {
   label: string;
@@ -54,7 +55,7 @@ export function InspectorSection({
   }
 
   return (
-    <div className="border-b border-line-subtle">
+    <div {...resetScopeProps} className="border-b border-line-subtle">
       {/* h3: nested beneath the Inspector's own h2 title. */}
       <h3 className="flex items-center">
         <button

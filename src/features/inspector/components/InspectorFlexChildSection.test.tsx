@@ -34,7 +34,7 @@ describe("InspectorFlexChildSection", () => {
 
     expect(screen.getByLabelText("Grow")).toHaveValue(0);
     expect(screen.getByLabelText("Shrink")).toHaveValue(1);
-    const basisRow = screen.getByText("Basis").closest("div")!;
+    const basisRow = screen.getByText("Basis").closest<HTMLElement>("[data-inspector-reset-scope]")!;
     expect(within(basisRow).getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByLabelText("Basis (px)")).not.toBeInTheDocument();
   });
@@ -72,7 +72,7 @@ describe("InspectorFlexChildSection", () => {
   it("switching Basis back to Auto clears the fixed value and hides the pixel field", () => {
     setup({ id: "heading-1", tag: "h1", flexChild: { grow: 0, shrink: 1, basis: 120, alignSelf: "auto" } });
 
-    const basisRow = screen.getByText("Basis").closest("div")!;
+    const basisRow = screen.getByText("Basis").closest<HTMLElement>("[data-inspector-reset-scope]")!;
     fireEvent.click(within(basisRow).getByRole("button", { name: "Auto" }));
 
     const node = useEditorStore.getState().document.children?.find((c) => c.id === "heading-1");
@@ -92,7 +92,7 @@ describe("InspectorFlexChildSection", () => {
   it("re-derives the Basis Fixed/Auto toggle when the selected node changes to a different sibling (regression: selection-change staleness, Checkpoint 3.5.1)", () => {
     const { rerender } = render(<InspectorFlexChildSection node={{ id: "a", tag: "h1" }} />);
 
-    let basisRow = screen.getByText("Basis").closest("div")!;
+    let basisRow = screen.getByText("Basis").closest<HTMLElement>("[data-inspector-reset-scope]")!;
     expect(within(basisRow).getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByLabelText("Basis (px)")).not.toBeInTheDocument();
 
@@ -102,7 +102,7 @@ describe("InspectorFlexChildSection", () => {
       />,
     );
 
-    basisRow = screen.getByText("Basis").closest("div")!;
+    basisRow = screen.getByText("Basis").closest<HTMLElement>("[data-inspector-reset-scope]")!;
     expect(within(basisRow).getByRole("button", { name: "Fixed" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByLabelText("Basis (px)")).toHaveValue(150);
   });
