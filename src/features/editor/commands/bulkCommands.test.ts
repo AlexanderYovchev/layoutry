@@ -319,7 +319,7 @@ describe("setElementsSpacingAllSides", () => {
     const document: EditorElementNode = {
       id: "root",
       tag: "page",
-      children: [{ id: "p-1", tag: "p", spacing: { margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 4, right: 4, bottom: 4, left: 4 } } }],
+      children: [{ id: "p-1", tag: "p", spacing: { padding: { top: 4, right: 4, bottom: 4, left: 4 } } }],
     };
     const result = setElementsSpacingAllSides(document, new Set(["p-1"]), "margin", 16);
     expect(result.children?.[0].spacing?.padding).toEqual({ top: 4, right: 4, bottom: 4, left: 4 });
@@ -441,5 +441,28 @@ describe("setElementsTransformField / setElementsTransform", () => {
     const document: EditorElementNode = { id: "p-1", tag: "p" };
     const result = setElementsTransform(document, new Set(["p-1"]), undefined);
     expect(result).toBe(document);
+  });
+});
+
+describe("setElementsSpacingAllSides — zero vs unset (BC-05.3)", () => {
+  const doc = (spacing?: EditorElementNode["spacing"]): EditorElementNode => ({
+    id: "root",
+    tag: "page",
+    children: [{ id: "p-1", tag: "p", spacing }],
+  });
+
+  it("writing 0 to an unset box authors 0 (unset is not 'already 0')", () => {
+    const result = setElementsSpacingAllSides(doc(), new Set(["p-1"]), "padding", 0);
+    expect(result.children?.[0].spacing).toEqual({ padding: { top: 0, right: 0, bottom: 0, left: 0 } });
+  });
+
+  it("is a no-op when every side is already an authored 0", () => {
+    const document = doc({ padding: { top: 0, right: 0, bottom: 0, left: 0 } });
+    expect(setElementsSpacingAllSides(document, new Set(["p-1"]), "padding", 0)).toBe(document);
+  });
+
+  it("completes a partly authored box", () => {
+    const result = setElementsSpacingAllSides(doc({ margin: { left: 0 } }), new Set(["p-1"]), "margin", 0);
+    expect(result.children?.[0].spacing?.margin).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
   });
 });

@@ -126,7 +126,7 @@ describe("elementPositionStyle — spacing (Checkpoint 3.5)", () => {
     const node: EditorElementNode = {
       id: "n1",
       tag: "div",
-      spacing: { margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 8, right: 16, bottom: 8, left: 16 } },
+      spacing: { padding: { top: 8, right: 16, bottom: 8, left: 16 } },
     };
     expect(elementPositionStyle(node, "flow")).toEqual({
       paddingTop: 8,
@@ -140,7 +140,7 @@ describe("elementPositionStyle — spacing (Checkpoint 3.5)", () => {
     const node: EditorElementNode = {
       id: "n1",
       tag: "div",
-      spacing: { margin: { top: 0, right: 12, bottom: 24, left: 0 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } },
+      spacing: { margin: { right: 12, bottom: 24 } },
     };
     expect(elementPositionStyle(node, "flow")).toEqual({ marginRight: 12, marginBottom: 24 });
   });
@@ -150,7 +150,7 @@ describe("elementPositionStyle — spacing (Checkpoint 3.5)", () => {
       id: "n1",
       tag: "div",
       dimensions: { preferredWidth: 200, preferredHeight: 100, offsetX: -40, offsetY: -10 },
-      spacing: { margin: { top: 5, right: 0, bottom: 0, left: 8 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } },
+      spacing: { margin: { top: 5, left: 8 } },
     };
     const style = elementPositionStyle(node, "flow");
     expect(style?.marginLeft).toBe(-32); // -40 (offsetX) + 8 (spacing.margin.left)
@@ -162,7 +162,7 @@ describe("elementPositionStyle — spacing (Checkpoint 3.5)", () => {
       id: "n1",
       tag: "div",
       freeLayout: { x: 16, y: 16, width: 100, height: 80 },
-      spacing: { margin: { top: 4, right: 0, bottom: 0, left: 4 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } },
+      spacing: { margin: { top: 4, left: 4 } },
     };
     const style = elementPositionStyle(node, "free");
     expect(style).toEqual({
@@ -176,8 +176,44 @@ describe("elementPositionStyle — spacing (Checkpoint 3.5)", () => {
     });
   });
 
-  it("returns undefined when neither geometry nor any non-zero spacing is present", () => {
+  it("returns undefined when neither geometry nor any authored spacing is present", () => {
     const node: EditorElementNode = { id: "n1", tag: "div" };
     expect(elementPositionStyle(node, "flow")).toBeUndefined();
+    expect(elementPositionStyle({ ...node, spacing: {} }, "flow")).toBeUndefined();
+  });
+});
+
+describe("elementPositionStyle — authored zero (BC-05.3)", () => {
+  it("writes an authored 0 padding as a real declaration", () => {
+    const node: EditorElementNode = { id: "b", tag: "button", spacing: { padding: { top: 0, right: 0, bottom: 0, left: 0 } } };
+    expect(elementPositionStyle(node, "flow")).toEqual({ paddingTop: 0, paddingRight: 0, paddingBottom: 0, paddingLeft: 0 });
+  });
+
+  it("writes only the authored sides, so unset sides keep their default", () => {
+    const node: EditorElementNode = { id: "b", tag: "button", spacing: { padding: { left: 0, top: 12 } } };
+    expect(elementPositionStyle(node, "flow")).toEqual({ paddingTop: 12, paddingLeft: 0 });
+  });
+
+  it("writes an authored 0 margin on every side, including the offset-composed left and top", () => {
+    const node: EditorElementNode = { id: "h", tag: "h1", spacing: { margin: { top: 0, right: 0, bottom: 0, left: 0 } } };
+    expect(elementPositionStyle(node, "flow")).toEqual({ marginTop: 0, marginRight: 0, marginBottom: 0, marginLeft: 0 });
+  });
+
+  it("composes an authored 0 margin with the resize-anchor offset", () => {
+    const node: EditorElementNode = {
+      id: "h",
+      tag: "h1",
+      dimensions: { preferredWidth: 200, preferredHeight: 100, offsetX: -40, offsetY: 0 },
+      spacing: { margin: { left: 0 } },
+    };
+    const style = elementPositionStyle(node, "flow");
+    expect(style?.marginLeft).toBe(-40);
+    expect(style).not.toHaveProperty("marginTop");
+  });
+
+  it("writes an authored 0 margin on a Free child", () => {
+    const node: EditorElementNode = { id: "n", tag: "div", freeLayout: { x: 1, y: 2, width: 3, height: 4 }, spacing: { margin: { top: 0 } } };
+    expect(elementPositionStyle(node, "free")).toMatchObject({ marginTop: 0 });
+    expect(elementPositionStyle(node, "free")).not.toHaveProperty("marginLeft");
   });
 });

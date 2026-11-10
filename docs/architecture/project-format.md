@@ -9,12 +9,12 @@ serves browser storage (PROJECT-1.2, see
 - **Code:** `src/features/project/`. Public API: `src/features/project/index.ts`.
 - **Document schema:** `src/features/editor/schemas/editorDocumentSchema.ts`.
 
-## Structure (format version 1)
+## Structure (format version 2)
 
 ```json
 {
   "format": "layoutry-project",
-  "formatVersion": 1,
+  "formatVersion": 2,
   "project": {
     "id": "0b7f1c2e-5c1a-4c8e-9a51-2f4d6f0d9e11",
     "name": "Untitled Project",
@@ -121,10 +121,17 @@ and that 100,000-level nested JSON is rejected without a stack overflow.
 
 ## Versioning and migration policy
 
-- `formatVersion` is an integer. Version 1 is current, and the only
-  version so far; its canonical bytes have been stable since PROJECT-1.1
-  (pinned by a file written by the PROJECT-1.1 code, see "Compatibility
-  fixtures" below).
+- `formatVersion` is an integer. Version 2 is current (BC-05.3). Version 1
+  (PROJECT-1.1 to BC-05.2) still opens through the migration below; its
+  canonical bytes were stable from PROJECT-1.1 until then (pinned by a
+  file written by the PROJECT-1.1 code, see "Compatibility fixtures").
+- **Format 2 vs 1:** the only difference is spacing. In format 1 every
+  `spacing.margin` and `spacing.padding` box had four required numbers,
+  and 0 meant "no declaration". In format 2 every side and both boxes are
+  optional: an absent side is unset, and 0 is an authored `margin: 0` or
+  `padding: 0`. The format 1 → 2 step removes every 0 side, then every
+  empty box, and keeps the `spacing` record itself, so old projects export
+  byte-for-byte the same HTML and CSS.
 - **Newer than this build:** refused with `unsupported-version`, and a
   message telling the user to update Layoutry. Loading it best-effort
   would silently drop its new fields on the next save.
@@ -132,7 +139,7 @@ and that 100,000-level nested JSON is rejected without a stack overflow.
 - **Older than this build:** upgraded by `migrateProjectFile`
   (`utils/projectFormatMigrations.ts`, PROJECT-1.5), one step at a time
   (v1 → v2 → …), each step a `FormatMigration` in
-  `PROJECT_FORMAT_MIGRATIONS`. The list is empty today.
+  `PROJECT_FORMAT_MIGRATIONS`. Today it has one step, 1 → 2 (BC-05.3).
 
 ### Migration contract
 
@@ -159,11 +166,12 @@ a failed migration leaves the file, library record or recovery record
 exactly as it was, and the open just reports the error.
 
 **Rollback.** Nothing is rewritten on load, so there is nothing to roll
-back. The original stays on disk until the user saves. A future format 2
-must decide one policy before shipping, because saving writes the new
-format, which older builds refuse ("made by a newer version"). The
-recommendation is that the first save of a migrated native file asks
-whether to update the file or use Save As to keep the old one.
+back. The original stays on disk until the user saves. Saving then writes
+format 2, which builds before BC-05.3 refuse ("made by a newer version")
+without changing the file. BC-05.3 ships that plain behavior: Save writes
+format 2 with no extra prompt. The earlier recommendation, that the first
+save of a migrated native file ask whether to update the file or use
+Save As to keep the old one, is still open as a product decision.
 
 ### Adding a version
 
@@ -203,10 +211,12 @@ checkpoints:
 
 - a PROJECT-1.1 `.layoutry` file with every element type;
 - PROJECT-1.2 library records;
-- PROJECT-1.4 browser and desktop recovery records.
+- PROJECT-1.4 browser and desktop recovery records;
+- a BC-05.3 format 2 file with authored and unset spacing zeros.
 
-Tests check that each still opens, unchanged and without rewriting
-anything. See that folder's README. Never regenerate a fixture; add a new
+Tests check that each still opens without rewriting anything. Format 1
+files are migrated in memory; the format 2 file re-saves to the same
+bytes. See that folder's README. Never regenerate a fixture; add a new
 one.
 
 ## Applying a loaded project (restoration contract)

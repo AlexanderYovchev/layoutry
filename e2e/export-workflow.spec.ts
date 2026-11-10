@@ -372,7 +372,7 @@ test("handles a large document: bounded preview, complete downloads, responsive 
       tag: "p",
       text: `Paragraph ${index}`,
       typography: { color: "#334155", fontSize: { value: 14 + (index % 5), unit: "px" } },
-      spacing: { margin: { top: 4, right: 0, bottom: 4, left: 0 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } },
+      spacing: { margin: { top: 4, bottom: 4 } },
     });
   const large: EditorElementNode = { id: "page-root", tag: "page", children };
   await importDocument(page, large);

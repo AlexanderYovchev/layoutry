@@ -42,7 +42,6 @@ import type { EditorElementNode } from "@/features/editor/types/document";
 import type { FlexContainerSettings } from "@/features/editor/types/flowLayout";
 import type { PositionSettings } from "@/features/editor/types/position";
 import type { ElementSpacing } from "@/features/editor/types/spacing";
-import { ZERO_EDGES } from "@/features/editor/types/spacing";
 import type { TypographySettings } from "@/features/editor/types/typography";
 
 interface AlertPalette {
@@ -62,7 +61,7 @@ const ALERT_ROOT_FLEX: FlexContainerSettings = {
   columnGap: 4,
 };
 
-const ALERT_PADDING: ElementSpacing = { margin: ZERO_EDGES, padding: { top: 16, right: 16, bottom: 16, left: 16 } };
+const ALERT_PADDING: ElementSpacing = { padding: { top: 16, right: 16, bottom: 16, left: 16 } };
 
 const ALERT_RADIUS: BorderRadiusSettings = {
   topLeft: { value: 8, unit: "px" },
@@ -164,7 +163,7 @@ export function createDismissibleAlertNode(): EditorElementNode {
     tag: "div",
     flowLayout: { display: "flex", flex: { ...ALERT_ROOT_FLEX, alignItems: "start" } },
     flexChild: { grow: 1, shrink: 1, basis: "auto", alignSelf: "auto" },
-    spacing: { margin: ZERO_EDGES, padding: ZERO_EDGES },
+    spacing: {},
     children: [alertTitle("Information", INFO_PALETTE.titleColor), alertBody("Here is some helpful information.")],
   };
 
@@ -256,14 +255,14 @@ export function createManualToastNode(): EditorElementNode {
     border: alertBorder("#e4e4e7"),
     borderRadius: ALERT_RADIUS,
     boxShadow: applyShadowPreset("floatingCard"),
-    spacing: { margin: ZERO_EDGES, padding: { top: 16, right: 16, bottom: 16, left: 16 } },
+    spacing: { padding: { top: 16, right: 16, bottom: 16, left: 16 } },
     position: TOAST_POSITION,
     children: [
       {
         id: generateNodeId("div"),
         tag: "div",
         flowLayout: { display: "flex", flex: TOAST_CONTENT_FLEX },
-        spacing: { margin: ZERO_EDGES, padding: ZERO_EDGES },
+        spacing: {},
         children: [
           { id: generateNodeId("h3"), tag: "h3", text: "Notice", typography: { fontSize: { value: 15, unit: "px" }, fontWeight: 600, color: "#18181b" } },
           alertBody("This is a manually dismissed toast message."),
@@ -332,7 +331,7 @@ export function createPopoverNode(): EditorElementNode {
     border: alertBorder("#e4e4e7"),
     borderRadius: ALERT_RADIUS,
     boxShadow: applyShadowPreset("medium"),
-    spacing: { margin: ZERO_EDGES, padding: { top: 16, right: 16, bottom: 16, left: 16 } },
+    spacing: { padding: { top: 16, right: 16, bottom: 16, left: 16 } },
     children: [
       { id: generateNodeId("h3"), tag: "h3", text: "Popover Title", typography: { fontSize: { value: 15, unit: "px" }, fontWeight: 600, color: "#18181b" } },
       alertBody("Popover content goes here."),

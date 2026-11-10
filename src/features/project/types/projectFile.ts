@@ -7,7 +7,7 @@ import type { EditorElementNode } from "@/features/editor/types/document";
  */
 
 export const PROJECT_FILE_FORMAT = "layoutry-project";
-export const CURRENT_PROJECT_FORMAT_VERSION = 1;
+export const CURRENT_PROJECT_FORMAT_VERSION = 2;
 export const PROJECT_FILE_EXTENSION = ".layoutry";
 export const PROJECT_FILE_MEDIA_TYPE = "application/vnd.layoutry.project+json";
 export const DEFAULT_PROJECT_NAME = "Untitled Project";

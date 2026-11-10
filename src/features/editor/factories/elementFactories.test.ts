@@ -61,11 +61,10 @@ describe("element factories", () => {
     expect(node.id).toMatch(/^div-/);
   });
 
-  it("createContainerNode defaults to Block display with 16px padding and zero margin (Checkpoint 3.5)", () => {
+  it("createContainerNode defaults to Block display with 16px padding and unset margin (Checkpoint 3.5, BC-05.3)", () => {
     const node = createContainerNode();
     expect(node.flowLayout).toEqual({ display: "block" });
     expect(node.spacing).toEqual({
-      margin: { top: 0, right: 0, bottom: 0, left: 0 },
       padding: { top: 16, right: 16, bottom: 16, left: 16 },
     });
   });

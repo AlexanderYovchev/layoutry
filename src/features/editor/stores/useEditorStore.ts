@@ -380,9 +380,9 @@ interface EditorState {
   /** Live (no-history) counterpart of setGridContainerSettings — same reasoning as setFlexContainerSettingsLive. */
   setGridContainerSettingsLive: (containerId: string, settings: GridContainerSettings) => void;
   /** Margin never affects Free content bounds — a plain field set, no side effects. */
-  setElementMargin: (nodeId: string, margin: EdgeValues) => void;
+  setElementMargin: (nodeId: string, margin: EdgeValues | undefined) => void;
   /** The containment-critical one: re-normalizes a Free container's direct children into its new (padding-adjusted) content bounds in the same atomic write — see spacingCommands.setElementPadding. */
-  setElementPadding: (nodeId: string, padding: EdgeValues) => void;
+  setElementPadding: (nodeId: string, padding: EdgeValues | undefined) => void;
   /** `undefined` removes the record (BC-05.2 "Reset flex item"). */
   setFlexChildSettings: (nodeId: string, settings: FlexChildSettings | undefined) => void;
   /** Column/row start+span are clamped to the parent's current Grid track counts before being applied — see the implementation for why that happens here rather than in the pure command. */

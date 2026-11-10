@@ -59,7 +59,7 @@ describe("loading a project into the editor", () => {
     [
       "a newer format",
       serializeProject({ metadata, document: pageWith() }).replace(
-        '"formatVersion": 1',
+        '"formatVersion": 2',
         '"formatVersion": 99',
       ),
     ],

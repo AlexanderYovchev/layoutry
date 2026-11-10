@@ -7,10 +7,10 @@ import {
 } from "@/features/project/utils/projectFormatMigrations";
 
 /**
- * PROJECT-1.5 migration harness. The real chain is empty (format 1 is the
- * only format); these tests run the dispatcher with synthetic versions to
- * pin the contract every future migration will rely on. No v2 field is
- * invented here — the synthetic files are plain objects.
+ * PROJECT-1.5 migration harness: these tests run the dispatcher with
+ * synthetic versions to pin the contract every migration relies on (the
+ * synthetic files are plain objects). The real format 1 → 2 step
+ * (BC-05.3) is tested at the end.
  */
 
 const v1to2: FormatMigration = {
@@ -32,10 +32,10 @@ const chain = {
 };
 
 describe("migrateProjectFile", () => {
-  it("passes a current-format file through untouched (the only real case today)", () => {
-    const file = { format: "layoutry-project", formatVersion: 1, x: 1 };
-    expect(CURRENT_PROJECT_FORMAT_VERSION).toBe(1);
-    expect(PROJECT_FORMAT_MIGRATIONS).toEqual([]);
+  it("passes a current-format file through untouched", () => {
+    const file = { format: "layoutry-project", formatVersion: 2, x: 1 };
+    expect(CURRENT_PROJECT_FORMAT_VERSION).toBe(2);
+    expect(PROJECT_FORMAT_MIGRATIONS.map((step) => step.from)).toEqual([1]);
     expect(migrateProjectFile(file)).toEqual({ ok: true, value: file });
   });
 
@@ -142,4 +142,148 @@ describe("migrateProjectFile", () => {
       if (!result.ok) expect(result.error.code).toBe("not-a-project");
     },
   );
+});
+
+describe("format 1 → 2: spacing zeros become unset (BC-05.3)", () => {
+  function v1(document: Record<string, unknown>) {
+    return {
+      format: "layoutry-project",
+      formatVersion: 1,
+      project: { id: "p" },
+      document,
+    };
+  }
+  function migrated(document: Record<string, unknown>) {
+    const result = migrateProjectFile(v1(document));
+    if (!result.ok) throw new Error(result.error.message);
+    return result.value as {
+      formatVersion: number;
+      document: Record<string, unknown>;
+    };
+  }
+
+  it("drops zero sides, keeps non-zero sides exactly, and sets format 2", () => {
+    const result = migrated({
+      id: "page-root",
+      tag: "page",
+      children: [
+        {
+          id: "b",
+          tag: "button",
+          spacing: {
+            margin: { top: 0, right: 0, bottom: 0, left: 0 },
+            padding: { top: 0, right: 12, bottom: 0, left: 4.5 },
+          },
+        },
+      ],
+    });
+    expect(result.formatVersion).toBe(2);
+    expect(result.document).toEqual({
+      id: "page-root",
+      tag: "page",
+      children: [
+        {
+          id: "b",
+          tag: "button",
+          spacing: { padding: { right: 12, left: 4.5 } },
+        },
+      ],
+    });
+  });
+
+  it("keeps an all-zero spacing record as an empty record (it switched the container default padding off)", () => {
+    const result = migrated({
+      id: "page-root",
+      tag: "page",
+      children: [
+        {
+          id: "c",
+          tag: "div",
+          spacing: {
+            margin: { top: 0, right: 0, bottom: 0, left: 0 },
+            padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          },
+        },
+      ],
+    });
+    expect((result.document.children as Record<string, unknown>[])[0]).toEqual({
+      id: "c",
+      tag: "div",
+      spacing: {},
+    });
+  });
+
+  it("reaches nodes at every depth and leaves nodes without spacing alone", () => {
+    const deep = {
+      id: "d",
+      tag: "p",
+      spacing: {
+        margin: { top: 0, right: 0, bottom: 8, left: 0 },
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      },
+    };
+    const result = migrated({
+      id: "page-root",
+      tag: "page",
+      children: [
+        {
+          id: "a",
+          tag: "div",
+          children: [{ id: "b", tag: "section", children: [deep] }],
+        },
+        { id: "e", tag: "h1" },
+      ],
+    });
+    const [outer, plain] = result.document.children as Record<
+      string,
+      unknown
+    >[];
+    const inner = (outer.children as Record<string, unknown>[])[0];
+    expect((inner.children as Record<string, unknown>[])[0]).toEqual({
+      id: "d",
+      tag: "p",
+      spacing: { margin: { bottom: 8 } },
+    });
+    expect(outer).not.toHaveProperty("spacing");
+    expect(plain).toEqual({ id: "e", tag: "h1" });
+  });
+
+  it("leaves malformed spacing for the schema to reject rather than guessing", () => {
+    const result = migrated({
+      id: "page-root",
+      tag: "page",
+      children: [
+        {
+          id: "x",
+          tag: "div",
+          spacing: { margin: "wide", padding: { top: "0" } },
+        },
+      ],
+    });
+    expect((result.document.children as Record<string, unknown>[])[0]).toEqual({
+      id: "x",
+      tag: "div",
+      spacing: { margin: "wide", padding: { top: "0" } },
+    });
+  });
+
+  it("never modifies the caller's object", () => {
+    const original = v1({
+      id: "page-root",
+      tag: "page",
+      children: [
+        {
+          id: "b",
+          tag: "button",
+          spacing: {
+            margin: { top: 0, right: 0, bottom: 0, left: 0 },
+            padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          },
+        },
+      ],
+    });
+    const snapshot = structuredClone(original);
+    migrateProjectFile(original);
+    expect(original).toEqual(snapshot);
+  });
 });

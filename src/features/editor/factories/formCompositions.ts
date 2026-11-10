@@ -52,7 +52,6 @@ import type { BorderSettings } from "@/features/editor/types/border";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { FlexContainerSettings } from "@/features/editor/types/flowLayout";
 import type { ElementSpacing } from "@/features/editor/types/spacing";
-import { ZERO_EDGES } from "@/features/editor/types/spacing";
 import type { TypographySettings } from "@/features/editor/types/typography";
 
 const FIELD_LABEL_TYPOGRAPHY: TypographySettings = { fontSize: { value: 13, unit: "px" }, fontWeight: 600, color: "#3f3f46" };
@@ -143,7 +142,7 @@ function inlineFormRoot(children: EditorElementNode[]): EditorElementNode {
     id: generateNodeId("form"),
     tag: "form",
     flowLayout: { display: "flex", flex: INLINE_FORM_ROW_FLEX },
-    spacing: { margin: ZERO_EDGES, padding: ZERO_EDGES },
+    spacing: {},
     children,
   };
 }
@@ -212,7 +211,7 @@ const FORM_CARD_RADIUS: BorderRadiusSettings = {
   bottomRight: { value: 8, unit: "px" },
   bottomLeft: { value: 8, unit: "px" },
 };
-const FORM_CARD_PADDING: ElementSpacing = { margin: ZERO_EDGES, padding: { top: 24, right: 24, bottom: 24, left: 24 } };
+const FORM_CARD_PADDING: ElementSpacing = { padding: { top: 24, right: 24, bottom: 24, left: 24 } };
 const FORM_COLUMN_FLEX: FlexContainerSettings = { direction: "column", wrap: "nowrap", justifyContent: "start", alignItems: "stretch", rowGap: 16, columnGap: 16 };
 
 /** A fresh shadow layer list per Form instance (never a shared module constant) — same "every node's own nested ids stay fresh" reasoning cardCompositions.ts's own cardShadow already documented. */

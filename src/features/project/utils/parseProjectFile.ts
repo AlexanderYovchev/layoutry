@@ -3,7 +3,7 @@ import {
   DEFAULT_PROJECT_LIMITS,
   type ProjectLimits,
 } from "@/features/project/rules/projectLimits";
-import { projectFileV1Schema } from "@/features/project/schemas/projectFileSchema";
+import { projectFileV2Schema } from "@/features/project/schemas/projectFileSchema";
 import {
   PROJECT_FILE_FORMAT,
   type ProjectLoadError,
@@ -67,7 +67,7 @@ export function parseProjectFile(
   const migrated = migrateProjectFile(raw);
   if (!migrated.ok) return fail(migrated.error);
 
-  const parsed = projectFileV1Schema.safeParse(migrated.value);
+  const parsed = projectFileV2Schema.safeParse(migrated.value);
   if (!parsed.success) return fail(describeSchemaError(parsed.error));
 
   const integrityError = checkDocumentIntegrity(parsed.data.document, limits);

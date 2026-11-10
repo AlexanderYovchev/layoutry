@@ -18,7 +18,18 @@ describe("setElementMargin", () => {
     const result = setElementMargin(root, "container-1", { top: 10, right: 20, bottom: 10, left: 20 });
     const node = result.children?.find((c) => c.id === "container-1");
     expect(node?.spacing?.margin).toEqual({ top: 10, right: 20, bottom: 10, left: 20 });
-    expect(node?.spacing?.padding).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
+    expect(node?.spacing?.padding).toBeUndefined();
+  });
+
+  it("stores an authored 0 and only the sides given (BC-05.3)", () => {
+    const result = setElementMargin(tree(), "container-1", { left: 0 });
+    expect(result.children?.[0].spacing).toEqual({ margin: { left: 0 } });
+  });
+
+  it("undefined removes the box but keeps the spacing record (Reset)", () => {
+    const withMargin = setElementMargin(tree(), "container-1", { top: 0 });
+    const result = setElementMargin(withMargin, "container-1", undefined);
+    expect(result.children?.[0].spacing).toEqual({});
   });
 
   it("preserves existing padding when only margin changes", () => {

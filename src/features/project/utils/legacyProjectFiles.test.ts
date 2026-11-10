@@ -18,8 +18,28 @@ function fixture(name: string): Buffer {
   );
 }
 
+/** The format 1 → 2 rule, written independently of the migration: drop spacing sides that are 0, then empty boxes. */
+function stripSpacingZeros(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripSpacingZeros);
+  if (typeof value !== "object" || value === null) return value;
+  const entries = Object.entries(value).map(
+    ([key, child]): [string, unknown] => {
+      if (key !== "spacing" || typeof child !== "object" || child === null)
+        return [key, stripSpacingZeros(child)];
+      const boxes = Object.entries(child).flatMap(([box, edges]) => {
+        const kept = Object.entries(edges as Record<string, unknown>).filter(
+          ([, side]) => side !== 0,
+        );
+        return kept.length > 0 ? [[box, Object.fromEntries(kept)]] : [];
+      });
+      return [key, Object.fromEntries(boxes)];
+    },
+  );
+  return Object.fromEntries(entries);
+}
+
 describe("project files from earlier checkpoints", () => {
-  it("opens the PROJECT-1.1 file with every element type, unchanged", () => {
+  it("opens the PROJECT-1.1 file with every element type", () => {
     const text = fixture("project-1.1-every-element.layoutry").toString("utf8");
     const result = parseProjectFile(text);
     expect(result.ok).toBe(true);
@@ -31,8 +51,37 @@ describe("project files from earlier checkpoints", () => {
       updatedAt: "2026-10-26T12:00:00.000Z",
     });
     expect(result.project.document.children?.length).toBeGreaterThan(10);
-    // Canonical serialization is stable across checkpoints: saving it
-    // again without changes produces the very same bytes.
+  });
+
+  it("migrates the PROJECT-1.1 file to format 2, changing nothing but its spacing zeros (BC-05.3)", () => {
+    const text = fixture("project-1.1-every-element.layoutry").toString("utf8");
+    const result = parseProjectFile(text);
+    if (!result.ok) throw new Error(result.error.message);
+    const saved: unknown = JSON.parse(serializeProject(result.project));
+    const original: unknown = JSON.parse(text);
+
+    // Saving writes format 2. Removing every spacing side that was 0 (and
+    // any box left empty) from the original gives exactly the saved file:
+    // nothing else was touched, and every non-zero side survived.
+    expect(saved).toEqual(
+      Object.assign({}, stripSpacingZeros(original), { formatVersion: 2 }),
+    );
+    expect(JSON.stringify(original)).toMatch(/"padding":\{"bottom":0/);
+    expect(JSON.stringify(saved)).not.toMatch(
+      /"(top|right|bottom|left)":0[,}]/,
+    );
+  });
+
+  it("re-saves a format 2 file to the very same bytes (BC-05.3 fixture, authored zeros included)", () => {
+    const text = fixture("project-2-spacing-zero.layoutry").toString("utf8");
+    const result = parseProjectFile(text);
+    if (!result.ok) throw new Error(result.error.message);
+    const button = result.project.document.children?.find(
+      (node) => node.id === "zero-button",
+    );
+    expect(button?.spacing).toEqual({
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    });
     expect(serializeProject(result.project)).toBe(text);
   });
 

@@ -83,6 +83,7 @@ export function InspectorNumberFieldRow({ label, value, onCommit, live = false, 
       type="number"
       value={session.draft}
       onChange={session.handleChange}
+      onInput={session.handleInput}
       onBlur={session.handleBlur}
       onKeyDown={handleKeyDown}
       className={cn(inspectorFieldClassName, "min-w-16 px-2 text-right")}

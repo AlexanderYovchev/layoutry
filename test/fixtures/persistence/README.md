@@ -1,7 +1,9 @@
 # Frozen persistence fixtures (PROJECT-1.5)
 
 Byte-exact data as earlier Layoutry checkpoints wrote it. Tests check
-that every later build still opens it, without migrating or rewriting it.
+that every later build still opens it, without rewriting the file. Format 1
+files are migrated to format 2 in memory on open (BC-05.3); a format 2
+file re-saves to the very same bytes.
 Never regenerate or reformat these files: a change that breaks them is
 a compatibility break. Add a new fixture instead. `.gitattributes` turns
 off line-ending conversion here, because sizes and SHA-256 hashes are part
@@ -14,6 +16,7 @@ of the data.
 | `indexeddb-library-1.2.json` | PROJECT-1.2 repository (`0fcafaf`, unchanged since) | raw `summaries`/`documents` object stores of `layoutry-projects` v1, dumped after a real `repository.write` |
 | `indexeddb-recovery-1.4.json` | PROJECT-1.4 browser recovery storage (`5489ae3`) | raw `summaries`/`texts` stores of `layoutry-recovery` v1, dumped after a real snapshot write |
 | `22222222222222222222222222222222-4.layoutry-recovery` | PROJECT-1.4 desktop recovery store (`5489ae3`) | a real `createRecoveryStore().write` (header line + project text) |
+| `project-2-spacing-zero.layoutry` | BC-05.3 (format 2) | `serializeProject` in a throwaway test: authored zero padding/margin, mixed sides, an unset button and an empty spacing record |
 
 Tests: `src/features/project/utils/legacyProjectFiles.test.ts`,
 `src/features/project/storage/legacyStorageRecords.test.ts`,

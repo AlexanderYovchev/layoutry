@@ -45,6 +45,11 @@ test.describe("live updates across elements (Spacing: padding)", () => {
       await gotoApp(page);
       await selectOnCanvas(page, id);
       const original = await computed(page, id, "padding-top");
+      // BC-05.3: an unset padding shows what the element renders. The
+      // button's own 8px / 16px differs per side, so Padding opens
+      // unlinked; link it to reach the all-sides field.
+      if (id === "button-1")
+        await page.getByRole("button", { name: "Unlinked", exact: true }).click();
       const field = await replaceText(page, "Padding (all sides)", "33");
 
       await expect.poll(() => computed(page, id, "padding-top")).toBe("33px");

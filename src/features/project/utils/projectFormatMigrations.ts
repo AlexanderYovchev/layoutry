@@ -21,11 +21,55 @@ export interface FormatMigration {
   migrate: (file: Record<string, unknown>) => Record<string, unknown>;
 }
 
+const SPACING_SIDES = ["top", "right", "bottom", "left"] as const;
+
 /**
- * Every migration this build knows, oldest first. Empty: format 1 is the
- * only format so far. Format 2 will add `{ from: 1, migrate }` here.
+ * Format 1 → 2 (BC-05.3): spacing zeros become unset sides.
+ *
+ * Format 1 stored margin and padding as four required numbers and wrote
+ * no CSS for a 0, so a 0 there always meant "no declaration": a button
+ * with padding 0 still rendered its own default padding. Format 2 makes
+ * every side optional and treats 0 as an authored declaration. Reading a
+ * format 1 zero as authored would therefore change how old projects look
+ * (that button would lose its padding), so this step removes every zero
+ * side, and then every box left with no side. Non-zero sides are kept
+ * exactly. The spacing record itself is always kept, even when empty,
+ * because its presence is what switched off the pre-3.5 container default
+ * padding in format 1 and still does in format 2 (elementStyleRecipes).
+ * The result renders byte-for-byte the same CSS as before.
+ *
+ * Only plain-object `spacing.margin` / `spacing.padding` boxes with a
+ * numeric 0 are touched; anything malformed is left for the format 2
+ * schema to reject, as the migration contract requires. Iterative, so
+ * nesting depth (already bounded by the structure scan) never matters.
  */
-export const PROJECT_FORMAT_MIGRATIONS: readonly FormatMigration[] = [];
+function migrateSpacingZerosToUnset(
+  file: Record<string, unknown>,
+): Record<string, unknown> {
+  const pending: unknown[] = [file.document];
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (!isPlainObject(node)) continue;
+    const spacing = node.spacing;
+    if (isPlainObject(spacing)) {
+      for (const box of ["margin", "padding"] as const) {
+        const edges = spacing[box];
+        if (!isPlainObject(edges)) continue;
+        for (const side of SPACING_SIDES) {
+          if (edges[side] === 0) delete edges[side];
+        }
+        if (Object.keys(edges).length === 0) delete spacing[box];
+      }
+    }
+    if (Array.isArray(node.children)) pending.push(...node.children);
+  }
+  return { ...file, formatVersion: 2 };
+}
+
+/** Every migration this build knows, oldest first. */
+export const PROJECT_FORMAT_MIGRATIONS: readonly FormatMigration[] = [
+  { from: 1, migrate: migrateSpacingZerosToUnset },
+];
 
 /** The oldest format this build still opens. */
 export const OLDEST_SUPPORTED_FORMAT_VERSION = 1;

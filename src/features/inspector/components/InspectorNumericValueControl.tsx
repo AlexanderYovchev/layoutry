@@ -155,6 +155,7 @@ export function InspectorNumericValueControl({
         placeholder={value === "auto" && keywordPlaceholder ? keywordPlaceholder : allowAuto ? "Auto" : undefined}
         disabled={disabled}
         onChange={session.handleChange}
+        onInput={session.handleInput}
         onBlur={session.handleBlur}
         onKeyDown={handleKeyDown}
         className={cn(inspectorFieldClassName, "min-w-14 px-2 text-right")}

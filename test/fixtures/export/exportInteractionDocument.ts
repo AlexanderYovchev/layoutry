@@ -37,7 +37,7 @@ export function interactionFixture(): InteractionFixture {
   children(children(children(modals[1])[1])[0]).push(nestedDropdown);
   const drawer = createElementNode("drawer");
   const popover = createElementNode("popover");
-  const popoverContainer: EditorElementNode = { id: "popover-container", tag: "div", flowLayout: { display: "block" }, spacing: { margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 12, right: 12, bottom: 12, left: 12 } }, children: [popover] };
+  const popoverContainer: EditorElementNode = { id: "popover-container", tag: "div", flowLayout: { display: "block" }, spacing: { padding: { top: 12, right: 12, bottom: 12, left: 12 } }, children: [popover] };
   const toasts = [createElementNode("manualToast"), createElementNode("manualToast")];
   const alerts = [createElementNode("dismissibleAlert"), createElementNode("dismissibleAlert")];
   const dialog = createElementNode("dialog");

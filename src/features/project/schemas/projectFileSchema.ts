@@ -29,8 +29,8 @@ export const projectMetadataSchema = z.strictObject({
   updatedAt: z.iso.datetime({ message: "timestamps must be ISO 8601 UTC" }),
 });
 
-/** Version 1 envelope. A new format version gets its own schema. */
-export const projectFileV1Schema = z.strictObject({
+/** Version 2 envelope (BC-05.3: optional spacing sides). A new format version gets its own schema. */
+export const projectFileV2Schema = z.strictObject({
   format: z.literal(PROJECT_FILE_FORMAT),
   formatVersion: z.literal(CURRENT_PROJECT_FORMAT_VERSION),
   project: projectMetadataSchema,
@@ -45,4 +45,4 @@ function assertSameType<Condition extends true>(): Condition | undefined {
   return undefined;
 }
 assertSameType<Equal<z.infer<typeof projectMetadataSchema>, ProjectMetadata>>();
-assertSameType<Equal<z.infer<typeof projectFileV1Schema>, ProjectFile>>();
+assertSameType<Equal<z.infer<typeof projectFileV2Schema>, ProjectFile>>();

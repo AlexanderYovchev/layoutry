@@ -57,7 +57,6 @@ import type { ElementSpacing } from "@/features/editor/types/spacing";
 
 /** Checkpoint 3.5's stated default for a newly created container: Block display, 16px padding on every side, zero margin. */
 const DEFAULT_CONTAINER_SPACING: ElementSpacing = {
-  margin: { top: 0, right: 0, bottom: 0, left: 0 },
   padding: { top: 16, right: 16, bottom: 16, left: 16 },
 };
 
@@ -766,7 +765,7 @@ export function createFigureNode(): EditorElementNode {
     id: generateNodeId("figure"),
     tag: "figure",
     flowLayout: { display: "flex", flex: FIGURE_FLEX },
-    spacing: { margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } },
+    spacing: {},
     children: [createImageNode(), createFigcaptionNode()],
   };
 }

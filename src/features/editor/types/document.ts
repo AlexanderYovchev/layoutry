@@ -112,7 +112,7 @@ export interface EditorElementNode {
    * flex-column rendering, which predates this field.
    */
   flowLayout?: FlowLayoutSettings;
-  /** This node's own margin + padding (Checkpoint 3.5). Unset means zero on all sides — see getElementSpacing. Meaningful for any node, not just containers. */
+  /** This node's own margin + padding (Checkpoint 3.5). Each side is optional (BC-05.3): an absent side writes no CSS, and 0 is an authored declaration — see types/spacing.ts. Meaningful for any node, not just containers. */
   spacing?: ElementSpacing;
   /** This node's own flex-item properties. Only meaningful while its parent's flowLayout.display is "flex". */
   flexChild?: FlexChildSettings;

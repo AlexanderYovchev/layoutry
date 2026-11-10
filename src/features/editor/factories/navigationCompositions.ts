@@ -46,7 +46,6 @@ import type { BorderSettings } from "@/features/editor/types/border";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { FlexContainerSettings, JustifyContent } from "@/features/editor/types/flowLayout";
 import type { ElementSpacing } from "@/features/editor/types/spacing";
-import { ZERO_EDGES } from "@/features/editor/types/spacing";
 import type { TypographySettings } from "@/features/editor/types/typography";
 
 /** Shared by every plain nav Link below — readable dark neutral text, overriding LinkElement's own default blue (see this file's own top comment on why the underline itself stays). */
@@ -61,7 +60,6 @@ const NAVBAR_BOTTOM_BORDER: BorderSettings = {
   bottom: { width: { value: 1, unit: "px" }, style: "solid", color: "#e4e4e7" },
 };
 const NAVBAR_SPACING: ElementSpacing = {
-  margin: ZERO_EDGES,
   padding: { top: 16, right: 24, bottom: 16, left: 24 },
 };
 
@@ -159,7 +157,7 @@ export function createBreadcrumbsNode(): EditorElementNode {
     id: generateNodeId("nav"),
     tag: "nav",
     flowLayout: { display: "flex", flex: BREADCRUMB_FLEX },
-    spacing: { margin: ZERO_EDGES, padding: { top: 8, right: 0, bottom: 8, left: 0 } },
+    spacing: { padding: { top: 8, bottom: 8 } },
     children: [
       navLink("Home"),
       breadcrumbSeparator(),
@@ -186,7 +184,6 @@ const PAGINATION_CONTROL_RADIUS: BorderRadiusSettings = {
   bottomLeft: { value: 6, unit: "px" },
 };
 const PAGINATION_CONTROL_SPACING: ElementSpacing = {
-  margin: ZERO_EDGES,
   padding: { top: 6, right: 12, bottom: 6, left: 12 },
 };
 const PAGINATION_BORDER: BorderSettings = {
@@ -248,7 +245,7 @@ export function createPaginationNode(): EditorElementNode {
     id: generateNodeId("nav"),
     tag: "nav",
     flowLayout: { display: "flex", flex: PAGINATION_FLEX },
-    spacing: { margin: ZERO_EDGES, padding: ZERO_EDGES },
+    spacing: {},
     children: [
       paginationControlButton("Previous"),
       pageLink("1", true),
@@ -268,11 +265,9 @@ const SIDEBAR_FLEX: FlexContainerSettings = {
   columnGap: 4,
 };
 const SIDEBAR_SPACING: ElementSpacing = {
-  margin: ZERO_EDGES,
   padding: { top: 16, right: 16, bottom: 16, left: 16 },
 };
 const SIDEBAR_LINK_SPACING: ElementSpacing = {
-  margin: ZERO_EDGES,
   padding: { top: 8, right: 12, bottom: 8, left: 12 },
 };
 const SIDEBAR_LINK_RADIUS: BorderRadiusSettings = {

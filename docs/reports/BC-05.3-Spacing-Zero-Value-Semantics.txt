@@ -1,0 +1,440 @@
+LAYOUTRY — BC-05.3: SPACING ZERO-VALUE SEMANTICS
+================================================
+Date: 2026-11-10
+Type: CSS correctness fix + data-model compatibility (project format 2) + regression tests
+Base: HEAD af9e256 (BC-05.2)
+Status: implemented and validated; NOT committed
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Margin and padding now distinguish four states that used to be one:
+
+| State                 | Stored                  | CSS written         | Inspector shows                        |
+|-----------------------|-------------------------|---------------------|----------------------------------------|
+| Unset                 | side absent             | nothing             | the rendered value, no dot, no reset   |
+| Authored 0            | side = 0                | `padding-left: 0`   | 0, blue dot, reset available           |
+| Authored non-zero     | side = n                | `padding-left: npx` | n, blue dot, reset available           |
+| Effective / computed  | not stored              | —                   | shown for unset sides only (measured)  |
+
+What changed:
+- The model (types/spacing.ts):
+  - every side of `spacing.margin` and `spacing.padding` is optional;
+  - both boxes are optional;
+  - 0 is a real value.
+- Canvas, Preview and Export (all go through `elementPositionStyle`) write every authored side, 0 included, and nothing for an unset side.
+- The project format went from 1 to 2, with a format 1 → 2 migration that removes the old zeros. Old projects therefore render, and export, byte-for-byte as before. This was verified on both frozen legacy fixtures (section 10).
+- Inspector:
+  - unset padding sides show what the element renders (a button's 8 / 16), not 0;
+  - the reset button and the state dot follow authored state, never "value ≠ 0";
+  - in the unlinked view each side has its own state dot and its own reset ("Reset padding left").
+- Reset removes the authored value: one side, or the whole box. Undo brings an authored 0 back exactly.
+- Multi-selection: unset and authored 0 now read as "Mixed", and writing 0 to an unset box is a real change.
+
+All acceptance criteria are met. Two items need a product decision (section 20):
+- whether to prompt before re-saving an old native file in format 2;
+- the multi-selection display of an unset padding.
+
+QA recommendation: READY FOR QA.
+
+
+2. ROOT CAUSE
+-------------
+The defect is in the data model, not in a stray truthiness check.
+
+- types/spacing.ts (format 1):
+  `interface EdgeValues { top: number; right: number; bottom: number; left: number }`
+  - Four REQUIRED numbers per box, and `spacing` holds both boxes.
+  - The model therefore had no way to say "unset", so 0 was used as the unset sentinel. A comment in InspectorSpacingSection said so: "all-zero counts as unset, matching the spacing model's own documented zero default".
+- canvas/utils/elementDimensionsStyle.ts (`elementPositionStyle`, used by the Canvas, Preview and Export alike):
+  - `if (spacing.padding.top !== 0) style.paddingTop = …`, and the same for every side;
+  - margin left/top used the composed `offset + margin`, written only when `!== 0`;
+  - so an explicit 0 could never reach CSS.
+- InspectorSpacingSection:
+  - `isSet = top !== 0 || right !== 0 || …`, so Reset was unavailable for an explicit 0;
+  - an unset box was displayed as 0, so a button rendering 8 / 16 padding showed "Padding 0";
+  - Reset committed ZERO_EDGES (all zeros);
+  - editing one side committed all four sides.
+- bulkCommands.setElementsSpacingAllSides: a no-op when every side was already 0, so writing 0 to an unset box did nothing.
+- InspectorBulkSpacingSection: the row was always "set", and unset could not be told apart from 0.
+- A second, general cause, found while testing Case A: useInspectorEditSession started a session only from React's onChange.
+  - React drops onChange when the text doesn't change.
+  - So selecting a displayed "0" (unset margin) and typing 0 authored nothing.
+  - The same applies to any unset property that shows its rendered value (e.g. typing 30 over an unset H1 font size that shows 30).
+
+The search for `value || fallback`, `if (value)` and `Boolean(value)` turned up no other spacing paths:
+- the Free-layout padding arithmetic in spacingCommands uses the numbers directly;
+- the recipe's `!node.spacing` is a presence check, kept on purpose (section 4).
+No blind replacement was done.
+
+
+3. OLD vs NEW DATA REPRESENTATION
+---------------------------------
+Old (format 1):
+  "spacing": { "margin":  { "top": 0, "right": 0, "bottom": 0, "left": 0 },
+               "padding": { "top": 8, "right": 0, "bottom": 8, "left": 0 } }
+  → every 0 meant "no declaration".
+
+New (format 2):
+  "spacing": { "padding": { "top": 8, "bottom": 8 } }   (same rendering as above)
+  "spacing": { "padding": { "left": 0 } }               (authored padding-left: 0)
+  "spacing": {}                                         (record kept, nothing authored)
+
+TypeScript:
+  type EdgeValues = Partial<Record<"top"|"right"|"bottom"|"left", number>>;
+  interface ElementSpacing { margin?: EdgeValues; padding?: EdgeValues }
+
+Helpers, all pure:
+- `withEdgeSide`: set or remove one side; the box collapses to undefined once empty.
+- `withSpacingBox`: replace or remove a box; the record is kept.
+- `hasAuthoredEdge`: 0 counts as authored.
+- `edgeValuesEqual`: absent ≠ 0.
+- `uniformEdges`.
+- `clampSpacingValue`: unchanged, 0–500.
+- Removed: `clampEdgeValues` and `ZERO_EDGES`.
+
+No parallel spacing system and no metadata flags: optionality in the existing record is the whole change. The Zod schema (editorDocumentSchema) mirrors it, and the compile-time drift guard confirms the types match.
+
+
+4. MIGRATION / COMPATIBILITY STRATEGY
+-------------------------------------
+A version bump was necessary:
+- in a format 1 file, 0 means "unset";
+- in the new model, 0 means "authored";
+- the same bytes `"left": 0` cannot mean both;
+- so only the version number can tell them apart.
+
+The existing PROJECT-1.5 migration chain was built for exactly this: "Format 2 will add { from: 1, migrate }".
+
+Format 1 → 2 (projectFormatMigrations.ts, `migrateSpacingZerosToUnset`):
+- For every node at every depth, iteratively:
+  - remove every spacing side that is exactly 0;
+  - then remove every box left empty;
+  - keep non-zero sides exactly.
+- The spacing record itself is always kept, even when empty. In format 1, the mere presence of `spacing` switched the pre-3.5 container default padding (`p-8`, 2rem) off. elementStyleRecipes still uses `!node.spacing` for that, so keeping the record keeps those containers at padding 0.
+- Policy, deterministic: no format 1 zero is reinterpreted as an authored override. That is what minimizes visual change: format 1 never wrote a 0, so treating them as unset reproduces exactly what was rendered.
+- Malformed spacing (not an object, or a "0" string) is left alone for the format 2 schema to reject, per the migration contract. The caller's object is never modified, because the dispatcher runs migrations on a clone.
+
+Saving writes format 2. Builds before BC-05.3 refuse a format 2 file with "made by a newer version of Layoutry" and do not change it. See section 20 for the open "prompt before overwriting an old native file" decision.
+
+Also updated:
+- `CURRENT_PROJECT_FORMAT_VERSION = 2`;
+- `projectFileV1Schema` renamed to `projectFileV2Schema`;
+- docs/architecture/project-format.md (structure, format 2 vs 1, migration list, rollback);
+- test/fixtures/persistence/README.md.
+
+Copy/paste, duplicate, recovery snapshots and the browser library:
+- In memory, nodes are cloned whole, so authored zeros and empty records carry over (section 11).
+- Library and recovery records hold project text, which goes through `parseProjectFile` and therefore through the migration.
+- The desktop main process checks only that `formatVersion` is an integer.
+- The legacy library and recovery fixtures still open (their tests pass unchanged).
+
+Factories (new elements): every composition that used to write ZERO_EDGES now writes the format 2 equivalent:
+- zero sides omitted;
+- `{}` where both boxes were zero;
+- for example `{ top: 8, right: 0, bottom: 8, left: 0 }` → `{ top: 8, bottom: 8 }`.
+Newly inserted elements therefore produce exactly the CSS they did before.
+
+
+5. ZERO vs UNSET BEHAVIOR
+-------------------------
+- Typing 0 creates an authored 0. That includes typing 0 over a displayed 0, and "00".
+- Rendering writes `padding-*: 0` / `margin-*: 0` for an authored 0.
+  - Margin left/top compose with the resize-anchor offset as before, so an authored 0 plus offset -40 writes -40.
+  - An authored 0 on a Free child is written too.
+- An unset side writes nothing, so the element's default presentation applies:
+  - button `padding-inline: 1rem; padding-block: 0.5rem`;
+  - text controls;
+  - the base stylesheet's `margin: 0`.
+- No browser default values are hardcoded anywhere:
+  - unset padding is measured from the Canvas;
+  - unset margin shows 0, the shared base stylesheet's value (`*, ::before, ::after { margin: 0; padding: 0 }`, identical in Canvas, Preview and Export), and no Layoutry default presentation adds margin.
+- Negative values are still not supported (clamped to 0, an authored 0), as before.
+- Decimals are kept (2.5 is stored as 2.5).
+
+
+6. INSPECTOR DISPLAY BEHAVIOR
+-----------------------------
+- A new hook, `useRenderedPadding(nodeId)` (inspector/hooks), follows the BC-01.4/5 `useRenderedTypography` precedent:
+  - one `getComputedStyle` read of the Canvas element in a layout effect, re-run after document changes;
+  - skipped entirely when all four padding sides are authored.
+- Displayed value per side: the authored value, else the rendered value (padding) or 0 (margin).
+- The box-model diagram shows the same values.
+- The linked/unlinked toggle is derived from the displayed values.
+  - It is re-derived on a selection change, and once more when the first measurement arrives.
+  - So a button (8 / 16) opens unlinked with four truthful fields, instead of a misleading "all sides 0".
+- Authored state is shown with existing conventions:
+  - the row label dot and "Explicitly set" screen-reader text when any side is authored;
+  - per-side dots in the unlinked view;
+  - an unset side has no dot and its reset is hidden (opacity 0, disabled, as every reset).
+- Layout fix found in testing:
+  - at the narrowest Inspector width, the new per-side reset pushed the row past the panel edge;
+  - the number input's intrinsic width is 184px and doesn't shrink in a flex row;
+  - the side row is now a three-column grid (label | field | reset): `3.75rem | minmax(0, 1fr) | auto`;
+  - the field column gives way down to the field's own min-width;
+  - verified in a screenshot, and asserted by the e2e narrow-width test.
+- No redesign: same fields, labels, link toggle and diagram.
+
+
+7. RESET BEHAVIOR
+-----------------
+- Group reset: "Reset margin" / "Reset padding" remove the box (`setElementMargin/Padding(id, undefined)`). The spacing record stays.
+- Side reset: "Reset {margin|padding} {top|right|bottom|left}", shown in the unlinked view. It removes only that side; the box collapses once its last side goes.
+
+| Case | Result |
+|---|---|
+| A | unset → 0 authors 0; Reset becomes available |
+| B | n → 0 stays authored |
+| C | Reset removes the 0 |
+| D | Undo brings the 0 back |
+| E | Redo removes it again |
+| F | Reset padding left keeps top, right and bottom, including an authored 0 (unit and e2e) |
+
+- Composite exceptions: none. The linked "all sides" field writes four sides at once; that is the only composite write, and a later side reset still removes one side.
+- BC-05.2 behavior is preserved and covers the new buttons:
+  - every side row is a `data-inspector-reset-scope`, so pressing a side's reset while typing in that side cancels the draft (one Undo step);
+  - resetting a different side keeps the typed edit;
+  - a keyboard reset focuses that side's field.
+
+
+8. UNDO/REDO EVIDENCE
+---------------------
+- InspectorSpacingZero.test.tsx walks unset → 0 → 8 → 0 → unset → 8 → unset through the real section, store and history:
+  - each step is exactly one entry (6 total);
+  - six Undos restore every intermediate state exactly, including `{}` vs `{ margin: 0×4 }` vs undefined.
+- Store test: authoring 0 on an unset box makes the document dirty; Undo makes it clean again (`document === persistedDocument`).
+- Reset while typing: one entry; Undo returns to the pre-edit value, never to the draft.
+- e2e (Chromium, Firefox, WebKit, Electron): Undo after Reset restores computed padding 0px; Redo restores the default.
+
+
+9. SAVE/REOPEN EVIDENCE
+-----------------------
+- e2e: button padding 0 → save (browser library) → reload → reopen:
+  - computed padding is 0px on all sides;
+  - "Reset padding" is enabled;
+  - the field shows 0.
+- New frozen fixture test/fixtures/persistence/project-2-spacing-zero.layoutry (written by `serializeProject`):
+  - contents: an authored zero button, a mixed-sides button, an unset button, a zero-margin heading and paragraph, a zero-padding container, and an empty spacing record;
+  - it re-saves to the very same bytes.
+- The legacy PROJECT-1.1 fixture still opens.
+  - The old "re-saves to the same bytes" assertion no longer holds by design: a re-save writes format 2.
+  - It is replaced by a stronger check: removing, independently of the migration code, every 0 side and empty box from the original file gives exactly the re-saved file (apart from formatVersion 2). So nothing else changed, and every non-zero side survived.
+- serializeProject runs every file through the real loader before returning it, so the schema accepts every saved shape.
+
+
+10. CANVAS / PREVIEW / EXPORT PARITY
+------------------------------------
+All three render from `elementPositionStyle`. Evidence:
+
+e2e (spacing-zero.spec.ts), each comparing the Canvas computed style, the Preview computed style, the exported rule declarations, and the computed style of the exported page loaded in its own tab:
+- button padding 0 on all sides: 0px everywhere; the rule has `padding-*: 0;` ×4;
+- heading and paragraph margin 0: `margin-*: 0;` ×4 each; computed 0px;
+- container padding 0: `padding-*: 0;` ×4; computed 0px;
+- mixed sides (button padding-left 0 only): left 0px, the other sides the default; only `padding-left: 0;` exported;
+- reset: no declarations, and the exported page computes the default padding again; after all resets the rules equal the untouched page's;
+- legacy project (format 1 fixture imported in the browser):
+  - an all-zero container still renders padding 0 (no legacy 2rem);
+  - a 10/20 button keeps its padding;
+  - its old zero margin is not offered as a resettable override.
+
+Unit tests:
+- exportSpacingZero.test.ts covers the same cases through `exportHtmlCss`;
+- elementDimensionsStyle.test.ts adds authored-zero cases (padding, mixed, margin, offset composition, Free child).
+
+Legacy byte-identity, one-off, recorded here and not a permanent test:
+- Exported with the HEAD (BC-05.2) build, reading format 1 as stored, and with this build, after migration:
+  - project-1.1-every-element.layoutry: 95,443 bytes, IDENTICAL (265 spacing declarations);
+  - native-site-original-1.3.layoutry: 3,210 bytes, IDENTICAL.
+- Method:
+  - a temporary git worktree at af9e256 with node_modules linked;
+  - the same throwaway Vitest script in both trees dumped `exportHtmlCss(..., separate)`;
+  - `cmp`;
+  - the worktree was then removed.
+- The shared export parity fixtures (test/fixtures/export) were converted to the format 2 shape (0 meant "no declaration" there too), keeping their original CSS.
+
+No browser-native default is altered globally.
+
+
+11. COPY/PASTE AND DUPLICATION
+------------------------------
+useEditorStore.spacingZero.test.ts:
+- copy + paste keeps authored zeros (padding 0×4, margin-left 0) and keeps unset spacing unset;
+- duplicate keeps authored zeros;
+- resetting margin leaves padding and its zeros untouched (one entry).
+
+Paste, duplicate and cut all use `cloneNodeWithFreshIds`, a whole-node copy, so empty records also carry over.
+
+
+12. MULTI-SELECTION IMPACT
+--------------------------
+No new multi-selection reset. Scope-limited fixes, because the shared representation changed:
+- setElementsSpacingAllSides:
+  - unset is not "already 0", so writing 0 to unset nodes authors 0, as one history entry;
+  - it is a no-op only when every side is already the target value.
+- InspectorBulkSpacingSection:
+  - reads the authored side, so an authored 0 next to an unset side reads "Mixed" (the zero no longer disappears into an equal-looking 0);
+  - the row is "set" only when every node authors the side.
+Tests: InspectorBulkSpacingSection.test.tsx (3), bulkCommands.test.ts (+3), plus the store test.
+
+Limitation, section 20: a selection where every node leaves the side unset shows 0, the baseline, with no state dot. It does not measure each element's rendered padding.
+
+
+13. ACCESSIBILITY
+-----------------
+- Zero can be typed with the keyboard, including over a displayed 0 (the onInput fix). Tests: unit Case A, and e2e keyboard-only (focus the Right field, Ctrl+A, 0, Enter → computed 0px).
+- Reset is keyboard-operable. A keyboard side reset moves focus to that side's own field (unit and e2e, Chromium/Firefox/WebKit/Electron).
+- Every field keeps its accessible name: "Margin (all sides)", "Padding (all sides)", Top/Right/Bottom/Left.
+- New reset buttons have distinct names ("Reset padding left").
+- The authored state is announced through the existing sr-only "Explicitly set" text next to the state dot.
+- No keyboard traps. Tab order is label → field → unit → reset, per side.
+- No hover-only control: an available reset is always visible.
+- High-contrast and reduced-motion handling are untouched; only existing tokens and classes are used.
+- Observation, pre-existing from BC-05.2 and not changed here: a keyboard press of the GROUP reset ("Reset margin") lands on the group's pressed "Linked" toggle when the group is linked, because `resetFocusTarget` prefers a pressed button. Focus stays in the row, as BC-05.2 requires. A side reset always lands on its field.
+
+
+14. PERFORMANCE OBSERVATIONS
+----------------------------
+- No new global state, no duplicate representation, no default tables, no new dependencies.
+- useRenderedPadding adds one getComputedStyle read per document change, only while the Spacing section shows a node with an unset padding side; it is skipped when all four sides are authored.
+- Measured with inspector-final-regression's own instrumentation (Firefox, 1 worker, 3 runs):
+  - getComputedStyle calls per keystroke: 2 (budget 5);
+  - keystroke → Canvas latency median 37–38 ms (budget 50), p95 95–98 ms.
+- That test failed in Firefox under the 4-worker parallel run (median 59 ms). An A/B in the same tree, with the padding measurement disabled, failed the same way twice under the same load. So it is a load-sensitive check, not a BC-05.3 regression (section 21).
+- A HEAD baseline of the same test could not be run: the Next dev server would not start from the temporary worktree (linked node_modules). This is recorded rather than estimated.
+- The format 1 → 2 migration is a single iterative pass over the tree, with no recursion. All persistence tests pass, including the PROJECT-1.5 5,000-element load test.
+
+
+15. MODIFIED FILES
+------------------
+Created:
+- src/features/inspector/hooks/useRenderedPadding.ts
+- src/features/inspector/components/InspectorSpacingZero.test.tsx (16 tests)
+- src/features/inspector/components/InspectorBulkSpacingSection.test.tsx (3)
+- src/features/editor/stores/useEditorStore.spacingZero.test.ts (6)
+- src/features/export/utils/exportSpacingZero.test.ts (5)
+- test/fixtures/persistence/project-2-spacing-zero.layoutry (frozen format 2 fixture)
+- e2e/spacing-zero.spec.ts (4 tests)
+- e2e/desktop/spacing-zero.spec.ts (1 Electron test)
+- docs/reports/BC-05.3-Spacing-Zero-Value-Semantics.txt (this file)
+- changelogs/2026-11-10-spacing-zero-value-semantics-BC-05.3.txt (gitignored)
+
+Modified, product:
+- editor/types/spacing.ts (model + helpers)
+- editor/types/document.ts (doc comment)
+- editor/schemas/editorDocumentSchema.ts (optional sides and boxes)
+- editor/commands/spacingCommands.ts (box replace/remove; unset = 0 in the Free padding arithmetic)
+- editor/commands/bulkCommands.ts (zero ≠ unset)
+- editor/stores/useEditorStore.ts (setter types accept undefined)
+- editor/factories/{button,card,dataDisplay,feedback,form,interaction,navigation}Compositions.ts and elementFactories.ts (format 2 shapes, same CSS)
+- canvas/utils/elementDimensionsStyle.ts (write authored zeros)
+- inspector/components/InspectorSpacingSection.tsx (authored vs displayed, per-side state and reset, grid side rows)
+- inspector/components/InspectorBulkSpacingSection.tsx
+- inspector/components/InspectorResetButton.tsx (doc comment)
+- inspector/hooks/useInspectorEditSession.ts (handleInput)
+- inspector/components/InspectorNumericValueControl.tsx and InspectorNumberFieldRow.tsx (onInput wired)
+- project/types/projectFile.ts (format 2)
+- project/schemas/projectFileSchema.ts (V2 schema)
+- project/utils/parseProjectFile.ts
+- project/utils/projectFormatMigrations.ts (1 → 2 step)
+- docs/architecture/project-format.md
+- test/fixtures/persistence/README.md
+
+Modified, tests and fixtures (inputs moved to the format 2 shape; the expectations that encoded "0 = unset" were updated to the new semantics; no assertion was removed):
+- canvas/utils/elementDimensionsStyle.test.ts (+5 authored-zero tests)
+- editor/commands/spacingCommands.test.ts (+2)
+- editor/commands/bulkCommands.test.ts (+3)
+- editor/types/spacing.test.ts (rewritten for the helpers, 22 tests)
+- editor/factories/{card,dataDisplay,element}…test.ts
+- inspector/components/InspectorSpacingSection.test.tsx
+- inspector/hooks/useInspectorEditSession.test.tsx
+- project/utils/{legacyProjectFiles, parseProjectFile, projectFormatMigrations (+5 for the real 1 → 2 step), projectRestoreContract}.test.ts
+- test/fixtures/export/exportFixtureDocuments.ts and exportInteractionDocument.ts
+- e2e/export-workflow.spec.ts (large-document fixture in format 2 shape)
+- e2e/inspector-live-numeric.spec.ts (button-1 opens unlinked now: link it first)
+
+Moved: none. Deleted: none. The temporary playwright.cross-temp.config.ts was created for cross-browser runs and deleted afterwards.
+
+
+16. TEST COMMANDS AND EXACT COUNTS
+----------------------------------
+- `npx tsc --noEmit -p .` → 0 errors
+- `npx eslint .` → 0 problems
+- `npx vitest run` (full) → 359 files passed: 5383 passed, 1 skipped (was 355 files / 5323 at BC-05.2)
+- New and updated unit tests for BC-05.3 (spacing, migration, export, store, bulk, section): all pass.
+- Regression proof: the 4 new BC-05.3 unit test files, run against HEAD af9e256 in a temporary worktree:
+  - 24 of 30 tests FAIL there;
+  - the 6 that pass cover behavior that was already correct: clearing, decimals, copy/paste ×2, duplicate, margin reset keeps padding.
+- `npx playwright test e2e/spacing-zero.spec.ts --project=chromium --repeat-each=2` → 8 passed
+- `npx playwright test --project=chromium` (full) → 219 passed, 0 failed (215 at BC-05.2 + 4 new)
+- Prettier: new files and files that were Prettier-clean at HEAD are formatted. Files that were already unformatted at HEAD were not reformatted (no churn).
+
+
+17. CROSS-BROWSER RESULTS
+-------------------------
+Using a temporary config with Firefox and WebKit projects:
+
+| Run | Result |
+|---|---|
+| spacing-zero.spec.ts, Firefox | 4 passed |
+| spacing-zero.spec.ts, WebKit (--workers=1) | 4 passed |
+| Inspector set, Firefox (7 specs: color-slider-commit, computed-typography, final-regression, live-color-font-size, live-numeric, inspector-reset, spacing-zero) | 72 passed, 1 failed (the load-sensitive latency check, section 21) |
+| Inspector set, WebKit (--workers=1) | 71 passed, 2 failed (the known native colour-picker limit, BC-01.6 E2: Playwright's WebKit on Windows has no input[type=color]) |
+| Latency check alone, Firefox (--workers=1, ×3) | 3 passed (median 37–38 ms) |
+
+Browser default styles: each test compares against the element's own measured default padding in that browser, never a fixed number. The zero cases are exact (0px) in all three engines.
+
+
+18. ELECTRON RESULTS
+--------------------
+`npx playwright test -c playwright.desktop.config.ts e2e/desktop/spacing-zero.spec.ts e2e/desktop/inspector-reset.spec.ts …` → 17 passed (spacing-zero, inspector-reset, inspector-live-edit, files, projects — the last two exercise format 2 files on disk)
+
+(ELECTRON_RUN_AS_NODE stripped from the environment, as required on this machine.)
+
+
+19. BUILD / TYPECHECK / LINT RESULTS
+------------------------------------
+- Typecheck: 0 errors.
+- ESLint: 0 problems.
+- `npm run build` (production): succeeded ("Compiled successfully")
+- `npm run desktop:build`: succeeded
+
+
+20. REMAINING LIMITATIONS
+-------------------------
+1. Old native files are re-saved as format 2 without a prompt.
+   - Opening a format 1 file never writes it.
+   - Saving writes format 2, which older Layoutry builds refuse ("made by a newer version"), leaving the file untouched.
+   - project-format.md had recommended asking "update the file or Save As" on the first save of a migrated native file. That prompt is a product decision and is NOT implemented here; it is documented as open.
+2. Multi-selection display of an unset padding: shows 0 (the baseline) with no state dot, and doesn't measure each element's own rendered padding. A single selection shows the true rendered values. Broad multi-selection work is out of scope by the brief.
+3. Negative margins remain unsupported (clamped to 0), unchanged.
+4. Linked view with mixed authored and unset sides:
+   - the toggle is re-derived on selection (and first measurement), not after every edit, as before;
+   - if a user links four different displayed values, the all-sides field shows Top's value, as it did before BC-05.3.
+5. An unset padding side shows 0 for the single frame before the first measurement (one layout effect, before paint in practice), or permanently for a node that isn't rendered.
+6. Group keyboard reset focus lands on the pressed "Linked" toggle (pre-existing BC-05.2 behavior, section 13).
+
+
+21. KNOWN FAILURES
+------------------
+- WebKit, 2: native colour picker (input[type=color] missing in Playwright WebKit on Windows). Pre-existing, recorded in BC-01.6 E2. Unrelated to spacing.
+- Firefox, 1, only under the 4-worker parallel run: "50 edit sessions … keystroke latency" median above 50 ms.
+  - It passes single-worker (37–38 ms).
+  - An A/B with the BC-05.3 padding measurement disabled fails the same way under the same load (2 of 2 runs), so it is not caused by this checkpoint.
+  - Chromium is the configured project and passes it (section 16).
+
+
+22. GIT WORKING-TREE STATUS
+---------------------------
+Branch main, HEAD af9e256, nothing committed or staged. 44 modified files and 9 untracked files (the 8 created source, test, fixture and spec files, plus this report). The changelog is gitignored. The temporary Playwright config is deleted.
+
+
+23. QA RECOMMENDATION
+---------------------
+READY FOR QA.
+- Zero and unset are distinct end to end (model, Canvas, Preview, Export, save/reopen, Undo/Redo, copy/paste, duplicate, multi-selection reads).
+- Old projects keep their exact export output.
+- BC-05.2 reset behavior covers the new per-side resets.
+- No high-severity defect is known to remain.
+- Decisions for the product owner:
+  - (1) prompt before re-saving an old native file as format 2;
+  - (2) whether multi-selection should measure unset padding.

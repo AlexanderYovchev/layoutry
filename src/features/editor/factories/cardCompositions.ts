@@ -45,7 +45,6 @@ import type { BorderSettings } from "@/features/editor/types/border";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { FlexContainerSettings } from "@/features/editor/types/flowLayout";
 import type { ElementSpacing } from "@/features/editor/types/spacing";
-import { ZERO_EDGES } from "@/features/editor/types/spacing";
 import type { TypographySettings } from "@/features/editor/types/typography";
 
 const CARD_BACKGROUND: BackgroundSettings = { color: "#ffffff" };
@@ -61,7 +60,7 @@ const CARD_RADIUS: BorderRadiusSettings = {
   bottomRight: { value: 8, unit: "px" },
   bottomLeft: { value: 8, unit: "px" },
 };
-const CARD_PADDING: ElementSpacing = { margin: ZERO_EDGES, padding: { top: 20, right: 20, bottom: 20, left: 20 } };
+const CARD_PADDING: ElementSpacing = { padding: { top: 20, right: 20, bottom: 20, left: 20 } };
 const CARD_TITLE_TYPOGRAPHY: TypographySettings = { fontSize: { value: 18, unit: "px" }, fontWeight: 600, color: "#18181b" };
 const CARD_LINK_TYPOGRAPHY: TypographySettings = { color: "#18181b", fontWeight: 600 };
 
@@ -152,7 +151,7 @@ function mediaCardRoot(flex: FlexContainerSettings, media: EditorElementNode, co
     borderRadius: CARD_RADIUS,
     boxShadow: cardShadow(),
     display: { overflow: "hidden" },
-    spacing: { margin: ZERO_EDGES, padding: ZERO_EDGES },
+    spacing: {},
     children: [
       media,
       {
@@ -242,7 +241,7 @@ export function createHorizontalCardNode(): EditorElementNode {
     borderRadius: CARD_RADIUS,
     boxShadow: cardShadow(),
     display: { overflow: "hidden" },
-    spacing: { margin: ZERO_EDGES, padding: ZERO_EDGES },
+    spacing: {},
     children: [image, content],
   };
 }
@@ -337,12 +336,12 @@ export function createPricingCardNode(): EditorElementNode {
     id: generateNodeId("ul"),
     tag: "ul",
     flowLayout: { display: "flex", flex: PRICING_LIST_FLEX },
-    spacing: { margin: ZERO_EDGES, padding: ZERO_EDGES },
+    spacing: {},
     children: [pricingFeature("Feature one"), pricingFeature("Feature two"), pricingFeature("Feature three")],
   };
   const cta = createPrimaryButtonNode();
   cta.text = "Choose Plan";
-  return cardRoot(cardColumnFlex(12), { margin: ZERO_EDGES, padding: { top: 24, right: 24, bottom: 24, left: 24 } }, [
+  return cardRoot(cardColumnFlex(12), { padding: { top: 24, right: 24, bottom: 24, left: 24 } }, [
     cardTitle("Starter"),
     { id: generateNodeId("h3"), tag: "h3", text: "$19", typography: PRICE_TYPOGRAPHY },
     { id: generateNodeId("p"), tag: "p", text: "per month", typography: BILLING_PERIOD_TYPOGRAPHY },

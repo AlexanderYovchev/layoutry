@@ -161,13 +161,13 @@ describe("InspectorSpacingSection", () => {
     expect(screen.getAllByLabelText("Right")[0]).toHaveValue(8);
   });
 
-  it("disables the reset button for a group that is already at the zero default", () => {
+  it("disables the reset button for a group with no authored side", () => {
     render(<InspectorSpacingSection node={{ id: "n1", tag: "div" }} />);
     expect(screen.getByRole("button", { name: "Reset margin" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Reset padding" })).toBeDisabled();
   });
 
-  it("reset removes the explicit margin by committing the model's own zero default, through the same setElementMargin command (undoable)", () => {
+  it("reset removes the explicit margin (BC-05.3: the box is removed, not written as zeros), through the same setElementMargin command (undoable)", () => {
     useEditorStore.setState((state) => ({
       document: {
         ...state.document,
@@ -202,7 +202,7 @@ describe("InspectorSpacingSection", () => {
     fireEvent.click(resetMargin);
 
     const node = useEditorStore.getState().document.children?.find((c) => c.id === "n1");
-    expect(node?.spacing?.margin).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
+    expect(node?.spacing?.margin).toBeUndefined();
 
     // Undoable through the normal history stack — reset is a plain
     // setElementMargin commit, not a special bypass.
@@ -212,7 +212,7 @@ describe("InspectorSpacingSection", () => {
 
     useEditorStore.getState().redo();
     const afterRedo = useEditorStore.getState().document.children?.find((c) => c.id === "n1");
-    expect(afterRedo?.spacing?.margin).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
+    expect(afterRedo?.spacing?.margin).toBeUndefined();
   });
 
   it("keeps the same node selected across an undo/redo round trip of a spacing commit", () => {

@@ -228,7 +228,8 @@ describe("live numeric editing (BC-01.3)", () => {
     render(<Selected section={InspectorSpacingSection} />);
     const input = screen.getAllByLabelText("Padding (all sides)")[0];
     focus(input);
-    // Out of range: not previewed, so both elements still read padding 0.
+    // Out of range: not previewed, so both elements still read padding 0
+    // (the paragraph's is unset, which shows as 0 here).
     type(input, "99999");
     act(() => store().selectOnly("paragraph-1"));
     blur(screen.getAllByLabelText("Padding (all sides)")[0]);
@@ -236,7 +237,7 @@ describe("live numeric editing (BC-01.3)", () => {
     const heading = node("heading-1");
     const paragraph = node("paragraph-1");
     expect(heading && getElementSpacing(heading).padding.top).toBe(500);
-    expect(paragraph && getElementSpacing(paragraph).padding.top).toBe(0);
+    expect(paragraph && getElementSpacing(paragraph).padding.top).toBeUndefined();
     expect(history()).toBe(1);
     expect(screen.getAllByLabelText("Padding (all sides)")[0]).toHaveValue(0);
   });

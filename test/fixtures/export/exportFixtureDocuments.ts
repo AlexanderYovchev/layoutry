@@ -19,9 +19,11 @@ function node(tag: string, fields: Omit<EditorElementNode, "id" | "tag"> = {}): 
 }
 
 const px = (value: number) => ({ value, unit: "px" as const });
+// A 0 here means "no declaration", as these documents were written before BC-05.3
+// made 0 an authored value; the record itself still switches container defaults off.
 const spacing = (padding: number, margin = 0) => ({
-  margin: { top: margin, right: margin, bottom: margin, left: margin },
-  padding: { top: padding, right: padding, bottom: padding, left: padding },
+  ...(margin === 0 ? {} : { margin: { top: margin, right: margin, bottom: margin, left: margin } }),
+  ...(padding === 0 ? {} : { padding: { top: padding, right: padding, bottom: padding, left: padding } }),
 });
 const block = { display: "block" as const };
 
@@ -100,7 +102,7 @@ export function spacingNestingDocument(): EditorElementNode {
     section([
       node("div", {
         flowLayout: block,
-        spacing: { margin: { top: 12, right: 0, bottom: 20, left: 32 }, padding: { top: 8, right: 24, bottom: 16, left: 4 } },
+        spacing: { margin: { top: 12, bottom: 20, left: 32 }, padding: { top: 8, right: 24, bottom: 16, left: 4 } },
         background: { color: "#eef2ff" },
         children: [
           node("div", {

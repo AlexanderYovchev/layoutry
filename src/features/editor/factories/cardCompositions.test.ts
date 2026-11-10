@@ -91,11 +91,11 @@ describe("Image Card (Checkpoint 1.15.6.4, Part D)", () => {
     expect(node.display?.overflow).toBe("hidden");
   });
 
-  it("the root's own padding is zero — the nested content Container carries the real padding instead", () => {
+  it("the root's own padding is unset (it has a spacing record, so no default padding) — the nested content Container carries the real padding instead", () => {
     const node = createImageCardNode();
-    expect(node.spacing?.padding).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
+    expect(node.spacing).toEqual({});
     const [, content] = node.children!;
-    expect(content.spacing?.padding.top).toBeGreaterThan(0);
+    expect(content.spacing?.padding?.top).toBeGreaterThan(0);
   });
 
   it("every node gets its own fresh id, and two separate compositions never share one", () => {

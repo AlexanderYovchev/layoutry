@@ -80,7 +80,7 @@ describe("parseProjectFile — rejects malformed and foreign files", () => {
     ["a string", "1", "not-a-project"],
     ["zero", 0, "not-a-project"],
     ["fractional", 1.5, "not-a-project"],
-    ["a future version", 2, "unsupported-version"],
+    ["a future version", 3, "unsupported-version"],
   ] as const)("a format version that is %s", (_label, formatVersion, code) => {
     expectRejected(JSON.stringify({ ...validFile(), formatVersion }), code);
   });

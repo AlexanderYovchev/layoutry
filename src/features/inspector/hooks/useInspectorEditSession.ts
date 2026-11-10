@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type FormEvent, type RefObject } from "react";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { HistoryEntry } from "@/features/editor/types/history";
 // The pure matcher only (not the project feature's index, which would pull
@@ -209,17 +209,34 @@ export function useInspectorEditSession<T>(options: InspectorEditSessionOptions<
     return true;
   }
 
-  function handleChange(event: ChangeEvent<HTMLInputElement>) {
-    const nextDraft = event.target.value;
+  function applyInput(input: HTMLInputElement) {
+    const nextDraft = input.value;
     // A type="number" input reports "" for a partial entry such as "-" or
     // "1."; badInput tells that apart from a genuinely cleared field.
-    const nextBadInput = event.target.validity?.badInput === true;
+    const nextBadInput = input.validity?.badInput === true;
     setDraft(nextDraft);
     setBadInput(nextBadInput);
     setEditing(true);
     const session = ensureSession();
     const parsed = nextBadInput ? null : latestRef.current.parseLive(nextDraft);
     if (parsed) writeLive(session, parsed.value);
+  }
+
+  function handleChange(event: ChangeEvent<HTMLInputElement>) {
+    applyInput(event.target);
+  }
+
+  /**
+   * The native `input` event, for the one case React's onChange skips:
+   * typing that leaves the text as it was, such as selecting a shown "0"
+   * and typing 0. For a property that is unset but shows its rendered
+   * value, that keystroke is the user authoring exactly that value
+   * (BC-05.3: an explicit margin of 0), so it must open a session like any
+   * other edit. Any input that changes the text is left to handleChange.
+   */
+  function handleInput(event: FormEvent<HTMLInputElement>) {
+    if (event.currentTarget.value !== latestRef.current.draft) return;
+    applyInput(event.currentTarget);
   }
 
   /** An Arrow Up/Down step: part of the live session, or (not live) its own one-shot commit as before. */
@@ -300,5 +317,5 @@ export function useInspectorEditSession<T>(options: InspectorEditSessionOptions<
 
   useEffect(() => () => endSession("commit"), [endSession]);
 
-  return { draft, handleChange, handleBlur, commitAndRelease, cancelAndRelease, stepTo };
+  return { draft, handleChange, handleInput, handleBlur, commitAndRelease, cancelAndRelease, stepTo };
 }

@@ -183,15 +183,17 @@ const gridChildSchema = z.strictObject({
   rowSpan: finite,
 });
 
+// Project format 2 (BC-05.3): each side optional; an absent side is unset and
+// 0 is an authored value. Format 1 files are migrated before this runs.
 const edgeValuesSchema = z.strictObject({
-  top: finite,
-  right: finite,
-  bottom: finite,
-  left: finite,
+  top: finite.optional(),
+  right: finite.optional(),
+  bottom: finite.optional(),
+  left: finite.optional(),
 });
 const spacingSchema = z.strictObject({
-  margin: edgeValuesSchema,
-  padding: edgeValuesSchema,
+  margin: edgeValuesSchema.optional(),
+  padding: edgeValuesSchema.optional(),
 });
 
 const objectPositionAxisSchema = z.strictObject({

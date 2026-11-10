@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { getElementSpacing } from "@/features/editor/types/spacing";
+import { getElementSpacing, hasAuthoredEdge } from "@/features/editor/types/spacing";
 import type { ElementDimensions, EditorElementNode } from "@/features/editor/types/document";
 import type { ContainerLayoutMode, FreeLayoutGeometry } from "@/features/editor/types/layout";
 
@@ -35,8 +35,9 @@ import type { ContainerLayoutMode, FreeLayoutGeometry } from "@/features/editor/
  * composed additively with the offsetX/Y anchor shift rather than one
  * overwriting the other in the final CSS — see elementPositionStyle,
  * the only caller, which is also the only place both values are known.
- * Margin is omitted entirely when the composed total is 0 on that axis,
- * rather than emitting a redundant `margin: 0px`.
+ * Margin on an axis is omitted when nothing sets it (no offset, no
+ * authored margin); an authored margin of 0 is still written (BC-05.3),
+ * and so is the composed total when the two cancel out.
  *
  * maxWidth/maxHeight ownership moved to resolveSizeConstraintsStyle in
  * Checkpoint 5.7 — this function no longer sets either property itself.
@@ -54,18 +55,24 @@ import type { ContainerLayoutMode, FreeLayoutGeometry } from "@/features/editor/
  * HeadingElement/ParagraphElement/ButtonElement) — the text itself is
  * never removed from the document model, only visually clipped.
  */
+/** One margin axis: the resize-anchor offset plus the authored margin, or undefined when neither sets it. */
+function composedMargin(offset: number, authored: number | undefined): number | undefined {
+  if (authored === undefined && offset === 0) return undefined;
+  return offset + (authored ?? 0);
+}
+
 export function elementDimensionsStyle(
   dimensions: ElementDimensions | undefined,
   options?: { clipOverflowY?: boolean; extraMarginLeft?: number; extraMarginTop?: number },
 ): CSSProperties | undefined {
-  const marginLeft = (dimensions?.offsetX ?? 0) + (options?.extraMarginLeft ?? 0);
-  const marginTop = (dimensions?.offsetY ?? 0) + (options?.extraMarginTop ?? 0);
+  const marginLeft = composedMargin(dimensions?.offsetX ?? 0, options?.extraMarginLeft);
+  const marginTop = composedMargin(dimensions?.offsetY ?? 0, options?.extraMarginTop);
 
   if (!dimensions) {
-    if (marginLeft === 0 && marginTop === 0) return undefined;
+    if (marginLeft === undefined && marginTop === undefined) return undefined;
     const style: CSSProperties = {};
-    if (marginLeft !== 0) style.marginLeft = marginLeft;
-    if (marginTop !== 0) style.marginTop = marginTop;
+    if (marginLeft !== undefined) style.marginLeft = marginLeft;
+    if (marginTop !== undefined) style.marginTop = marginTop;
     return style;
   }
 
@@ -75,8 +82,8 @@ export function elementDimensionsStyle(
     flexShrink: 0,
   };
 
-  if (marginLeft !== 0) style.marginLeft = marginLeft;
-  if (marginTop !== 0) style.marginTop = marginTop;
+  if (marginLeft !== undefined) style.marginLeft = marginLeft;
+  if (marginTop !== undefined) style.marginTop = marginTop;
   if (options?.clipOverflowY) style.overflow = "hidden";
 
   return style;
@@ -111,19 +118,22 @@ export function elementPositionStyle(
           extraMarginTop: spacing.margin.top,
         });
 
-  const hasRightBottomMargin = spacing.margin.right !== 0 || spacing.margin.bottom !== 0;
-  const hasPadding =
-    spacing.padding.top !== 0 || spacing.padding.right !== 0 || spacing.padding.bottom !== 0 || spacing.padding.left !== 0;
+  // Authored sides only, 0 included (BC-05.3): an explicit 0 is a real
+  // declaration that overrides a default presentation (a button's own
+  // padding); an unset side writes nothing and keeps that default.
+  const { margin, padding } = spacing;
+  const hasRightBottomMargin = margin.right !== undefined || margin.bottom !== undefined;
+  const hasPadding = hasAuthoredEdge(padding);
 
   if (!geometryStyle && !hasRightBottomMargin && !hasPadding) return undefined;
 
   const style: CSSProperties = { ...geometryStyle };
-  if (spacing.margin.right !== 0) style.marginRight = spacing.margin.right;
-  if (spacing.margin.bottom !== 0) style.marginBottom = spacing.margin.bottom;
-  if (spacing.padding.top !== 0) style.paddingTop = spacing.padding.top;
-  if (spacing.padding.right !== 0) style.paddingRight = spacing.padding.right;
-  if (spacing.padding.bottom !== 0) style.paddingBottom = spacing.padding.bottom;
-  if (spacing.padding.left !== 0) style.paddingLeft = spacing.padding.left;
+  if (margin.right !== undefined) style.marginRight = margin.right;
+  if (margin.bottom !== undefined) style.marginBottom = margin.bottom;
+  if (padding.top !== undefined) style.paddingTop = padding.top;
+  if (padding.right !== undefined) style.paddingRight = padding.right;
+  if (padding.bottom !== undefined) style.paddingBottom = padding.bottom;
+  if (padding.left !== undefined) style.paddingLeft = padding.left;
 
   return style;
 }
@@ -146,14 +156,14 @@ export function freeChildStyle(
   geometry: FreeLayoutGeometry | undefined,
   options?: { clipOverflowY?: boolean; extraMarginLeft?: number; extraMarginTop?: number },
 ): CSSProperties | undefined {
-  const marginLeft = options?.extraMarginLeft ?? 0;
-  const marginTop = options?.extraMarginTop ?? 0;
+  const marginLeft = composedMargin(0, options?.extraMarginLeft);
+  const marginTop = composedMargin(0, options?.extraMarginTop);
 
   if (!geometry) {
-    if (marginLeft === 0 && marginTop === 0) return undefined;
+    if (marginLeft === undefined && marginTop === undefined) return undefined;
     const style: CSSProperties = {};
-    if (marginLeft !== 0) style.marginLeft = marginLeft;
-    if (marginTop !== 0) style.marginTop = marginTop;
+    if (marginLeft !== undefined) style.marginLeft = marginLeft;
+    if (marginTop !== undefined) style.marginTop = marginTop;
     return style;
   }
 
@@ -165,8 +175,8 @@ export function freeChildStyle(
     height: geometry.height,
   };
 
-  if (marginLeft !== 0) style.marginLeft = marginLeft;
-  if (marginTop !== 0) style.marginTop = marginTop;
+  if (marginLeft !== undefined) style.marginLeft = marginLeft;
+  if (marginTop !== undefined) style.marginTop = marginTop;
   if (options?.clipOverflowY) style.overflow = "hidden";
 
   return style;

@@ -26,7 +26,6 @@ import { applyShadowPreset } from "@/features/editor/types/boxShadow";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { FlexContainerSettings } from "@/features/editor/types/flowLayout";
 import type { ElementSpacing } from "@/features/editor/types/spacing";
-import { ZERO_EDGES } from "@/features/editor/types/spacing";
 
 const COLLAPSIBLE_ROOT_FLEX: FlexContainerSettings = {
   direction: "column",
@@ -38,7 +37,6 @@ const COLLAPSIBLE_ROOT_FLEX: FlexContainerSettings = {
 };
 
 const COLLAPSIBLE_CONTENT_PADDING: ElementSpacing = {
-  margin: ZERO_EDGES,
   padding: { top: 12, right: 12, bottom: 12, left: 12 },
 };
 
@@ -83,10 +81,7 @@ const MODAL_CONTENT_FLEX: FlexContainerSettings = {
   columnGap: 12,
 };
 
-const MODAL_CONTENT_SPACING: ElementSpacing = {
-  margin: ZERO_EDGES,
-  padding: ZERO_EDGES,
-};
+const MODAL_CONTENT_SPACING: ElementSpacing = {};
 
 /**
  * Modal (Checkpoint 1.15.6.9) — the first Interactive composition to use
@@ -148,7 +143,7 @@ export function createModalNode(): EditorElementNode {
     id: dialogId,
     tag: "dialog",
     initialPreviewVisibility: "hidden",
-    spacing: { margin: ZERO_EDGES, padding: { top: 24, right: 24, bottom: 24, left: 24 } },
+    spacing: { padding: { top: 24, right: 24, bottom: 24, left: 24 } },
     children: [content],
   };
 
@@ -371,7 +366,7 @@ export function createDrawerNode(): EditorElementNode {
     dimensions: { preferredWidth: 360, preferredHeight: 480, offsetX: 0, offsetY: 0 },
     background: { color: "#ffffff" },
     boxShadow: applyShadowPreset("floatingCard"),
-    spacing: { margin: ZERO_EDGES, padding: { top: 24, right: 24, bottom: 24, left: 24 } },
+    spacing: { padding: { top: 24, right: 24, bottom: 24, left: 24 } },
     children: [content],
   };
 

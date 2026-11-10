@@ -19,8 +19,7 @@ import { getFilterSettings, withFilterField, type FilterSettings } from "@/featu
 import { getMediaFitSettings, withMediaFitField, type MediaFitSettings } from "@/features/editor/types/mediaFit";
 import { getPositionSettings, withPositionField, type PositionSettings } from "@/features/editor/types/position";
 import { getSizeConstraints, withSizeConstraintField, type SizeConstraints } from "@/features/editor/types/sizeConstraints";
-import { getElementSpacing, type ElementSpacing } from "@/features/editor/types/spacing";
-import type { EdgeValues } from "@/features/editor/types/spacing";
+import { edgeValuesEqual, getElementSpacing, uniformEdges, withSpacingBox } from "@/features/editor/types/spacing";
 import { getShapePreset, type ShapePreset } from "@/features/editor/types/shape";
 import type { SvgPrimitiveKind } from "@/features/editor/types/svg";
 import { getTypographySettings, withTypographyField, type CssLengthValue, type TypographySettings } from "@/features/editor/types/typography";
@@ -480,14 +479,11 @@ export function setElementsSpacingAllSides(
   value: number,
 ): EditorElementNode {
   return updateNodesByIds(root, ids, (node) => {
-    const spacing = getElementSpacing(node);
-    const currentBox = spacing[box];
-    if (currentBox.top === value && currentBox.right === value && currentBox.bottom === value && currentBox.left === value) {
-      return node;
-    }
-    const nextBox: EdgeValues = { top: value, right: value, bottom: value, left: value };
-    const nextSpacing: ElementSpacing = { ...spacing, [box]: nextBox };
-    return { ...node, spacing: nextSpacing };
+    // 0 is an authored value (BC-05.3): an unset box is not "already 0",
+    // so writing 0 to it is a real change.
+    const nextBox = uniformEdges(value);
+    if (edgeValuesEqual(getElementSpacing(node)[box], nextBox)) return node;
+    return { ...node, spacing: withSpacingBox(node.spacing, box, nextBox) };
   });
 }
 

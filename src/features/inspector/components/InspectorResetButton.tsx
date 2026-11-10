@@ -17,8 +17,8 @@ interface InspectorResetButtonProps {
  * Shared reset affordance (Checkpoint 4.1). Reset always means "remove the
  * explicit value and let the document model's own default/inherited
  * behavior take over" — the caller supplies onReset wired to that model's
- * actual default (see InspectorSpacingSection's ZERO_EDGES, the spacing
- * model's own documented unset value), never a guessed browser default.
+ * actual default (e.g. InspectorSpacingSection removes the box or side,
+ * leaving it unset), never a guessed browser default.
  * Invisible (not just inert) when there is nothing to reset, so it never
  * occupies attention as a dead control.
  *

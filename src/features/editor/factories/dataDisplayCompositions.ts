@@ -68,7 +68,6 @@ import type { BorderSettings } from "@/features/editor/types/border";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { FlexContainerSettings } from "@/features/editor/types/flowLayout";
 import type { ElementSpacing } from "@/features/editor/types/spacing";
-import { ZERO_EDGES } from "@/features/editor/types/spacing";
 import type { TypographySettings } from "@/features/editor/types/typography";
 
 function flexRow(gap: number, justifyContent: FlexContainerSettings["justifyContent"], alignItems: FlexContainerSettings["alignItems"]): FlexContainerSettings {
@@ -95,7 +94,7 @@ const BADGE_BORDER: BorderSettings = {
   left: { width: { value: 1, unit: "px" }, style: "solid", color: "#e4e4e7" },
 };
 const BADGE_RADIUS: BorderRadiusSettings | undefined = applyBorderRadiusPreset("pill");
-const BADGE_PADDING: ElementSpacing = { margin: ZERO_EDGES, padding: { top: 4, right: 10, bottom: 4, left: 10 } };
+const BADGE_PADDING: ElementSpacing = { padding: { top: 4, right: 10, bottom: 4, left: 10 } };
 const BADGE_TEXT_TYPOGRAPHY: TypographySettings = { fontSize: { value: 12, unit: "px" }, fontWeight: 600, color: "#3f3f46" };
 
 /**
@@ -266,7 +265,7 @@ const STAT_CARD_RADIUS: BorderRadiusSettings = {
   bottomRight: { value: 8, unit: "px" },
   bottomLeft: { value: 8, unit: "px" },
 };
-const STAT_CARD_PADDING: ElementSpacing = { margin: ZERO_EDGES, padding: { top: 20, right: 20, bottom: 20, left: 20 } };
+const STAT_CARD_PADDING: ElementSpacing = { padding: { top: 20, right: 20, bottom: 20, left: 20 } };
 const STAT_LABEL_TYPOGRAPHY: TypographySettings = { fontSize: { value: 13, unit: "px" }, color: "#71717a" };
 const STAT_VALUE_TYPOGRAPHY: TypographySettings = { fontSize: { value: 28, unit: "px" }, fontWeight: 700, color: "#18181b" };
 /**
@@ -395,7 +394,7 @@ export function createMetadataRowNode(): EditorElementNode {
  * row both rendered an unwanted 32px-padded, faintly-bordered, rounded
  * box neither composition intended. Both the root and the header row
  * below now author explicit, genuinely-zero values for all three fields
- * (ZERO_EDGES spacing, `style: "none"` on every border side, 0px on every
+ * (an empty spacing record, `style: "none"` on every border side, 0px on every
  * radius corner) — real document data, not a new field/mechanism, that
  * simply and correctly opts both nodes out of that fallback, matching the
  * "no card surface... no large padding" requirement precisely rather than
@@ -413,7 +412,7 @@ const NO_RADIUS: BorderRadiusSettings = {
   bottomRight: { value: 0, unit: "px" },
   bottomLeft: { value: 0, unit: "px" },
 };
-const NO_SPACING: ElementSpacing = { margin: ZERO_EDGES, padding: ZERO_EDGES };
+const NO_SPACING: ElementSpacing = {};
 
 export function createProgressBarNode(): EditorElementNode {
   const headerRow: EditorElementNode = {

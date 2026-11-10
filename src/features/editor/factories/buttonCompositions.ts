@@ -53,7 +53,6 @@ const BUTTON_PRESET_RADIUS: BorderRadiusSettings = {
 };
 
 const BUTTON_PRESET_SPACING: ElementSpacing = {
-  margin: { top: 0, right: 0, bottom: 0, left: 0 },
   padding: { top: 10, right: 20, bottom: 10, left: 20 },
 };
 
@@ -120,7 +119,7 @@ export function createButtonGroupNode(): EditorElementNode {
     id: generateNodeId("div"),
     tag: "div",
     flowLayout: { display: "flex", flex: BUTTON_GROUP_FLEX },
-    spacing: { margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } },
+    spacing: {},
     children: [
       { id: generateNodeId("button"), tag: "button", text: "Option 1" },
       { id: generateNodeId("button"), tag: "button", text: "Option 2" },
@@ -185,7 +184,7 @@ export function createDropdownButtonNode(): EditorElementNode {
       left: { width: { value: 1, unit: "px" }, style: "solid", color: "#e4e4e7" },
     },
     borderRadius: BUTTON_PRESET_RADIUS,
-    spacing: { margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 8, right: 8, bottom: 8, left: 8 } },
+    spacing: { padding: { top: 8, right: 8, bottom: 8, left: 8 } },
     initialPreviewVisibility: "hidden",
     children: [
       { id: generateNodeId("a"), tag: "a", text: "Item 1", href: DEFAULT_LINK_HREF },
@@ -205,7 +204,7 @@ export function createDropdownButtonNode(): EditorElementNode {
     id: generateNodeId("div"),
     tag: "div",
     flowLayout: { display: "flex", flex: DROPDOWN_ROOT_FLEX },
-    spacing: { margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } },
+    spacing: {},
     children: [trigger, menu],
   };
 }

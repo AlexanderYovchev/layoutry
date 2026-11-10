@@ -280,13 +280,14 @@ describe("Progress Bar (Checkpoint 1.15.6.13.1)", () => {
     }
   });
 
-  it("no card surface — explicit zero spacing/border/borderRadius on root and header row, not merely omitted", () => {
+  it("no card surface — a spacing record and explicit zero border/borderRadius on root and header row, not merely omitted", () => {
     const node = createProgressBarNode() as unknown as Record<string, unknown>;
-    expect(node.spacing).toEqual({ margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } });
+    // An empty spacing record (BC-05.3) is what switches the container default padding off.
+    expect(node.spacing).toEqual({});
     expect(node.background).toBeUndefined();
 
     const headerRow = (node.children as Record<string, unknown>[])[0];
-    expect(headerRow.spacing).toEqual({ margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 0, right: 0, bottom: 0, left: 0 } });
+    expect(headerRow.spacing).toEqual({});
   });
 
   it("stores no proprietary progress-bar field anywhere on any node", () => {

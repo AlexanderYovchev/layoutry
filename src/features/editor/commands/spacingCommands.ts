@@ -1,10 +1,12 @@
 import { getLayoutMode, getResizeConstraintsForTag } from "@/features/editor/types/layout";
-import { getElementSpacing, type EdgeValues } from "@/features/editor/types/spacing";
+import { withSpacingBox, type EdgeValues } from "@/features/editor/types/spacing";
 import { normalizeFreeLayoutGeometry } from "@/features/editor/utils/normalizeFreeLayoutGeometry";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
 /**
- * Sets exactly one node's margin. A no-op (same reference) if nodeId
+ * Sets exactly one node's margin — the whole box at once. Sides absent
+ * from `margin` are unset and 0 is an authored value (BC-05.3); undefined,
+ * or a box with no authored side, removes the box (how Reset works). A no-op (same reference) if nodeId
  * doesn't exist. Margin never affects a Free container's content bounds
  * (it's outside the border, not inside it — see setElementPadding for
  * the field that does), so no child re-normalization is needed here.
@@ -12,10 +14,10 @@ import type { EditorElementNode } from "@/features/editor/types/document";
 export function setElementMargin(
   root: EditorElementNode,
   nodeId: string,
-  margin: EdgeValues,
+  margin: EdgeValues | undefined,
 ): EditorElementNode {
   if (root.id === nodeId) {
-    return { ...root, spacing: { ...getElementSpacing(root), margin } };
+    return { ...root, spacing: withSpacingBox(root.spacing, "margin", margin) };
   }
 
   if (!root.children) return root;
@@ -48,10 +50,10 @@ export function setElementMargin(
 export function setElementPadding(
   root: EditorElementNode,
   nodeId: string,
-  padding: EdgeValues,
+  padding: EdgeValues | undefined,
 ): EditorElementNode {
   if (root.id === nodeId) {
-    const updated: EditorElementNode = { ...root, spacing: { ...getElementSpacing(root), padding } };
+    const updated: EditorElementNode = { ...root, spacing: withSpacingBox(root.spacing, "padding", padding) };
 
     if (getLayoutMode(updated) !== "free" || !updated.children?.length) {
       return updated;
@@ -62,8 +64,10 @@ export function setElementPadding(
     if (outerWidth === undefined || outerHeight === undefined) return updated;
 
     const newContentBounds = {
-      width: Math.max(0, outerWidth - padding.left - padding.right),
-      height: Math.max(0, outerHeight - padding.top - padding.bottom),
+      // An unset side is 0 here: the node now has a spacing record, so no
+      // default padding applies to it (see ElementSpacing).
+      width: Math.max(0, outerWidth - (padding?.left ?? 0) - (padding?.right ?? 0)),
+      height: Math.max(0, outerHeight - (padding?.top ?? 0) - (padding?.bottom ?? 0)),
     };
 
     return {
