@@ -1,7 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { copyFile, readFile } from "node:fs/promises";
 import path from "node:path";
-import { launchLayoutry, makeTempDir, removeDir, scriptFileDialogs, type LaunchedLayoutry } from "./support/layoutryApp";
+import { launchLayoutry, makeTempDir, removeDir, REPO_ROOT, scriptFileDialogs, type LaunchedLayoutry } from "./support/layoutryApp";
 
 /**
  * BC-06.2 in the real Electron window: Navbar with CTA managed through the
@@ -115,4 +116,41 @@ test("manage Navbar with CTA links, Preview, save to a real file and reopen it",
   expect(await canvasChildren(layoutry.page, navId)).toEqual(expected);
   await node(layoutry.page, navId).click({ position: { x: 5, y: 5 } });
   await expect(section(layoutry.page).getByText("3 links")).toBeVisible();
+});
+
+test("a format 1 file's Navbar is managed, then BC-05's upgrade prompt still protects the original (Save As, real files)", async () => {
+  const original = path.join(folder, "Legacy Every Element.layoutry");
+  const copy = path.join(folder, "Legacy Every Element (v2).layoutry");
+  await copyFile(path.join(REPO_ROOT, "test", "fixtures", "persistence", "project-1.1-every-element.layoutry"), original);
+  const sha = async (file: string) => createHash("sha256").update(await readFile(file)).digest("hex");
+  const originalHash = await sha(original);
+
+  layoutry = await launchLayoutry({ extraArgs: [original] });
+  const { app, page } = layoutry;
+  await expect(page.locator("[data-project-source]")).toHaveText(/Legacy Every Element\.layoutry/);
+  const navId = "nav-3ca05eea";
+  await expect(node(page, navId)).toBeVisible();
+  await node(page, navId).click({ position: { x: 5, y: 5 } });
+  await expect(section(page).getByText("4 links")).toBeVisible();
+
+  await button(page, "Add link").click();
+  await button(page, "Move Home down").click();
+  await button(page, "Remove Services").click();
+  const expected = ["a:About", "a:Home", "a:Contact", "a:New link"];
+  expect(await canvasChildren(page, navId)).toEqual(expected);
+
+  await scriptFileDialogs(app, { save: [copy] });
+  // File > Save, not Ctrl+S: this file contains an authored, open Dialog element, and
+  // the project shortcuts ignore keys while ANY dialog[open] exists — a pre-existing
+  // defect found by BC-06.3 (report: PRJ-K1), outside BC-06.
+  await page.getByRole("menuitem", { name: "File" }).click();
+  await page.getByRole("menuitem", { name: "Save", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Upgrade Project File?" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Save As… (Recommended)" }).click();
+  await expect(page.locator("[data-project-status]")).toHaveAttribute("data-project-status", "saved");
+  expect(await sha(original)).toBe(originalHash);
+  const saved = JSON.parse(await readFile(copy, "utf8")) as { formatVersion: number; document: SavedNode };
+  expect(saved.formatVersion).toBe(2);
+  expect(findById(saved.document, navId)?.children?.map((child) => `${child.tag}:${child.text ?? ""}`)).toEqual(expected);
 });

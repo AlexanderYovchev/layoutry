@@ -9,15 +9,19 @@ import { createBasicNavbarNode } from "@/features/editor/factories/navigationCom
 import { getInteractions } from "@/features/editor/types/interactions";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
+import { parseProjectFile } from "@/features/project/utils/parseProjectFile";
 import { createProjectMetadata, serializeProject } from "@/features/project/utils/serializeProject";
 import { useEditorStore } from "./useEditorStore";
 
 const initialState = useEditorStore.getState();
 const store = () => useEditorStore.getState();
 
-/** Saving the current document the way Save does: throws when the document holds a dangling interaction target. */
+/** Saving the current document the way Save does (throws on a dangling interaction target), then reopening it: the reopened document must equal the saved one (BC-06.3). */
 function save(): void {
-  serializeProject({ metadata: createProjectMetadata({ id: "project-1", now: new Date(0) }), document: store().document });
+  const text = serializeProject({ metadata: createProjectMetadata({ id: "project-1", now: new Date(0) }), document: store().document });
+  const reopened = parseProjectFile(text);
+  if (!reopened.ok) throw new Error(reopened.error.message);
+  expect(reopened.project.document).toEqual(store().document);
 }
 
 function bindingTargets(nodeId: string): string[] {

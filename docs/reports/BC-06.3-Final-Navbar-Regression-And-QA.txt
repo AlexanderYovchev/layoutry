@@ -1,0 +1,820 @@
+LAYOUTRY — BC-06.3 FINAL NAVBAR REGRESSION & DOCUMENT INTEGRITY QA
+===================================================================
+
+Checkpoint: BC-06.3 (final regression + corrective fix + closure audit)
+Date:       2026-11-10
+Base:       main @ b57a6f9 (BC-06.2 committed), working tree clean at start
+Result:     One BC-06 defect found and fixed (BC-06-H). One pre-existing,
+            out-of-scope defect found and registered, not fixed (PRJ-K1).
+            Recommendation: CLOSE BC-06. Nothing committed or pushed.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+
+The BC-06.2 source was re-read, then re-verified with four new permanent
+test layers:
+- a deterministic store regression suite (24 tests);
+- an Inspector eligibility suite (17 tests) through the real
+  InspectorContent;
+- a responsive Canvas / Preview / Export parity matrix: 8 Navbar states ×
+  5 widths × 3 surfaces, structural and measured geometry;
+- 5 more Inspector e2e tests and 1 more Electron test on real files.
+
+Findings:
+
+BC-06-H — FIXED (BC-06 defect, Medium)
+- "Add link" copied the last link's hidden state. If the last link was
+  hidden (Display none, Visibility hidden, or Opacity 0), the new link was
+  invisible on the Canvas, in Preview and in the export.
+- Fix: createNavigationLink drops exactly those three values. The rest of
+  the look is still inherited.
+- 2 tests fail on b57a6f9 and pass now.
+
+PRJ-K1 — REGISTERED, NOT FIXED (pre-existing since PROJECT-1.2 / 0fcafaf,
+not BC-06, Medium)
+- The project shortcuts (Ctrl+S, Ctrl+Shift+S, Ctrl+O, Ctrl+N) are
+  silently ignored while any `dialog[open]` exists in the page. That
+  includes an authored Dialog element on the Canvas, which Design renders
+  open.
+- File › Save still works.
+- Reproduced in Chromium on a fresh page (HTML › Dialog, then Ctrl+S) and
+  in Electron with the PROJECT-1.1 file.
+- Out of BC-06 scope, so it is raised rather than fixed (section 21).
+
+Everything else verified as working:
+- eligibility, add / remove / reorder, inheritance (including format 2
+  zeros), limits, CTA and mixed content;
+- interaction integrity on every audited removal path, including save and
+  reopen;
+- Undo/Redo stress, copy/paste/duplicate independence, persistence (v1,
+  v2, over-limit);
+- parity, accessibility, Inspector responsiveness, and the workload test.
+
+Validation:
+- Vitest: 5534 passed, 1 skipped.
+- Chromium: 241/241.
+- Firefox targeted: 27/27.
+- WebKit targeted: 27/27.
+- Electron: 73 passed, 2 skipped, 1 load-only timeout that passes 3/3
+  alone.
+- Builds, typecheck and lint clean.
+
+
+2. APPROVED PRODUCT DECISIONS VERIFICATION
+------------------------------------------
+
+  Decision                         Verified by                          Status
+  -------------------------------  -----------------------------------  ------
+  Management list                  eligibility suite; e2e (3 engines)   kept
+  Maximum 12 via management        store limits tests; e2e cap test     kept
+  Inherit last link's styling      inheritance matrix (section 5)       kept
+  Explicit removal only            removal tests; no count control      kept
+  Wrap hint from 6                 RTL + e2e (5 / 6 / 12, real Wrap)    kept
+  No automatic Wrap                hint tests assert flex-wrap stays    kept
+                                   nowrap
+  No mobile/hamburger menu         none added                           kept
+
+The Navbar is still an ordinary `nav` of Link elements. There is no new
+type and no format 3: CURRENT_PROJECT_FORMAT_VERSION is unchanged at 2,
+and saves write formatVersion 2.
+
+
+3. NAVBAR ELIGIBILITY RESULTS
+-----------------------------
+
+New file: InspectorNavigationLinksSection.eligibility.test.tsx, rendered
+through the real InspectorContent with store selections.
+
+  Case                                        Section  Count shown
+  ------------------------------------------  -------  -----------
+  Basic Navbar                                yes      4 links
+  Navbar with CTA                             yes      3 links (CTA not counted)
+  Zero links (blank Nav)                      yes      No links yet
+  One link                                    yes      1 link
+  Twelve links                                yes      12 links
+  Legacy fifteen links                        yes      15 links
+  Breadcrumbs (separators)                    yes      3 links
+  Pagination (Previous/Next Buttons)          yes      3 links; buttons not listed
+  Sidebar Navigation                          yes      4 links
+  Duplicated / pasted Navbar                  yes      store suite (section 11)
+  Navbar from a format 1 project              yes      store suite + Electron
+  div / header / footer full of links         NO       -
+  ul, a single link, a link inside a nav      NO       -
+  Multi-selection of two navs                 NO       -
+
+No Remove or Move control is rendered for any non-nav selection (asserted
+for each one). No persisted Navbar type is involved.
+
+
+4. ADD / REMOVE / REORDER RESULTS
+---------------------------------
+
+Add (store regression suite plus the BC-06.2 suites):
+- Default, CTA, empty, customized, duplicated and mixed-content navs all
+  pass.
+- Every new link:
+  - has a unique id (every id in the document is checked unique after
+    each scenario);
+  - has the text "New link" and the href "#";
+  - copies no interactions and no htmlId;
+  - is inserted after the last link, before the CTA.
+- Existing labels and destinations are unchanged (the same object
+  references).
+- One history entry per add.
+
+Remove (each with Undo → deep-equal restore, Redo, a valid document,
+and saving):
+- First, middle, last and only link.
+- A customized and targeted link, through 10 remove/Undo/Redo cycles.
+- Unrelated links remain the same objects. The CTA and non-link children
+  are untouched.
+- "Link with nested content": not applicable. `a` is a text-bearing leaf
+  and cannot have children (insertionRules CONTAINER_TAGS). Descendant
+  cleanup is covered in section 9.
+
+Reorder:
+- Exact id orders after first↓, last↑, middle↑ and middle↓.
+- Duplicate labels move by id, keeping each one's destination, style and
+  interactions (the node objects are reused).
+- Around the CTA: the last link's Move down is disabled.
+- Around non-link children: see section 8.
+- No history entry for the five no-op or refused calls tested.
+
+Mixed-content ordering rule (documented in the BC-06.2 report, re-verified
+here):
+- A move SWAPS the link with its neighbouring LINK. Each takes the other's
+  slot, so every non-link child keeps its exact index and identity.
+- Add inserts after the last direct link.
+- Remove refuses non-links. A link nested in a Container is not a link of
+  the nav (Remove of its id is refused and the node survives).
+
+
+5. STYLING INHERITANCE RESULTS
+------------------------------
+
+Source link (Contact), customized through the production store actions:
+- font family Georgia, size 19 px, weight 600, colour #7c3aed;
+- margin 0 / 12 / 0 / 0 and padding 4 / 0 / 4 / 10 (authored zeros);
+- background #fef3c7, 2 px dashed border on four sides, 6 px radius.
+
+Result for the new link:
+- typography, spacing, background, border and borderRadius deep-equal the
+  source's;
+- the authored zeros survive save + reopen (format 2), on both links;
+- the source link is untouched (the same object).
+- Live check (BC-06.2 e2e, 3 engines): computed color, font-size,
+  text-decoration-line and padding equal the source's.
+
+Template choice: the LAST link, not the first and not the CTA (tested).
+
+BC-06-H (new fix):
+- Not inherited:
+  - Display none;
+  - Visibility hidden;
+  - Opacity 0.
+- Still inherited:
+  - other display fields (for example cursor);
+  - other filters (for example blur);
+  - opacity above 0 (for example 60).
+- Empty display/filters records are removed entirely, not left as `{}`;
+  the document validates and saves.
+
+Never copied (unchanged): id, htmlId, interactions, initial Preview
+visibility, text, href, layer name, title, dimensions, free geometry,
+position offsets, and the explicit grid cell. No runtime state exists on
+nodes.
+
+
+6. MAXIMUM-COUNT BEHAVIOR
+-------------------------
+
+Store tests:
+- 11 → 12 succeeds. The 13th is refused with no history entry.
+- After removing one, Add works again.
+- A 14-link nav:
+  - is never truncated;
+  - can be edited (text, href), moved within, saved and reopened with
+    identical ids;
+  - Add is refused at 14 and 13;
+  - Remove works down to 12, where Add is still refused;
+  - at 11, Add works and the count reaches 12.
+- A format 1 file with a 14-link Navbar (section 12) migrates without
+  truncation.
+
+UI (RTL + e2e):
+- At 12, "Add link" has aria-disabled, stays focusable and is described by
+  "Maximum of 12 navigation links. Remove a link to add another."
+  (aria-describedby).
+- Its tooltip reads "Maximum of 12 navigation links.".
+- Enter/Space at the cap does nothing.
+
+Nothing anywhere deletes content to enforce the limit.
+
+
+7. RESPONSIVE TEST MATRIX
+-------------------------
+
+New file: e2e/navigation-links-responsive.spec.ts.
+- Documents are built with the production Add commands, with realistic
+  labels (Home … Legal).
+- They are imported through the real project import.
+- Each is measured in Design (the Canvas), in Preview, and on the exported
+  page, at each width. The page sheet is pinned to the width, the same
+  technique as the export parity harness.
+
+Asserted in EVERY cell, in Chromium, Firefox and WebKit:
+- authored order = Canvas = Preview = Export (tag, label, href);
+- nav-relative boxes of every link and the CTA, plus the nav's width and
+  height, equal within 1 px across the three surfaces;
+- the same spill flags and sideways-scroll result;
+- the CTA last in document order, and rightmost without Wrap.
+
+Additionally asserted with Wrap ON:
+- no link escapes the nav;
+- no label spills out of its link;
+- every link is visible and there is no sideways scroll;
+- reading order is kept (rows top→bottom, left→right).
+
+Chromium measurements (rows / labels spilling / boxes outside the nav /
+zero-width boxes / sideways scroll / nav height in px):
+
+  State                   320px            375px            768px           1024px         1440px
+  ----------------------  ---------------  ---------------  --------------  -------------  -------------
+  4, Wrap off             1/0/0/0/no 57    1/0/0/0/no 57    1/0/0/0/no 57   1/0/0/0/no 57  1/0/0/0/no 57
+  4, Wrap on              1/0/0/0/no 57    1/0/0/0/no 57    1/0/0/0/no 57   1/0/0/0/no 57  1/0/0/0/no 57
+  6, Wrap off             1/6/0/0/no 57    1/6/0/0/no 57    1/0/0/0/no 57   1/0/0/0/no 57  1/0/0/0/no 57
+  6, Wrap on              2/0/0/0/no 105   2/0/0/0/no 105   1/0/0/0/no 57   1/0/0/0/no 57  1/0/0/0/no 57
+  12, Wrap off            1/12/0/12/YES 57 1/12/0/0/YES 57  1/12/0/0/no 57  1/0/0/0/no 57  1/0/0/0/no 57
+  12, Wrap on             3/0/0/0/no 153   3/0/0/0/no 153   2/0/0/0/no 105  1/0/0/0/no 57  1/0/0/0/no 57
+  6 + CTA, Wrap off       1/6/0/0/no 93*   1/6/0/0/no 93*   1/0/0/0/no 73   1/0/0/0/no 73  1/0/0/0/no 73
+  12 + CTA, Wrap on       4/0/0/0/no 217   4/0/0/0/no 169   3/0/0/0/no 121  2/0/0/0/no 73  2/0/0/0/no 73
+
+  (*) "Get Started" wraps onto two lines inside the button. The button is
+      taller; nothing overflows.
+
+Firefox and WebKit: every assertion passed. The values are within the
+1 px parity tolerance on each engine.
+
+Classification:
+- Expected limitation (BC06-R1, Wrap off):
+  - Label spill at 6 links on phone widths, and at 12 links up to 768 px.
+  - At 12 links / 320 px, link boxes shrink to 0 px and the page scrolls
+    sideways. The labels are still painted, overlapping.
+  - Wrap off is the default; the hint appears from 6 links and points to
+    the fix.
+- Fix verified: with Wrap ON, every case is clean at every width. The nav
+  grows vertically (up to 4 rows / 217 px), and links never disappear.
+- No rendering defects:
+  - all three surfaces agree everywhere;
+  - links never vanish from the document or the DOM;
+  - the Inspector stays usable (section 15);
+  - the editor shell is unaffected (the sheet scrolls inside the
+    workspace).
+
+Focus visibility:
+- A keyboard-focused link shows a focus ring in Preview and on the
+  exported page.
+  - Chromium: outline auto, 1 px.
+  - Firefox and WebKit: outline auto, 3 px.
+- Asserted in all three engines.
+
+
+8. CTA AND MIXED-CONTENT RESULTS
+--------------------------------
+
+Store: a nav of [a, button, p, div > a, a, a], moved, added to and removed
+from.
+- The button, the p and the div keep their indexes and object identities.
+- The nested link is never listed, and Remove refuses it.
+- The document stays valid.
+
+e2e (3 engines), an imported mixed nav
+[One, "|" separator, Two, Container > Nested link, Act button, Three]:
+- Only One, Two and Three are listed.
+- After Move One↓, Move Three↑, Add and Remove Two, the Canvas, Preview
+  and exported HTML agree:
+  ["|", Three, Nested, Act, One, New link].
+- The nested link is still visible and its href is kept.
+- The removed link's href is gone.
+
+Other checks:
+- Breadcrumbs: the separators are unchanged after moves and an add.
+- Navbar with CTA: the CTA is not counted, not listed, never removed or
+  moved, and stays last. Verified on the Canvas, in Preview, in Export,
+  in saved files and after reopen, in 3 engines and Electron.
+- Exported HTML stays semantic (`<nav>` > `<a href>` …, `<button>`).
+
+No ambiguity required a correction. The swap rule is deterministic for
+arbitrary mixed content.
+
+
+9. INTERACTION-REFERENCE INTEGRITY MATRIX
+-----------------------------------------
+
+Every case: a trigger targets a node that gets removed AND a node that
+survives. Then:
+- edit;
+- the reference to the removed node is gone and the other is unchanged;
+- checkDocumentIntegrity passes;
+- serialize and reopen, with the reopened document deep-equal to the
+  saved one (save + reopen added in BC-06.3);
+- Undo restores the target and its binding, then save + reopen;
+- Redo removes it again, then save + reopen.
+
+  Removal path                                   Result
+  ---------------------------------------------  ------
+  Navigation links › Remove (targeted link)      pass
+  List › Items decrease                          pass
+  Select › Options decrease                      pass
+  Table › Columns decrease (targeted cell)       pass
+  Table › Body rows decrease (targeted row)      pass
+  Table › Body rows (cell inside removed row)    pass  (descendant)
+  Table › Header row off (header cell)           pass  (descendant: thead > tr > th)
+  Table › Footer row off (footer cell)           pass  (descendant)
+  Table › Caption off                            pass
+  Delete of a whole Navbar (4 targeted links)    pass  (descendants; new in BC-06.3)
+  Binding ON a removed node                      leaves with it; pass
+  Targeted link, 10 remove/Undo/Redo cycles      pass
+  Interaction remap in a duplicated Navbar       copy's link targets the copy's link; pass
+
+Other removal paths audited (code):
+- setElementTag renames only.
+- setSelectSelectedOption removes nothing.
+- SVG object removal: vector objects are not interaction targets.
+- Paste uses removeInteractionsWithMissingTargets; Delete and Cut use
+  removeInteractionsTargeting.
+- No other command drops element nodes.
+
+Target constraint: every node except the page root can be a target, so no
+substitute scenario was needed. Nothing suppresses validation: each check
+runs the real validator, serializer and parser.
+
+Through the real UI (3 engines): removing a targeted link, and trimming a
+List below a targeted item, both reach status "saved".
+
+
+10. UNDO/REDO STRESS RESULTS
+----------------------------
+
+The brief's section 13 sequence, deterministic, on Navbar with CTA:
+1. add ×3;
+2. customize two links (text and href; colour);
+3. three moves;
+4. remove a customized link;
+5. Undo ×4;
+6. Redo ×2;
+7. add;
+8. save, reopen, export.
+
+Asserted:
+- exactly 10 history entries for the 10 operations;
+- the exact intermediate order after Undo ×4 and after Redo ×2;
+- the redo stack is cleared by the new add;
+- the final order is
+  [Home, Blog, Features, Pricing, New link ×3, Get Started], with the CTA
+  as the same object;
+- the newest link copies the correct (last) link;
+- valid and unique ids at every checkpoint;
+- reopened nav deep-equal; exported links in order with hrefs
+  (Blog → /blog);
+- dirty state: unsaved before save, clean after markDocumentPersisted,
+  dirty after Undo, clean again after Redo back to the saved document.
+
+Workload: 100 cycles of add / move up / move down / remove (400
+operations).
+- Took 34 ms.
+- The document returns exactly to the baseline (same ids and order).
+- Exactly 400 history entries.
+- 400 Undo calls restore the baseline exactly, and 400 Redo calls
+  reapply.
+
+
+11. COPY/PASTE AND DUPLICATION
+------------------------------
+
+- Duplicate Navbar:
+  - fresh ids;
+  - an internal interaction (Home → About) is remapped to the copy's own
+    About;
+  - adding, moving and removing in the copy leaves the original the
+    identical object;
+  - removing the copy's About cleans only the copy's binding; the
+    original's binding is intact.
+- Paste twice: three independent subtrees with unique ids. Adding to one
+  changes neither of the others.
+- Duplicate a single link (Ctrl+D), then move and add: ids stay unique and
+  the order is correct.
+- Copy/paste of an edited CTA Navbar keeps links, order, styling, custom
+  hrefs and the CTA (BC-06.2 suite).
+- Save/reopen: valid after each scenario.
+- Export parity is covered in section 13.
+
+
+12. PROJECT PERSISTENCE
+-----------------------
+
+  Case                                              Result
+  ------------------------------------------------  ------
+  New format 2 project, managed Navbar              round-trips deep-equal
+  Existing format 2 (frozen BC-05.3 fixture)        full suite, unchanged
+  Format 1 (PROJECT-1.1) Navbar, managed            saves as format 2, reloads
+  Format 1 with a 14-link Navbar                    migrates untruncated; managed; deep-equal
+  Navbar with CTA, customized links, 12 links       round-trip tests
+  After repeated Undo/Redo                          stress test round-trip
+  Electron: new file, save → relaunch → open        same order, no dangling
+                                                    binding, format 2
+  Electron: format 1 file, managed, then saved      upgrade prompt shown;
+                                                    Save As writes format 2;
+                                                    original SHA-256 unchanged
+
+BC-05's legacy desktop save protection is intact. The format 1 source file
+was never overwritten.
+
+
+13. CANVAS / PREVIEW / EXPORT PARITY MATRIX
+-------------------------------------------
+
+  Compared                          How                                       Where
+  --------------------------------  ----------------------------------------  -----------------------
+  Authored tree vs Canvas DOM       tag / label / href per child, in order    responsive spec, all cells
+  Canvas vs Preview DOM             structure + geometry within 1 px          responsive spec, all cells
+  Canvas vs exported page DOM       structure + geometry within 1 px          responsive spec, all cells
+  Exported HTML                     anchor order + hrefs                      stress test; e2e CTA and mixed
+  Interaction behaviour             shared resolveInteractionTargets;         BC-06.2 + full suite
+                                    export-interactions spec
+  Responsive layout                 section 7                                 3 engines
+  Keyboard focus                    focus ring in Preview + export            3 engines
+
+States covered:
+- addition (the matrix documents are built with Add);
+- removal, reordering and Undo/Redo (e2e CTA test, mixed-content test,
+  stress test);
+- styling changes (the inheritance matrix; the computed-style check in
+  BC-06.2 e2e);
+- save/reopen (e2e, store and Electron).
+
+Assertions are structural and computed-geometry, not screenshots.
+
+
+14. ACCESSIBILITY RESULTS
+-------------------------
+
+- The section is discoverable: an h3 header button "Navigation links".
+- The count is announced: a polite live region ("4 links" → "5 links").
+- Add link's accessible name is "Add link" (it matches the visible
+  label). At the cap it is aria-disabled and described by the note.
+- Row buttons name their target: "Move Home up", "Move Home down",
+  "Remove Home" and "Select Home".
+- Duplicate labels: "… Docs (link 1)" / "… Docs (link 2)". Empty labels:
+  "Untitled link".
+- Boundary buttons use real `disabled`, so they are skipped by Tab.
+
+Keyboard (new e2e, 3 engines):
+- Tab from "Select Home" visits Move Home down → Remove Home → Select
+  About → Move About up → … ; Shift+Tab reverses exactly.
+- After the last row, Tab goes to "Add link" and then out of the section:
+  there is no trap.
+- Enter and Space activate.
+- Focus after Add, Remove and Move is predictable (BC-06.2 RTL + e2e).
+- Escape: the editor-wide "clear selection" shortcut applies. It
+  deselects the nav (the section unmounts); the document is unchanged.
+  The same happens from any Inspector control (asserted with a Background
+  control), so this is pre-existing editor behaviour, not BC-06 (section
+  23).
+
+Other checks:
+- Tooltips are native `title` attributes, rendered by the OS and never
+  clipped. Every control also has an aria-label, so tooltips are
+  redundant for assistive tech.
+- Focus indicators: focus-visible outlines on Inspector controls, and a
+  focus ring on authored links (section 7).
+- WebKit: buttons are reachable with Tab. Links are not, by engine
+  default: on a bare HTML page with no Layoutry code, Tab from a button
+  skips the link in WebKit, while Chromium and Firefox stop on it
+  (temporary probe). That is evidence the WebKit behaviour is not an app
+  defect.
+
+
+15. INSPECTOR RESPONSIVENESS
+----------------------------
+
+Checked at:
+- the standard width (1600 × 1000);
+- the minimum Inspector width (resize handle at aria-valuemin; BC-06.2
+  e2e);
+- 1280 × 720 and 1440 × 900 windows (new e2e).
+
+Verified with 12 links, a long label, the hint and the cap note:
+- nothing escapes the section, and the Inspector does not scroll sideways;
+- labels truncate;
+- the last row's Remove button, once focused, is scrolled fully into view;
+- Content Layout's Wrap control below the section is still reachable;
+- in 3 engines.
+
+BC-03 sidebar scrolling: the full Chromium run includes
+resource-panel-scrolling.spec, which passes.
+
+
+16. PERFORMANCE AND LEAK OBSERVATIONS
+-------------------------------------
+
+- 400 management operations take 34 ms in total, with no unbounded
+  document growth: the node set returns to baseline.
+- History grows by exactly one entry per operation.
+  - It is uncapped by design (pre-existing; snapshots share structure).
+  - Growth is linear in edits, not something BC-06 introduced.
+- The section adds no store subscriptions beyond 4 action selectors, no
+  DOM measurement, and no window or document listeners. Its only effect
+  queries its own rows after an action.
+- Preview enter/exit and listener-count bounds: the BC-02 lifecycle spec
+  (25 Preview sessions, CDP listener counts) passes in the full Chromium
+  suite.
+- Repeated Navbar selection changes: covered by the e2e flows (dozens of
+  selections per test) with no lag. No component-level growth is
+  possible: there is no per-selection state besides one ref.
+
+
+17. CROSS-BROWSER RESULTS
+-------------------------
+
+Targeted set: navigation-links (10 tests), navigation-links-responsive (9),
+interaction-guidance (BC-04), spacing-zero (BC-05).
+
+  Engine    Result
+  --------  ---------------------------------
+  Chromium  included in the full suite: 241/241
+  Firefox   27 passed (1.3 min), 4 workers
+  WebKit    27 passed (4.2 min), 1 worker
+
+There were no WebKit failures in this set. The BC-06.2-era WebKit failures
+are in specs outside this set (section 24).
+
+
+18. ELECTRON RESULTS
+--------------------
+
+Run after a fresh `npm run desktop:build`, with ELECTRON_RUN_AS_NODE
+stripped.
+
+e2e/desktop/navigation-links.spec.ts: 2 passed.
+- Test 1 (new file): Navbar with CTA managed (including Remove of a
+  targeted link and Undo/Redo), Preview, then Save to a real file (format
+  2, the correct order, no dangling binding), then relaunch with the file
+  (same order, "3 links").
+- Test 2 (new in BC-06.3): the format 1 PROJECT-1.1 file is opened, its
+  Navbar managed, then saved.
+  - The "Upgrade Project File?" prompt appears.
+  - Save As writes format 2 with the managed order.
+  - The original's SHA-256 is unchanged.
+  - The test uses File › Save, because this file contains an authored
+    open Dialog, which triggers PRJ-K1.
+
+Full desktop suite: 73 passed, 2 skipped (the same 2 as before), 1 failed.
+- The failure: preview-parity "authored motion follows
+  prefers-reduced-motion" timed out on a 60 s locator wait under
+  full-suite load.
+- Alone, ×3 (--repeat-each=3): 3 passed in 6.9 s.
+- Classified as intermittent under load, not a BC-06 regression. BC-06
+  touches no motion or Preview code.
+
+Security: BC-06 adds no IPC, no preload API and no file-system path. The
+desktop security spec passes in the full run.
+
+
+19. EXACT TEST COMMANDS AND COUNTS
+----------------------------------
+
+- npx vitest run → Test Files 366 passed (366); Tests 5534 passed, 1
+  skipped (205 s).
+  - BC-06.2 ended at 5493, so +41 new tests: regression 24, eligibility
+    17.
+- A/B check of the BC-06-H fix: the regression suite against b57a6f9's
+  navigationLinkCommands.ts gives 2 failed, 22 passed. The file was
+  restored byte-for-byte (cmp).
+- npx playwright test --project=chromium → 241 passed (4.2 min).
+- Firefox and WebKit: a temporary config (playwright.zz-xbrowser.config.ts,
+  deleted afterwards), because the main config defines Chromium only:
+  - --project=firefox <4 specs> → 27 passed
+  - --project=webkit --workers=1 <4 specs> → 27 passed
+- npx playwright test -c playwright.desktop.config.ts
+  e2e/desktop/navigation-links.spec.ts → 2 passed.
+- Full desktop suite → 73 passed, 2 skipped, 1 failed (load); that test
+  alone ×3 → 3 passed.
+
+Temporary probes, deleted:
+- e2e/desktop/zz-bc063-diag.spec.ts (PRJ-K1 diagnosis);
+- e2e/zz-bc063-dialog-probe.spec.ts (PRJ-K1 in the browser);
+- e2e/zz-bc063-tab-probe.spec.ts (WebKit Tab evidence).
+
+
+20. BUILD / TYPECHECK / LINT RESULTS
+------------------------------------
+
+- npx tsc --noEmit -p . → 0 errors
+- npx tsc -p desktop/tsconfig.json --noEmit → 0 errors
+- npm run lint (eslint .) → clean
+- npm run build → compiled successfully
+- npm run desktop:build → succeeded
+
+
+21. FINAL BC-06 DEFECT REGISTER
+-------------------------------
+
+BC-06-A  Missing Navbar link-management UI
+  - Status:   FIXED (BC-06.2).
+  - Evidence: eligibility 17 tests; section RTL 13; e2e 10 × 3 engines;
+              Electron 2.
+  - Risk:     none known.
+  - Closure:  ready.
+
+BC-06-B  New links do not inherit Navbar styling
+  - Status:   FIXED (BC-06.2), hardened by BC-06-H.
+  - Evidence: inheritance matrix (9 fields + format 2 zeros); computed
+              styles in 3 engines.
+  - Risk:     Breadcrumbs inherit the muted "current" colour and get no
+              separator (accepted, documented).
+  - Closure:  ready.
+
+BC-06-C  Missing keyboard-accessible reordering
+  - Status:   FIXED (BC-06.2).
+  - Evidence: keyboard e2e (Tab/Shift+Tab/Enter/Space, focus after move),
+              3 engines + Electron.
+  - Risk:     general element reordering by keyboard (outside navs) is
+              still pointer-only; out of scope.
+  - Closure:  ready.
+
+BC-06-D  Count-based removal leaves dangling interaction references
+  - Status:   FIXED (BC-06.2); re-verified with save + reopen and
+              descendants (section 9).
+  - Evidence: 12-case matrix (9 fail on pre-BC-06.2 code), 3 extra
+              BC-06.3 cases, UI save in 3 engines.
+  - Risk:     none known.
+  - Closure:  ready.
+
+BC-06-E  Responsive overflow risk with many links
+  - Status:   ACCEPTED LIMITATION (BC06-R1), mitigated as approved.
+  - Mitigation: the 12 cap, the hint from 6, Wrap available.
+  - Evidence: 8 × 5 matrix (section 7); Wrap on is clean at every width.
+  - Risk:     Wrap off at 12 links on phones collapses link boxes and
+              scrolls sideways; the user must act on the hint.
+  - Closure:  does not block (product decision: no auto-Wrap, no mobile
+              menu).
+
+BC-06-F  Mixed-content Navbar safety
+  - Status:   VERIFIED SAFE.
+  - Implementation: the swap rule, Remove refuses non-links, Add after the
+              last link.
+  - Evidence: store + e2e mixed nav, Breadcrumbs, CTA, in 3 engines.
+  - Risk:     nested links are not listed (BC06-C2, documented).
+  - Closure:  ready.
+
+BC-06-G  Count limits and preservation of legacy over-limit Navbars
+  - Status:   FIXED/VERIFIED (BC-06.2 + BC-06.3).
+  - Evidence: 11/12/13/14 tests; a format 1 file with 14 links; the
+              accessible cap note.
+  - Risk:     none known.
+  - Closure:  ready.
+
+BC-06-H  "Add link" copies a hidden last link's hidden state (NEW)
+  - Status:   FIXED (BC-06.3).
+  - Severity: Medium (an invisible new link).
+  - Implementation: withoutHiddenState in createNavigationLink.
+  - Evidence: 3 tests; 2 fail on b57a6f9.
+  - Risk:     none known.
+  - Closure:  ready.
+
+PRJ-K1  Project shortcuts ignored while an authored Dialog is open (NEW,
+        NOT BC-06)
+  - Status:   OPEN, out of scope. Pre-existing since 0fcafaf
+              (PROJECT-1.2).
+  - Severity: Medium. Ctrl+S, Ctrl+Shift+S, Ctrl+O and Ctrl+N do nothing,
+              silently, in any project with a visible Dialog element.
+              File › Save works. There is no data loss, but a user may
+              believe they saved.
+  - Root cause: useProjectKeyboardShortcuts checks
+              `document.querySelector("dialog[open]")`, which also matches
+              the authored `<dialog open>` that Design renders on the
+              Canvas. copyTextToClipboard.ts uses the same selector to
+              choose its host element.
+  - Evidence: Chromium probe (HTML › Dialog → Ctrl+S opens nothing;
+              File › Save opens Save); Electron diagnosis with the
+              PROJECT-1.1 file.
+  - Suggested fix (small, separate checkpoint): ignore dialogs inside
+              `[data-document-surface]` in both places, and add a
+              regression test.
+  - Closure:  does not block BC-06 (unrelated code, pre-existing).
+
+
+22. MODIFIED FILES
+------------------
+
+Modified:
+- src/features/editor/commands/navigationLinkCommands.ts: BC-06-H fix
+  (withoutHiddenState) and doc comment.
+- src/features/editor/stores/useEditorStore.structuralRemovalIntegrity.test.ts:
+  save() now also reopens and compares.
+- e2e/navigation-links.spec.ts: +5 tests (mixed content, keyboard walk,
+  Wrap control, 1280 and 1440 windows).
+- e2e/desktop/navigation-links.spec.ts: +1 test (format 1 file + upgrade
+  prompt).
+
+Created:
+- src/features/editor/stores/useEditorStore.navigationLinks.regression.test.ts
+  (24 tests)
+- src/features/inspector/components/InspectorNavigationLinksSection.eligibility.test.tsx
+  (17 tests)
+- e2e/navigation-links-responsive.spec.ts (9 tests)
+- docs/reports/BC-06.3-Final-Navbar-Regression-And-QA.txt
+- changelogs/2026-11-10-final-navbar-regression-and-qa-BC-06.3.txt
+  (gitignored)
+
+Moved / deleted: none (the temporary probes and config listed in section
+19 were created and removed).
+
+
+23. REMAINING LIMITATIONS
+-------------------------
+
+- BC06-R1 / BC-06-E: overflow with Wrap off (accepted; section 7).
+- BC06-C2: links nested inside a Container in the nav are not listed.
+- Breadcrumbs: Add adds no separator and copies the "current page" colour.
+- A Free-layout nav: Move changes document and Tab order (and the export
+  source order), not on-screen positions, which are each link's own
+  geometry. This is consistent with Free layout; the Wrap hint is hidden
+  there.
+- Duplicate visible labels look identical in the list; only accessible
+  names add "(link N)".
+- Escape in the Inspector deselects (editor-wide, pre-existing).
+  Keyboard focus then goes to the page. Worth a future keyboard-focus
+  checkpoint; not BC-06.
+- BC06-U2 (unnamed nav landmarks) and BC06-U3 (generic HTML › Link /
+  Duplicate behaviour): unchanged, out of scope.
+- Undo history is uncapped (pre-existing design).
+
+
+24. KNOWN FAILURES AND THEIR CLASSIFICATION
+-------------------------------------------
+
+None in the BC-06 targeted sets on any engine.
+
+- Electron preview-parity reduced-motion test: a 60 s timeout once under
+  full-suite load, 3/3 alone. Intermittent, environment load; not BC-06.
+- WebKit, outside the targeted set (recorded in BC-06.2, not rerun here):
+  - 4 media tests in preview-export-parity: Playwright's Windows WebKit
+    loads no media (known since BC-02.2).
+  - export-interactions "Tab reaches the menu": WebKit's default skips
+    links on Tab. This is now proven engine-level by the bare-page probe
+    (section 14), so it is an environment limitation, not an app defect.
+    Suggested: make that one step engine-aware in a future checkpoint
+    (focus the link directly in WebKit), without weakening other engines.
+- PRJ-K1 is a real defect, not a test failure (section 21).
+
+
+25. GIT WORKING-TREE STATUS
+---------------------------
+
+Branch main, HEAD b57a6f9. `git status --short`:
+   M e2e/desktop/navigation-links.spec.ts
+   M e2e/navigation-links.spec.ts
+   M src/features/editor/commands/navigationLinkCommands.ts
+   M src/features/editor/stores/useEditorStore.structuralRemovalIntegrity.test.ts
+  ?? docs/reports/BC-06.3-Final-Navbar-Regression-And-QA.txt
+  ?? e2e/navigation-links-responsive.spec.ts
+  ?? src/features/editor/stores/useEditorStore.navigationLinks.regression.test.ts
+  ?? src/features/inspector/components/InspectorNavigationLinksSection.eligibility.test.tsx
+
+The changelog is gitignored. Nothing was committed, staged or pushed.
+
+
+26. FINAL RECOMMENDATION
+------------------------
+
+CLOSE BC-06.
+
+  #   Criterion                                         Met
+  --  ------------------------------------------------  ---
+  1   Approved decisions implemented                    yes (section 2)
+  2   Link management for supported Navbars             yes (sections 3–4)
+  3   Styling inheritance correct                       yes (section 5; BC-06-H fixed)
+  4   12 maximum without data loss                      yes (section 6)
+  5   Safe explicit removal and reordering              yes (section 4)
+  6   CTA and mixed content preserved                   yes (section 8)
+  7   Atomic Undo/Redo                                  yes (section 10)
+  8   Valid interaction references after removals       yes (section 9)
+  9   Projects remain saveable                          yes (sections 9, 12)
+  10  Canvas/Preview/Export parity                      yes (sections 7, 13)
+  11  Format 2 compatibility                            yes (section 12)
+  12  Accessibility                                     yes (section 14)
+  13  No new high-severity defects                      yes (BC-06-H Medium,
+                                                        fixed; PRJ-K1 Medium,
+                                                        pre-existing, unrelated)
+  14  Tests pass or limits justified                    yes (section 24)
+
+Follow-ups, outside BC-06:
+- PRJ-K1: fix the project-shortcut guard in a small checkpoint.
+- Make the WebKit export-interactions Tab step engine-aware.
+- A general keyboard-focus checkpoint (Escape deselect focus loss;
+  keyboard reorder outside navs).
+
+Stop: BC-07 not started. Waiting for ChatGPT QA review.

@@ -2,6 +2,8 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { NAVIGATION_LINKS_COPY } from "../src/features/inspector/utils/navigationLinksCopy";
 import { gotoApp } from "./support/gotoApp";
 import { canvasNode, computed, selectOnCanvas } from "./support/inspector";
+import { importDocument } from "./support/parityFixtures";
+import type { EditorElementNode } from "../src/features/editor/types/document";
 
 /*
  * BC-06.2 — the Inspector's Navigation links section in the real editor:
@@ -302,3 +304,138 @@ test("at the narrowest Inspector width the rows, buttons and notes stay inside t
   if (!sectionBox || !removeBox) throw new Error("no boxes");
   expect(removeBox.x + removeBox.width).toBeLessThanOrEqual(sectionBox.x + sectionBox.width + 0.5);
 });
+
+/* ---------------------------------------------------------------------- */
+/* BC-06.3 additions                                                       */
+/* ---------------------------------------------------------------------- */
+
+function mixedNavDocument(): EditorElementNode {
+  return {
+    id: "page-root",
+    tag: "page",
+    children: [
+      {
+        id: "nav-mixed",
+        tag: "nav",
+        flowLayout: { display: "flex", flex: { direction: "row", wrap: "nowrap", justifyContent: "start", alignItems: "center", rowGap: 16, columnGap: 16 } },
+        children: [
+          { id: "a-one", tag: "a", text: "One", href: "/one" },
+          { id: "p-sep", tag: "p", text: "|" },
+          { id: "a-two", tag: "a", text: "Two", href: "/two" },
+          { id: "div-box", tag: "div", children: [{ id: "a-nested", tag: "a", text: "Nested", href: "/nested" }] },
+          { id: "button-act", tag: "button", text: "Act" },
+          { id: "a-three", tag: "a", text: "Three", href: "/three" },
+        ],
+      },
+    ],
+  };
+}
+
+test("mixed-content nav: only direct links are managed; separator, container and button keep their slots everywhere", async ({ page }) => {
+  await importDocument(page, mixedNavDocument(), "nav-mixed");
+  await selectOnCanvas(page, "nav-mixed");
+  expect(await rowNames(page)).toEqual(["One", "Two", "Three"]);
+  await expect(section(page).getByText("3 links")).toBeVisible();
+
+  await button(page, "Move One down").click();
+  await button(page, "Move Three up").click();
+  await button(page, "Add link").click();
+  await button(page, "Remove Two").click();
+  // One↔Two, then Three↔One, then Add after the last link (One), then remove Two.
+  const expected = ["p:|", "a:Three", "div:Nested", "button:Act", "a:One", "a:New link"];
+  expect(await canvasChildren(page, "nav-mixed")).toEqual(expected);
+  await expect(canvasNode(page, "a-nested")).toBeVisible();
+
+  await page.getByRole("button", { name: "Enter Preview" }).click();
+  expect(await canvasChildren(page, "nav-mixed")).toEqual(expected);
+  await page.getByRole("button", { name: "Exit Preview" }).click();
+
+  await page.getByRole("button", { name: "Export Code" }).click();
+  const html = (await page.getByRole("dialog", { name: "Export Code" }).getByTestId("export-code").textContent()) ?? "";
+  const navMarkup = /<nav[^>]*>([\s\S]*)<\/nav>/.exec(html)?.[1] ?? "";
+  const order = Array.from(navMarkup.matchAll(/>(Three|\||One|Nested|Act|New link)</g)).map((match) => match[1]);
+  expect(order).toEqual(["|", "Three", "Nested", "Act", "One", "New link"]);
+  expect(navMarkup).toContain('href="/one"');
+  expect(navMarkup).not.toContain('href="/two"');
+});
+
+test("keyboard: Tab and Shift+Tab walk each row's controls in order, skipping disabled ones, with no trap", async ({ page }) => {
+  await insertNavbar(page, "Basic Navbar");
+  const select = (name: string) => section(page).getByRole("button", { name: `Select ${name}`, exact: true });
+  await select("Home").focus();
+  const forward = ["Move Home down", "Remove Home", "Select About", "Move About up", "Move About down", "Remove About", "Select Services"];
+  for (const name of forward) {
+    await page.keyboard.press("Tab");
+    await expect(section(page).getByRole("button", { name, exact: true }), `Tab → ${name}`).toBeFocused();
+  }
+  for (const name of [...forward].reverse().slice(1)) {
+    await page.keyboard.press("Shift+Tab");
+    await expect(section(page).getByRole("button", { name, exact: true }), `Shift+Tab → ${name}`).toBeFocused();
+  }
+  // Past the last row, Tab leaves the list for Add link and then the rest of the Inspector.
+  await button(page, "Remove Contact").focus();
+  await page.keyboard.press("Tab");
+  await expect(button(page, "Add link")).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(button(page, "Add link")).not.toBeFocused();
+  await expect(section(page).locator(":focus")).toHaveCount(0);
+  // Escape is the editor-wide "clear selection" shortcut (pre-existing, every
+  // Inspector section): it deselects the nav and never changes the document.
+  const navId = await page.locator('[data-document-surface] [data-node-type="nav"]').last().getAttribute("data-node-id");
+  if (!navId) throw new Error("nav missing");
+  await button(page, "Add link").focus();
+  await page.keyboard.press("Escape");
+  await expect(section(page)).toHaveCount(0);
+  expect(await canvasChildren(page, navId)).toEqual(["a:Home", "a:About", "a:Services", "a:Contact"]);
+  // The same happens from another section's control (evidence it is generic, not BC-06).
+  await selectOnCanvas(page, navId);
+  const backgroundSource = inspector(page).getByRole("button", { name: "Image", exact: true }).first();
+  await backgroundSource.focus();
+  await page.keyboard.press("Escape");
+  await expect(inspector(page).getByText("1 element selected")).toHaveCount(0);
+  // Space and Enter activate.
+  await selectOnCanvas(page, navId);
+  await button(page, "Add link").focus();
+  await page.keyboard.press("Space");
+  await expect(section(page).getByText("5 links")).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(section(page).getByText("6 links")).toBeVisible();
+});
+
+test("the Wrap recommendation points at a real control: turning Wrap on changes the CSS, hides the hint, and Undo brings both back", async ({ page }) => {
+  const navId = await insertNavbar(page, "Basic Navbar");
+  await button(page, "Add link").click();
+  await button(page, "Add link").click();
+  await expect(section(page).getByText(NAVIGATION_LINKS_COPY.wrapHint)).toBeVisible();
+  expect(await computed(page, navId, "flex-wrap")).toBe("nowrap");
+  const wrap = inspector(page).getByRole("button", { name: "Wrap", exact: true });
+  await wrap.scrollIntoViewIfNeeded();
+  await wrap.click();
+  await expect.poll(() => computed(page, navId, "flex-wrap")).toBe("wrap");
+  await expect(section(page).getByText(NAVIGATION_LINKS_COPY.wrapHint)).toBeHidden();
+  await undo(page);
+  await expect.poll(() => computed(page, navId, "flex-wrap")).toBe("nowrap");
+  await expect(section(page).getByText(NAVIGATION_LINKS_COPY.wrapHint)).toBeVisible();
+  // Five links: no hint.
+  await button(page, "Remove Home").click();
+  await expect(section(page).getByText("5 links")).toBeVisible();
+  await expect(section(page).getByText(NAVIGATION_LINKS_COPY.wrapHint)).toBeHidden();
+});
+
+for (const viewport of [1280, 1440] as const) {
+  test(`at a ${viewport}px window the 12-link section fits, scrolls into view and leaves other sections intact`, async ({ page }) => {
+    await page.setViewportSize({ width: viewport, height: viewport === 1280 ? 720 : 900 });
+    await insertNavbar(page, "Basic Navbar");
+    for (let i = 0; i < 8; i++) await button(page, "Add link").click();
+    await expect(section(page).getByText("12 links")).toBeVisible();
+    await expectNoHorizontalOverflow(section(page), `${viewport}px window`);
+    // The last row is reachable by scrolling the Inspector and fully visible there.
+    const lastRemove = button(page, "Remove New link (link 12)");
+    await lastRemove.focus();
+    await expect(lastRemove).toBeInViewport({ ratio: 1 });
+    // The sections after it still render (Content Layout's Wrap is reachable).
+    const wrap = inspector(page).getByRole("button", { name: "Wrap", exact: true });
+    await wrap.scrollIntoViewIfNeeded();
+    await expect(wrap).toBeInViewport();
+  });
+}

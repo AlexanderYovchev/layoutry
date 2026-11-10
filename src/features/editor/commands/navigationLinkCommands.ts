@@ -57,7 +57,8 @@ export function canAddNavigationLink(node: EditorElementNode): boolean {
  * content), and where that one link was placed or resized (dimensions,
  * freeLayout, aspectRatioLocked, CSS position offsets). Copying a placement
  * would stack the new link exactly on top of the old one. Grid spans are
- * copied, but an explicit grid cell is not (see below).
+ * copied, but an explicit grid cell is not (see below), and neither is a
+ * hidden state (withoutHiddenState).
  */
 const COPIED_STYLE_FIELDS = [
   "spacing",
@@ -92,6 +93,29 @@ export function createNavigationLink(template: EditorElementNode | undefined): E
   }
   // Same spans, but auto-placed: a fixed start would put both links in one cell.
   if (link.gridChild) link.gridChild = { ...link.gridChild, columnStart: "auto", rowStart: "auto" };
+  return withoutHiddenState(link);
+}
+
+/**
+ * The look, never the hidden state (BC-06.3, BC-06-H): a last link the user
+ * hid with Display none, Visibility hidden or Opacity 0 would otherwise give
+ * an Add link that adds nothing anyone can see. Only those three values are
+ * dropped; every other display, visibility and filter setting is kept.
+ */
+function withoutHiddenState(link: EditorElementNode): EditorElementNode {
+  if (link.display) {
+    const display = { ...link.display };
+    if (display.display === "none") delete display.display;
+    if (display.visibility === "hidden") delete display.visibility;
+    link.display = Object.keys(display).length > 0 ? display : undefined;
+    if (!link.display) delete link.display;
+  }
+  if (link.filters?.opacity === 0) {
+    const filters = { ...link.filters };
+    delete filters.opacity;
+    link.filters = Object.keys(filters).length > 0 ? filters : undefined;
+    if (!link.filters) delete link.filters;
+  }
   return link;
 }
 
