@@ -36,7 +36,7 @@ describe("desktop bridge adapter", () => {
 
   it("passes valid results through", async () => {
     const files = createDesktopProjectFiles(rawBridge());
-    expect(await files?.writeProjectFile("t", "x", false)).toEqual({
+    expect(await files?.writeProjectFile("t", "x", false, false)).toEqual({
       status: "saved",
       fileName: "a.layoutry",
     });

@@ -157,7 +157,7 @@ test("the bridge refuses forged tokens, other names, traversal and project token
     const otherName = await settle(() => bridge.writeExportFiles(token, [{ path: "evil.exe", content: "x" }, html[1]], true));
     const project = (await bridge.chooseSaveLocation("Site")) as { target: { token: string } };
     const projectOnExport = await settle(() => bridge.writeExportFiles(project.target.token, html, true));
-    const exportOnProject = await settle(() => bridge.writeProjectFile(token, '{"format":"layoutry-project","formatVersion":1}', true));
+    const exportOnProject = await settle(() => bridge.writeProjectFile(token, '{"format":"layoutry-project","formatVersion":1}', true, false));
     return { forged, traversal, absolute, otherName, projectOnExport, exportOnProject };
   });
   expect(outcome.forged).toMatchObject({ resolved: { status: "error", error: { code: "invalid-token" } } });

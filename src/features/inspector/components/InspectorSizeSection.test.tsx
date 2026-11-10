@@ -101,7 +101,7 @@ describe("InspectorSizeSection", () => {
       expect(committedNode()?.dimensions).toBeUndefined();
     });
 
-    it("Width's reset (named 'Reset width and height', BC-05.2) clears both axes (documented atomic-model behavior — the model has no way to represent Auto width with an explicit height)", () => {
+    it("the one 'Reset size' clears both axes (documented atomic-model behavior — the model has no way to represent Auto width with an explicit height)", () => {
       setupNode({ id: "n1", tag: "div", dimensions: { preferredWidth: 200, preferredHeight: 150, offsetX: 0, offsetY: 0 } });
       render(
         <InspectorSizeSection
@@ -110,11 +110,11 @@ describe("InspectorSizeSection", () => {
         />,
       );
 
-      fireEvent.click(screen.getAllByRole("button", { name: "Reset width and height" })[0]);
+      fireEvent.click(screen.getByRole("button", { name: "Reset size" }));
       expect(committedNode()?.dimensions).toBeUndefined();
     });
 
-    it("Height's reset clears both axes too, and says so", () => {
+    it("there is exactly one size reset for the pair (BC-05.4), and its tooltip says it resets both", () => {
       setupNode({ id: "n1", tag: "div", dimensions: { preferredWidth: 200, preferredHeight: 150, offsetX: 0, offsetY: 0 } });
       render(
         <InspectorSizeSection
@@ -123,13 +123,17 @@ describe("InspectorSizeSection", () => {
         />,
       );
 
-      fireEvent.click(screen.getAllByRole("button", { name: "Reset width and height" })[1]);
+      const resets = screen.getAllByRole("button", { name: "Reset size" });
+      expect(resets).toHaveLength(1);
+      expect(resets[0]).toHaveAttribute("title", "Reset width and height together.");
+      expect(screen.queryByRole("button", { name: "Reset width and height" })).toBeNull();
+      fireEvent.click(resets[0]);
       expect(committedNode()?.dimensions).toBeUndefined();
     });
 
     it("Reset is disabled when the node has never been resized", () => {
       render(<InspectorSizeSection node={{ id: "n1", tag: "div" }} isFreeChild={false} />);
-      for (const button of screen.getAllByRole("button", { name: "Reset width and height" })) expect(button).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Reset size" })).toBeDisabled();
     });
 
     it("applies the generic resize floor when committing a too-small Width (reuses resizeNode's clamp)", () => {
@@ -170,7 +174,7 @@ describe("InspectorSizeSection", () => {
       render(
         <InspectorSizeSection node={{ id: "n1", tag: "img", freeLayout: { x: 10, y: 20, width: 100, height: 80 } }} isFreeChild />,
       );
-      expect(screen.queryByRole("button", { name: "Reset width and height" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Reset size" })).not.toBeInTheDocument();
     });
 
     it("committing Width writes through setFreeChildGeometry, preserving x/y and Height", () => {

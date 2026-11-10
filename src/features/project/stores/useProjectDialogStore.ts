@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type {
   FileConflict,
+  OlderFormatFile,
   ImportMode,
   ProjectCommandError,
 } from "@/features/project/commands/projectCommands";
@@ -44,6 +45,8 @@ export type ProjectDialog =
       existing: ProjectMetadata;
     }
   | { kind: "file-conflict"; conflict: FileConflict }
+  /** BC-05.4: saving would upgrade a file opened in an older project format. */
+  | { kind: "older-format"; file: OlderFormatFile }
   /**
    * PROJECT-1.4: recovered work of ended sessions. Updated in place (never
    * closed and reopened) while a restore or discard runs.

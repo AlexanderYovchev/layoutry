@@ -339,12 +339,14 @@ describe("preload", () => {
     expect(() => discardRecovery("x")).toThrow(TypeError);
 
     const writeProjectFile = Reflect.get(api, "writeProjectFile");
-    expect(() => writeProjectFile("t", 5, false)).toThrow(TypeError);
-    await writeProjectFile("t", "text", true);
+    expect(() => writeProjectFile("t", 5, false, false)).toThrow(TypeError);
+    expect(() => writeProjectFile("t", "text", false, "yes")).toThrow(TypeError);
+    await writeProjectFile("t", "text", true, false);
     expect(invoke).toHaveBeenLastCalledWith(INVOKE_CHANNELS.writeProjectFile, {
       token: "t",
       text: "text",
       force: true,
+      upgradeFormat: false,
     });
 
     const writeExportFiles = Reflect.get(api, "writeExportFiles");

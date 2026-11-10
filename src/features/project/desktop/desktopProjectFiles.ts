@@ -43,6 +43,12 @@ const writeResultSchema = z.discriminatedUnion("status", [
     reason: z.enum(["modified", "missing"]),
     fileName: z.string(),
   }),
+  // BC-05.4: the file is in an older project format; nothing was written.
+  z.object({
+    status: z.literal("older-format"),
+    fileName: z.string(),
+    formatVersion: z.number().int(),
+  }),
   z.object({ status: z.literal("error"), error: serviceErrorSchema }),
 ]);
 
@@ -62,11 +68,17 @@ export interface DesktopProjectFiles {
   takePendingProjectFile(): Promise<DesktopOpenResult>;
   /** Native Save dialog; the result is a write capability for the destination. */
   chooseSaveLocation(suggestedName: string): Promise<DesktopChooseResult>;
-  /** Atomic write. `force` overwrites an external change the user confirmed. */
+  /**
+   * Atomic write. `force` overwrites an external change the user confirmed.
+   * `upgradeFormat` replaces a file read in an older project format, after
+   * the user chose Overwrite (BC-05.4); without it such a write returns
+   * "older-format" and changes nothing.
+   */
   writeProjectFile(
     token: string,
     text: string,
     force: boolean,
+    upgradeFormat: boolean,
   ): Promise<DesktopWriteResult>;
   releaseProjectFile(token: string): void;
   setUnsavedChanges(unsaved: boolean): void;
@@ -134,8 +146,10 @@ export function createDesktopProjectFiles(
       call(openResultSchema, () => raw.takePendingProjectFile()),
     chooseSaveLocation: (suggestedName) =>
       call(chooseResultSchema, () => raw.chooseSaveLocation(suggestedName)),
-    writeProjectFile: (token, text, force) =>
-      call(writeResultSchema, () => raw.writeProjectFile(token, text, force)),
+    writeProjectFile: (token, text, force, upgradeFormat) =>
+      call(writeResultSchema, () =>
+        raw.writeProjectFile(token, text, force, upgradeFormat),
+      ),
     releaseProjectFile: (token) => {
       void Promise.resolve(raw.releaseProjectFile(token)).catch(
         () => undefined,

@@ -100,11 +100,17 @@ contextBridge.exposeInMainWorld(
       ipcRenderer.invoke(INVOKE.chooseSaveLocation, {
         suggestedName: requireString(suggestedName, "suggestedName"),
       }),
-    writeProjectFile: (token: unknown, text: unknown, force: unknown) =>
+    writeProjectFile: (
+      token: unknown,
+      text: unknown,
+      force: unknown,
+      upgradeFormat: unknown,
+    ) =>
       ipcRenderer.invoke(INVOKE.writeProjectFile, {
         token: requireString(token, "token"),
         text: requireString(text, "text"),
         force: requireBoolean(force, "force"),
+        upgradeFormat: requireBoolean(upgradeFormat, "upgradeFormat"),
       }),
     releaseProjectFile: (token: unknown) =>
       ipcRenderer.invoke(INVOKE.releaseProjectFile, {

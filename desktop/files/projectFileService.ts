@@ -52,6 +52,7 @@ export type ChooseLocationResult =
 export type WriteResult =
   | { status: "saved"; fileName: string }
   | { status: "conflict"; reason: "modified" | "missing"; fileName: string }
+  | { status: "older-format"; fileName: string; formatVersion: number }
   | { status: "error"; error: ServiceError };
 
 export interface ProjectFileServiceOptions {
@@ -125,6 +126,26 @@ function expectProjectText(value: unknown): string {
   return value;
 }
 
+/**
+ * The top-level `formatVersion` of a project text, or null when it has
+ * none (not JSON, not an object, not an integer). Only used to compare a
+ * file's format with what is about to replace it.
+ */
+export function formatVersionOf(
+  text: string | null | undefined,
+): number | null {
+  if (typeof text !== "string") return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    const version = isRecord(parsed) ? parsed.formatVersion : undefined;
+    return typeof version === "number" && Number.isInteger(version)
+      ? version
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /** A file name only — any folder part the renderer sends is discarded. */
 export function safeSuggestedFileName(value: unknown): string {
   if (typeof value !== "string" || value.length > MAX_SUGGESTED_NAME_LENGTH)
@@ -165,7 +186,12 @@ export function createProjectFileService(options: ProjectFileServiceOptions) {
       return {
         status: "opened",
         file: {
-          token: registry.issue(ownerId, filePath, fingerprint),
+          token: registry.issue(
+            ownerId,
+            filePath,
+            fingerprint,
+            formatVersionOf(text),
+          ),
           fileName,
           text,
         },
@@ -243,11 +269,19 @@ export function createProjectFileService(options: ProjectFileServiceOptions) {
     },
 
     async write(ownerId: number, payload: unknown): Promise<WriteResult> {
-      const request = expectKeys(payload, ["token", "text", "force"]);
+      const request = expectKeys(payload, [
+        "token",
+        "text",
+        "force",
+        "upgradeFormat",
+      ]);
       const token = expectToken(request.token);
       const text = expectProjectText(request.text);
       if (typeof request.force !== "boolean")
         throw new InvalidPayloadError("force must be a boolean");
+      if (typeof request.upgradeFormat !== "boolean")
+        throw new InvalidPayloadError("upgradeFormat must be a boolean");
+      const incomingVersion = formatVersionOf(text);
 
       const capability = registry.resolve(ownerId, token);
       if (!capability)
@@ -259,6 +293,24 @@ export function createProjectFileService(options: ProjectFileServiceOptions) {
               "Layoutry no longer has access to this file. Use Save As to choose where to save.",
           },
         };
+      // BC-05.4: never silently upgrade a file this window read in an older
+      // project format — older Layoutry versions can't open the new one.
+      // Nothing is written; the renderer asks (Save As / Overwrite / Cancel)
+      // and retries with upgradeFormat only after an explicit Overwrite.
+      // `force` comes from the external-change prompt, which can only follow
+      // this one, so it implies the upgrade was already confirmed.
+      if (
+        !request.upgradeFormat &&
+        !request.force &&
+        capability.formatVersion !== null &&
+        incomingVersion !== null &&
+        capability.formatVersion < incomingVersion
+      )
+        return {
+          status: "older-format",
+          fileName: capability.fileName,
+          formatVersion: capability.formatVersion,
+        };
       try {
         const fingerprint = await writeProjectFileAtomically(
           capability.filePath,
@@ -269,7 +321,7 @@ export function createProjectFileService(options: ProjectFileServiceOptions) {
           ops,
           options.writeHooks,
         );
-        registry.recordVersion(ownerId, token, fingerprint);
+        registry.recordVersion(ownerId, token, fingerprint, incomingVersion);
         return { status: "saved", fileName: capability.fileName };
       } catch (error) {
         if (

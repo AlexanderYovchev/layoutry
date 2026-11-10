@@ -4,6 +4,7 @@ import type { FileCapabilityRegistry } from "../files/fileCapabilities";
 import {
   expectKeys,
   expectToken,
+  formatVersionOf,
   InvalidPayloadError,
   MAX_PROJECT_TEXT_LENGTH,
 } from "../files/projectFileService";
@@ -474,10 +475,17 @@ export function createRecoveryService(options: RecoveryServiceOptions) {
           try {
             assertProjectFilePath(header.association.path);
             file = {
-              token: registry.issue(owner, header.association.path, {
-                size: header.association.size,
-                sha256: header.association.sha256,
-              }),
+              token: registry.issue(
+                owner,
+                header.association.path,
+                {
+                  size: header.association.size,
+                  sha256: header.association.sha256,
+                },
+                // BC-05.4: the original's format, so saving restored work
+                // never silently upgrades an older-format file.
+                formatVersionOf(original?.text),
+              ),
               fileName: path.basename(header.association.path),
             };
           } catch {

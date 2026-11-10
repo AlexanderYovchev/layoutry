@@ -361,20 +361,31 @@ test("the page gets a fixed bridge: no paths, no ipcRenderer, forged tokens and 
         "0123456789abcdef0123456789abcdef",
         '{"format":"layoutry-project","formatVersion":1}',
         true,
+        false,
       ),
       pathAsToken: await call(
         "writeProjectFile",
         "C:\\Windows\\win.ini",
         '{"format":"layoutry-project","formatVersion":1}',
         true,
+        false,
       ),
       notAProject: await call(
         "writeProjectFile",
         "0123456789abcdef0123456789abcdef",
         "MZ binary",
         true,
+        false,
       ),
-      wrongType: await call("writeProjectFile", "t", 42, true),
+      wrongType: await call("writeProjectFile", "t", 42, true, false),
+      // BC-05.4: the format-upgrade consent must be a real boolean too.
+      wrongUpgradeType: await call(
+        "writeProjectFile",
+        "0123456789abcdef0123456789abcdef",
+        '{"format":"layoutry-project","formatVersion":2}',
+        false,
+        "yes",
+      ),
       traversalName: await call(
         "chooseSaveLocation",
         "..\\..\\Windows\\System32\\evil.layoutry",
@@ -413,6 +424,7 @@ test("the page gets a fixed bridge: no paths, no ipcRenderer, forged tokens and 
   expect(probe?.pathAsToken.ok).toBe(false);
   expect(probe?.notAProject.ok).toBe(false);
   expect(probe?.wrongType.ok).toBe(false);
+  expect(probe?.wrongUpgradeType.ok).toBe(false);
   // The Save dialog only ever suggested a bare file name in a normal folder.
   const [saveCall] = await fileDialogCalls(app);
   expect(path.basename(String(saveCall.defaultPath))).toBe("evil.layoutry");

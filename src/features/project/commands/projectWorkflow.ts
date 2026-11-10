@@ -65,6 +65,8 @@ export function createProjectWorkflow(
       ui().showDialog({ kind: "error", error: result.error });
     else if ("conflict" in result)
       ui().showDialog({ kind: "file-conflict", conflict: result.conflict });
+    else if ("olderFormat" in result)
+      ui().showDialog({ kind: "older-format", file: result.olderFormat });
     return false;
   }
 
@@ -488,6 +490,24 @@ export function createProjectWorkflow(
       ui().closeDialog();
       if (choice === "overwrite")
         return report(await commands.saveToFile({ force: true }));
+      return report(await commands.saveToFile({ saveAs: true }));
+    },
+
+    /**
+     * BC-05.4: the first save of a file opened in an older project format.
+     * "save-as" writes a new file and leaves the original untouched (a
+     * cancelled Save dialog writes nothing); "overwrite" replaces the
+     * original with the current format, on this explicit choice only.
+     * Cancel just closes the dialog (closeDialogOfKind). After a successful
+     * save the file is in the current format, so this never asks again.
+     */
+    async resolveOlderFormat(
+      choice: "save-as" | "overwrite",
+    ): Promise<boolean> {
+      if (ui().dialog?.kind !== "older-format") return false;
+      ui().closeDialog();
+      if (choice === "overwrite")
+        return report(await commands.saveToFile({ upgradeFormat: true }));
       return report(await commands.saveToFile({ saveAs: true }));
     },
 

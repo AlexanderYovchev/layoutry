@@ -205,9 +205,12 @@ test("the packaged bridge exposes only the fixed API and refuses forged access",
       "0123456789abcdef0123456789abcdef",
       '{"format":"layoutry-project","formatVersion":1}',
       true,
+      false,
     );
     const notAProject = await Promise.resolve()
-      .then(() => write("0123456789abcdef0123456789abcdef", "not json", true))
+      .then(() =>
+        write("0123456789abcdef0123456789abcdef", "not json", true, false),
+      )
       .then(
         () => "accepted",
         () => "rejected",

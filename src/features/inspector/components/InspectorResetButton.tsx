@@ -11,6 +11,8 @@ interface InspectorResetButtonProps {
   disabled?: boolean;
   /** Accessible name — should name the property being reset, e.g. "Reset margin". */
   label?: string;
+  /** Tooltip, when it should say more than the name (BC-05.4: "Reset width and height together."). Also read as the accessible description. Defaults to the label. */
+  title?: string;
 }
 
 /**
@@ -31,7 +33,7 @@ interface InspectorResetButtonProps {
  *   after the reset has rendered it moves to the property's own control
  *   in the same row (or section). A pointer click leaves focus alone.
  */
-export function InspectorResetButton({ onReset, disabled = false, label = "Reset" }: InspectorResetButtonProps) {
+export function InspectorResetButton({ onReset, disabled = false, label = "Reset", title }: InspectorResetButtonProps) {
   function handleClick(event: MouseEvent<HTMLButtonElement>) {
     const button = event.currentTarget;
     const fromKeyboard = event.detail === 0;
@@ -55,7 +57,7 @@ export function InspectorResetButton({ onReset, disabled = false, label = "Reset
       onClick={handleClick}
       disabled={disabled}
       aria-label={label}
-      title={label}
+      title={title ?? label}
       className={cn(
         "flex size-6 shrink-0 items-center justify-center rounded-control-sm text-fg-muted transition-colors duration-150 ease-studio hover:bg-surface-hover hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-0",
       )}

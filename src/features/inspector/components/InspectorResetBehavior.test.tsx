@@ -1,4 +1,10 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
@@ -602,12 +608,63 @@ describe("Size constraints stay isolated (BC-05.2)", () => {
         )}
       />,
     );
-    const [widthReset] = screen.getAllByRole("button", {
-      name: "Reset width and height",
+    fireEvent.click(screen.getByRole("button", { name: "Reset size" }), {
+      detail: 1,
     });
-    fireEvent.click(widthReset, { detail: 1 });
     expect(nodeOf("box")).not.toHaveProperty("dimensions.preferredWidth");
     // Constraints are a separate record and survive.
     expect(nodeOf("box").sizeConstraints).toEqual({ maxWidth: 500 });
+  });
+});
+
+describe("Size: one combined reset (BC-05.4)", () => {
+  const resized = (): EditorElementNode[] => [
+    {
+      id: "box",
+      tag: "div",
+      dimensions: {
+        preferredWidth: 300,
+        preferredHeight: 120,
+        offsetX: 0,
+        offsetY: 0,
+      },
+    },
+  ];
+  const renderSize = () =>
+    render(
+      <Live
+        id="box"
+        render={(node) => (
+          <InspectorSizeSection node={node} isFreeChild={false} />
+        )}
+      />,
+    );
+
+  it("pressing Reset size while typing in Height discards the draft: one Undo step back to the committed size", () => {
+    setup(resized());
+    renderSize();
+    fireEvent.change(screen.getByLabelText("Height"), {
+      target: { value: "333" },
+    });
+    expect(nodeOf("box").dimensions?.preferredHeight).toBe(333);
+    pressReset("Reset size");
+    expect(nodeOf("box").dimensions).toBeUndefined();
+    expect(historyLength()).toBe(1);
+    undo();
+    expect(nodeOf("box").dimensions).toEqual({
+      preferredWidth: 300,
+      preferredHeight: 120,
+      offsetX: 0,
+      offsetY: 0,
+    });
+  });
+
+  it("a keyboard Reset size moves focus to the Width field", async () => {
+    setup(resized());
+    renderSize();
+    const button = screen.getByRole("button", { name: "Reset size" });
+    button.focus();
+    fireEvent.click(button, { detail: 0 });
+    await waitFor(() => expect(screen.getByLabelText("Width")).toHaveFocus());
   });
 });

@@ -11,6 +11,19 @@ import type {
  * checks on write (external edits and deletions are conflicts), and
  * scriptable native dialogs. Test-only.
  */
+/** The top-level formatVersion of a project text, or null. */
+function formatVersionOf(text: string | null): number | null {
+  if (text === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const version: unknown = Reflect.get(parsed, "formatVersion");
+    return typeof version === "number" ? version : null;
+  } catch {
+    return null;
+  }
+}
+
 export function createFakeDesktopProjectFiles() {
   const disk = new Map<string, string>();
   const tokens = new Map<
@@ -81,7 +94,12 @@ export function createFakeDesktopProjectFiles() {
         target: { token: issue(script.saveAs, null), fileName: script.saveAs },
       };
     },
-    async writeProjectFile(token, text, force): Promise<DesktopWriteResult> {
+    async writeProjectFile(
+      token,
+      text,
+      force,
+      upgradeFormat,
+    ): Promise<DesktopWriteResult> {
       if (writeGate) await writeGate;
       const capability = tokens.get(token);
       if (!capability)
@@ -101,6 +119,18 @@ export function createFakeDesktopProjectFiles() {
           },
         };
       }
+      // Same rule as the main process (BC-05.4): an older-format file is
+      // only replaced after an explicit Overwrite.
+      const readVersion = formatVersionOf(capability.version);
+      const incomingVersion = formatVersionOf(text);
+      if (
+        !upgradeFormat &&
+        !force &&
+        readVersion !== null &&
+        incomingVersion !== null &&
+        readVersion < incomingVersion
+      )
+        return { status: "older-format", fileName, formatVersion: readVersion };
       if (!force && capability.version !== null) {
         const current = disk.get(fileName);
         if (current === undefined)

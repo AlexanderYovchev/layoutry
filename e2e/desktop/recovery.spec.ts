@@ -210,6 +210,14 @@ test("restored work never overwrites its file after someone else changed it", as
   );
 
   await layoutry.page.keyboard.press("Control+s");
+  // BC-05.4: the file is format 1, so the format prompt comes first; even
+  // after choosing Overwrite there, the outside change is still caught.
+  const upgrade = layoutry.page.getByRole("dialog", {
+    name: "Upgrade Project File?",
+  });
+  await expect(upgrade).toBeVisible();
+  expect(await readFile(target, "utf8")).toBe(external);
+  await upgrade.getByRole("button", { name: "Overwrite Original" }).click();
   const conflict = layoutry.page.getByRole("dialog", {
     name: "File Changed Outside Layoutry",
   });

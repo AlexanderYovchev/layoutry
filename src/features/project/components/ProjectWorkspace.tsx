@@ -21,6 +21,7 @@ import {
 import {
   DeleteProjectDialog,
   FileConflictDialog,
+  OlderFormatDialog,
   ImportCollisionDialog,
   ProjectErrorDialog,
   UnsavedChangesDialog,
@@ -357,6 +358,12 @@ export function ProjectWorkspace({
         onOverwrite={() => void workflow.resolveFileConflict("overwrite")}
         onSaveAs={() => void workflow.resolveFileConflict("save-as")}
         onClose={() => closeDialogOfKind("file-conflict")}
+      />
+      <OlderFormatDialog
+        file={dialog?.kind === "older-format" ? dialog.file : null}
+        onSaveAs={() => void workflow.resolveOlderFormat("save-as")}
+        onOverwrite={() => void workflow.resolveOlderFormat("overwrite")}
+        onClose={() => closeDialogOfKind("older-format")}
       />
       <DeleteProjectDialog
         target={

@@ -281,6 +281,7 @@ describe("recovery service", () => {
         token: choice.target.token,
         text,
         force: false,
+        upgradeFormat: false,
       });
       if (written.status !== "saved") throw new Error(JSON.stringify(written));
       return choice.target.token;
@@ -336,6 +337,7 @@ describe("recovery service", () => {
           token: read.file.token,
           text: edited,
           force: false,
+          upgradeFormat: false,
         }),
       ).toEqual({
         status: "conflict",
@@ -376,8 +378,52 @@ describe("recovery service", () => {
           token: read.file.token,
           text: edited,
           force: false,
+          upgradeFormat: false,
         }),
       ).toMatchObject({ status: "saved" });
+    });
+
+    it("restored work never silently upgrades a format 1 original (BC-05.4)", async () => {
+      const services = setup();
+      const { recovery, files, registry } = services;
+      const { sessionId } = recovery.beginSession(WINDOW, undefined);
+      const original = projectText("v1");
+      const token = await savedFile(services, "Site.layoutry", original);
+      // The crashed session ran a newer build: its snapshot is format 2.
+      const edited = projectText("v2").replace(
+        '"formatVersion": 1',
+        '"formatVersion": 2',
+      );
+      await recovery.write(
+        WINDOW,
+        snapshot(1, edited, { kind: "file", token, fileName: "Site.layoutry" }),
+      );
+      registry.revokeOwner(WINDOW);
+      recovery.endSession(WINDOW);
+
+      recovery.beginSession(WINDOW, undefined);
+      const read = await recovery.read(WINDOW, {
+        recordId: `${sessionId}-1`,
+        forRestore: true,
+      });
+      if (read.status !== "ok" || !read.file) throw new Error("no file");
+      const target = path.join(root, "Site.layoutry");
+      const restoredToken = read.file.token;
+      const save = (upgradeFormat: boolean) =>
+        files.write(WINDOW, {
+          token: restoredToken,
+          text: edited,
+          force: false,
+          upgradeFormat,
+        });
+      expect(await save(false)).toEqual({
+        status: "older-format",
+        fileName: "Site.layoutry",
+        formatVersion: 1,
+      });
+      expect(await fs.readFile(target, "utf8")).toBe(original);
+      expect(await save(true)).toMatchObject({ status: "saved" });
+      expect(await fs.readFile(target, "utf8")).toBe(edited);
     });
 
     it("recognizes a snapshot whose work the original file already holds", async () => {

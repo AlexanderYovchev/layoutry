@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialogButtons";
 import type {
   FileConflict,
+  OlderFormatFile,
   ProjectCommandError,
 } from "@/features/project/commands/projectCommands";
 import type { ProjectMetadata } from "@/features/project/types/projectFile";
@@ -312,6 +313,76 @@ export function FileConflictDialog({
               className={primaryButtonClass}
             >
               Save As…
+            </button>
+          </div>
+        </>
+      )}
+    </Dialog>
+  );
+}
+
+interface OlderFormatDialogProps {
+  file: OlderFormatFile | null;
+  onSaveAs: () => void;
+  onOverwrite: () => void;
+  onClose: () => void;
+}
+
+/**
+ * The first save of a file opened in an older project format (BC-05.4).
+ * Saving upgrades it to the current format, which older Layoutry versions
+ * can't open. Nothing is written until the user picks an option: Save As
+ * (recommended, focused) keeps the original file as it is; Overwrite
+ * replaces it only on this explicit choice; Cancel changes nothing.
+ */
+export function OlderFormatDialog({
+  file,
+  onSaveAs,
+  onOverwrite,
+  onClose,
+}: OlderFormatDialogProps) {
+  const saveAsRef = useRef<HTMLButtonElement>(null);
+  return (
+    <Dialog
+      open={file !== null}
+      onClose={onClose}
+      title="Upgrade Project File?"
+      initialFocusRef={saveAsRef}
+    >
+      {file && (
+        <>
+          <p>
+            <span className="text-fg-primary font-medium">
+              “{file.fileName}”
+            </span>{" "}
+            uses an older file format. Saving it will upgrade it to the current
+            format, which may not open in older versions of Layoutry.
+          </p>
+          <p className="mt-2">
+            Nothing has been saved yet. Save a new copy to keep the original.
+          </p>
+          <div className={dialogFooterClass}>
+            <button
+              type="button"
+              onClick={onClose}
+              className={secondaryButtonClass}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onOverwrite}
+              className={dangerButtonClass}
+            >
+              Overwrite Original
+            </button>
+            <button
+              ref={saveAsRef}
+              type="button"
+              onClick={onSaveAs}
+              className={primaryButtonClass}
+            >
+              Save As… (Recommended)
             </button>
           </div>
         </>

@@ -4,6 +4,7 @@ import { InspectorAspectRatioFields } from "@/features/inspector/components/Insp
 import { InspectorNumericValueControl, type NumericOrAuto } from "@/features/inspector/components/InspectorNumericValueControl";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
+import { resetScopeProps } from "@/features/inspector/utils/inspectorResetScope";
 import { InspectorResizeLockToggle } from "@/features/inspector/components/InspectorResizeLockToggle";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
@@ -21,12 +22,14 @@ interface InspectorSizeSectionProps {
 
 const SIZE_UNITS = ["px"] as const;
 
-// BC-05.2: Width and Height are one stored record (ElementDimensions: both
-// axes, plus the resize offsets), and the project format has no way to keep
-// one axis while returning the other to Auto. Both reset buttons therefore
-// say what they do. Independent per-axis reset needs a format change
-// (deferred, see the BC-05.2 report).
-const RESET_SIZE_LABEL = "Reset width and height";
+// Width and Height are one stored record (ElementDimensions: both axes, plus
+// the resize offsets), and the project format has no way to keep one axis
+// while returning the other to Auto. So there is one reset for the pair
+// (BC-05.4; BC-05.2 had a "Reset width and height" button on each field),
+// and its tooltip says it resets both. Independent per-axis reset would need
+// a format change: an accepted limitation for BC-05.
+const RESET_SIZE_LABEL = "Reset size";
+const RESET_SIZE_TITLE = "Reset width and height together.";
 
 // A rendered size within this many pixels of the preferred size counts as
 // "not constrained" — guards against reporting a parent constraint from
@@ -174,12 +177,19 @@ export function InspectorSizeSection({ node, isFreeChild }: InspectorSizeSection
 
   return (
     <InspectorSection label="Size" defaultOpen>
+      {/* One reset scope for the pair: "Reset size" covers both fields (an open edit in either is discarded, and a keyboard reset lands on Width). */}
+      <div {...resetScopeProps} className="flex flex-col gap-1.5">
+      {!isFreeChild && (
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-fg-secondary">Width and height</span>
+          <InspectorResetButton onReset={resetSize} disabled={node.dimensions === undefined} label={RESET_SIZE_LABEL} title={RESET_SIZE_TITLE} />
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <InspectorPropertyRow
           label="Width"
           variant="stack"
           state={!isFreeChild && node.dimensions === undefined ? "unset" : "set"}
-          reset={!isFreeChild && <InspectorResetButton onReset={resetSize} disabled={node.dimensions === undefined} label={RESET_SIZE_LABEL} />}
         >
           <InspectorNumericValueControl
             ariaLabel="Width"
@@ -195,7 +205,6 @@ export function InspectorSizeSection({ node, isFreeChild }: InspectorSizeSection
           label="Height"
           variant="stack"
           state={!isFreeChild && node.dimensions === undefined ? "unset" : "set"}
-          reset={!isFreeChild && <InspectorResetButton onReset={resetSize} disabled={node.dimensions === undefined} label={RESET_SIZE_LABEL} />}
         >
           <InspectorNumericValueControl
             ariaLabel="Height"
@@ -207,6 +216,7 @@ export function InspectorSizeSection({ node, isFreeChild }: InspectorSizeSection
             onCommit={isFreeChild ? commitFreeHeight : commitFlowHeight}
           />
         </InspectorPropertyRow>
+      </div>
       </div>
       {widthConstrained && (
         <p className="text-[11px] text-fg-secondary">

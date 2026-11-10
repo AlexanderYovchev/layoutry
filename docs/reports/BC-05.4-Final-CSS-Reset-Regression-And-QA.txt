@@ -1,0 +1,473 @@
+LAYOUTRY — BC-05.4: FINAL CSS RESET REGRESSION, MIGRATION SAFETY & QA
+=====================================================================
+Date: 2026-11-10
+Type: Final corrections + cross-system regression + milestone closure audit
+Base: HEAD 21ee7fe (BC-05.3 committed)
+Status: implemented and validated; NOT committed
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Both approved product decisions are implemented, tested in the real Electron app on real files, and verified across Chromium, Firefox and WebKit:
+- Decision A: the first save of an older-format desktop file asks first: Save As… (recommended) / Overwrite Original / Cancel.
+- Decision B: multi-selection Spacing compares effective spacing.
+
+Also:
+- Width/height now have one "Reset size" action, with the tooltip "Reset width and height together."
+- A reset coverage audit added table-driven tests for every reset that had none (Typography, Transform, Grid item).
+- A Canvas / Preview / exported-page / reopened-project parity matrix was added and passes.
+
+One real gap was found and closed while implementing Decision A: saving restored recovery work could have overwritten an older-format original without a prompt (section 3).
+
+No new high-severity defect remains.
+
+Recommendation: CLOSE BC-05 (section 22).
+
+
+2. APPROVED PRODUCT DECISIONS IMPLEMENTED
+-----------------------------------------
+Decision A — protect legacy desktop project files: implemented (sections 3–4).
+- Choices offered: Save As (recommended, focused), Overwrite Original (explicit), Cancel.
+- The dialog uses the approved wording: "uses an older file format. Saving it will upgrade it to the current format, which may not open in older versions of Layoutry." … "Save a new copy to keep the original."
+- Nothing is written before the choice.
+- The prompt doesn't repeat after a successful format 2 save.
+
+Decision B — multi-selection computed spacing: implemented (section 5).
+- Compares each element's effective margin/padding.
+- Shows the shared value or Mixed.
+- Authored vs unset stays in the row state.
+- Measured values are never written.
+
+
+3. DESKTOP MIGRATION SAVE WORKFLOW
+----------------------------------
+Where the rule lives: the desktop main process, the single choke point every save to a file passes through. This covers:
+- Save and Ctrl+S;
+- Save from the close-window and switch-project "Unsaved Changes" prompt;
+- saving work restored from a crash.
+
+Design:
+- desktop/files/fileCapabilities.ts: each file token records `formatVersion`, the project format of the file as this window last read or wrote it.
+  - It is set on open (from the text just read).
+  - It is set on a recovery restore (from the original file's current text; recoveryService already reads it).
+  - It is updated after every successful write.
+  - It is null for a Save dialog destination.
+- desktop/files/projectFileService.ts `write`:
+  - New required payload key `upgradeFormat` (boolean), validated like `force`.
+  - If the token's formatVersion < the incoming text's formatVersion, and neither `upgradeFormat` nor `force` is set, it returns `{ status: "older-format", fileName, formatVersion }` and writes NOTHING.
+  - `force` comes only from the external-change dialog, which can only be reached after this check has passed, so the user is never asked twice.
+- desktop/preload/preload.ts: `writeProjectFile(token, text, force, upgradeFormat)`. The 4th argument must be a boolean, or the call throws as for every other argument. No new channel, and no change to sandboxing, the CSP or the capability model.
+- Renderer:
+  - The bridge schema accepts "older-format".
+  - projectCommands.saveToFile takes `upgradeFormat` and maps the result to `{ ok: false, olderFormat }`.
+  - The workflow shows the new "older-format" dialog.
+  - `resolveOlderFormat("save-as" | "overwrite")`; Cancel = close the dialog.
+- UI: `OlderFormatDialog` in ProjectConfirmDialogs.tsx, the same Dialog primitive and button styles as the existing File Conflict dialog.
+  - Title "Upgrade Project File?".
+  - Initial focus is Save As… (Recommended).
+  - Escape and Cancel write nothing.
+
+Workflows checked:
+
+| Workflow | Result |
+|---|---|
+| Save / Ctrl+S on a format 1 file | Prompt; file untouched until a choice |
+| Save As from the prompt | New format 2 file; original byte-identical; the project moves to the new file (existing Save As identity rules); later saves go there with no prompt |
+| Save As dialog cancelled | Nothing written; still dirty |
+| Overwrite Original | Original replaced with format 2; next save has no prompt |
+| Cancel / Escape | Nothing written; still dirty; the next Save asks again (no conversion happened) |
+| Save failure during Overwrite | Error dialog; original untouched; still dirty |
+| Closing a dirty format 1 project → Save | Prompt; the window stays open (the close is cancelled, as the File Conflict dialog does today); original untouched |
+| Opening another project | Its "Save" goes through the same saveInPlace path, so the same prompt applies |
+| Application quit | Same as closing |
+| Autosave | Layoutry has no autosave to the project file. Recovery snapshots go to separate recovery storage and never write the original (recoveryCoordinator → storage.write) |
+| Restored recovery work whose original is format 1 | Prompt (gap closed: before BC-05.4 this would have saved straight over the original) |
+| Existing format 2 file | Saves in place, no prompt |
+| New project | Native Save dialog, no prompt (the token has no recorded format) |
+| Save dialog destination replacing an existing format 1 file | No second prompt: Windows' own replace confirmation already asked |
+
+Browser library projects are outside Decision A, which covers desktop files.
+
+
+4. ORIGINAL-FILE PRESERVATION EVIDENCE
+--------------------------------------
+- Electron, real temporary files (e2e/desktop/legacy-format-save.spec.ts, 4 tests).
+  - The original is a byte copy of test/fixtures/persistence/native-site-original-1.3.layoutry, a format 1 file written by PROJECT-1.3. It is historical, not regenerated.
+  - SHA-256 is compared before and after:
+    - Cancel: identical;
+    - Escape: identical;
+    - Save As: identical, and the new file is format 2;
+    - cancelled Save As dialog: identical, and no other file exists;
+    - close → Save → Cancel: identical, window still open;
+    - Overwrite Original: the file becomes format 2, and no second file exists.
+- Main process, real temporary files (projectFileService.test.ts, +7):
+  - refused without consent, and the bytes and directory listing are unchanged;
+  - upgrades on consent, then saves with no prompt;
+  - a same-format write needs no consent;
+  - a format 2 file saves straight back;
+  - a Save dialog destination needs no second consent;
+  - force implies consent;
+  - a non-boolean upgradeFormat is rejected.
+- Recovery (recoveryService.test.ts, +1): restored work over a format 1 original is refused without consent, the file is unchanged, and it saves with consent.
+- Renderer workflow (projectDesktopWorkflow.test.ts, +8, using the same historical fixture text): every choice and failure path above, plus format 2 saves without asking.
+
+
+5. MULTI-SELECTION COMPUTED SPACING RESULTS
+-------------------------------------------
+- `useRenderedPaddings(ids)` generalizes BC-05.3's hook. One layout effect measures every listed node (one getComputedStyle each).
+  - Only nodes with an unset padding side are listed.
+  - An empty list does no work and causes no re-render.
+- `useRenderedPadding(id)` is now a thin wrapper, so single selection is unchanged.
+- Effective value per side: authored (0 included), else rendered padding, else 0 for margin (the base stylesheet's value; no default presentation adds margin).
+- The field shows a number only when every side of every selected element has it; otherwise it shows Mixed.
+- Row state follows authored data:
+  - "set" when any selected node authors a side, an authored 0 included;
+  - "unset" when none does;
+  - "mixed" when the shown values differ.
+
+| Case (unit tests in InspectorBulkSpacingSection.test.tsx, 8) | Shows |
+|---|---|
+| 16 vs 8 computed | Mixed |
+| Authored 16 vs unset rendering 16 | 16, row set |
+| Two buttons with their own 8/16 | Mixed (BC-05.3 showed 0) |
+| Authored 0 vs unset rendering 0 | 0, row set (the distinction is kept) |
+| Authored 0 vs a button's unset 8/16 | Mixed |
+| Nothing authored, everything 0 | 0, no set state |
+
+- Editing a Mixed field writes exactly the typed value to all four sides of every node, in one history entry. Nothing measured is ever written.
+- After a style change and an Undo, the values re-read (not stale).
+- e2e (bc05-final-regression.spec.ts) confirms the same in a real browser: two buttons read Mixed; heading + authored-0 paragraph read 0 with "Explicitly set"; editing Mixed → 4px on both; margin untouched; Undo.
+- Multi-selection reset: none existed and none was added, per scope.
+
+
+6. WIDTH/HEIGHT RESET PRESENTATION
+----------------------------------
+- The two "Reset width and height" buttons (one per field, BC-05.2) are replaced by ONE "Reset size" button.
+  - It sits in a slim header, "WIDTH AND HEIGHT", above the pair, styled like the existing "CONSTRAINTS" caption.
+  - Its tooltip and accessible description: "Reset width and height together."
+  - InspectorResetButton gained an optional `title`.
+- The header and the pair form one reset scope:
+  - pressing Reset size while typing in Width or Height discards the draft (one Undo step);
+  - a keyboard Reset size focuses Width.
+- The dimension inputs, resize handles, Free-child behavior (no reset, as before) and Undo/Redo are unchanged.
+- The model is unchanged: no schema change, as decided.
+- Tests:
+  - InspectorSizeSection.test.tsx (one button, its tooltip, both axes cleared, disabled when unresized, absent for Free children);
+  - InspectorResetBehavior.test.tsx (+2: draft cancel, keyboard focus);
+  - e2e (one button, its title, keyboard focus on Width, Undo).
+
+
+7. FULL BC-05 DEFECT REGISTER
+-----------------------------
+BC-05-A — explicit zero vs unset spacing:
+- FIXED (BC-05.3), re-verified here.
+- Evidence:
+  - parity matrix (zero button, mixed side, unset button, reset heading margin);
+  - multi-selection reads;
+  - legacy migration fixtures;
+  - BC-05.3 suites still green.
+- Risk: none known. Not blocking.
+
+BC-05-B — width/height reset coupling:
+- ACCEPTED LIMITATION (combined model kept by decision).
+- The UI now communicates it accurately: one "Reset size", "Reset width and height together.".
+- Evidence: section 6.
+- Not blocking.
+
+BC-05-C — active-edit Undo transaction:
+- FIXED (BC-05.2), re-verified.
+- Evidence:
+  - BC-05.2 session tests (numeric, colour text, slider box, section reset, Escape, different property) still green;
+  - new: Reset size during a Height edit;
+  - BC-05.3 side resets during an edit.
+- Not blocking.
+
+BC-05-D — keyboard focus loss:
+- FIXED (BC-05.2), re-verified: Reset size → Width; side reset → its field; e2e in Chromium/Firefox/WebKit/Electron.
+- Residual: a group keyboard reset on a linked Margin/Padding lands on the pressed "Linked" toggle. That is inside the row, never <body> (section 10).
+- Not blocking.
+
+BC-05-E — missing layout reset coverage:
+- FIXED (BC-05.2), re-verified: parity matrix (Flex direction/gap, Grid columns) and the BC-05.2 suites.
+- Display and Layout mode are structural and intentionally have no reset.
+- Not blocking.
+
+BC-05-F — transform reset granularity:
+- FIXED (BC-05.2), re-verified: audit table (all 4 fields) and the parity matrix (rotate reset keeps scale; Canvas = Preview = exported page).
+- Not blocking.
+
+BC-05-G — multi-selection reset inconsistency:
+- PARTIALLY ADDRESSED, within the approved scope.
+  - Display: fixed (Decision B).
+  - Broad multi-selection reset: out of scope by decision, unchanged.
+- Not blocking.
+
+
+8. RESET COVERAGE AUDIT
+-----------------------
+Only controls that exist in the repository:
+
+| Area | Resets present | Evidence |
+|---|---|---|
+| Typography | font family, size, weight, style, decoration, text color, alignment, line height, letter spacing | NEW InspectorResetAudit.test.tsx, 9 table rows: with every field authored, each reset removes only its field, disables itself, makes one entry, and Undo restores it. Previously untested: family, weight, line height, text color |
+| Dimensions | Reset size (pair); min/max width/height | InspectorSizeSection and InspectorResetBehavior (constraints survive a size reset) |
+| Spacing | margin, padding, each side; explicit 0; unset | BC-05.3 suites, multi-selection suite, parity matrix |
+| Layout | Display: structural, no reset. Flex direction, wrap, justify, align items, gap, row gap, column gap. Grid columns, rows, row gap, column gap | BC-05.2 InspectorResetBehavior, section tests, parity matrix |
+| Flex item | grow, shrink, basis, align self, plus "Reset flex item" | BC-05.2 |
+| Grid item | column/row start, column/row span, plus "Reset grid item" | NEW audit table (4 rows, in a real 4-column grid parent): each returns only its field to the default. Previously untested: column span, row start |
+| Appearance | background (colour, image, gradient, size, position, repeat, attachment), border (width, style, colour, all), radius, shadow (layer, colour, geometry), opacity and filter effects | Existing section tests plus the BC-05.2 e2e |
+| Transform | translate X, translate Y, rotate, scale, plus "Reset transform" | NEW audit table (4 rows; translate X/Y previously untested) and the parity matrix |
+
+Structurally non-resettable, by design: Display, Layout mode (Flow/Free), Snap, Resize contents. Free-child width/height (geometry, not a style override) has no reset.
+
+
+9. UNDO/REDO AND LIVE-EDIT EVIDENCE
+-----------------------------------
+- Reset during numeric typing (Font size, Rotate, Gap box, Height, padding side): one entry; Undo returns to the pre-edit value. Tests: BC-05.2 session tests, BC-05.3 side reset, BC-05.4 Reset size.
+- Reset during colour text editing: BC-05.2 test.
+- Reset during slider editing: BC-05.2 "Gap (all) (exact value)" test.
+- Reset after Enter, Escape and blur: BC-05.2 tests, plus the BC-05.3 Escape/blur tests.
+- Reset after a selection change: BC-05.2 e2e plus BC-05.3 selection test.
+- Every audit row asserts exactly one history entry.
+- No duplicate commits, and no stale draft restoration: a blur after a reset adds nothing (BC-05.2 and BC-05.3 tests).
+- Dirty state: the store tests and the legacy-save tests keep "Unsaved changes" on every non-write path.
+
+
+10. KEYBOARD ACCESSIBILITY RESULTS
+----------------------------------
+- Every reset has an accessible name; Reset size also has a description (its title).
+- Enter and Space activate. Focus lands on the property's field: Reset size → Width; side reset → that side (unit tests, plus e2e in 3 engines and Electron).
+- No focus to <body> (BC-05.2 rule, still tested).
+- No traps. Tab order is unchanged apart from the one Reset size button replacing two.
+- Narrow Inspector:
+  - BC-05.2 and BC-05.3 narrow-width e2e checks still pass, so no control or reset escapes the panel;
+  - the Reset size header is a two-item flex row with a short caption.
+- Mixed is announced through the field's "Mixed" placeholder and the row's sr-only "Mixed values across the selection" state text.
+- Migration dialog:
+  - native dialog semantics (the shared Dialog primitive), title and text;
+  - initial focus on Save As;
+  - Escape = Cancel, writes nothing (Electron e2e);
+  - buttons in Cancel / Overwrite / Save As order, matching the File Conflict dialog.
+- Residual (BC-05.2, unchanged): a group keyboard reset on a linked Margin/Padding focuses the row's pressed "Linked" toggle rather than the field.
+
+
+11. CANVAS / PREVIEW / EXPORT PARITY MATRIX
+-------------------------------------------
+e2e/bc05-final-regression.spec.ts, "parity matrix".
+- Setup:
+  - one document with 8 elements;
+  - resets performed through the Inspector UI;
+  - then 14 computed properties read per element (padding ×4, margin ×4, flex-direction, column-gap, transform, height) in four places:
+    (1) Canvas;
+    (2) Preview;
+    (3) the exported standalone page, loaded in its own tab at the same viewport;
+    (4) the project after save, reload and reopen.
+- Result: (2), (3) and (4) are deep-equal to (1).
+
+| Element | Authored state | Canvas result |
+|---|---|---|
+| unsetButton | nothing | its default padding (≠ 0) |
+| zeroButton | padding 0 authored via UI | 0px ×4 |
+| mixedButton | padding-left 0 | left 0px, others = default |
+| resetHeading | margin bottom 24 → Reset margin | 0px ×4 |
+| flexBox | direction column, gap → reset | row, 0px |
+| gridBox | columns 4 → reset | `repeat(2, minmax(0, 1fr))` inline and in Export |
+| turned | rotate 20 + scale 1.5 → Reset rotate | scale only, same matrix everywhere |
+| sized | 300×120 → Reset size | auto height (≠ 120px) |
+
+Also checked:
+- the export contains no `initial`, `unset` or `revert` declarations;
+- legacy migrated project: covered by BC-05.3's legacy e2e (still green) and BC-05.3's byte-identical export comparison;
+- the parity spec is stable: 2 × 3 runs passed in Chromium; it passed in Firefox and in WebKit.
+
+
+12. LEGACY AND V2 PERSISTENCE RESULTS
+-------------------------------------
+- Migration re-verified (BC-05.3 tests still green):
+  - format 1 zeros are read as unset;
+  - non-zero sides unchanged;
+  - the spacing record is kept;
+  - other properties untouched;
+  - invalid and newer versions are refused (`unsupported-version`, `migration-failed` tests);
+  - historical fixtures (PROJECT-1.1 every-element, PROJECT-1.3 native, 1.2 library, 1.4 recovery) still open.
+- Format 2:
+  - the BC-05.3 frozen fixture re-saves byte-identically;
+  - save/reopen preserves authored styles (parity matrix part 4; BC-05.3 e2e).
+- Original legacy file byte-identical after Save As or Cancel: section 4 (SHA-256, real files).
+- Migration ambiguity: none beyond BC-05.3's documented policy (format 1 zeros meant "no declaration", so they are read as unset). Export of the historical fixtures is byte-identical.
+
+
+13. CROSS-BROWSER TEST RESULTS
+------------------------------
+Targeted set (8 specs): bc05-final-regression, spacing-zero, inspector-reset, inspector-color-slider-commit, inspector-computed-typography, inspector-final-regression, inspector-live-color-font-size, inspector-live-numeric.
+
+| Engine | Result |
+|---|---|
+| Chromium | the full suite includes them (section 15) |
+| Firefox (4 workers) | 75 passed, 1 failed: "50 edit sessions … keystroke latency" (median > 50 ms under parallel load) |
+| Firefox, that test alone (1 worker, ×3) | 3 passed; median 39 / 40 / 40 ms (budget 50), 2 getComputedStyle per keystroke (budget 5), the same as BC-05.3 (37–38 ms) |
+| WebKit (1 worker) | 74 passed, 2 failed: the native colour-picker tests |
+
+Classification, not assumed:
+- WebKit colour picker: the error signature "Expected rgb(0, 170, 0), received lab(…)" after `fill()` on input[type=color] is the BC-01.6 E2 environment limit (Playwright's WebKit on Windows has no working colour input). Neither test touches BC-05 code.
+- Firefox latency: BC-05.3 showed by A/B (padding measurement disabled) that it fails the same way under load. This run reproduced the single-worker pass with unchanged numbers.
+
+
+14. ELECTRON TEST RESULTS
+-------------------------
+`npx playwright test -c playwright.desktop.config.ts` (full), ELECTRON_RUN_AS_NODE stripped, after a fresh `npm run desktop:build`.
+
+| Run | Result |
+|---|---|
+| Final run | 72 passed, 2 skipped (the same 2 skips as before BC-05.4), 0 failed |
+| Earlier full run, same build | 71 passed, 1 failed: files.spec "invalid, newer-version and wrong-type files are refused" — the notes.txt error dialog didn't appear within 5 s |
+| That test alone, ×3 | 3 passed |
+
+The intermittent test exercises the Open path for invalid files, which BC-05.4 did not change. I record it as an intermittent, non-reproduced failure, not as pre-existing.
+
+Covered:
+- v1 Save As, v1 Overwrite Original, v1 Cancel/Escape, cancelled Save As, close-dirty → Save → prompt;
+- v2 saves, the keyboard shortcut (Ctrl+S);
+- Inspector reset and spacing specs (BC-05.2/3);
+- recovery restore over a changed format 1 original (prompt first, then the conflict prompt still catches the outside change);
+- project migration and export after migration (files/export specs);
+- bridge security probes (forged tokens, path-as-token, wrong types, and the new non-boolean upgradeFormat — all refused).
+
+Not run: the packaged suite (e2e/packaged), which needs a packaged build and real Windows dialogs. Its bridge probe was updated for the 4-argument call (section 18).
+
+
+15. EXACT TEST COMMANDS AND COUNTS
+----------------------------------
+- `npx tsc --noEmit -p .` → 0 errors
+- `npx tsc -p desktop/tsconfig.json --noEmit` → 0 errors
+- `npx eslint .` → 0 problems
+- `npx vitest run` → 360 files passed; 5423 passed, 1 skipped (BC-05.3: 359 files / 5383)
+- Regression proof: the 6 new or changed unit test files, run against HEAD 21ee7fe in a temporary worktree:
+  - 31 of 139 tests FAIL there;
+  - 6 of those 31 (existing service/recovery write tests) fail only because their payloads now carry `upgradeFormat`, which the old main process rejects;
+  - the other 25 fail on behavior.
+- `npx playwright test e2e/bc05-final-regression.spec.ts --project=chromium --repeat-each=2` → 6 passed
+- `npx playwright test --project=chromium` (full) → 222 passed, 0 failed
+- Firefox / WebKit: section 13.
+- Electron: section 14.
+
+
+16. BUILD / TYPECHECK / LINT RESULTS
+------------------------------------
+- `npm run build` → succeeded ("Compiled successfully")
+- `npm run desktop:build` → succeeded
+- Typecheck (web and desktop) and ESLint: clean.
+- Prettier: new files, and files that were Prettier-clean at HEAD, are formatted. Files already unformatted at HEAD were left alone.
+
+
+17. PERFORMANCE OBSERVATIONS
+----------------------------
+- Multi-selection measuring:
+  - one layout effect per document change;
+  - one getComputedStyle per selected node that has an unset padding side;
+  - no full-document scans, no polling, no new store subscriptions (the hook reads the same `document` signal as before);
+  - nodes with all four padding sides authored are not measured;
+  - an empty list does nothing, not even a state update.
+- Trade-off: a large multi-selection of unset elements costs N style reads per edit. These are reads, not writes, so no layout thrash.
+- Single-selection cost is unchanged: 2 getComputedStyle per keystroke, median 39–40 ms in Firefox.
+- Desktop: the format check is one JSON.parse of text the main process already holds (on open, on write, on restore). No extra disk reads, except restore, which already read the original.
+
+
+18. MODIFIED FILES
+------------------
+Created:
+- e2e/bc05-final-regression.spec.ts (3 tests: multi-selection, Reset size, parity matrix)
+- e2e/desktop/legacy-format-save.spec.ts (4 Electron tests, real files)
+- src/features/inspector/components/InspectorResetAudit.test.tsx (17 tests)
+- docs/reports/BC-05.4-Final-CSS-Reset-Regression-And-QA.txt (this file)
+- changelogs/2026-11-10-final-css-reset-regression-and-qa-BC-05.4.txt (gitignored)
+
+Modified, desktop (main and preload):
+- desktop/files/fileCapabilities.ts (formatVersion per token)
+- desktop/files/projectFileService.ts (formatVersionOf, upgradeFormat, older-format)
+- desktop/recovery/recoveryService.ts (restore token records the original's format)
+- desktop/preload/preload.ts (4th boolean argument)
+
+Modified, renderer:
+- project/desktop/desktopProjectFiles.ts (schema and signature)
+- project/desktop/fakeDesktopProjectFiles.ts (same rule as main, for tests)
+- project/commands/projectCommands.ts (olderFormat result, upgradeFormat option)
+- project/commands/projectWorkflow.ts (dialog and resolveOlderFormat)
+- project/stores/useProjectDialogStore.ts
+- project/components/ProjectConfirmDialogs.tsx (OlderFormatDialog)
+- project/components/ProjectWorkspace.tsx
+- inspector/hooks/useRenderedPadding.ts (useRenderedPaddings)
+- inspector/components/InspectorBulkSpacingSection.tsx (effective values)
+- inspector/components/InspectorSizeSection.tsx (one Reset size)
+- inspector/components/InspectorResetButton.tsx (optional title)
+
+Modified, docs: docs/architecture/project-format.md (upgrade prompt replaces the "open decision" paragraph).
+
+Modified, tests (no assertion removed):
+- desktop/files/projectFileService.test.ts (+7; payloads gain upgradeFormat: false so malformed-payload cases still fail for their own reason)
+- desktop/recovery/recoveryService.test.ts (+1, payloads updated)
+- desktop/ipc/registerDesktopIpc.test.ts (4-argument call, plus a non-boolean check)
+- src/features/project/commands/projectDesktopWorkflow.test.ts (+8)
+- src/features/project/desktop/desktopProjectFiles.test.ts (4-argument call)
+- inspector/components/InspectorBulkSpacingSection.test.tsx (rewritten for Decision B, 8)
+- InspectorSizeSection.test.tsx (one "Reset size")
+- InspectorResetBehavior.test.tsx (Reset size name, +2)
+- e2e/desktop/files.spec.ts, e2e/desktop/export.spec.ts and e2e/packaged/files.spec.ts (bridge probes pass the 4th argument; +1 non-boolean probe)
+- e2e/desktop/recovery.spec.ts (answers the new format prompt with Overwrite, then still asserts the conflict dialog and an untouched file)
+
+Moved / deleted: none. The temporary playwright.cross-temp.config.ts was created and deleted.
+
+
+19. REMAINING LIMITATIONS
+-------------------------
+1. Width/height reset together (accepted architectural limitation; the UI says so).
+2. No broad multi-selection reset (out of scope by decision).
+3. Closing the window with a format 1 file: choosing Save shows the format prompt and cancels the close. The user saves, then closes again. This matches the existing File Conflict behavior.
+4. Save As from the format prompt follows the existing Save As rule: the copy gets a new project identity.
+5. Browser library projects saved in format 2 are not prompted (Decision A covers desktop files). Older builds refuse them with "newer version" and don't change them.
+6. Group keyboard reset on a linked Margin/Padding focuses the "Linked" toggle (in-row, BC-05.2 behavior).
+7. Multi-selection measuring costs one style read per selected unset element per edit (section 17).
+8. The packaged-app suite was not run (it needs a packaged build).
+
+
+20. KNOWN FAILURES AND THEIR CLASSIFICATION
+-------------------------------------------
+
+| Failure | Classification | Evidence |
+|---|---|---|
+| WebKit ×2, native colour picker | Environment, pre-existing (BC-01.6 E2) | Same error signature; tests don't touch BC-05 code |
+| Firefox ×1, keystroke latency under 4 workers | Load-sensitive | Single-worker 3/3 at 39–40 ms; BC-05.3 A/B fails the same with the feature off |
+| Electron ×1 intermittent (files.spec invalid-file open) | Intermittent, not reproduced; in code BC-05.4 did not change | 3/3 alone and a clean full rerun. Not claimed as pre-existing |
+
+No other failures.
+
+
+21. GIT WORKING-TREE STATUS
+---------------------------
+Branch main, HEAD 21ee7fe; nothing committed or staged.
+- 28 modified files;
+- 4 untracked: the 3 new test/spec files plus this report;
+- the changelog is gitignored.
+
+
+22. FINAL RECOMMENDATION
+------------------------
+CLOSE BC-05.
+
+All 13 acceptance criteria are met:
+
+| # | Criterion | Evidence |
+|---|---|---|
+| 1 | Zero vs unset | Sections 7 and 11 |
+| 2 | v1 projects migrate safely | Section 12 |
+| 3 | First desktop save protects the original | Sections 3–4, including the recovery path |
+| 4 | Multi-selection computed spacing | Section 5 |
+| 5 | Reset reflects authored overrides | Sections 5, 8 and 11 |
+| 6 | Undo/Redo and live editing | Section 9 |
+| 7 | Keyboard focus | Section 10 |
+| 8 | Layout and transform resets | Sections 8 and 11 |
+| 9 | Combined size reset communicated | Section 6 |
+| 10 | Parity | Section 11 |
+| 11 | Persistence | Section 12 |
+| 12 | No new high-severity defects | — |
+| 13 | Remaining failures classified with evidence | Section 20 |

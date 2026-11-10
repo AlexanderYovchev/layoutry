@@ -51,7 +51,18 @@ export type ProjectCommandResult =
   /** The user cancelled a native dialog: nothing happened. */
   | { ok: false; cancelled: true }
   /** Saving would overwrite a change made outside Layoutry: nothing was written. */
-  | { ok: false; conflict: FileConflict };
+  | { ok: false; conflict: FileConflict }
+  /**
+   * BC-05.4: the file was opened in an older project format, and saving
+   * would upgrade it. Nothing was written; the user chooses Save As or
+   * Overwrite.
+   */
+  | { ok: false; olderFormat: OlderFormatFile };
+
+export interface OlderFormatFile {
+  fileName: string;
+  formatVersion: number;
+}
 
 /**
  * How an imported project whose id may already be in the library is added:
@@ -348,9 +359,15 @@ export function createProjectCommands({
      *
      * Nothing changes unless the write succeeds. `force` overwrites a file
      * that changed outside Layoutry, after the user confirmed it.
+     * `upgradeFormat` overwrites a file opened in an older project format,
+     * after the user chose Overwrite (BC-05.4).
      */
     saveToFile(
-      options: { saveAs?: boolean; force?: boolean } = {},
+      options: {
+        saveAs?: boolean;
+        force?: boolean;
+        upgradeFormat?: boolean;
+      } = {},
     ): Promise<ProjectCommandResult> {
       const saveAs = options.saveAs ?? false;
       return exclusive(saveAs ? "save-as" : "save", async () => {
@@ -399,15 +416,24 @@ export function createProjectCommands({
           target.token,
           text,
           options.force ?? false,
+          options.upgradeFormat ?? false,
         );
         if (result.status !== "saved") {
           if (chosen) desktop.releaseProjectFile(target.token);
-          return result.status === "conflict"
-            ? {
-                ok: false,
-                conflict: { reason: result.reason, fileName: result.fileName },
-              }
-            : fileFailure(result.error);
+          if (result.status === "conflict")
+            return {
+              ok: false,
+              conflict: { reason: result.reason, fileName: result.fileName },
+            };
+          if (result.status === "older-format")
+            return {
+              ok: false,
+              olderFormat: {
+                fileName: result.fileName,
+                formatVersion: result.formatVersion,
+              },
+            };
+          return fileFailure(result.error);
         }
 
         const location: ProjectLocation = {

@@ -23,6 +23,13 @@ export interface FileCapability {
    * confirmed replacing whatever is there.
    */
   fingerprint: FileFingerprint | null;
+  /**
+   * The project format version of the file as this window last read or
+   * wrote it (BC-05.4). `null` when unknown or not yet written (a Save
+   * dialog destination). A write that would raise it needs the user's
+   * explicit consent (see projectFileService.write).
+   */
+  formatVersion: number | null;
 }
 
 export class FileCapabilityRegistry {
@@ -37,6 +44,7 @@ export class FileCapabilityRegistry {
     ownerId: number,
     filePath: string,
     fingerprint: FileFingerprint | null,
+    formatVersion: number | null = null,
   ): string {
     let tokens = this.owners.get(ownerId);
     if (!tokens) {
@@ -49,6 +57,7 @@ export class FileCapabilityRegistry {
       filePath,
       fileName: path.basename(filePath),
       fingerprint,
+      formatVersion,
     });
     while (tokens.size > MAX_TOKENS_PER_OWNER) {
       const oldest = tokens.keys().next().value;
@@ -68,9 +77,12 @@ export class FileCapabilityRegistry {
     ownerId: number,
     token: string,
     fingerprint: FileFingerprint,
+    formatVersion: number | null = null,
   ): void {
     const capability = this.resolve(ownerId, token);
-    if (capability) capability.fingerprint = fingerprint;
+    if (!capability) return;
+    capability.fingerprint = fingerprint;
+    capability.formatVersion = formatVersion;
   }
 
   release(ownerId: number, token: string): void {

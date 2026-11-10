@@ -166,12 +166,33 @@ a failed migration leaves the file, library record or recovery record
 exactly as it was, and the open just reports the error.
 
 **Rollback.** Nothing is rewritten on load, so there is nothing to roll
-back. The original stays on disk until the user saves. Saving then writes
-format 2, which builds before BC-05.3 refuse ("made by a newer version")
-without changing the file. BC-05.3 ships that plain behavior: Save writes
-format 2 with no extra prompt. The earlier recommendation, that the first
-save of a migrated native file ask whether to update the file or use
-Save As to keep the old one, is still open as a product decision.
+back. The original stays on disk until the user saves.
+
+**Upgrading an older native file (BC-05.4).** Saving writes the current
+format, which older builds refuse ("made by a newer version"). So the
+first Save to a desktop file that was read in an older format asks first:
+
+- **Save As… (recommended, focused):** writes a new file and keeps the
+  original byte-for-byte;
+- **Overwrite Original:** replaces it, on this explicit choice only;
+- **Cancel:** writes nothing.
+
+The rule lives in the main process, so no save path can skip it (Save,
+the close prompt's Save, saving restored recovery work):
+
+- every file token records the format version of the file as the window
+  last read or wrote it, including a recovery restore's original;
+- a write that would raise that version returns `older-format` and
+  writes nothing, unless the renderer passes `upgradeFormat` (sent only
+  after Overwrite Original).
+
+A Save dialog destination needs no second prompt, because Windows already
+confirmed replacing it. After a successful save the file is in the current
+format, so the prompt never repeats. Recovery snapshots never write to the
+original file. Browser library projects are outside this rule (the product
+decision covers desktop files). An older build that meets a format 2
+library project refuses it with the same "newer version" message and
+doesn't change it.
 
 ### Adding a version
 

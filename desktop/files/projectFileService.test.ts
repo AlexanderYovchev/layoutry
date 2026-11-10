@@ -60,6 +60,7 @@ async function chooseAndWrite(
     token: choice.target.token,
     text,
     force: false,
+    upgradeFormat: false,
   });
   return { token: choice.target.token, written };
 }
@@ -146,7 +147,12 @@ describe("write", () => {
     );
     expect(written).toEqual({ status: "saved", fileName: "Site.layoutry" });
     expect(
-      await service.write(OWNER, { token, text: PROJECT("2"), force: false }),
+      await service.write(OWNER, {
+        token,
+        text: PROJECT("2"),
+        force: false,
+        upgradeFormat: false,
+      }),
     ).toEqual({
       status: "saved",
       fileName: "Site.layoutry",
@@ -167,7 +173,12 @@ describe("write", () => {
 
     await fs.writeFile(target, PROJECT("external"));
     expect(
-      await service.write(OWNER, { token, text: PROJECT("2"), force: false }),
+      await service.write(OWNER, {
+        token,
+        text: PROJECT("2"),
+        force: false,
+        upgradeFormat: false,
+      }),
     ).toEqual({
       status: "conflict",
       reason: "modified",
@@ -176,12 +187,22 @@ describe("write", () => {
     expect(await fs.readFile(target, "utf8")).toBe(PROJECT("external"));
 
     expect(
-      await service.write(OWNER, { token, text: PROJECT("2"), force: true }),
+      await service.write(OWNER, {
+        token,
+        text: PROJECT("2"),
+        force: true,
+        upgradeFormat: false,
+      }),
     ).toMatchObject({ status: "saved" });
 
     await fs.rm(target);
     expect(
-      await service.write(OWNER, { token, text: PROJECT("3"), force: false }),
+      await service.write(OWNER, {
+        token,
+        text: PROJECT("3"),
+        force: false,
+        upgradeFormat: false,
+      }),
     ).toMatchObject({
       status: "conflict",
       reason: "missing",
@@ -196,14 +217,24 @@ describe("write", () => {
       PROJECT("1"),
     );
     expect(
-      await service.write(8, { token, text: PROJECT("x"), force: true }),
+      await service.write(8, {
+        token,
+        text: PROJECT("x"),
+        force: true,
+        upgradeFormat: false,
+      }),
     ).toMatchObject({
       status: "error",
       error: { code: "invalid-token" },
     });
     service.release(OWNER, { token });
     expect(
-      await service.write(OWNER, { token, text: PROJECT("x"), force: true }),
+      await service.write(OWNER, {
+        token,
+        text: PROJECT("x"),
+        force: true,
+        upgradeFormat: false,
+      }),
     ).toMatchObject({
       error: { code: "invalid-token" },
     });
@@ -217,12 +248,18 @@ describe("write", () => {
         token: "a".repeat(32),
         text: PROJECT("x"),
         force: false,
+        upgradeFormat: false,
         path: "C:\\x.layoutry",
       },
     ],
     [
       "a path instead of a token",
-      { token: "C:\\Windows\\win.ini", text: PROJECT("x"), force: false },
+      {
+        token: "C:\\Windows\\win.ini",
+        text: PROJECT("x"),
+        force: false,
+        upgradeFormat: false,
+      },
     ],
     [
       "non-boolean force",
@@ -230,7 +267,12 @@ describe("write", () => {
     ],
     [
       "text that isn't JSON",
-      { token: "a".repeat(32), text: "MZ\u0090binary", force: false },
+      {
+        token: "a".repeat(32),
+        text: "MZ\u0090binary",
+        force: false,
+        upgradeFormat: false,
+      },
     ],
     [
       "JSON that isn't a project",
@@ -242,6 +284,7 @@ describe("write", () => {
         token: "a".repeat(32),
         text: "x".repeat(MAX_PROJECT_TEXT_LENGTH + 1),
         force: false,
+        upgradeFormat: false,
       },
     ],
   ])("rejects a malformed write payload: %s", async (_label, payload) => {
@@ -301,5 +344,112 @@ describe("external opens (command line, Explorer, second launch)", () => {
       service.queueExternalOpen(path.join(dir, `${i}.layoutry`)),
     );
     expect(accepted.filter(Boolean)).toHaveLength(8);
+  });
+});
+
+describe("older project formats (BC-05.4)", () => {
+  const V1 = (v: string) =>
+    `{"format":"layoutry-project","formatVersion":1,"v":"${v}"}\n`;
+  const V2 = (v: string) =>
+    `{"format":"layoutry-project","formatVersion":2,"v":"${v}"}\n`;
+
+  async function openV1(service: ReturnType<typeof setup>["service"]) {
+    openAnswer = path.join(dir, "Legacy.layoutry");
+    await fs.writeFile(openAnswer, V1("original"));
+    const opened = await service.open(OWNER);
+    if (opened.status !== "opened") throw new Error(JSON.stringify(opened));
+    return { token: opened.file.token, target: openAnswer };
+  }
+
+  const write = (
+    service: ReturnType<typeof setup>["service"],
+    token: string,
+    text: string,
+    flags: { force?: boolean; upgradeFormat?: boolean } = {},
+  ) =>
+    service.write(OWNER, {
+      token,
+      text,
+      force: flags.force ?? false,
+      upgradeFormat: flags.upgradeFormat ?? false,
+    });
+
+  it("refuses to upgrade a file opened in format 1 without consent, and writes nothing", async () => {
+    const { service } = setup();
+    const { token, target } = await openV1(service);
+    const before = await fs.readFile(target);
+    expect(await write(service, token, V2("new"))).toEqual({
+      status: "older-format",
+      fileName: "Legacy.layoutry",
+      formatVersion: 1,
+    });
+    expect((await fs.readFile(target)).equals(before)).toBe(true);
+    expect((await fs.readdir(dir)).sort()).toEqual(["Legacy.layoutry"]);
+  });
+
+  it("upgrades on explicit consent, then never asks again", async () => {
+    const { service } = setup();
+    const { token, target } = await openV1(service);
+    expect(
+      await write(service, token, V2("new"), { upgradeFormat: true }),
+    ).toEqual({ status: "saved", fileName: "Legacy.layoutry" });
+    expect(await fs.readFile(target, "utf8")).toBe(V2("new"));
+    expect(await write(service, token, V2("again"))).toEqual({
+      status: "saved",
+      fileName: "Legacy.layoutry",
+    });
+  });
+
+  it("a same-format write of a format 1 file needs no consent", async () => {
+    const { service } = setup();
+    const { token } = await openV1(service);
+    expect(await write(service, token, V1("still 1"))).toMatchObject({
+      status: "saved",
+    });
+  });
+
+  it("a format 2 file saves straight back", async () => {
+    const { service } = setup();
+    openAnswer = path.join(dir, "Current.layoutry");
+    await fs.writeFile(openAnswer, V2("a"));
+    const opened = await service.open(OWNER);
+    if (opened.status !== "opened") throw new Error("not opened");
+    expect(await write(service, opened.file.token, V2("b"))).toMatchObject({
+      status: "saved",
+    });
+  });
+
+  it("a Save dialog destination replacing a format 1 file needs no second consent (the dialog confirmed it)", async () => {
+    const { service } = setup();
+    await fs.writeFile(path.join(dir, "Copy.layoutry"), V1("old copy"));
+    const { written } = await chooseAndWrite(
+      service,
+      "Copy.layoutry",
+      V2("new"),
+    );
+    expect(written).toMatchObject({ status: "saved" });
+  });
+
+  it("the external-change Overwrite (force) follows the format consent and is not asked twice", async () => {
+    const { service } = setup();
+    const { token } = await openV1(service);
+    expect(await write(service, token, V2("x"), { force: true })).toMatchObject(
+      {
+        status: "saved",
+      },
+    );
+  });
+
+  it("rejects a non-boolean upgradeFormat", async () => {
+    const { service } = setup();
+    const { token } = await openV1(service);
+    await expect(
+      service.write(OWNER, {
+        token,
+        text: V2("x"),
+        force: false,
+        upgradeFormat: "yes",
+      }),
+    ).rejects.toBeInstanceOf(InvalidPayloadError);
   });
 });
