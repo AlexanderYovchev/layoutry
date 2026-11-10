@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addInteraction,
   removeInteraction,
+  removeInteractionsForRemovedNodes,
   removeInteractionsTargeting,
   removeInteractionsWithMissingTargets,
   remapInteractionTargets,
@@ -288,5 +289,48 @@ describe("removeInteractionsWithMissingTargets (BC-04.2)", () => {
       children: [{ id: "h-1", tag: "h1", interactions: [{ id: "self", trigger: "click", action: "toggle", targetId: "h-1" }] }],
     };
     expect(removeInteractionsWithMissingTargets(root)).toBe(root);
+  });
+});
+
+describe("removeInteractionsForRemovedNodes (BC-06.2)", () => {
+  const before: EditorElementNode = {
+    id: "page",
+    tag: "page",
+    children: [
+      {
+        id: "button-1",
+        tag: "button",
+        interactions: [
+          { id: "to-li-3", trigger: "click", action: "toggle", targetId: "li-3" },
+          { id: "to-nested", trigger: "click", action: "hide", targetId: "nested" },
+          { id: "to-li-1", trigger: "click", action: "show", targetId: "li-1" },
+        ],
+      },
+      {
+        id: "ul-1",
+        tag: "ul",
+        children: [
+          { id: "li-1", tag: "li" },
+          { id: "li-3", tag: "li" },
+          { id: "div-1", tag: "div", children: [{ id: "nested", tag: "p" }] },
+        ],
+      },
+    ],
+  };
+
+  it("removes bindings whose target disappeared at any depth, keeping the rest", () => {
+    const list = before.children![1];
+    const after: EditorElementNode = { ...before, children: [before.children![0], { ...list, children: [list.children![0]] }] };
+
+    const result = removeInteractionsForRemovedNodes(before, after);
+
+    expect(result.children![0].interactions).toEqual([{ id: "to-li-1", trigger: "click", action: "show", targetId: "li-1" }]);
+    expect(result.children![1]).toBe(after.children![1]);
+  });
+
+  it("returns `after` itself when nothing was removed", () => {
+    const after: EditorElementNode = { ...before, children: [...before.children!, { id: "p-new", tag: "p" }] };
+    expect(removeInteractionsForRemovedNodes(before, after)).toBe(after);
+    expect(removeInteractionsForRemovedNodes(before, before)).toBe(before);
   });
 });

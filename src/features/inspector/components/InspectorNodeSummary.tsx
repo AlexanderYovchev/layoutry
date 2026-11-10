@@ -19,6 +19,7 @@ import { InspectorInteractionsSection } from "@/features/inspector/components/In
 import { InspectorLayoutSection } from "@/features/inspector/components/InspectorLayoutSection";
 import { InspectorLinkSection } from "@/features/inspector/components/InspectorLinkSection";
 import { InspectorListSection } from "@/features/inspector/components/InspectorListSection";
+import { InspectorNavigationLinksSection } from "@/features/inspector/components/InspectorNavigationLinksSection";
 import { InspectorMediaSection } from "@/features/inspector/components/InspectorMediaSection";
 import { InspectorOptionSection } from "@/features/inspector/components/InspectorOptionSection";
 import { InspectorPositionSection } from "@/features/inspector/components/InspectorPositionSection";
@@ -40,6 +41,7 @@ import { InspectorTypographySection } from "@/features/inspector/components/Insp
 import { InspectorVectorObjectSection } from "@/features/inspector/components/InspectorVectorObjectSection";
 import { InspectorVideoSection } from "@/features/inspector/components/InspectorVideoSection";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { isNavigationLinkContainer } from "@/features/editor/commands/navigationLinkCommands";
 import { getElementCapabilities } from "@/features/editor/rules/elementCapabilities";
 import { canContainChildren } from "@/features/editor/rules/insertionRules";
 import { canOwnStyleLock, getStyleProtection } from "@/features/editor/rules/styleProtection";
@@ -95,7 +97,7 @@ export function InspectorNodeSummary({
   // and threaded through every STYLE-only section below via
   // InspectorProtectedStyleGroup (visible-but-disabled, never hidden — see
   // that component's own doc comment). Semantic/structural sections
-  // (Identity, Video, Iframe, Link, Heading Level, List, Table, Table
+  // (Identity, Video, Iframe, Link, Heading Level, List, Navigation links, Table, Table
   // Selection, Option, Form Control, Select Options) are deliberately left
   // OUTSIDE any protected group — this is a STYLE lock, not a content lock
   // (section 5).
@@ -167,6 +169,7 @@ export function InspectorNodeSummary({
       {getElementCapabilities(node.tag).supportsHref && <InspectorLinkSection node={node} />}
       {getElementCapabilities(node.tag).supportsHeadingLevel && <InspectorHeadingLevelSection node={node} />}
       {(node.tag === "ul" || node.tag === "ol") && <InspectorListSection node={node} />}
+      {isNavigationLinkContainer(node) && <InspectorNavigationLinksSection node={node} />}
       {node.tag === "table" && <InspectorTableSection node={node} />}
       {(node.tag === "table" || node.tag === "tr") && <InspectorTableSelectionSection node={node} />}
       {node.tag === "option" && <InspectorOptionSection node={node} parentId={parentId} />}

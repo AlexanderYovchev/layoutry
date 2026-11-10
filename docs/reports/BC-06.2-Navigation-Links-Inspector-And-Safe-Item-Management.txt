@@ -1,0 +1,726 @@
+LAYOUTRY — BC-06.2 NAVIGATION LINKS INSPECTOR & SAFE ITEM MANAGEMENT
+=====================================================================
+
+Checkpoint: BC-06.2 (feature implementation + integrity bug fix + tests)
+Date:       2026-11-10
+Base:       main @ 6e0493d (BC-05.4 committed)
+Result:     Implemented and validated. Nothing committed or pushed.
+            BC-06.3 not started.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+
+- New Inspector section "Navigation links" for any selected `nav`:
+  - count line;
+  - one row per direct link (label, destination, Move up, Move down,
+    Remove);
+  - "Add link".
+- New links:
+  - copy the last link's styling;
+  - get the text "New link", destination "#" and a fresh id;
+  - are inserted after the last link, so a CTA button stays last.
+- Removal is always of the link the user chose.
+- Moves swap a link with its neighbouring link, so non-link children never
+  move.
+- Limits and hints:
+  - "Add link" stops at 12 links. Existing navs with more are kept intact.
+  - A Wrap recommendation appears from 6 links. It is informational only.
+- BC06-D1 is fixed: List Items, Select Options, Table Columns, Table Body
+  rows and the Table Header/Footer/Caption toggles no longer leave
+  interactions pointing at removed elements, so projects stay saveable.
+  - One shared helper does the cleanup, using the same primitive as the
+    Delete key.
+  - The same helper serves Navigation links' Remove.
+- No new Navbar type, no duplicate link array, no project format change, no
+  mobile menu, and no automatic Wrap.
+- Every operation is one Undo step.
+
+Validation:
+- Typecheck and ESLint clean.
+- Vitest: full run 5492 passed, 1 skipped.
+- Playwright Chromium: full run 227/227.
+- Firefox and WebKit: the new spec passes 5/5 in each. Pre-existing WebKit
+  environment failures are listed in section 26.
+- Electron: full run 73 passed, 2 skipped. The new desktop spec passed.
+- Production and desktop builds succeeded.
+
+All 17 acceptance criteria are met (section 28).
+
+
+2. APPROVED DECISIONS IMPLEMENTED
+---------------------------------
+
+  Decision              Implementation
+  --------------------  -----------------------------------------------
+  Management list       InspectorNavigationLinksSection. No number field.
+  Maximum 12            MAX_NAVIGATION_LINKS = 12; enforced only by Add.
+  Inherit last link     createNavigationLink(template) copies style
+                        fields (section 6).
+  Explicit removal      A Remove button per row; there is no count-based
+                        removal anywhere.
+  Wrap hint from 6      Note only. Wrap is not enabled automatically, and
+                        no mobile menu or breakpoints were added.
+
+
+3. NAVBAR ELIGIBILITY RULES
+---------------------------
+
+Rule: the section shows for a single selected element whose tag is `nav`.
+Its "navigation links" are the nav's DIRECT `<a>` children, in document
+order (isNavigationLinkContainer / getNavigationLinks in
+src/features/editor/commands/navigationLinkCommands.ts).
+
+Why this rule:
+- Navbars carry no marker after insertion (1.15.6.3 decision). Adding a
+  persisted type just for detection was forbidden.
+- Requiring existing links would hide the section on a nav whose links
+  were all removed. The brief requires the empty case to work ("Do not
+  crash or assume a last link exists").
+- The rule never assumes a nav contains only links (mixed content, below).
+
+Covered: Basic / Centered / CTA Navbars, Breadcrumbs, Pagination, Sidebar
+Navigation, the Simple Footer's nav, and a blank HTML Nav.
+
+Mixed content:
+- Non-link children (a CTA Button, Breadcrumbs' "/" Paragraphs,
+  Pagination's Previous/Next Buttons, a nested Container) are never
+  counted, listed, moved or removed, and keep their exact index.
+- Links nested inside a Container within the nav are not direct links and
+  are not listed. This is a documented limitation (BC06-C2).
+
+Multi-selection: not shown. The multi-selection Inspector is a separate
+summary, the same rule the List/Table/Select sections follow.
+
+
+4. INSPECTOR UI IMPLEMENTATION
+------------------------------
+
+Files:
+- src/features/inspector/components/InspectorNavigationLinksSection.tsx
+- src/features/inspector/utils/navigationLinksCopy.ts (all wording, shared
+  with the tests)
+
+Placement:
+- In InspectorNodeSummary, directly after the List section, among the
+  structural sections (List / Table / Select).
+- Outside Parent Style Protection: it is a structure edit, not a style
+  edit.
+
+Layout, top to bottom:
+- "4 links" (polite live region).
+- A list (role=list, "Navigation links"). Each row:
+  - a Select button with the label and the destination (each truncated);
+  - Move up, Move down and Remove icon buttons (24 px, native title
+    tooltips).
+- "+ Add link" (a dashed button, the same style as "Add Interaction").
+- The maximum note when at or over 12 links.
+- The Wrap hint when it applies.
+
+Styling: existing Inspector classes and patterns (InspectorSection, the
+icon-button and dashed-button styles of the Interactions and shadow-layer
+lists). No new tokens, and no other section redesigned.
+
+Exact wording:
+- Count:              "No links yet" / "1 link" / "N links"
+- Add:                "Add link" (title "Add a link styled like the last
+                      one.")
+- At maximum, title:  "Maximum of 12 navigation links."
+- At maximum, note:   "Maximum of 12 navigation links. Remove a link to
+                      add another."
+- Wrap hint:          "With 6 or more links, consider turning on Wrap in
+                      Content Layout to avoid overflow on smaller
+                      screens."
+- Row names:          "Select Home", "Move Home up", "Move Home down",
+                      "Remove Home"
+- Empty label:        "Untitled link"
+
+Wording deviations from the brief, and why:
+- The Wrap hint says "turning on Wrap in Content Layout", not "enabling
+  Wrap in Layout". The existing section is titled "Content Layout" and its
+  control is "Wrap" (InspectorLayoutSection). The brief asked to use the
+  existing terminology.
+- The Add button's accessible name is its visible text, "Add link", not
+  "Add navigation link". WCAG 2.5.3 (Label in Name) requires the
+  accessible name to contain the visible label, and "Add navigation link"
+  does not contain "Add link". The section heading already supplies the
+  "navigation" context.
+
+
+5. ADD LINK BEHAVIOR
+--------------------
+
+Store action addNavigationLink(navId) (useEditorStore.ts):
+1. Finds the nav and its direct links.
+2. Builds the new link: createNavigationLink(lastLink).
+   - It is passed through resolveFreeDestinationPlacement, so a
+     Free-layout nav places it like any insertion.
+3. Inserts it with insertNavigationLink:
+   - right after the last direct link;
+   - first, when the nav has no links (before a CTA);
+   - refused (same document returned) at 12 links, for a non-nav id, or
+     for a non-link node.
+4. Pushes one history entry. A refused add pushes none.
+5. Leaves the selection unchanged (the nav), so Add can be pressed
+   repeatedly.
+
+New link: tag `a`, id `a-<8 hex>` (generateNodeId), text "New link",
+href "#".
+
+Empty nav: uses createNavbarLinkNode("New link"), the same starter link
+the Navbar presets use (newly exported from navigationCompositions.ts),
+not the generic blue Link.
+
+
+6. STYLING INHERITANCE
+----------------------
+
+Copied from the last direct link (deep-cloned, so no shared objects):
+- spacing, flexChild, typography, background, border, borderRadius,
+  shape, boxShadow, filters, display, aspectRatio, sizeConstraints,
+  transition, transform, className;
+- gridChild spans, with columnStart/rowStart reset to "auto".
+
+Not copied:
+- Identity and behaviour: id, htmlId, interactions,
+  initialPreviewVisibility.
+- Per-link content: text, href, displayName (layer name), title.
+- Per-link placement: dimensions, freeLayout, aspectRatioLocked, position
+  offsets, and the explicit grid cell.
+
+Why placement is excluded: copying it would stack the new link exactly on
+top of the old one (absolute offsets, or a fixed grid cell). This was
+found during this checkpoint's review and added to BC-06.1's list.
+
+Verified:
+- In unit tests, field by field.
+- Live in Chromium, Firefox and WebKit: the new link's computed color,
+  font-size, text-decoration-line and padding-left equal Contact's.
+
+
+7. MAXIMUM-COUNT ENFORCEMENT
+----------------------------
+
+- canAddNavigationLink: under 12 direct links (non-link children are not
+  counted).
+- Enforced at two levels:
+  - the command refuses (no document change, no history entry);
+  - the UI sets aria-disabled on "Add link", adds the title tooltip, and
+    shows a visible note linked by aria-describedby.
+- Add stays focusable at the cap, so keyboard and screen-reader users hear
+  why. Activating it does nothing.
+- Over-limit navs (for example 14 links built with Duplicate):
+  - every link is shown and the real count ("14 links") is displayed;
+  - nothing is truncated on load, render, save or export;
+  - Add stays disabled until the count drops below 12.
+- No schema change or migration.
+
+
+8. REMOVAL BEHAVIOR
+-------------------
+
+Store action removeNavigationLink(navId, linkId):
+- Removes exactly that node, and only if it is a direct `<a>` child of
+  that nav.
+  - A CTA id, another nav's link or an unknown id is a no-op with no
+    history entry.
+- Goes through commitStructuralEdit (section 13), in one write:
+  - interactions targeting the removed link are removed;
+  - interactions on other nodes survive;
+  - a binding ON the removed link leaves with it.
+- One history entry. Undo restores the node exactly (id, label, href,
+  styles, metadata, position) and the removed bindings, because history
+  entries are whole-document snapshots.
+- Selection stays on the nav. It falls back to the nav if a removed node
+  had been selected.
+- No confirmation dialog. This matches the Delete key: explicit,
+  one-at-a-time, one Undo step.
+- Removing every link is allowed. The section then shows "No links yet"
+  and "Add link".
+
+Focus after Remove: the next row's Remove button, else the previous row's,
+else "Add link".
+
+
+9. REORDERING BEHAVIOR
+----------------------
+
+Store action moveNavigationLink(navId, linkId, "up" | "down").
+
+Policy: swap the link with its neighbouring LINK. Each of the two nodes
+takes the other's slot.
+- Every non-link child keeps its exact index.
+- For adjacent links (all Navbar presets) this is identical to moving one
+  position.
+- Breadcrumbs: Home ↔ Products leaves both "/" separators in place.
+  Moving among ALL children would have produced "/ Products Home /", a
+  broken trail.
+- Navbar with CTA: the last link cannot move past the CTA, so its Move
+  down is disabled. Moving among all children would leave the list
+  visibly unchanged after the click.
+
+Why not moveElement (useMoveElement / moveNode):
+- It moves one node relative to a sibling, so a swap would take two
+  writes. It also re-selects the moved node.
+- The swap is one small immutable command that reuses the same node
+  objects: ids, styles and interactions are untouched, and nothing is
+  recreated.
+
+Other guarantees:
+- Disabled at the ends (real `disabled`).
+- A no-op pushes no history entry.
+- One entry per move. Undo and Redo restore and reapply the order.
+- Focus stays on the same control of the moved row. When the row reaches
+  an end, focus moves to its other Move button.
+
+
+10. CTA PRESERVATION
+--------------------
+
+The Navbar with CTA's "Get Started" button:
+- is not counted toward 12;
+- is not listed;
+- cannot be removed or moved by the section (the command refuses
+  non-links);
+- keeps its last position: Add inserts before it, and the swap policy
+  never moves it.
+
+Verified:
+- In unit tests (the same object reference survives).
+- In e2e in Chromium, Firefox, WebKit and Electron (Canvas, Preview,
+  Export, saved file and reopen).
+- The CTA's semantics (a `<button>`) are unchanged.
+
+
+11. WRAP RECOMMENDATION
+-----------------------
+
+The hint shows when all of these hold:
+- there are 6 or more direct links;
+- the nav is in Flow layout with display Flex;
+- Wrap is not already on.
+
+So it is hidden:
+- below 6 links;
+- for a block, grid or Free-layout nav (no Wrap control exists there, and
+  the brief forbids pointing to a control that does not exist);
+- once Wrap is on.
+
+Displaying it changes no CSS and creates no history entry (tested). Wrap
+is never turned on automatically.
+
+
+12. INTERACTION-REFERENCE BUG ROOT CAUSE (BC06-D1)
+--------------------------------------------------
+
+- setListItemCount, setOptionCount, setTableColumnCount,
+  setTableBodyRowCount and setTableHeader/Footer/CaptionEnabled each
+  dropped children inside their own command (`slice` / `filter`).
+- Their store actions pushed the result directly. Unlike deleteSelection
+  and cutSelection, they never called removeInteractionsTargeting.
+- A Show/Hide/Toggle binding aimed at a trimmed node was left dangling.
+- checkDocumentIntegrity then rejected the document, so serializeProject
+  threw and Save, autosave and recovery failed ("This project couldn't be
+  written … An interaction targets element …, which does not exist").
+
+Additionally affected, beyond BC-06.1's list: the Table Caption toggle (a
+caption is a valid target).
+
+Audited and unaffected:
+- setElementTag only renames, never drops children.
+- setSelectSelectedOption removes nothing.
+- SVG object removal: vector objects are not interaction targets.
+- Paste already used removeInteractionsWithMissingTargets; Delete and Cut
+  already used removeInteractionsTargeting.
+
+
+13. SHARED DELETION CLEANUP IMPLEMENTATION
+------------------------------------------
+
+- interactionCommands.removeInteractionsForRemovedNodes(before, after):
+  - collects the ids that existed before and are gone after, at any depth;
+  - passes them to the existing removeInteractionsTargeting, the same
+    primitive and policy the Delete key uses;
+  - returns `after` unchanged when nothing was removed.
+- useEditorStore.commitStructuralEdit(state, edited, fallbackSelectionId):
+  - applies that helper in the same write;
+  - prunes a stale selection to the container;
+  - pushes ONE history entry;
+  - returns `{}` for a no-op.
+- Used by all 7 count/toggle actions and by removeNavigationLink.
+- Design choice: a before/after diff rather than computing the removed ids
+  per command. It needs no changes to the six commands and covers nested
+  descendants (a removed row's cells) and any future removal path
+  uniformly.
+  - Cost: two id walks per structural edit, comparable to Delete's own
+    walk.
+- deleteSelection and cutSelection were left unchanged. They already use
+  the same primitive, so refactoring them was out of scope.
+- No change to the interaction system, its behaviour or its types.
+
+
+14. LIST / SELECT / TABLE INTEGRITY RESULTS
+-------------------------------------------
+
+File: src/features/editor/stores/useEditorStore.structuralRemovalIntegrity.test.ts
+
+Each case: a Button toggles the node that gets removed AND shows a node
+that survives. Then:
+- edit;
+- the dangling binding is gone and the other survives;
+- one history entry;
+- serializeProject succeeds;
+- Undo restores both bindings and the project saves;
+- Redo cleans up again and the project saves.
+
+  Case                                              Before fix  After
+  ------------------------------------------------  ----------  -----
+  List Items 3→2 (targeted li)                      FAIL        pass
+  Select Options 3→1 (targeted option)              FAIL        pass
+  Table Columns 3→2 (targeted cell)                 FAIL        pass
+  Table Body rows 2→1 (targeted row)                FAIL        pass
+  Table Body rows (targeted cell inside the row)    FAIL        pass
+  Table Header off (targeted header cell)           FAIL        pass
+  Navigation links Remove (targeted link)           FAIL*       pass
+  Table Footer off + Caption off                    FAIL        pass
+  Stale selection falls back to the container       FAIL        pass
+  Binding ON a removed node leaves with it          pass        pass
+  Count increase: no cleanup, one entry             pass        pass
+  Unchanged count: no history entry                 pass        pass
+
+  (*) The action did not exist before the fix.
+
+"Before fix" was measured by temporarily restoring HEAD's
+useEditorStore.ts: 9 failed, 3 passed. The file was then restored
+byte-for-byte (cmp).
+
+The e2e test (navigation-links.spec, "…keeps the project saveable") runs
+the original reproduction through the real UI in Chromium, Firefox and
+WebKit:
+- remove a targeted Navbar link, then Save;
+- trim a List below an item a link targets, then Save;
+- the status reaches "saved" and no "couldn't be written" error appears.
+
+Node types: every node except the page root can be an interaction target,
+so no substitute scenario was needed.
+
+
+15. UNDO/REDO EVIDENCE
+----------------------
+
+- Add, Remove, Move up, Move down, and each count/toggle cleanup: exactly
+  one entry each. Asserted with `past.length` in the store tests and with
+  Undo/Redo order checks in e2e.
+- Refused or boundary operations push no entry: Add at 12, Move at either
+  end, Remove of the CTA or an unknown id, an unchanged count.
+- Redo restores the SAME ids (no regeneration): tested for Add.
+- Undo of Remove restores the node `toEqual` to the customized original,
+  plus its bindings.
+- An open live-edit transaction is closed first, through the existing
+  pushHistory path (shared by every one-shot action).
+- Dirty state follows `document !== persistedDocument` as for every
+  action.
+
+
+16. CANVAS / PREVIEW / EXPORT PARITY
+------------------------------------
+
+Navbar with CTA, edited (Add, Move, Remove), checked in all four places:
+- Canvas children: a:Home, a:Pricing, a:New link, button:Get Started.
+- Preview: the same order.
+  - Tab follows document order in Chromium and Firefox.
+  - In WebKit, Tab goes from the first link to the CTA, because WebKit
+    (like Safari by default) leaves links out of Tab order (section 26).
+- Export (the real Export Code dialog, index.html): the same anchors in
+  the same `<nav>`, before the `<button>`, as
+  `<a class="… ly-link …" href="#">New link</a>`.
+- Save + reload + reopen (IndexedDB library): the same order, and the
+  section lists Home, Pricing, New link.
+
+Further checks:
+- Links remain semantic `<a href>`, and the CTA remains a `<button>`.
+- No export change and no extra JavaScript: the existing document-tree
+  exporter handles the edited tree.
+- Responsive layout behaviour is unchanged (BC06-R1). The cap and the hint
+  are the agreed mitigation. BC-06.3 re-measures it.
+
+
+17. ACCESSIBILITY RESULTS
+-------------------------
+
+- Heading: an h3 button "Navigation links" (InspectorSection).
+- The list uses role=list / listitem.
+- Every control is a real `<button>` with a text name.
+- Duplicate labels get distinguishable names: "Remove Docs (link 1)" /
+  "Remove Docs (link 2)". Empty labels are named "Untitled link".
+- Disabled states:
+  - Move up on the first row and Move down on the last row use real
+    `disabled`;
+  - Add at the cap uses aria-disabled, stays focusable and is described
+    by the maximum note.
+- Visible focus: focus-visible outlines, the same as other Inspector
+  controls.
+- Predictable focus after Add, Remove and Move (sections 5, 8 and 9).
+  Covered by RTL tests and live in e2e (keyboard Enter/Space, Tab between
+  a row's controls).
+- No keyboard traps: Tab moves through a row's controls in order.
+- The count line is a polite live region, so count changes are announced.
+
+
+18. PROJECT COMPATIBILITY
+-------------------------
+
+- No format change. CURRENT_PROJECT_FORMAT_VERSION is still 2, and there
+  is no migration change.
+- Format 1: the frozen PROJECT-1.1 fixture loads through the v1→v2
+  migration. Its real Basic Navbar (nav-3ca05eea) can be added to, moved,
+  removed from and saved, and the result is format 2 and reloads (store
+  test).
+- Format 2: existing legacy tests pass unchanged (full suite).
+- Arbitrary navs: non-link children are never touched (unit and store
+  tests on Breadcrumbs, CTA, and mixed and over-limit navs).
+- Electron: saved to a real .layoutry file (formatVersion 2, the correct
+  order, no dangling binding, the removed link absent), then reopened by
+  relaunching with the file.
+- BC-05 migration and legacy-save behaviour are untouched (the full
+  desktop suite includes legacy-format-save).
+
+
+19. COPY/PASTE AND DUPLICATION
+------------------------------
+
+Store tests:
+- Duplicate of an edited Navbar:
+  - fresh ids, with every id in the document unique;
+  - the same links in the same order;
+  - after restyling the copy's last link, Add on the copy follows it while
+    Add on the original keeps the original style (the correct instance).
+- Copy + paste of an edited Navbar with CTA: links, order, styling, a
+  custom href ("/blog") and the CTA are preserved, with fresh unique ids.
+- Save + reopen: the managed nav equals the saved one exactly.
+
+
+20. PERFORMANCE OBSERVATIONS
+----------------------------
+
+- No new store and no duplicate document representation.
+- The section reads `node.children` from props, plus the four action
+  selectors.
+- No DOM measurement. The focus effect only queries the section's own
+  rows after an action.
+- Each action is one immutable write along one path.
+  - Move swaps two array slots and reuses the nodes. The Navbar is never
+    rebuilt.
+  - Structural removal adds two id walks, the same order of cost as
+    Delete.
+- Repeated operations (20× Add attempts, 3× Remove, multiple moves) run in
+  milliseconds in unit tests. The e2e Add-to-12 loop shows no lag.
+- No new dependencies.
+
+
+21. MODIFIED FILES
+------------------
+
+Created:
+- src/features/editor/commands/navigationLinkCommands.ts
+- src/features/editor/commands/navigationLinkCommands.test.ts
+- src/features/editor/stores/useEditorStore.navigationLinks.test.ts
+- src/features/editor/stores/useEditorStore.structuralRemovalIntegrity.test.ts
+- src/features/inspector/components/InspectorNavigationLinksSection.tsx
+- src/features/inspector/components/InspectorNavigationLinksSection.test.tsx
+- src/features/inspector/utils/navigationLinksCopy.ts
+- e2e/navigation-links.spec.ts
+- e2e/desktop/navigation-links.spec.ts
+- docs/reports/BC-06.2-Navigation-Links-Inspector-And-Safe-Item-Management.txt
+- changelogs/2026-11-10-navigation-links-and-safe-item-management-BC-06.2.txt
+  (gitignored)
+
+Modified:
+- src/features/editor/stores/useEditorStore.ts
+  - commitStructuralEdit;
+  - 7 count/toggle actions routed through it;
+  - addNavigationLink, removeNavigationLink, moveNavigationLink.
+- src/features/editor/commands/interactionCommands.ts:
+  removeInteractionsForRemovedNodes.
+- src/features/editor/commands/interactionCommands.test.ts: 2 tests.
+- src/features/editor/factories/navigationCompositions.ts:
+  - exported createNavbarLinkNode;
+  - refreshed the outdated header comment (BC06-C3).
+- src/features/inspector/components/InspectorNodeSummary.tsx: renders the
+  section for `nav`.
+
+Moved / deleted: none. Temporary files were created and removed:
+- e2e/zz-bc062-shots.spec.ts (screenshots kept in the scratchpad);
+- playwright.zz-xbrowser.config.ts (Firefox/WebKit projects).
+
+Untracked from BC-06.1 (unchanged):
+docs/reports/BC-06.1-Navbar-Button-Count-Investigation.txt
+
+
+22. EXACT TEST COMMANDS AND COUNTS
+----------------------------------
+
+- npx tsc --noEmit -p . → 0 errors
+- npm run lint (eslint .) → clean
+- npx vitest run (full) → Test Files 364 passed; Tests 5492 passed, 1
+  skipped.
+  - BC-05.4 had 5423, so +69 new tests.
+- After that run, one command test was added (grid/position copy rules,
+  section 6). Targeted rerun of 10 related files (the 5 new/changed test
+  files, navigationCompositions, navigationComponents, documentCommands,
+  tableCommands, useEditorStore) → 489 passed.
+- New tests by file:
+  - navigationLinkCommands.test.ts: 23
+  - useEditorStore.navigationLinks.test.ts: 20
+  - useEditorStore.structuralRemovalIntegrity.test.ts: 12
+  - InspectorNavigationLinksSection.test.tsx: 13
+  - interactionCommands.test.ts: +2
+- npx playwright test --project=chromium (full):
+  - first run: 223 passed, 4 failed (bc02-final-regression);
+  - that spec alone: 4/4 passed;
+  - clean rerun of the full suite: 227 passed, 0 failed.
+  - The first-run failures (the save status reset to "new", a Toast
+    timeout) coincided with my source edit to navigationLinkCommands.ts
+    during the run, which reloaded the dev server's pages. Classified as
+    run interference, not a regression; the clean rerun confirms it.
+- npx playwright test e2e/navigation-links.spec.ts → 5/5 each in
+  Chromium, Firefox and WebKit.
+
+
+23. BROWSER AND ELECTRON RESULTS
+--------------------------------
+
+Firefox, targeted set (navigation-links, interaction-guidance,
+export-interactions, preview-export-parity), 4 workers: 22 passed.
+
+WebKit, same set, 1 worker: 16 passed, 6 failed.
+- 4 × preview-export-parity media tests: pre-existing (section 26).
+- 1 × export-interactions keyboard test: environment (section 26).
+- 1 × navigation-links CTA test: fixed. It asserted a link-by-link Tab
+  order, which WebKit does not provide. The spec now asserts WebKit's
+  documented behaviour (Tab goes from the first link to the CTA), while
+  the order is still asserted through the DOM. Rerun: 5/5.
+  - A first attempt with Option+Tab did not reach links in Playwright's
+    Windows WebKit and was discarded.
+
+Electron (ELECTRON_RUN_AS_NODE stripped, after npm run desktop:build):
+- e2e/desktop/navigation-links.spec.ts: 1 passed.
+- Full desktop suite: 73 passed, 2 skipped (the same 2 skips as BC-05.4),
+  0 failed.
+
+
+24. BUILD / TYPECHECK / LINT RESULTS
+------------------------------------
+
+- npm run build → succeeded (static routes /, /_not-found, icons).
+- npm run desktop:build → succeeded.
+- npx tsc -p desktop/tsconfig.json --noEmit → 0 errors.
+- Web typecheck → 0 errors.
+- ESLint → clean.
+- Prettier is not enforced in this repo: `prettier --check src/features`
+  reports 559 files, including every pre-existing file touched here, at
+  HEAD. New files follow their neighbours' style. Files were not
+  reformatted, to avoid unrelated diffs.
+
+
+25. REMAINING LIMITATIONS
+-------------------------
+
+- BC06-R1 (pre-existing): a no-wrap Flex nav still squeezes link text at
+  small widths. The hint and the cap mitigate it; there is no mobile menu
+  by decision.
+- BC06-C2: links nested in a Container inside the nav are not listed.
+- Breadcrumbs: Add does not insert a "/" separator, and copies the muted
+  "current page" colour of the last entry. Pattern-specific logic was
+  deliberately not built.
+- Duplicate visible labels look identical in the list. Only their
+  accessible names add "(link N)".
+- BC06-U2 (unnamed `nav` landmarks) and BC06-U3 (generic HTML > Link and
+  Duplicate behaviour) are unchanged and out of scope.
+- WebKit Tab order skips links: an engine default, not app behaviour.
+
+
+26. KNOWN FAILURES
+------------------
+
+None in Chromium, Firefox or Electron.
+
+WebKit (Playwright's Windows build), not caused by BC-06.2:
+- preview-export-parity "media in a hidden target" (Preview, Export),
+  "cross-defect … with media", "document integrity … media" (4 tests).
+  - Known since BC-02.2: Windows WebKit loads no media.
+- export-interactions "exported interactions are keyboard-operable…": the
+  step "Tab reaches the menu" expects Tab to focus an `<a>`; WebKit skips
+  links in Tab order.
+  - Not recorded in earlier reports (newly observed here).
+  - Neither the spec nor any export code changed in BC-06.2. The same
+    engine behaviour was demonstrated by this checkpoint's own spec (the
+    focus went from a link straight to the next button).
+  - Recommended for BC-06.3: record it in the cross-browser register, or
+    make that step engine-aware.
+
+
+27. GIT WORKING-TREE STATUS
+---------------------------
+
+Branch main, HEAD 6e0493d. `git status --short`:
+   M src/features/editor/commands/interactionCommands.test.ts
+   M src/features/editor/commands/interactionCommands.ts
+   M src/features/editor/factories/navigationCompositions.ts
+   M src/features/editor/stores/useEditorStore.ts
+   M src/features/inspector/components/InspectorNodeSummary.tsx
+  ?? docs/reports/BC-06.1-Navbar-Button-Count-Investigation.txt
+  ?? docs/reports/BC-06.2-Navigation-Links-Inspector-And-Safe-Item-Management.txt
+  ?? e2e/desktop/navigation-links.spec.ts
+  ?? e2e/navigation-links.spec.ts
+  ?? src/features/editor/commands/navigationLinkCommands.test.ts
+  ?? src/features/editor/commands/navigationLinkCommands.ts
+  ?? src/features/editor/stores/useEditorStore.navigationLinks.test.ts
+  ?? src/features/editor/stores/useEditorStore.structuralRemovalIntegrity.test.ts
+  ?? src/features/inspector/components/InspectorNavigationLinksSection.test.tsx
+  ?? src/features/inspector/components/InspectorNavigationLinksSection.tsx
+  ?? src/features/inspector/utils/navigationLinksCopy.ts
+
+The changelog is gitignored. Nothing was committed, staged or pushed.
+
+
+28. QA RECOMMENDATION
+---------------------
+
+Ready for ChatGPT QA.
+
+  #   Acceptance criterion                          Status
+  --  --------------------------------------------  ------
+  1   Section appears for eligible Navbars           met
+  2   Accurate count                                 met
+  3   Add link works                                 met
+  4   Inherits last link's styling                   met
+  5   Unique ids                                     met
+  6   Removal targets only the chosen link           met
+  7   Keyboard-accessible reordering                 met
+  8   12-link maximum for additions                  met
+  9   Over-limit navs intact                         met
+  10  Wrap hint from 6 links                         met
+  11  CTA unaffected                                 met
+  12  Atomic Undo/Redo                               met
+  13  No dangling references from count removal      met
+  14  Projects stay saveable                         met
+  15  Canvas/Preview/Export parity                   met
+  16  No format change                               met
+  17  No new high-severity regressions               met
+
+Items for QA to confirm:
+- The swap ordering policy (section 9).
+- Wrap-hint suppression for non-Flex or already-wrapping navs (section
+  11).
+- Excluding position offsets and grid cells from style inheritance
+  (section 6).
+- The "Add link" accessible name (section 4).
+
+Proposed BC-06.3:
+- A Navbar in the parity matrix at 4 and 12 links.
+- A responsive re-measurement (BC06-R1).
+- Classify the WebKit export-interactions Tab step.
+- CLOSE / KEEP OPEN.
+
+Stop: BC-06.3 not started. Waiting for ChatGPT QA review.

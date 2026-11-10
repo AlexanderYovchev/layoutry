@@ -12,29 +12,17 @@
  * architecture — the same "compositions reuse ordinary insertion/history/
  * duplication for free" story buttonCompositions.ts already proved.
  *
- * Two real, pre-existing limitations surfaced auditing this family (both
- * documented here rather than worked around, per this checkpoint's own
- * brief not to introduce one-off hacks):
+ * Two link limitations noted when this family was first built have since
+ * been fixed elsewhere (BC-06.2 refreshed this note): a Link's underline
+ * is now an authored typography text-decoration that the link recipe
+ * yields to (Checkpoint 4.2+), and LinkElement no longer forces `w-fit`, so
+ * Sidebar Navigation's `alignItems: "stretch"` does stretch its links
+ * (Checkpoint 1.15.6.10.3). Every Link preset below still overrides
+ * `typography.color` for readability against the starter backgrounds.
  *
- * 1. LinkElement's own Tailwind classes ("underline underline-offset-2
- *    text-blue-600") are unconditional, same as ButtonElement's dark chrome
- *    (see buttonCompositions.ts's own top comment) — but unlike Button's
- *    background/color, there is no `textDecoration` field anywhere in the
- *    style model (TypographySettings has no such field), so a Link's
- *    underline cannot be authored off without inventing a new document
- *    field, which is out of this checkpoint's scope. Every Link preset
- *    below overrides `typography.color` for readability against the
- *    starter navbar backgrounds; the underline itself remains, and is a
- *    real, accepted cosmetic limitation (see this checkpoint's own report).
- * 2. Sidebar Navigation's Flex column uses `alignItems: "stretch"` so its
- *    Link children would normally fill the sidebar's width — but
- *    LinkElement's own unconditional `w-fit` class sets an explicit
- *    `width: fit-content`, which wins over flex stretch (stretch only
- *    applies when the cross-axis size is otherwise auto). Sidebar Links
- *    therefore currently size to their own text, not the sidebar's full
- *    width — also documented as a pre-existing Link rendering choice, not
- *    something this checkpoint's factories can fix without touching
- *    LinkElement itself (out of scope; see this checkpoint's own report).
+ * BC-06.2: the Inspector's Navigation links section adds links to any nav;
+ * when the nav has no link left to copy, it uses createNavbarLinkNode, the
+ * same starter link as these presets.
  */
 
 import { createPrimaryButtonNode } from "@/features/editor/factories/buttonCompositions";
@@ -48,11 +36,16 @@ import type { FlexContainerSettings, JustifyContent } from "@/features/editor/ty
 import type { ElementSpacing } from "@/features/editor/types/spacing";
 import type { TypographySettings } from "@/features/editor/types/typography";
 
-/** Shared by every plain nav Link below — readable dark neutral text, overriding LinkElement's own default blue (see this file's own top comment on why the underline itself stays). */
+/** Shared by every plain nav Link below — readable dark neutral text, overriding LinkElement's own default blue (the default underline is kept). */
 const NAV_LINK_TYPOGRAPHY: TypographySettings = { color: "#3f3f46" };
 
 function navLink(text: string, typography: TypographySettings = NAV_LINK_TYPOGRAPHY): EditorElementNode {
   return { id: generateNodeId("a"), tag: "a", text, href: DEFAULT_LINK_HREF, typography };
+}
+
+/** One starter Navbar link (dark neutral text, href "#"), the same link the Navbar presets are built from. */
+export function createNavbarLinkNode(text: string): EditorElementNode {
+  return navLink(text);
 }
 
 const NAVBAR_BACKGROUND: BackgroundSettings = { color: "#ffffff" };

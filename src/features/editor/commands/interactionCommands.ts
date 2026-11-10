@@ -126,6 +126,37 @@ export function removeInteractionsTargeting(root: EditorElementNode, deletedIds:
   return { ...root, children: nextChildren, interactions: withInteractions(filtered) };
 }
 
+function collectIds(root: EditorElementNode, into: Set<string>): Set<string> {
+  const stack = [root];
+  for (let node = stack.pop(); node; node = stack.pop()) {
+    into.add(node.id);
+    if (node.children) stack.push(...node.children);
+  }
+  return into;
+}
+
+/**
+ * The Delete key's cleanup rule for any OTHER structural edit that removes
+ * nodes (BC-06.2, defect BC06-D1). The List Items, Select Options and Table
+ * column/row counts, the Table Header/Footer/Caption toggles, and
+ * Navigation links' Remove all drop children inside their own command, so
+ * the store cannot name the removed roots up front the way deleteSelection
+ * does. Instead this compares the document before and after: every id that
+ * disappeared, at any depth, is treated as deleted, and every binding
+ * targeting one of them is removed through removeInteractionsTargeting, in
+ * the same write and the same history entry. Bindings ON a removed node
+ * leave with it. Returns `after` unchanged when nothing was removed.
+ */
+export function removeInteractionsForRemovedNodes(before: EditorElementNode, after: EditorElementNode): EditorElementNode {
+  if (before === after) return after;
+  const remaining = collectIds(after, new Set());
+  const removed = new Set<string>();
+  for (const id of collectIds(before, new Set())) {
+    if (!remaining.has(id)) removed.add(id);
+  }
+  return removeInteractionsTargeting(after, removed);
+}
+
 /**
  * Sets (or clears) nodeId's own authored initial Preview visibility
  * (Checkpoint 1.15.6.8.1) — a plain single-field setter, the exact same

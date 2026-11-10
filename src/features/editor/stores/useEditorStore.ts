@@ -32,6 +32,7 @@ import {
 import {
   addInteraction as addInteractionCommand,
   removeInteraction as removeInteractionCommand,
+  removeInteractionsForRemovedNodes,
   removeInteractionsTargeting,
   removeInteractionsWithMissingTargets,
   setInitialPreviewVisibility as setInitialPreviewVisibilityCommand,
@@ -44,6 +45,14 @@ import {
   setTableFooterEnabled as setTableFooterEnabledCommand,
   setTableHeaderEnabled as setTableHeaderEnabledCommand,
 } from "@/features/editor/commands/tableCommands";
+import {
+  createNavigationLink,
+  getNavigationLinks,
+  insertNavigationLink,
+  moveNavigationLink as moveNavigationLinkCommand,
+  removeNavigationLink as removeNavigationLinkCommand,
+  type NavigationLinkMoveDirection,
+} from "@/features/editor/commands/navigationLinkCommands";
 import {
   setElementProgressIndeterminate as setElementProgressIndeterminateCommand,
   setElementProgressMax as setElementProgressMaxCommand,
@@ -498,6 +507,12 @@ interface EditorState {
   setTableHeaderEnabled: (tableId: string, enabled: boolean) => void;
   /** One-shot table Footer Row toggle (Checkpoint 1.14) — creates/removes the entire `<tfoot>` subtree in one step. */
   setTableFooterEnabled: (tableId: string, enabled: boolean) => void;
+  /** Adds one "New link" (href "#") styled like the nav's last direct link, right after it (BC-06.2). Refused at MAX_NAVIGATION_LINKS links. One history entry; the selection is left as it is (normally the nav). */
+  addNavigationLink: (navId: string) => void;
+  /** Removes exactly this direct link of the nav, and every interaction that targeted it, as one history entry (BC-06.2). */
+  removeNavigationLink: (navId: string, linkId: string) => void;
+  /** Swaps this link with its neighbouring link (non-link children keep their slots). One history entry; no-op at either end (BC-06.2). */
+  moveNavigationLink: (navId: string, linkId: string, direction: NavigationLinkMoveDirection) => void;
   /** One-shot table Caption toggle (Checkpoint 1.15.6.12.2) — creates/removes the entire `<caption>` in one step, always as the table's first child. A new Table has no Caption by default; this is the only way one is created. */
   setTableCaptionEnabled: (tableId: string, enabled: boolean) => void;
 
@@ -738,6 +753,25 @@ function pushHistory(state: EditorState): Pick<EditorState, "past" | "future"> &
     return { past: [...state.past, ...editEntry, snapshot(state)], future: [], transactionSnapshot: null, historyMergeSnapshot: null };
   }
   return { past: [...state.past, snapshot(state)], future: [] };
+}
+
+/**
+ * Commits a one-shot structural edit that may have removed nodes (a count
+ * decrease, a Table toggle, a Navigation link removal): interactions that
+ * targeted a removed node are removed in the SAME write, exactly as Delete
+ * does (BC-06.2, BC06-D1), so the document never holds a dangling target
+ * and stays saveable. If a removed node was selected, the selection falls
+ * back to `fallbackSelectionId`. One history entry; `{}` for a no-op.
+ */
+function commitStructuralEdit(state: EditorState, edited: EditorElementNode, fallbackSelectionId: string): Partial<EditorState> {
+  if (edited === state.document) return {};
+  const document = removeInteractionsForRemovedNodes(state.document, edited);
+  const selectionIsStale = state.selection.ids.some((id) => !findNodeById(document, id));
+  return {
+    ...pushHistory(state),
+    document,
+    ...(selectionIsStale ? { selection: selectionFromSingle(fallbackSelectionId) } : {}),
+  };
 }
 
 function isMergingHistory(state: Pick<EditorState, "transactionSnapshot" | "historyMergeSnapshot">): boolean {
@@ -1343,18 +1377,10 @@ export const useEditorStore = create<EditorState>()((set) => ({
     }),
 
   setListItemCount: (nodeId, count) =>
-    set((state) => {
-      const document = setListItemCountCommand(state.document, nodeId, count);
-      if (document === state.document) return {};
-      return { ...pushHistory(state), document };
-    }),
+    set((state) => commitStructuralEdit(state, setListItemCountCommand(state.document, nodeId, count), nodeId)),
 
   setOptionCount: (selectId, count) =>
-    set((state) => {
-      const document = setOptionCountCommand(state.document, selectId, count);
-      if (document === state.document) return {};
-      return { ...pushHistory(state), document };
-    }),
+    set((state) => commitStructuralEdit(state, setOptionCountCommand(state.document, selectId, count), selectId)),
 
   setSelectSelectedOption: (selectId, optionId) =>
     set((state) => {
@@ -1364,36 +1390,37 @@ export const useEditorStore = create<EditorState>()((set) => ({
     }),
 
   setTableColumnCount: (tableId, count) =>
-    set((state) => {
-      const document = setTableColumnCountCommand(state.document, tableId, count);
-      if (document === state.document) return {};
-      return { ...pushHistory(state), document };
-    }),
+    set((state) => commitStructuralEdit(state, setTableColumnCountCommand(state.document, tableId, count), tableId)),
 
   setTableBodyRowCount: (tableId, count) =>
-    set((state) => {
-      const document = setTableBodyRowCountCommand(state.document, tableId, count);
-      if (document === state.document) return {};
-      return { ...pushHistory(state), document };
-    }),
+    set((state) => commitStructuralEdit(state, setTableBodyRowCountCommand(state.document, tableId, count), tableId)),
 
   setTableHeaderEnabled: (tableId, enabled) =>
-    set((state) => {
-      const document = setTableHeaderEnabledCommand(state.document, tableId, enabled);
-      if (document === state.document) return {};
-      return { ...pushHistory(state), document };
-    }),
+    set((state) => commitStructuralEdit(state, setTableHeaderEnabledCommand(state.document, tableId, enabled), tableId)),
 
   setTableFooterEnabled: (tableId, enabled) =>
+    set((state) => commitStructuralEdit(state, setTableFooterEnabledCommand(state.document, tableId, enabled), tableId)),
+
+  setTableCaptionEnabled: (tableId, enabled) =>
+    set((state) => commitStructuralEdit(state, setTableCaptionEnabledCommand(state.document, tableId, enabled), tableId)),
+
+  addNavigationLink: (navId) =>
     set((state) => {
-      const document = setTableFooterEnabledCommand(state.document, tableId, enabled);
+      const nav = findNodeById(state.document, navId);
+      if (!nav) return {};
+      const links = getNavigationLinks(nav);
+      const link = resolveFreeDestinationPlacement(state.document, navId, createNavigationLink(links[links.length - 1]));
+      const document = insertNavigationLink(state.document, navId, link);
       if (document === state.document) return {};
       return { ...pushHistory(state), document };
     }),
 
-  setTableCaptionEnabled: (tableId, enabled) =>
+  removeNavigationLink: (navId, linkId) =>
+    set((state) => commitStructuralEdit(state, removeNavigationLinkCommand(state.document, navId, linkId), navId)),
+
+  moveNavigationLink: (navId, linkId, direction) =>
     set((state) => {
-      const document = setTableCaptionEnabledCommand(state.document, tableId, enabled);
+      const document = moveNavigationLinkCommand(state.document, navId, linkId, direction);
       if (document === state.document) return {};
       return { ...pushHistory(state), document };
     }),

@@ -1,0 +1,1173 @@
+LAYOUTRY — BC-06.1 NAVBAR BUTTON COUNT SELECTOR INVESTIGATION
+================================================================
+
+Checkpoint: BC-06.1 (read-only architecture and UX investigation)
+Date:       2026-11-10
+Base:       main @ 6e0493d (BC-05.4 committed), working tree clean
+Result:     No product code changed. Two temporary probes (one Playwright
+            spec, one Vitest file) were written, run and deleted.
+            The working tree is clean again (section 23).
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+
+A Layoutry Navbar is not a component with settings. It is an ordinary
+tree of document nodes, created once by a factory:
+
+  <nav>  (Flex row, no wrap)
+    <a>Home</a> <a>About</a> <a>Services</a> <a>Contact</a>
+
+- The items are real `<a>` links, not buttons. Only "Navbar with CTA"
+  ends with a real `<button>`.
+- After insertion, nothing marks the nav as a Navbar. This was a
+  deliberate choice in Checkpoint 1.15.6.3: no navbar flag and no
+  special node type.
+- A Navbar is therefore indistinguishable from any other `nav` element
+  (a blank Nav, Breadcrumbs, Pagination, Sidebar Navigation, or the nav
+  inside Simple Footer).
+- There is no count setting today, and no Navbar-specific Inspector
+  section.
+
+What users can already do with the existing generic tools (all verified
+live):
+- Select a link and edit its destination (Inspector > Link >
+  Destination).
+- Double-click a link to edit its label.
+- Add a link (insert, or Duplicate with Ctrl+D).
+- Delete a link.
+- Reorder links by dragging on the Canvas.
+
+Every one of these is one Undo step. Delete removes interactions that
+pointed at the deleted link. Missing today: a discoverable "how many
+links" control, and any keyboard way to reorder.
+
+Findings that shape the recommendation:
+
+a) CONFIRMED DEFECT (pre-existing, High): BC06-D1
+   - The existing count controls trim items without removing
+     interactions that target them:
+     - List > Items;
+     - Select > Options;
+     - Table > Columns / Body Rows, and the Header/Footer row toggles.
+   - The project then cannot be saved: "This project couldn't be
+     written … An interaction targets element "li3", which does not
+     exist."
+   - Probe-confirmed for List and Select; the table commands have the
+     same code shape.
+   - A Navbar count built by copying those commands would inherit this
+     defect.
+
+b) A pure number field is the wrong model here.
+   - Navbar items are user-authored content: their own labels,
+     destinations, styles, ids and interactions.
+   - Typing 2 into a field showing 8 would delete six items without
+     saying which ones.
+
+c) A Flex row with no wrap has limited room, and there is no responsive
+   or mobile menu.
+   - On the exported page, short labels already spill out of their link
+     boxes and run into each other:
+     - at 5 links on a 375 px viewport;
+     - at 12 links on 768 px;
+     - at 16 links on 1024 px.
+   - At 12 links on 375 px the whole page scrolls sideways.
+   - The default 4 links are fine everywhere tested.
+
+Recommendation:
+- Option C, an item-management list: a "Navigation links" section with
+  per-link rows, "Add link", per-row Remove and Move up/down, and the
+  count shown in the section.
+- Not a free numeric count.
+- Rules:
+  - New links copy the last link's style (never its id, interactions or
+    destination).
+  - Removal is always of a link the user chose, through the same safe
+    deletion as the Delete key.
+  - A hard maximum of 12 links per nav.
+  - Helper text from 6 links on, pointing to Wrap.
+- Fix BC06-D1 as part of the same work.
+- Implement in BC-06.2, and do final QA in BC-06.3.
+
+
+2. EXISTING NAVBAR ARCHITECTURE
+-------------------------------
+
+Data flow: Component Library → Canvas → Inspector → Document State →
+Preview → Export.
+
+1. Component Library
+   - The Creation Toolbar has Components > Navigation, with six entries
+     (creationToolbarCategories.ts:379-385):
+     - Basic Navbar;
+     - Navbar with CTA;
+     - Centered Navbar;
+     - Breadcrumbs;
+     - Pagination;
+     - Sidebar Navigation.
+   - Each entry maps to an `elementType`:
+     - basicNavbar → createBasicNavbarNode;
+     - navbarWithCta → createNavbarWithCtaNode;
+     - centeredNavbar → createCenteredNavbarNode.
+     The map is FACTORIES_BY_TYPE (elementFactories.ts:932-937).
+   - The HTML menu also has a blank "Nav" (createNavNode, which creates
+     an empty block nav).
+
+2. Insertion
+   - useInsertElement (src/features/editor/hooks/useInsertElement.ts)
+     calls createElementNode(type) → resolveDestinationParent → store
+     insertElement(parentId, node).
+   - The whole subtree is inserted in one write: one history entry, and
+     the nav root is selected.
+     (Tested in useEditorStore.navigationComponents.test.ts.)
+
+3. Document state
+   - The Zustand store useEditorStore, field `document`, a tree of
+     EditorElementNode.
+   - A Navbar has:
+     - `tag: "nav"`;
+     - `flowLayout: { display: "flex", flex: { direction: "row",
+       wrap: "nowrap", justifyContent: start | space-between | center,
+       alignItems: "center", rowGap: 24, columnGap: 24 } }`;
+     - `background` #fff, a bottom `border`, and `spacing` padding of
+       16/24/16/24;
+     - `children`: four `{ tag: "a", text, href: "#", typography:
+       { color: "#3f3f46" } }`.
+
+4. Canvas
+   - DocumentNodeRenderer → ContainerElement draws the nav, and
+     LinkElement (canvas/components/document/elements/LinkElement.tsx)
+     draws each item.
+   - Every Flex child gets `minWidth: 0` and `minHeight: 0`
+     (resolveFlexOrGridChildStyle.ts:63-72), so link boxes stay inside
+     the nav. Text that doesn't fit spills out of its own link box
+     (section 11).
+
+5. Inspector
+   - With a nav selected, the generic sections appear (live): Identity,
+     Protection, Interactions, Size, Background, Border, Border Radius,
+     Shape, Box Shadow, Visual Effects, Transition, Transform, Display &
+     Visibility, Position, Spacing, Content Layout.
+   - With a link selected: Identity, Interactions, Size, Flex item,
+     Link, Typography, Background, Border, Border Radius, Box Shadow,
+     Visual Effects, Transition, Transform, Display & Visibility,
+     Position, Spacing.
+   - No section knows about "navigation items".
+
+6. Preview
+   - The same React renderer runs with editorMode "preview".
+   - LinkElement calls preventDefault on every click, in Preview too,
+     so links never navigate. The editor URL stays the same (live).
+   - Links remain keyboard-focusable, in document order (live).
+
+7. Export
+   - buildExportDocument.ts:368 writes
+     `<a class="ly-link ly-link-underline ly-node-N" href="…">`, with
+     the href checked by exportUrlPolicy ("link" kind; "#" when
+     rejected).
+   - The nav is a plain `<nav class="…">`.
+   - Live export markup of a Basic Navbar:
+       <nav class="ly-container-radius ly-node-2">
+         <a class="ly-link ly-link-underline ly-node-3" href="#">Home</a>
+         … ×4
+       </nav>
+
+
+3. CURRENT USER WORKFLOW
+------------------------
+
+Reproduced live in Chromium against the dev server (temporary probe,
+1600×1000 window).
+
+  Step                         Result
+  ---------------------------  --------------------------------------
+  1  Open a project            Works (starter page).
+  2  Add a Navbar              Works. Components > Basic Navbar adds
+                               nav > a×4 (Home/About/Services/Contact,
+                               href "#"), 920 px wide in the page, and
+                               selects the nav.
+  3  Select the Navbar         Works. The Inspector shows "Navigation"
+                               and the tag nav.
+  4  Navbar configuration      Generic CSS sections only. No item,
+                               count or link-list control. Content
+                               Layout offers Flex Wrap, Justify and
+                               Gap.
+  5  Select a link             Works: clicking a link on the Canvas
+                               selects it directly.
+  6  Change its label          Works: double-click, type, Enter
+                               ("Home" → "Start").
+  7  Change its destination    Works: Inspector > Link > Destination
+                               "/home" + Enter sets href="/home".
+  8  Add an item               Works, with two caveats (below).
+  9  Remove an item            Works: select + Delete, one Undo step;
+                               Undo restores the link.
+  10 Reorder items             Works by pointer drag on the Canvas
+                               (the last link was dropped at the
+                               start). No keyboard alternative; the
+                               Structure tree's arrow keys only move
+                               focus (StructureTreeNode.tsx:85-108).
+  11 Preview                   Works: links render. Clicking does not
+                               navigate (by design, preventDefault).
+                               Tab moves through the links in
+                               document order.
+  12 Export                    Works: real <a href> inside <nav>,
+                               labels and order preserved.
+
+The two caveats on step 8 (adding an item):
+- HTML > Link with a link selected appends a NEW link at the END of
+  the nav, not after the selected link. It has the generic Link
+  defaults ("Link text", blue, underlined), so it does not match the
+  other links (live colour lab(44 29 -86) against rgb(63,63,70)).
+- Ctrl+D (Duplicate) inserts a copy right after the selected link with
+  identical styling and fresh ids, but also copies its label,
+  destination, authored HTML id and interactions.
+
+Classification:
+- Missing functionality:
+  - no discoverable way to set or see the number of links;
+  - no "add a link that matches the others";
+  - no keyboard reorder.
+- Not bugs: the add/duplicate behaviour above is the designed generic
+  behaviour, just not tuned for navbars.
+- The real bug found nearby is BC06-D1 (section 20).
+
+
+4. CURRENT ITEM-COUNT BEHAVIOR
+------------------------------
+
+- There is no Navbar count setting, no count field and no limit. The
+  number of links is simply `nav.children.length`, whatever the user
+  made it.
+- A nav may contain anything a container may contain: insertionRules
+  CONTAINER_TAGS includes nav, which is not constrained. For example,
+  Navbar with CTA has a Button, and Breadcrumbs has Paragraph
+  separators.
+
+The editor already has count controls for other structures. They are
+the closest precedent:
+
+  Inspector field            Store action / command                 File
+  -------------------------  -------------------------------------  -----------------------------
+  List > Items               setListItemCount                       documentCommands.ts:523
+  Select > Options           setOptionCount                         documentCommands.ts:573
+  Table > Columns            setTableColumnCount                    tableCommands.ts
+  Table > Body Rows          setTableBodyRowCount                   tableCommands.ts:128
+  Table > Header/Footer row  setTableHeaderEnabled / FooterEnabled  tableCommands.ts
+
+How they all behave:
+- Free numeric entry (InspectorNumberFieldRow), committed on Enter or
+  blur, never live. BC-01.3 deliberately keeps structural counts
+  non-live: a live "1" on the way to "12" would really delete rows.
+- Rounded and clamped at ≥ 0. No upper bound.
+- Growing appends fresh default children.
+- Shrinking trims from the end with `slice`, silently.
+- One history entry.
+- They do NOT call removeInteractionsTargeting. That is BC06-D1.
+
+
+5. SOURCE FILE INVENTORY
+------------------------
+
+Definition and catalog
+- src/features/editor/factories/navigationCompositions.ts
+  - navbarRoot, navLink;
+  - createBasicNavbarNode, createNavbarWithCtaNode,
+    createCenteredNavbarNode;
+  - createBreadcrumbsNode, createPaginationNode,
+    createSidebarNavigationNode.
+- src/features/editor/factories/elementFactories.ts
+  - createNavNode (296), createLinkNode (227), createFooterCompositionNode;
+  - FACTORIES_BY_TYPE (932-937);
+  - DEFAULT_FREE_ELEMENT_SIZE (basicNavbar 480×64, navbarWithCta 520×64);
+  - createElementNode (971).
+- src/components/layout/creationToolbarCategories.ts:379-385: catalog
+  entries.
+
+Ids
+- src/features/editor/utils/generateNodeId.ts: `<tag>-<8 hex>` from
+  crypto.randomUUID. Ids never change after creation (no editing path
+  rewrites one).
+- src/features/editor/utils/cloneNodeWithFreshIds.ts: fresh ids for a
+  subtree, with internal interaction targets remapped. Note: it keeps
+  the authored `htmlId` and the node's own interactions.
+
+Store and commands (state path: useEditorStore.getState().document)
+- src/features/editor/stores/useEditorStore.ts:
+  - insertElement;
+  - moveElement (via hooks/useMoveElement.ts);
+  - duplicateSelection (1771);
+  - deleteSelection (1794);
+  - cutSelection / copySelection / pasteClipboard (1723-1769);
+  - setElementText, setElementHref;
+  - setListItemCount / setOptionCount / table counts (1345-1400);
+  - beginTransaction / commitTransaction;
+  - undo / redo; pushHistory.
+- src/features/editor/commands/documentCommands.ts: setListItemCount,
+  setOptionCount.
+- src/features/editor/commands/tableCommands.ts: the table counts and
+  toggles.
+- src/features/editor/commands/interactionCommands.ts:
+  - removeInteractionsTargeting (104);
+  - remapInteractionTargets;
+  - removeInteractionsWithMissingTargets (191).
+- src/features/editor/utils/interactionTargets.ts:
+  resolveInteractionTargets (Preview and Export share it).
+- src/features/editor/utils/resolveDestinationParent.ts and
+  hooks/useInsertElement.ts: where an insertion lands.
+
+Inspector
+- src/features/inspector/components/InspectorNodeSummary.tsx:
+  per-tag section gating (169-174 show the List/Table/Select count
+  sections).
+- InspectorListSection.tsx, InspectorSelectOptionsSection.tsx,
+  InspectorTableSection.tsx: the count UI precedent.
+- InspectorShadowLayerList.tsx: the item-list UI precedent (Move up,
+  Move down, Drag, Select, Duplicate and Remove, each with a text
+  aria-label).
+- InspectorLinkSection.tsx: Destination field, with
+  isValidLinkHref / getLinkHref from editor/types/link.ts.
+- InspectorInteractionsSection.tsx: collectTargetCandidates (113).
+  Every node except the page root can be a target.
+- InspectorNumberFieldRow.tsx: draft and commit lifecycle.
+- InspectorLayoutSection.tsx: Flex Wrap control (line 208).
+
+Canvas and Preview
+- src/features/canvas/components/document/elements/LinkElement.tsx
+- src/features/canvas/utils/elementStyleRecipes.ts:160-161 (the link
+  underline yields to an authored text decoration)
+- src/features/canvas/utils/documentDefaultStyles.ts:158-172 (link
+  defaults; `w-fit` was removed in 1.15.6.10.3)
+- src/features/canvas/utils/resolveFlexOrGridChildStyle.ts (Flex child
+  minWidth: 0)
+- src/features/canvas/hooks/usePreviewTriggerAria.ts
+
+Export
+- src/features/export/utils/buildExportDocument.ts:368 (`<a href>`)
+- src/features/export/utils/exportUrlPolicy.ts
+- src/features/export/utils/buildExportBehaviors.ts and
+  exportInteractionRuntime.ts (interactions)
+
+Persistence
+- src/features/project/utils/serializeProject.ts: refuses an invalid
+  document.
+- src/features/project/utils/checkDocumentIntegrity.ts: every
+  interaction must target an existing node.
+- src/features/project/commands/projectCommands.ts:574: "This project
+  couldn't be written".
+- src/features/project/utils/prepareRecoverySnapshot.ts and the
+  snapshot worker: the same check for autosave/recovery.
+
+Responsive
+- None. Project > Responsive Breakpoints is a disabled menu item
+  (src/components/layout/applicationMenus.ts:522). The document model
+  has no breakpoint or mobile-menu concept.
+
+Existing tests that cover Navbars
+- navigationCompositions.test.ts
+- useEditorStore.navigationComponents.test.ts
+- CreationToolbar.test.tsx
+- e2e/inspector-live-numeric.spec.ts ("navbar: per-side padding")
+- e2e/inspector-final-regression.spec.ts (Navbar Gap live edit)
+- There is NO Navbar in the Canvas/Export parity fixtures
+  (test/fixtures/export/exportFixtureDocuments.ts
+  VISUAL_PARITY_DOCUMENTS).
+
+Documentation drift (comments only, not defects):
+- navigationCompositions.ts's header lists two "limitations" that no
+  longer hold:
+  1. Link underline can't be removed: text decoration became an
+     authored typography field in 4.2+, and the recipe yields to it.
+  2. Link `w-fit` defeats stretch: removed in 1.15.6.10.3.
+- Worth correcting when that file is next touched.
+
+
+6. NAVBAR ITEM DATA MODEL
+-------------------------
+
+Navbar items are regular document nodes: ordinary children of the
+`nav`. They are not configuration data, not a template, and not a
+hybrid.
+
+- Order: stored explicitly as the order of the `children` array. Drag,
+  insert-after and Duplicate all change that array.
+- Ids: `a-xxxxxxxx` from generateNodeId at creation; stable for the
+  node's life (edits never change an id). Duplicate, paste and import
+  of a copy create fresh ids. Undo and Redo restore the exact earlier
+  ids, because history snapshots are whole documents.
+- Per item, everything is independent: text, href, typography,
+  spacing, background, border, radius, dimensions, flexChild, htmlId,
+  className, interactions, initialPreviewVisibility.
+- Variable counts: fully supported by the model. Nothing in the
+  renderer, Preview, export or persistence assumes four items.
+  - The only "4" anywhere is the factory's starter content and its
+    tests.
+  - The live probe built navs of up to 14 items (Canvas) and 16 items
+    (export). Both render and export correctly; only the layout
+    capacity limits of section 11 apply.
+- Assumptions the count feature must respect:
+  - A nav may hold non-link children: the CTA Button, Breadcrumbs'
+    "/" Paragraphs, Pagination's Previous/Next Buttons, or anything the
+    user dropped in.
+  - Nothing tells a Navbar apart from other navs.
+
+
+7. UX OPTIONS COMPARISON
+------------------------
+
+Option A: numeric field "Navigation items"
+- Discoverability: good, since it reuses the List/Select/Table
+  pattern.
+- Validation: same as the existing rows (Enter/blur commit; empty or
+  non-numeric reverts; decimals round).
+- Accidental deletion: HIGH. 8 → 2 deletes six customized links, and
+  the user cannot choose which.
+- Keyboard: fine (native number input).
+- Existing data: can only append defaults or trim the tail.
+- Undo: one step. Recoverable, but only if the user notices.
+- It also has to decide what counts as an "item" when a nav holds a
+  Button or separators.
+- Verdict: rejected as the primary control.
+
+Option B: stepper "Navigation items [−] 4 [+]"
+- Safer than A: one item per press, so there are no large silent
+  deletions.
+- But "−" still removes a link the user did not pick, namely the last
+  one. That can be the most customized link, or the one an
+  interaction targets.
+- Two icon-only buttons need visible or accessible names (this is
+  solvable: "Remove last link" / "Add link").
+- Verdict: acceptable as a fallback if the product owner wants a pure
+  count, with the rules in section 9.
+
+Option C: item-management list
+- Shows every link: label and destination, with Select / Move up /
+  Move down / Remove per row, plus "Add link".
+- Removal is always explicit. The rows double as keyboard reorder,
+  which fills the gap from section 3, step 10.
+- Same pattern as the Box Shadow layer list users already know
+  (InspectorShadowLayerList).
+- The count is visible ("4 links") without being a destructive input.
+- Inspector size: about 28 px per row; at the cap of 12 rows the list
+  stays shorter than the existing Box Shadow lists.
+- Verdict: RECOMMENDED.
+
+Option D: count control plus list
+- Two controls for one fact. The count would either duplicate "Add
+  link", or reintroduce A/B's tail deletion beside an explicit Remove.
+- The extra complexity is not justified for a beginner-friendly panel.
+- Verdict: rejected. Option C already shows the count.
+
+
+8. RECOMMENDED CONTROL DESIGN
+-----------------------------
+
+A new Inspector section, "Navigation links".
+
+When it appears:
+- For a single selected element with tag `nav`, in every case:
+  Navbars, Breadcrumbs, Pagination, Sidebar Navigation, the Simple
+  Footer nav, and a blank Nav.
+- Not for multi-selection, the same rule the List/Table count sections
+  follow.
+- No Navbar marker is needed (respecting the 1.15.6.3 "no variant
+  flag" decision).
+
+What it lists:
+- The nav's DIRECT `<a>` children, in document order.
+- Other children are not listed and never touched: the CTA Button,
+  separators, nested containers.
+- Links nested inside a wrapper Container are not direct children; the
+  user selects the wrapper's own nav-like structure instead. Limitation
+  noted in section 20 (BC06-C2).
+
+Row contents:
+- The label text, truncated, as a "Select" button. It selects that
+  link, so the existing Link and Typography sections apply.
+- The destination as secondary text.
+- Move up / Move down buttons.
+- A Remove button.
+- No inline label or destination editing in the row. The selected
+  link's own Link section and Canvas text editing already do that, and
+  duplicating those fields would create a second editing path.
+
+Footer:
+- An "Add link" button.
+- A count line: "4 links".
+- Helper text when the count is 6 or more (section 11).
+
+Section placement: directly after "Interactions", in the semantic group
+where List/Table/Select already live (InspectorNodeSummary:169-174).
+
+
+9. ADD / REMOVE ITEM POLICIES
+-----------------------------
+
+ADD ("Add link")
+
+Source: the nav's LAST direct `<a>` child is the style template.
+
+Fields the new link keeps from the template:
+- typography, spacing, background, border, borderRadius, boxShadow,
+  filters, transition, transform, display, className, flexChild,
+  gridChild.
+
+Fields the new link does NOT copy:
+- id: always new (generateNodeId("a")).
+- text: "New link". Distinct and obvious, never a copy of
+  "Contact" (two identical labels confuse both users and screen
+  readers).
+- href: "#" (DEFAULT_LINK_HREF), always a valid destination. Copying
+  "/contact" would create two links to the same page by accident.
+- htmlId: an authored id must stay unique. A duplicated id makes the
+  item unreferenceable (interactionTargets: "Absent when an authored id
+  exists but is duplicated").
+- interactions: an item's click actions are not cloned.
+- initialPreviewVisibility: a new link is never born hidden.
+- dimensions and freeLayout: a resize the user made is not faked onto
+  the new link.
+
+Other cases:
+- No links at all (blank Nav, or all removed): createLinkNode()
+  defaults, with text "New link".
+- Position: immediately after the last direct link. For Navbar with
+  CTA, the new link lands before the CTA Button, keeping the CTA last.
+  For Pagination, it lands after "3", before "Next".
+- Selection stays on the nav, so the user can press Add repeatedly.
+- One press is one history entry.
+- At the maximum (12), "Add link" is disabled and its reason is shown
+  (section 22).
+
+Pattern-specific note:
+- In Breadcrumbs, a new link is added without a "/" separator and
+  copies the muted "current page" colour.
+- That is honest (it copies what is there), but it does not produce a
+  well-formed trail.
+- Recommended for BC-06.2: show the section for Breadcrumbs too (it is
+  just a nav), and accept that the user may add the separator. Do not
+  build breadcrumb-specific logic. A product decision is listed in
+  section 24.
+
+REMOVE (per-row "Remove <label>")
+- Always removes exactly the chosen link. Never "from the end".
+- Must reuse the safe deletion path, the same one deleteSelection uses:
+  - removeNodesByIds;
+  - collectDeletedIds → removeInteractionsTargeting;
+  - one pushHistory.
+- So any Show/Hide/Toggle binding that targets the removed link is
+  removed with it. A binding ON the removed link disappears with the
+  node.
+- Selection:
+  - The nav stays selected.
+  - If the removed link was itself part of the selection (not possible
+    from this section, since a single nav is selected), fall back the
+    way deleteSelection does.
+- Focus moves to the next row's Remove button, or to "Add link" when
+  the last row was removed, so keyboard users keep their place.
+- No confirmation dialog:
+  - removal is explicit, one item at a time, and one Undo step;
+  - the Delete key already works this way;
+  - a dialog per click would be friction without safety gain.
+- Undo restores the link with its id, label, href, styles, its
+  position, and any binding that was removed with it, because the
+  history entry is one document snapshot.
+
+MOVE (Move up / Move down)
+- Moves the link one place among ALL the nav's children, so the CTA
+  and separators keep their positions relative to the other children.
+- Uses the existing moveElement command with before/after zones: one
+  history entry.
+- Disabled at the ends.
+
+
+10. MINIMUM / MAXIMUM RECOMMENDATIONS
+-------------------------------------
+
+Minimum: 0 links is allowed.
+- The Delete key can already empty a nav.
+- An empty nav is valid HTML and valid in the model (createNavNode
+  starts empty).
+- A "Navbar" with only a CTA, or only a brand area, is a real design.
+- Removing the last link therefore stays allowed, and the section then
+  shows "No links yet" with "Add link".
+- One link is valid.
+
+Maximum: 12 links per nav, enforced only by "Add link". It never
+deletes anything.
+
+Justification, measured on the export of the real factory trees with
+short labels:
+
+  Links  1440px  1024px  768px   375px          320px
+  -----  ------  ------  ------  -------------  --------------
+  4      fits    fits    fits    fits           fits
+  5      fits    fits    fits    spills         spills
+  7      fits    fits    fits    spills         spills
+  10     fits    fits    spills  spills         spills, page scrolls
+         (CTA variant)
+  12     fits    fits    spills  spills, page   page scrolls
+                                 scrolls
+  16     fits    spills  spills  items escape   items escape
+                                 the nav        the nav
+
+("spills" means label text overflows its own link box, so neighbours
+run together. Screenshot evidence: "HomeAboutServicesContact" and
+"Pricin" under the CTA at 8 links on 375 px.)
+
+- 12 is the largest count that still fits a laptop width (1024 px) in
+  both Navbar variants.
+- Beyond it, links spill even on desktop layouts, and the Inspector
+  list stops being scannable.
+- It is a usability cap, not a performance limit: performance is fine
+  far beyond it (section 18).
+- Navs that already hold more than 12 links (built with Duplicate) are
+  shown in full and never trimmed. Only "Add link" is disabled.
+
+Input validation:
+- The recommended design has no free numeric input, so negative,
+  empty, decimal, very large and non-numeric values cannot be entered
+  at all.
+- If the product owner chooses Option B or A instead:
+  - negative → 0;
+  - decimals round;
+  - empty or non-numeric reverts on Enter/blur, as
+    InspectorNumberFieldRow already does;
+  - values above 12 clamp to 12;
+  - a decrease removes only links that are unmodified starter links;
+    otherwise it is refused with a message.
+
+
+11. RESPONSIVE BEHAVIOR FINDINGS
+--------------------------------
+
+What exists:
+- Flex row, `flex-wrap: nowrap`, gap 24, Flex children `min-width: 0`.
+- No breakpoints, no media-query authoring, no mobile/hamburger menu.
+  The "Mobile Navbar" was deferred in 1.15.6.3, and "Responsive
+  Breakpoints" is a disabled menu item.
+- No item hiding, no horizontal scrolling container.
+
+Behavior as the width shrinks, measured live:
+1. Links shrink first. Their boxes stay inside the nav thanks to
+   `min-width: 0`.
+2. Multi-word labels wrap inside their link (on the Canvas, "Link
+   text" became two lines).
+3. Single words cannot wrap, so the text overflows its link box and
+   overlaps neighbours (see the table in section 10).
+4. At extreme counts, link boxes reach 0 px and escape the nav
+   padding, and the page scrolls horizontally.
+
+Narrow Canvas widths:
+- The Canvas page sheet follows the editor's panel widths (920 px in a
+  1600 px window). The same mechanics apply.
+- With 14 links, five labels spilled on the Canvas.
+
+This conflicts with Layoutry's own standing rule that content must
+never escape its container. The cause is the Flex-row-without-wrap
+layout in general, not the count feature: a user can reach it today
+with Duplicate. Hence BC06-R1 is classed as a pre-existing constraint,
+and the count design adds guardrails, not a layout rewrite:
+- the cap of 12;
+- helper text from 6 links (the first count that spills on phones):
+  "Links may not fit on small screens. Turn on Wrap in Content Layout
+  to let them flow onto more lines."
+- Wrap is an existing control (Content Layout > Wrap), so the advice
+  is actionable today.
+
+Making a mobile menu is explicitly out of BC-06 scope.
+
+
+12. NAVIGATION SEMANTICS
+------------------------
+
+- The Navbar renders a `<nav>` landmark containing `<a href>` links.
+  This is correct for navigation to destinations.
+- Navbar with CTA's "Get Started" is a `<button>`.
+  - Acceptable for an action.
+  - If it really navigates to a sign-up page, a Link styled as a
+    button would be more correct. Not changed here; noted as BC06-U3.
+- Pagination already follows the link-vs-button rule: page numbers are
+  Links; Previous/Next are Buttons (navigationCompositions.ts
+  comments).
+- No list markup (`<ul><li><a>`).
+  - This cannot be built: `li` is a text leaf in this app
+    (insertionRules), so `nav > ul > li > a` is not representable.
+  - A flat `nav > a` is acceptable to assistive technology. Only the
+    "list, N items" announcement is lost.
+- The `nav` has no accessible name (no aria-label).
+  - With several navs on one page (Navbar plus footer nav plus
+    breadcrumbs), screen-reader users hear several unnamed
+    "navigation" landmarks.
+  - This needs a generic attribute system that does not exist yet.
+    Noted as BC06-U2, not proposed for BC-06.
+- The count feature must keep adding `<a>` elements, never buttons.
+
+
+13. STYLING AND INTERACTION PRESERVATION
+----------------------------------------
+
+Styling
+- All Navbar styling is ordinary per-node fields. There is no shared
+  "navbar link style" object.
+  - The four starter links each carry their own copy of
+    `typography: { color: "#3f3f46" }`.
+  - Layout comes from the nav: Flex direction, Justify, Gap, Align.
+- So:
+  - "New links inherit styling" means copying the last link's style
+    fields (section 9).
+  - Changing the count never touches the nav's own CSS or any
+    surviving link.
+- Per-item customizations are preserved: add only inserts, remove only
+  removes the chosen node, move only reorders.
+- Hover, focus and active states do not exist in the style model.
+  Exported links use the browser's default focus ring. There is no
+  "active page" field; an active link is shown through authored colour,
+  as in Pagination. Nothing in the count design depends on states.
+- Gap, Alignment and Justify live on the nav and apply to new links
+  automatically.
+
+Interactions (BC-04 rules preserved)
+- Removal uses removeInteractionsTargeting in the same document write,
+  as Delete and Cut do. No dangling target is possible, and the
+  document stays saveable.
+- Add never copies interactions or htmlId, so it creates no duplicate
+  triggers and no unresolvable ids.
+- Move changes order only. Interaction targets are by node id, so
+  bindings survive reordering. The generated `ly-target-N` DOM ids
+  re-number in document order in both Preview and Export, which share
+  resolveInteractionTargets, so they still agree.
+- A link that is itself a trigger keeps its bindings when moved.
+
+
+14. UNDO/REDO DESIGN
+--------------------
+
+Each action is one store action with one pushHistory, the pattern
+every one-shot command already uses:
+- add one link → one entry;
+- remove one link, plus its cleaned bindings → one entry;
+- move one place → one entry.
+
+"Increase by three" is three presses, so three entries. That is the
+correct granularity for an explicit list: each Undo step reverses one
+visible action.
+
+If the product owner chooses a count control (A/B), a +3 or −2 change
+must be one action call → one entry, as setListItemCount already is.
+
+What each action guarantees:
+- Undo restores the removed link with its exact id, label, href,
+  styles, position and removed bindings (whole-document snapshot).
+- Redo re-applies it.
+- No-op guard: an action that changes nothing (Move up on the first
+  row; Add at the cap) returns the same document and pushes no
+  history, the action-level guard setListItemCount uses.
+- No live mode and no transactions: these are discrete clicks, not
+  drafts. BC-01's live-edit transactions are for continuous CSS edits
+  and are not involved.
+- If a Canvas text edit is open on a link when a row button is
+  pressed, the existing commit-on-blur of useEditableText runs first
+  (same as clicking any Inspector control today). The BC-06.2 tests
+  should include this ordering.
+- Selection after Undo: deleteSelection's fallback rules already avoid
+  stale ids. For the nav-section actions the selection is the nav,
+  which is never removed by them.
+
+
+15. PERSISTENCE AND COMPATIBILITY
+---------------------------------
+
+No schema, serialization or format change is needed.
+- Links are ordinary nodes that format 2 already stores. Item count
+  and order are just `children`.
+- No new EditorElementNode field. No Navbar flag. No format 3.
+- No migration. Older projects (format 1 and 2) load unchanged, and
+  their navs gain the section automatically.
+- Copy/paste and Duplicate of a whole nav already clone every link
+  with fresh ids and remapped internal targets (tested in
+  navigationComponents "Duplication").
+- Import and export are unaffected.
+- Autosave and recovery serialize whatever the document is. The
+  integrity check stays satisfied as long as removal cleans bindings.
+  That is exactly why BC06-D1 must not be copied.
+- Electron: no desktop-specific path. The renderer and the project
+  format are shared.
+
+
+16. CANVAS / PREVIEW / EXPORT FINDINGS
+--------------------------------------
+
+Comparison between Canvas, Preview and Export (live and from code):
+- Item count, order, labels: identical. Every surface renders the same
+  `children` array.
+- Destinations:
+  - Canvas and Preview render the stored href but block navigation.
+  - Export writes the href after URL-policy checking; a rejected URL
+    becomes "#" with a diagnostic.
+- Styling: same recipe on all surfaces (link + link-underline classes,
+  authored typography). The generic Canvas/Export parity tests cover
+  links and Flex rows.
+- Interactions: Preview and Export share resolveInteractionTargets.
+  Already covered by e2e/export-interactions.spec.ts.
+- Responsive: identical mechanics on all surfaces (section 11).
+- Keyboard: links are focusable in document order in Preview and in
+  the exported page.
+
+Gaps found:
+- No discrepancy was found.
+- Coverage gap: no Navbar exists in the Canvas/Export parity fixtures.
+  BC-06.3 should add one, with a variable link count.
+
+
+17. ACCESSIBILITY REVIEW
+------------------------
+
+The recommended section:
+- Every control is a real `<button>` with a visible or accessible text
+  name. No icon-only control is left unnamed (names in section 22).
+  This follows the InspectorShadowLayerList precedent (aria-label
+  "Move <name> up", etc.).
+- The list is a plain `role="list"` with `listitem` rows, as the
+  shadow list already uses. No extra ARIA.
+- Move up/down provides the keyboard reorder the Canvas lacks. This
+  fixes the "pointer-only reorder" gap for navbar links (BC06-U1).
+- Focus management after Remove and after Move: focus stays on the
+  moved row's button, or goes to the next row (section 9).
+- Announcements:
+  - The count line ("4 links") is a polite live region
+    (`aria-live="polite"`), so adding or removing announces the new
+    count.
+  - The removed item is not announced separately (avoids double
+    speech).
+- Disabled "Add link" at the cap: keep it focusable, use
+  aria-disabled with the helper text as the description. A plain
+  `disabled` button is skipped by Tab and its reason is never read.
+- Touch targets: Inspector rows follow the existing 24 px control
+  height (size-6), consistent with every other Inspector button.
+  (Layoutry's Inspector is desktop-pointer software.)
+- Generated output:
+  - links keep accessible names from their text;
+  - "New link" is a deliberately visible placeholder, not an empty
+    label;
+  - the unnamed-nav concern is BC06-U2.
+
+Responsive menu accessibility: not applicable, since no responsive
+menu exists.
+
+
+18. PERFORMANCE CONSIDERATIONS
+------------------------------
+
+- Each action is one immutable tree write along one path, one
+  pushHistory snapshot, and one store notification. This is the same
+  cost as Delete or Duplicate today.
+- At most 12 links per click-built nav; the probe rendered 14–16
+  without trouble.
+- The interaction cleanup is one tree walk per removal
+  (removeInteractionsTargeting), the same as Delete.
+- Section renders: the section reads `node.children` (already in
+  props), so no new store subscription per row and no getComputedStyle
+  calls. No layout reads.
+- No event listeners are added on the Canvas.
+- History entries are whole-document snapshots, as today.
+- No new dependencies.
+
+
+19. TEST COMMANDS AND COUNTS
+----------------------------
+
+All run on 2026-11-10 at 6e0493d, with no product changes.
+
+a) Existing Vitest suites (18 files)
+
+     npx vitest run navigationCompositions.test.ts
+       useEditorStore.navigationComponents.test.ts
+       useEditorStore.interactions.test.ts useEditorStore.test.ts
+       useEditorStore.multiSelection.test.ts
+       useEditorStore.persistence.test.ts documentCommands.test.ts
+       interactionCommands.test.ts tableCommands.test.ts
+       InspectorInteractionsSection.test.tsx
+       InspectorLinkSection.test.tsx InspectorShadowLayerList.test.tsx
+       InspectorTableSection.test.tsx CreationToolbar.test.tsx
+       canvasExportParity.test.tsx exportHtmlCss.test.ts
+       buildExportBehaviors.test.ts serializeProject.test.ts
+     (full src/ paths were used)
+     → Test Files 18 passed (18); Tests 606 passed (606).
+
+   A 19th file I named, checkDocumentIntegrity.test.ts, does not
+   exist. The integrity check is covered through serializeProject and
+   parseProjectFile tests.
+
+b) Existing Playwright specs, Chromium
+
+     npx playwright test e2e/inspector-live-numeric.spec.ts
+       e2e/inspector-final-regression.spec.ts
+       e2e/export-interactions.spec.ts
+       e2e/interaction-guidance.spec.ts
+       e2e/preview-export-parity.spec.ts
+     → 48 passed, 0 failed, 0 skipped (1.3 min).
+
+c) Temporary probes (written, run, deleted; findings in sections 3, 10,
+   11 and 20)
+
+   e2e/zz-bc06-probe.spec.ts (Chromium):
+   - Workflow probe: steps 1-12 of section 3. 1 passed (the first two
+     runs failed only on probe selector mistakes: an ambiguous "Link
+     destination" label, and a corner click on a resize handle).
+   - Export responsive probe: 4/5/6/7/8/10/12/16 links × 1440/1024/
+     768/375/320 px, Basic and CTA variants. All passed and recorded
+     the measurements.
+
+   src/features/editor/stores/zz-bc06-probe.test.ts (Vitest): 4
+   passed. Logged results:
+   - list trim of a targeted li → binding kept → save error "An
+     interaction targets element "li3", which does not exist."; after
+     Undo the save succeeds;
+   - select trim of a targeted option → same save error;
+   - Delete of a targeted navbar link → binding removed, 1 history
+     entry, save OK, nav selected; Undo restores link and binding;
+   - multi-select delete of 2 links → 2 remain, 1 history entry, nav
+     selected.
+
+d) Not run, and why:
+   - Firefox and WebKit: no code changed. The responsive measurements
+     are a layout characteristic, to be re-measured cross-browser in
+     BC-06.3.
+   - Electron: there is no desktop-specific Navbar path (shared
+     renderer and format).
+   - Full suites: no code changed.
+
+
+20. RISK REGISTER
+-----------------
+
+BC06-D1  CONFIRMED DEFECT (pre-existing) — Severity: HIGH
+- What: structural count decreases leave interactions targeting removed
+  children, so the project cannot be saved.
+- Reproduction:
+  1. Insert an Unordered List (3 items) and a Button.
+  2. Button > Interactions > Add: Toggle, target the list's third
+     item.
+  3. Select the list and set Items = 2 (Enter).
+  4. Save (Ctrl+S). The dialog says "This project couldn't be
+     written" and nothing is saved. Autosave and recovery snapshots
+     fail the same check.
+  Same with Select > Options, and by code inspection with Table >
+  Columns / Body Rows and the Header/Footer row toggles.
+- Root cause: setListItemCount, setOptionCount, setTableColumnCount,
+  setTableBodyRowCount and setTableHeader/FooterEnabled remove children
+  (slice, or a subtree drop) without removeInteractionsTargeting. Only
+  Delete and Cut call it; Paste calls
+  removeInteractionsWithMissingTargets.
+- User escape today: Undo, or remove the broken binding in the
+  trigger's Interactions section.
+- Affected: useEditorStore.ts:1345-1400, documentCommands.ts:523/573,
+  tableCommands.ts.
+- Mitigation: in each store action, compute the ids removed by the
+  command (the before/after child difference) and apply
+  removeInteractionsTargeting in the same write before pushHistory.
+  The Navbar remove action uses the same helper from day one.
+- Regression coverage:
+  - per command, a unit test: a targeted child is trimmed → no binding
+    left, serializeProject succeeds, one history entry, and Undo
+    restores node and binding;
+  - one e2e: list trim, then Save, succeeds.
+
+BC06-R1  ARCHITECTURAL CONSTRAINT (pre-existing) — Severity: MEDIUM
+- What: label text overflows link boxes when a no-wrap Flex nav has
+  more links than fit. At extreme counts the page scrolls sideways.
+- Reproduction: export a Basic Navbar with 5+ links and view it at
+  375 px; or Duplicate a link until there are 14 on the Canvas.
+- Root cause: Flex row `nowrap`, and Flex children `min-width: 0`
+  (boxes contained, text not). No responsive or mobile-menu system.
+- Affected: navigationCompositions.ts (nowrap starter),
+  resolveFlexOrGridChildStyle.ts.
+- Mitigation for BC-06: the cap of 12, plus helper text from 6 links
+  pointing to Wrap. A real fix (wrap by default for new Navbars, or a
+  mobile menu) is a separate product decision, outside BC-06.
+- Regression coverage: in BC-06.3, a measured export at 1024/768/375
+  for 4 and 12 links, recording the spill counts (documenting, not
+  asserting a fix).
+
+BC06-M1  MISSING FUNCTIONALITY — Severity: MEDIUM (the BC-06 request
+itself)
+- What: no discoverable way to see or change how many links a nav has,
+  or to add a link that matches the others.
+- Mitigation: the "Navigation links" section (sections 8-9).
+- Coverage: unit tests for the commands and the section; e2e for
+  Add/Remove/Move/Undo plus Save.
+
+BC06-U1  UX / ACCESSIBILITY GAP — Severity: MEDIUM
+- What: reordering is pointer-drag on the Canvas only. There is no
+  keyboard reorder anywhere (Structure arrow keys move focus only).
+- Mitigation for links: Move up/down in the new section. A general
+  keyboard reorder for all elements is out of scope.
+- Coverage: keyboard-only e2e (Tab to "Move About down", Enter, order
+  changes, one Undo step).
+
+BC06-U2  ACCESSIBILITY (generated output) — Severity: LOW
+- What: `nav` landmarks have no accessible name, so pages with several
+  navs are ambiguous for screen readers.
+- Root cause: no generic attribute (aria-label) system.
+- Mitigation: deferred to a future attributes/accessibility checkpoint.
+  Not BC-06.
+
+BC06-U3  UX — Severity: LOW
+- What: "Add link" via HTML > Link appends at the end with generic blue
+  styling. Duplicate copies label, destination, authored id and
+  interactions. Neither is ideal for navbars.
+- Mitigation: "Add link" in the new section, with the copy rules of
+  section 9. The generic HTML > Link and Duplicate stay unchanged.
+- Related: Duplicate copying an authored htmlId produces duplicate DOM
+  ids. It is handled safely (the id is dropped from target resolution)
+  but is surprising. Noted for a future Identity checkpoint.
+
+BC06-C2  ARCHITECTURAL CONSTRAINT — Severity: LOW
+- What: Navbars are not identifiable after insertion, and the section
+  sees only direct `<a>` children. Links wrapped in a Container inside
+  the nav are not listed.
+- Mitigation: documented behaviour. The user selects the wrapper. No
+  Navbar marker field, per the 1.15.6.3 decision.
+
+BC06-C3  DOCUMENTATION DRIFT — Severity: TRIVIAL
+- What: the navigationCompositions.ts header describes two link
+  limitations that were fixed later.
+- Mitigation: update the comment when BC-06.2 touches the file.
+
+
+21. RECOMMENDED IMPLEMENTATION CHECKPOINTS
+------------------------------------------
+
+The feature is small and uses existing commands, so two checkpoints
+are enough.
+
+BC-06.2: Navigation links section, plus the safe-removal fix
+(implementation)
+
+a) BC06-D1 fix:
+   - the shared "removed ids → removeInteractionsTargeting" step in
+     the list, option and table count/toggle store actions;
+   - regression tests (section 20).
+
+b) Store actions, each one history entry with a no-op guard:
+   - addNavLink(navId)
+     - Copies the last direct link's style fields (section 9).
+     - text "New link", href "#".
+     - No htmlId, interactions, initialPreviewVisibility, dimensions
+       or freeLayout.
+     - Inserted after the last direct link; refused at 12 direct
+       links.
+     - Free-layout navs: placed through resolveFreeDestinationPlacement
+       like any insertion.
+   - removeNavLink(navId, linkId)
+     - Uses the deleteSelection removal path plus interaction cleanup.
+     - Refuses an id that is not a direct `<a>` child.
+   - moveNavLink(navId, linkId, direction)
+     - Uses moveElement before/after relative to the neighbouring
+       child.
+   - Style protection: these are structure edits, like the list count,
+     not style edits. Follow setListItemCount (not routed through the
+     style-protection guard). Confirm with the product owner if that
+     is wrong.
+
+c) InspectorNavigationLinksSection:
+   - shown for a single selected `nav` (InspectorNodeSummary);
+   - rows, Add link, count live region, helper text and focus rules
+     (sections 8, 17 and 22).
+
+d) Tests:
+   - unit tests for the three actions: ids, style copy, exclusions,
+     position before CTA, cap, cleanup, Undo/Redo, save succeeds;
+   - section RTL tests: names, disabled states, focus after Remove,
+     live count;
+   - e2e: Add ×3, Remove a targeted link, Move with the keyboard,
+     Undo/Redo, Preview, Export, Save + reopen.
+
+e) Refresh the navigationCompositions.ts header comment.
+
+BC-06.3: final regression and QA
+- A Navbar in the Canvas/Export parity matrix at 4 and 12 links.
+- Cross-browser runs: Chromium, Firefox, WebKit.
+- Electron: save and reopen a nav edited with the section.
+- Responsive re-measurement (BC06-R1).
+- Defect register and a CLOSE / KEEP OPEN recommendation.
+
+If the product owner prefers a numeric count (Option A/B) over the
+list, BC-06.2 changes only in the section UI and adds the "decrease
+only removes unmodified links" rule (section 10). The command and
+BC06-D1 work is identical.
+
+
+22. EXACT PROPOSED UI WORDING
+-----------------------------
+
+Section title:            Navigation links
+Count line (live region): "1 link" / "4 links" / "No links yet"
+Row label button:         <link text>, e.g. "Home"
+  (accessible name)       "Select Home link"
+Row secondary text:       <destination>, e.g. "/about" or "#"
+Move up button:           title and aria-label "Move Home up"
+Move down button:         title and aria-label "Move Home down"
+Remove button:            title and aria-label "Remove Home link"
+Add button (visible):     "Add link"
+Add button title:         "Add a link styled like the last one."
+New link text:            "New link"
+Helper text (6–12 links):
+  "Links may not fit on small screens. Turn on Wrap in Content Layout
+  to let them flow onto more lines."
+Cap reason (12+, Add disabled):
+  "A navigation bar can have up to 12 links. Remove a link to add
+  another."
+Empty label fallback in a row (a link whose text is empty):
+  "Untitled link"
+Section help (InspectorHelpButton, if the section has one):
+  "Lists the links directly inside this navigation. Select a link to
+  edit its text and destination."
+
+
+23. GIT WORKING-TREE STATUS
+---------------------------
+
+- Branch main, HEAD 6e0493d. `git status --short` is empty: no product
+  file changed.
+- Temporary files were created and deleted:
+  - e2e/zz-bc06-probe.spec.ts
+  - src/features/editor/stores/zz-bc06-probe.test.ts
+  - test-results/zz-bc06*
+- Screenshots were saved outside the repository (session scratchpad).
+- Files added by this checkpoint:
+  - docs/reports/BC-06.1-Navbar-Button-Count-Investigation.txt (this
+    report; untracked)
+  - changelogs/2026-11-10-navbar-button-count-investigation-BC-06.1.txt
+    (gitignored)
+- Nothing was committed or pushed.
+
+
+24. RECOMMENDATION FOR BC-06.2
+------------------------------
+
+Proceed with BC-06.2 as defined in section 21:
+- the "Navigation links" item list (Option C), with Add / Remove /
+  Move up / Move down and a visible count;
+- explicit removal through the safe deletion path;
+- a cap of 12, with Wrap guidance from 6 links;
+- no format change;
+- the BC06-D1 save-blocking fix included.
+
+Decisions requested from the product owner before BC-06.2:
+
+1. Approve Option C (item list) over a numeric count or stepper.
+   Recommended: yes.
+2. Approve the limits: 0 minimum (an empty nav allowed), 12 maximum
+   enforced only by "Add link". Recommended: yes.
+3. Include the BC06-D1 fix (list, option and table count/toggle
+   actions) in BC-06.2, rather than a separate checkpoint.
+   Recommended: include, since the same helper and the same tests are
+   needed anyway.
+4. Show the section for every `nav` (including Breadcrumbs and
+   Pagination), without pattern-specific logic. Recommended: yes.
+5. Keep new Navbars as `nowrap`, relying on the helper text, rather
+   than switching the starter presets to Wrap. Recommended: keep (a
+   preset change alters existing behaviour and belongs to a layout
+   checkpoint).
+
+Stop: BC-06.2 has not been started. Waiting for ChatGPT QA review.
