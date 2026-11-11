@@ -110,6 +110,47 @@ describe("commitImageUpload (BC-07.2)", () => {
     });
   });
 
+  describe("project-size boundaries (BC-07.4)", () => {
+    it("replacing a large image with a smaller one is always allowed, and the project shrinks", () => {
+      const second = createImageNode();
+      store().insertElement("page-root", second);
+      expect(commitImageUpload(target, dataUrl("A", 7_800_000))).toEqual({ ok: true });
+      expect(commitImageUpload({ ...target, nodeId: second.id }, dataUrl("B", 7_800_000))).toEqual({ ok: true });
+      // Now near the limit: a bigger replacement no longer fits, a smaller one does.
+      expect(commitImageUpload({ ...target, nodeId: second.id, startSrc: src(second.id) }, dataUrl("C", 9_500_000))).toEqual({ ok: false, message: IMAGE_COMMIT_MESSAGES.projectTooLarge });
+      expect(commitImageUpload({ ...target, nodeId: second.id, startSrc: src(second.id) }, dataUrl("D", 1_000))).toEqual({ ok: true });
+      expect(documentFitsProjectFile(store().document)).toBe(true);
+    });
+
+    it("near the limit, every state Undo and Redo can reach still saves", () => {
+      const second = createImageNode();
+      store().insertElement("page-root", second);
+      commitImageUpload(target, dataUrl("A", 8_000_000));
+      commitImageUpload({ ...target, nodeId: second.id }, dataUrl("B", 8_000_000));
+      expect(commitImageUpload({ ...target, nodeId: second.id, startSrc: src(second.id) }, dataUrl("C", 9_000_000)).ok).toBe(false);
+      const states = [store().document];
+      while (store().past.length > 0) {
+        store().undo();
+        states.push(store().document);
+      }
+      while (store().future.length > 0) {
+        store().redo();
+        states.push(store().document);
+      }
+      expect(states.every((document) => documentFitsProjectFile(document))).toBe(true);
+    });
+
+    it("the project growing while a file was read is measured at commit: the late upload is refused", () => {
+      const second = createImageNode();
+      store().insertElement("page-root", second);
+      const started = { ...target, startSrc: src(imageId) };
+      // Meanwhile another upload filled the project.
+      expect(commitImageUpload({ ...target, nodeId: second.id }, dataUrl("B", 12_000_000))).toEqual({ ok: true });
+      expect(commitImageUpload(started, dataUrl("A", 6_000_000))).toEqual({ ok: false, message: IMAGE_COMMIT_MESSAGES.projectTooLarge });
+      expect(documentFitsProjectFile(store().document)).toBe(true);
+    });
+  });
+
   describe("asynchronous lifecycle guards", () => {
     it("an upload started before another project was opened never lands in it", () => {
       const reopened = store().document;
@@ -128,6 +169,16 @@ describe("commitImageUpload (BC-07.2)", () => {
       store().insertElement("page-root", button);
       expectUnchanged(() => expect(commitImageUpload({ ...target, nodeId: button.id }, dataUrl("A")).ok).toBe(false));
       expectUnchanged(() => expect(commitImageUpload({ ...target, nodeId: "missing" }, dataUrl("A")).ok).toBe(false));
+    });
+
+    it("BC-07.4: a source changed while it was reading (a typed URL, an Undo) is never overwritten by the late upload", () => {
+      const startSrc = src(imageId);
+      store().setElementSrc(imageId, "https://example.com/typed-meanwhile.png");
+      const before = { document: store().document, past: store().past };
+      expect(commitImageUpload({ ...target, startSrc }, dataUrl("A"))).toEqual({ ok: false, message: IMAGE_COMMIT_MESSAGES.sourceChanged });
+      expect(store().document).toBe(before.document);
+      expect(store().past).toBe(before.past);
+      expect(src(imageId)).toBe("https://example.com/typed-meanwhile.png");
     });
 
     it("edits made while it was reading are kept: the commit applies to the latest document", () => {

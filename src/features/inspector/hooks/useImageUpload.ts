@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { findNodeById } from "@/features/editor/utils/findNodeById";
 import { commitImageUpload } from "@/features/inspector/utils/commitImageUpload";
 import { rememberUploadedImage } from "@/features/inspector/utils/uploadedImageDetails";
 import { validateImageUpload, type DecodeImage, type ImageUploadFile } from "@/features/inspector/utils/validateImageUpload";
@@ -45,7 +46,8 @@ export function useImageUpload(nodeId: string, decode?: DecodeImage) {
     ticketRef.current += 1;
     const ticket = ticketRef.current;
     readingTicketRef.current = ticket;
-    const target = { nodeId, documentSessionId: useEditorStore.getState().documentSessionId };
+    const started = useEditorStore.getState();
+    const target = { nodeId, documentSessionId: started.documentSessionId, startSrc: findNodeById(started.document, nodeId)?.src };
     setState({ status: "reading" });
 
     const validation = await validateImageUpload(file, decode);

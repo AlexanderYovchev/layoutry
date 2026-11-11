@@ -33,7 +33,7 @@ export type ExportDiagnosticCode =
   | "non-operable-trigger"
   | "control-characters-removed"
   | "unmuted-autoplay"
-  | "embedded-image-not-packaged"
+  | "embedded-image-invalid"
   | "embedded-image-type-mismatch";
 
 export interface ExportDiagnostic {

@@ -23,7 +23,7 @@ export type PackagedImageResult =
   | { kind: "packaged"; path: string; mismatch?: { declared: string; actual: string } }
   /** Not an uploaded-style raster data URL (SVG, AVIF, BMP, a non-base64 URL…): exported as before, embedded. */
   | { kind: "not-packageable" }
-  /** Looked like an embedded raster image but isn't a valid one: stays embedded, with a warning. */
+  /** Looked like an embedded raster image but isn't a valid one: refused in separate files, warned in a single file. */
   | { kind: "rejected"; reason: string };
 
 /** Splits a `data:` URL into its declared media type and base64 payload, or says why it can't be packaged. */
@@ -63,9 +63,12 @@ function binaryToBytes(binary: string): Uint8Array {
  *    image-002.jpg… numbered in the order the export meets each distinct
  *    image, so the same document always gives the same names.
  *
- * A source that declares a supported raster type but fails 1–3 is not
- * packaged ("rejected"): the caller keeps it embedded, exactly as the
- * Canvas shows it, and reports a warning. Nothing is ever silently dropped.
+ * A source that declares a supported raster type but fails 1–3 is
+ * "rejected": the caller refuses a separate-files export and warns in a
+ * single-file one (BC-07.4, see buildExportDocument's checkedUrl). Nothing is
+ * ever silently dropped or written as a misleading file. Types it doesn't
+ * package (SVG, AVIF, BMP, non-base64) are "not-packageable" and exported as
+ * before: inert in every image context.
  */
 export function createEmbeddedImagePackager() {
   const byUrl = new Map<string, PackagedImageResult>();

@@ -171,3 +171,55 @@ test("a format 1 project exports its uploaded image while the original file stay
   await prompt.getByRole("button", { name: "Cancel" }).click();
   expect(await sha()).toBe(originalHash);
 });
+
+test("BC-07.4: repeated exports are identical; a real permission failure rolls back and keeps the previous export intact", async () => {
+  const { chmod, stat } = await import("node:fs/promises");
+  const site = path.join(folder, "Site");
+  const elsewhere = path.join(folder, "Elsewhere");
+  await mkdir(site);
+  await mkdir(elsewhere);
+  layoutry = await launchLayoutry();
+  const { app, page } = layoutry;
+  const id = await insertImage(page);
+  await uploadInput(page).setInputFiles(imageFixture("upload-40x30.png"));
+  await expect.poll(() => canvasImage(page, id).getAttribute("src")).toBe(PNG);
+  await scriptFileDialogs(app, { open: [site, site, site, site, site, elsewhere, site] });
+  const dialog = await openSeparateExport(page);
+  const save = async (replace: boolean) => {
+    await dialog.getByRole("button", { name: "Save to Folder…" }).click();
+    if (replace) await dialog.getByRole("alertdialog").getByRole("button", { name: "Replace" }).click();
+  };
+
+  // Five exports into the same folder (four of them replacing): byte-identical every time, no temporary files left.
+  const snapshots: string[] = [];
+  for (let round = 0; round < 5; round += 1) {
+    await save(round > 0);
+    await expect(transferStatus(page)).toContainText("1 image file in assets");
+    const files = await tree(site);
+    expect(files).toEqual(["assets/image-001.png", "index.html", "styles.css"]);
+    snapshots.push((await Promise.all(files.map((name) => readFile(path.join(site, name))))).map((bytes) => createHash("sha256").update(bytes).digest("hex")).join(","));
+  }
+  expect(new Set(snapshots).size).toBe(1);
+
+  // A new destination gets its own complete copy.
+  await save(false);
+  await expect(transferStatus(page)).toContainText("to “Elsewhere”");
+  expect(await tree(elsewhere)).toEqual(["assets/image-001.png", "index.html", "styles.css"]);
+
+  // A real failure: Windows refuses to rename over a read-only file (EPERM). The export must not report success,
+  // must put back what it replaced, and must leave the previous export exactly as it was.
+  const previousHtml = await readFile(path.join(site, "index.html"));
+  const locked = path.join(site, "assets", "image-001.png");
+  await chmod(locked, 0o444);
+  try {
+    await save(true);
+    await expect(dialog.getByRole("alert")).toContainText("image-001.png", { timeout: 15_000 });
+    await expect(dialog.getByRole("alert")).toContainText("Nothing was exported");
+    expect(await tree(site)).toEqual(["assets/image-001.png", "index.html", "styles.css"]);
+    expect((await readFile(path.join(site, "index.html"))).equals(previousHtml)).toBe(true);
+    expect((await readFile(locked)).equals(imageFixtureBytes("upload-40x30.png"))).toBe(true);
+    expect((await stat(locked)).mode & 0o200).toBe(0);
+  } finally {
+    await chmod(locked, 0o666);
+  }
+});

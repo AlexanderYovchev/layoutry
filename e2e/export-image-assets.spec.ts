@@ -189,30 +189,73 @@ test("Single HTML file still embeds uploaded images and stays one complete file"
   await site.close();
 });
 
-test("an embedded image that isn't valid stays embedded with a warning, and the dialog is keyboard-operable", async ({ page }) => {
-  const fake = `data:image/png;base64,${Buffer.from("<script>alert(1)</script>").toString("base64")}`;
-  await importDocument(page, { id: "page-root", tag: "page", children: [{ id: "img-png", tag: "img", src: PNG, displayName: "Real" }, { id: "img-fake", tag: "img", src: fake, displayName: "Fake" }] }, "img-png");
+
+test("BC-07.4: an invalid embedded image blocks Separate files, Single HTML file warns, and no embedded payload ever runs", async ({ page }) => {
+  const svgScript = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" onload="window.top.__bc074 = 1"><script>window.top.__bc074 = 2</script><rect width="10" height="10"/></svg>';
+  const svg = `data:image/svg+xml;base64,${Buffer.from(svgScript).toString("base64")}`;
+  const fake = `data:image/png;base64,${Buffer.from("<!doctype html><script>window.top.__bc074 = 3</script>").toString("base64")}`;
+  const document: EditorElementNode = {
+    id: "page-root",
+    tag: "page",
+    children: [
+      { id: "img-png", tag: "img", src: PNG, displayName: "Real" },
+      { id: "img-fake", tag: "img", src: fake, displayName: "Fake" },
+      { id: "img-svg", tag: "img", src: svg, displayName: "Vector" },
+      { id: "panel", tag: "div", background: { image: svg }, children: [{ id: "panel-text", tag: "p", text: "Panel" }] },
+    ],
+  };
+  await importDocument(page, document, "img-png");
+  // The editor itself shows them as images only.
+  expect(await page.evaluate(() => Reflect.get(window, "__bc074"))).toBeUndefined();
+
   await page.getByRole("button", { name: "Export Code" }).click();
   const dialog = exportDialog(page);
   await expect(dialog.getByTestId("export-code")).toBeVisible();
-  // Keyboard: arrow to Separate files, then reach the ZIP button with Tab.
+  // Single HTML file: exported, with an accurate warning for the broken one.
+  const diagnostics = dialog.getByRole("list", { name: "Export diagnostics" });
+  await expect(diagnostics).toContainText("isn't a valid image");
+  await expect(diagnostics).toContainText("browsers will show it as a broken image");
+  const downloaded = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "Download index.html" }).click();
+  await (await downloaded).saveAs(path.join(workDir, "index.html"));
+
+  // Separate files: refused, naming the problem; nothing can be downloaded.
+  await dialog.getByLabel("Separate files").check();
+  await expect(dialog.getByText("This design can't be exported until the errors below are fixed.")).toBeVisible();
+  await expect(diagnostics).toContainText("can't be exported as a file because its data is not a PNG, JPEG, GIF or WebP image. Replace or remove this image");
+  await expect(dialog.getByRole("button", { name: /^Download/ }).first()).toBeDisabled();
+  await page.keyboard.press("Escape");
+
+  // The single-file export, opened from disk: the real image works, the fake one is broken, and nothing ran.
+  const site = await openExported(page, workDir);
+  await site.waitForLoadState("load");
+  expect(await exportedImage(site, "Real")).toMatchObject({ width: 40, height: 30 });
+  expect(await site.locator('img[alt="Fake"]').evaluate((image: HTMLImageElement) => image.decode().then(() => "decoded", () => "broken"))).toBe("broken");
+  expect(await exportedImage(site, "Vector")).toMatchObject({ width: 10, height: 10 });
+  expect(await site.evaluate(() => Reflect.get(window, "__bc074"))).toBeUndefined();
+  await site.close();
+  expect(await page.evaluate(() => Reflect.get(window, "__bc074"))).toBeUndefined();
+});
+
+test("the export dialog is keyboard-operable: choose Separate files with the arrow keys and download the ZIP with Enter", async ({ page }) => {
+  await importDocument(page, { id: "page-root", tag: "page", children: [{ id: "img-png", tag: "img", src: PNG, displayName: "Real" }] }, "img-png");
+  await page.getByRole("button", { name: "Export Code" }).click();
+  const dialog = exportDialog(page);
+  await expect(dialog.getByTestId("export-code")).toBeVisible();
   await dialog.getByLabel("Single HTML file").focus();
   await page.keyboard.press("ArrowRight");
   await expect(dialog.getByLabel("Separate files")).toBeChecked();
   await expect(dialog.getByRole("list", { name: /exported as 1 image file/ })).toContainText("assets/image-001.png");
-  await expect(dialog.getByRole("list", { name: "Export diagnostics" })).toContainText("left embedded in the page");
   const zipButton = dialog.getByRole("button", { name: "Download website (.zip)" });
   for (let step = 0; step < 30 && !(await zipButton.evaluate((element) => element === document.activeElement)); step += 1) await page.keyboard.press("Tab");
   await expect(zipButton).toBeFocused();
   const downloaded = page.waitForEvent("download");
   await page.keyboard.press("Enter");
-  const zipPath = path.join(workDir, "fake.zip");
+  const zipPath = path.join(workDir, "keyboard.zip");
   await (await downloaded).saveAs(zipPath);
-  const folder = path.join(workDir, "fake");
+  const folder = path.join(workDir, "keyboard");
   execFileSync(process.platform === "win32" ? "cmd" : "mkdir", process.platform === "win32" ? ["/c", "mkdir", folder] : ["-p", folder]);
   extract(zipPath, folder);
   expect(listTree(folder).sort()).toEqual(["assets/image-001.png", "index.html", "styles.css"]);
-  const html = readFileSync(path.join(folder, "index.html"), "utf8");
-  expect(html).toContain(`src="${fake}" alt="Fake"`);
-  expect(html).toContain(`src="assets/image-001.png" alt="Real"`);
+  await expect(dialog.getByTestId("export-transfer-status")).toContainText("Unzip it and open index.html");
 });

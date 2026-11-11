@@ -128,6 +128,8 @@ describe("Image section upload (BC-07.2)", () => {
     const click = vi.spyOn(input(), "click");
     fireEvent.click(busy);
     expect(click).not.toHaveBeenCalled();
+    // The PNG data check runs first; wait until the slow decoder is really called.
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
     await act(async () => finish({ width: 40, height: 30 }));
     await waitFor(() => expect(src(imageId)).toBe(PNG_DATA_URL));
     expect(screen.getByRole("button", { name: IMAGE_UPLOAD_COPY.replace })).toHaveFocus();
@@ -143,9 +145,29 @@ describe("Image section upload (BC-07.2)", () => {
     await screen.findByRole("button", { name: IMAGE_UPLOAD_COPY.reading });
     rerender(<Harness id={other.id} decoder={slowDecode} />);
     const before = store().document;
+    // The PNG data check runs first; wait until the slow decoder is really called.
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
     await act(async () => finish({ width: 40, height: 30 }));
     expect(store().document).toBe(before);
     expect(screen.getByRole("button", { name: IMAGE_UPLOAD_COPY.upload })).toBeInTheDocument();
+  });
+
+  it("BC-07.4: a URL typed while the file is read wins; the late upload is refused with an alert", async () => {
+    let finish!: (size: { width: number; height: number }) => void;
+    const slowDecode: DecodeImage = () => new Promise((resolve) => (finish = resolve));
+    render(<Harness id={imageId} decoder={slowDecode} />);
+    choose(pngFile());
+    await screen.findByRole("button", { name: IMAGE_UPLOAD_COPY.reading });
+    const field = screen.getByRole("textbox", { name: "Source URL" });
+    fireEvent.change(field, { target: { value: "https://example.com/typed.png" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    const history = store().past.length;
+    // The PNG data check runs first; wait until the slow decoder is really called.
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
+    await act(async () => finish({ width: 40, height: 30 }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The image's source changed while the file was being read");
+    expect(src(imageId)).toBe("https://example.com/typed.png");
+    expect(store().past.length).toBe(history);
   });
 
   it("closing the section (unmount) during a read drops the result", async () => {
@@ -156,6 +178,8 @@ describe("Image section upload (BC-07.2)", () => {
     await screen.findByRole("button", { name: IMAGE_UPLOAD_COPY.reading });
     unmount();
     const before = store().document;
+    // The PNG data check runs first; wait until the slow decoder is really called.
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
     await act(async () => finish({ width: 40, height: 30 }));
     expect(store().document).toBe(before);
   });

@@ -129,15 +129,60 @@ describe("exportHtmlCss image packaging (BC-07.3)", () => {
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "embedded-image-type-mismatch", severity: "info", nodeId: "img-1", property: "src" }));
   });
 
-  it("an embedded image that isn't a valid image stays embedded with a warning — never dropped, never a broken file reference", () => {
-    const fake = dataUrl("image/png", Buffer.from("<script>alert(1)</script>"));
-    const result = exportHtmlCss({ id: "page-root", tag: "page", children: [{ id: "img-1", tag: "img", src: fake, displayName: "Fake" }] }, { mode: "separate" });
-    expect(result.ok).toBe(true);
-    expect(result.assetFiles).toEqual([]);
-    expect(htmlOf(result)).toContain(`src="${fake}" alt="Fake"`);
-    expect(result.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "embedded-image-not-packaged", severity: "warning", nodeId: "img-1", property: "src", message: expect.stringContaining("left embedded") }),
-    );
+  /**
+   * BC-07.4 fallback audit: every kind of embedded image source an older or
+   * hand-edited project can hold, and what each export mode does with it.
+   * "packaged" = a file in assets/; "embedded" = the source exactly as
+   * authored; "refused" = an error that blocks the export; "dropped" = the
+   * URL policy removes it (pre-existing, with its own warning).
+   */
+  describe("invalid and unusual embedded sources (BC-07.4 fallback audit)", () => {
+    const jpegBytes = fixture("upload-32x24.jpg");
+    const svgScript = '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><script>alert(1)</script></svg>';
+    const cases: [string, string, "packaged" | "refused" | "embedded" | "dropped", "embedded" | "embedded-warned" | "dropped", string | null][] = [
+      // name, src, separate outcome, standalone outcome, diagnostic code
+      ["a valid legacy PNG", PNG, "packaged", "embedded", null],
+      ["a JPEG declared as PNG", dataUrl("image/png", jpegBytes), "packaged", "embedded", "embedded-image-type-mismatch"],
+      ["malformed base64 declared PNG", "data:image/png;base64,iVBOR*w0KGgo=", "refused", "embedded-warned", "embedded-image-invalid"],
+      ["a truncated JPEG", dataUrl("image/jpeg", jpegBytes.subarray(0, 300)), "refused", "embedded-warned", "embedded-image-invalid"],
+      ["a truncated WebP", dataUrl("image/webp", fixture("upload-24x16.webp").subarray(0, 200)), "refused", "embedded-warned", "embedded-image-invalid"],
+      ["HTML and script declared as PNG", dataUrl("image/png", Buffer.from("<!doctype html><script>alert(1)</script>")), "refused", "embedded-warned", "embedded-image-invalid"],
+      ["oversized decoded data", "data:image/png;base64," + "A".repeat(Math.ceil((16 * 1024 * 1024) / 3) * 4 + 4), "refused", "embedded-warned", "embedded-image-invalid"],
+      ["an SVG data URL with script", `data:image/svg+xml;base64,${Buffer.from(svgScript).toString("base64")}`, "embedded", "embedded", null],
+      ["an unsupported format (BMP)", "data:image/bmp;base64,Qk0=", "embedded", "embedded", null],
+      ["an HTML data URL", "data:text/html,<script>alert(1)</script>", "dropped", "dropped", "unsafe-url"],
+    ];
+
+    it.each(cases)("%s", (_name, src, separateOutcome, standaloneOutcome, code) => {
+      const document: EditorElementNode = { id: "page-root", tag: "page", children: [{ id: "img-1", tag: "img", src, displayName: "Case" }] };
+      const separate = exportHtmlCss(document, { mode: "separate" });
+      const standalone = exportHtmlCss(document, { mode: "standalone" });
+      const diagnostic = (result: ReturnType<typeof exportHtmlCss>) => result.diagnostics.find((entry) => entry.nodeId === "img-1" && entry.property === "src");
+
+      if (separateOutcome === "refused") {
+        expect(separate.ok).toBe(false);
+        expect(separate.files).toEqual([]);
+        expect(separate.assetFiles).toEqual([]);
+        expect(diagnostic(separate)).toMatchObject({ code, severity: "error", message: expect.stringContaining("Replace or remove this image") });
+      } else {
+        expect(separate.ok).toBe(true);
+        const html = htmlOf(separate);
+        if (separateOutcome === "packaged") expect(html).toMatch(/src="assets\/image-001\.(png|jpg)" alt="Case"/);
+        if (separateOutcome === "embedded") expect(html).toContain(`src="${src}" alt="Case"`);
+        if (separateOutcome === "dropped") expect(html).not.toContain("data:text/html");
+        if (code) expect(diagnostic(separate)).toMatchObject({ code });
+        else expect(diagnostic(separate)).toBeUndefined();
+      }
+
+      expect(standalone.ok).toBe(true);
+      expect(standalone.assetFiles).toEqual([]);
+      const standaloneHtml = htmlOf(standalone);
+      if (standaloneOutcome === "dropped") expect(standaloneHtml).not.toContain("data:text/html");
+      else expect(standaloneHtml).toContain(`src="${src}" alt="Case"`);
+      if (standaloneOutcome === "embedded-warned") expect(diagnostic(standalone)).toMatchObject({ code: "embedded-image-invalid", severity: "warning", message: expect.stringContaining("broken image") });
+      // An embedded image never makes a single-file export claim it's a different type.
+      if (standaloneOutcome === "embedded") expect(diagnostic(standalone)).toBeUndefined();
+    });
   });
 
   it("a refused export ships no asset files", () => {

@@ -1,0 +1,820 @@
+LAYOUTRY — BC-07.4: FINAL LOCAL IMAGE UPLOAD & EXPORT REGRESSION QA
+=====================================================================
+Date: 2026-11-11
+Type: Final regression, security audit, corrective fixes, closure recommendation
+Base commit: 5ad4087 (BC-07.3). Nothing committed.
+Author: Claude (implementation engineer), for ChatGPT QA review
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+BC-07 was re-verified end to end. That covered real behaviour in Chromium,
+Firefox, WebKit and Electron, a cross-engine security matrix, a parity
+matrix at five widths, document immutability, stress and resource
+lifecycle, and real-folder failure recovery.
+
+Three real defects were found and fixed:
+
+BC07-A1 (Medium): damaged images passed upload validation in Firefox and
+WebKit.
+- A PNG with perfect structure but garbage compressed image data was
+  accepted in Firefox (shown blank) and in WebKit (stored, shown broken).
+- WebKit also accepted a GIF with garbage image data.
+- Cause: those engines' createImageBitmap is lenient.
+- Fix:
+  - PNG image data is now inflated with the browser's own zlib
+    (DecompressionStream) and must produce the bytes its header needs;
+  - every upload must also decode through an <img>, the path the Canvas,
+    Preview and export use. Its object URL is always revoked.
+- Now refused in all three engines.
+
+BC07-C1 (Medium): a late upload overwrote newer intent.
+- If the user typed a Source URL (or undid that image's source) while an
+  upload was still reading, the finished upload silently replaced it.
+- Now the commit is refused unless the Image still has the source it had
+  when the upload started. The user gets an alert, and nothing changes.
+
+BC07-G1 (High-priority audit item): the invalid-embedded-image fallback.
+- BC-07.3 kept an invalid embedded raster image inline, with a warning,
+  in a Separate files export.
+- That is inert: no browser runs script from an image source, which is
+  proven below.
+- But it shipped a broken image in a "portable" site, which fails the
+  brief's condition 4 (no broken or misleading export).
+- Now:
+  - Separate files: an export-blocking error naming the element and how
+    to fix it.
+  - Single HTML file: the source is kept exactly as authored (as before
+    BC-07), with an accurate warning that it will show as a broken image.
+- SVG, AVIF and BMP data URLs keep their pre-BC-07 behaviour. An SVG
+  carrying onload and <script> was proven never to run, in the editor and
+  in the exported page.
+
+Validation:
+- typecheck (web and desktop) and ESLint are clean;
+- Vitest: 5710 passed, 1 skipped;
+- Chromium full suite: 257/257;
+- Firefox and WebKit BC-07 specs: 54/54;
+- Electron full suite twice, with the rebuilt bundle: 80 passed and 2
+  skipped each time;
+- production and desktop builds succeed.
+
+Recommendation: CLOSE BC-07.
+
+
+2. BC-07 MILESTONE SCOPE
+------------------------
+All approved decisions were verified unchanged:
+- PNG, JPEG, GIF and WebP;
+- 5 MB = 5,242,880 bytes per file;
+- 8192 px per side;
+- SVG refused;
+- data URLs in Image `src`;
+- project format 2 with no migration;
+- a size preflight before commit;
+- one Undo step per source change;
+- editable alt text (in displayName);
+- browser and Electron persistence;
+- a browser ZIP for Separate files with uploads;
+- an Electron folder export with assets/;
+- Single HTML file keeps images embedded;
+- deduplicated assets;
+- safe filesystem handling.
+
+Implementation paths:
+- inspector:
+  - components/InspectorImageSection.tsx
+  - components/InspectorImageUploadField.tsx
+  - components/InspectorMediaTextField.tsx
+  - hooks/useImageUpload.ts
+  - utils/validateImageUpload.ts
+  - utils/verifyPngImageData.ts (new)
+  - utils/commitImageUpload.ts
+  - utils/describeEmbeddedImage.ts
+  - utils/uploadedImageDetails.ts
+- lib: sniffRasterImage.ts, downloadBlob.ts, downloadTextFile.ts
+- editor:
+  - commands/documentCommands.ts (setImageAltText)
+  - stores/useEditorStore.ts (setElementAltText, documentSessionId, the
+    paste/duplicate guard)
+  - rules/documentSaveLimitGuard.ts
+- project: rules/projectSaveLimit.ts, utils/serializeProject.ts,
+  components/ProjectWorkspace.tsx
+- export:
+  - utils/packageEmbeddedImages.ts
+  - utils/buildExportDocument.ts
+  - utils/exportHtmlCss.ts
+  - utils/zipExportPackage.ts
+  - hooks/useExportCodeSession.ts
+  - components/ExportCodeDialog.tsx
+  - desktop/desktopExportFiles.ts
+  - types/*
+- desktop: export/exportFileService.ts, preload/preload.ts
+- canvas: ImageElement.tsx, unchanged (it renders `src` and
+  `alt=displayName`).
+
+
+3. VERIFICATION METHODOLOGY
+---------------------------
+- Production code only.
+  - Unit tests drive the real store, serializer, parser, exporter, packager,
+    ZIP builder and desktop service (on real temporary folders).
+  - Browser tests use the real UI: file input and chooser, Inspector,
+    Preview, the export dialog, real downloads.
+- Independent checks:
+  - ZIPs are extracted with Windows' own tar.exe (libarchive), a different
+    implementation from the writer;
+  - exported sites are opened from disk with every http(s) request
+    blocked;
+  - the desktop export is opened in a separate Chromium.
+- Reproduce, then fix: each defect was first shown by a probe or a failing
+  test, then fixed, then the same test was rerun across engines.
+- Temporary probes (e2e/zz-bc074-body-probe.spec.ts) and the temporary
+  cross-browser config were deleted. The desktop bundle was rebuilt before
+  the Electron runs counted here.
+
+
+4. UPLOAD FORMAT MATRIX
+-----------------------
+Per format, the evidence (all passing):
+
+| Check | PNG | JPEG | GIF | WebP |
+|---|---|---|---|---|
+| Picker filter | yes | yes | yes | yes |
+| Bytes sniffed | yes | yes | yes | yes |
+| MIME from bytes | yes | yes | yes | yes |
+| Data URL equals the file's base64 | yes | yes | yes | yes |
+| Canvas / Preview | yes | yes | yes | yes |
+| Save/reopen (browser library + reload, Electron file) | yes | yes | n/a | n/a |
+| Single file embeds | yes | yes | yes | yes |
+| Separate files packages | yes | yes | yes | yes |
+| Packaged bytes equal the original | yes | yes | yes | yes |
+| Alt preserved | yes | yes | yes | yes |
+| Undo/Redo | yes | yes | n/a | n/a |
+
+Save/reopen is covered in the browser for PNG and JPEG, and in Electron for
+PNG. The unit tests cover save/reopen and recovery for every format.
+
+Fixtures:
+- 40×30 PNG with alpha (transparency);
+- 32×24 JPEG;
+- 20×10 GIF, 2 frames;
+- 24×16 WebP;
+- 8192×1 PNG (dimension boundary);
+- an 1140×1140 PNG of about 5.0 MB, generated deterministically just
+  under 5 × 1024 × 1024 (size boundary);
+- the shapes above provide different aspect ratios.
+
+GIF animation: the packaged file decodes to 2 frames (Chromium
+ImageDecoder), and its bytes are identical.
+
+Tests:
+- unit: validateImageUpload, sniffRasterImage, useEditorStore.imageUpload;
+- e2e: image-upload, image-upload-security ("near-limit sizes"),
+  export-image-assets, image-parity;
+- Electron: image-upload, export-image-assets.
+
+
+5. FILE VALIDATION SECURITY MATRIX
+----------------------------------
+e2e/image-upload-security.spec.ts was run in Chromium, Firefox and WebKit
+(3/3 tests each). Every case below is refused with its message, and after
+each refusal:
+- the src is unchanged;
+- the project status is unchanged;
+- no history entry was added (one Undo returns straight to the
+  placeholder);
+- no script ran (a window flag stays unset).
+
+| Input | Message |
+|---|---|
+| SVG | "SVG images can't be uploaded" |
+| HTML renamed .png | "SVG images can't be uploaded" (markup detected) |
+| JavaScript renamed .jpg | "isn't a supported image" |
+| Text renamed .webp | "isn't a supported image" |
+| PNG reported as text/html | "isn't a supported image" |
+| PNG named .bmp | "isn't a supported image" |
+| BMP bytes | "isn't a supported image" |
+| PNG header with garbage body | "may be damaged" (BC07-A1, now in all engines) |
+| GIF with garbage LZW | "may be damaged" (BC07-A1, WebKit fixed) |
+| Truncated PNG, JPEG, GIF and WebP | "may be damaged" |
+| Empty file | "This file is empty" |
+| 8193 px wide | "This image is 8193 × 1 pixels…" |
+| More than 5 MB | refused before reading (unit and e2e) |
+| Zero or invalid dimensions | refused (unit) |
+| Corrupted base64 | refused at export (section 10); uploads never produce base64 the user controls |
+
+Accepted by design (bytes decide):
+- A JPEG named .gif and reported as image/webp is stored as image/jpeg.
+- A PNG+HTML polyglot (HTML after IEND) is accepted as the complete PNG it
+  is. It is shown only as an image, and its script never ran.
+
+Temporary resources: uploads create exactly one object URL each (the <img>
+decode check) and revoke it. Counted in the stress test: 71 created, 71
+revoked.
+
+
+6. PROJECT-SIZE BOUNDARY TESTS
+------------------------------
+The preflight uses documentFitsProjectFile:
+- formatProjectFileText, the very function serializeProject writes with;
+- worst-case metadata;
+- against the same maxFileCharacters that parseProjectFile enforces;
+- the desktop write limit is the same 16 Mi characters.
+
+Tests (commitImageUpload, projectSaveLimit, store and e2e):
+- small image: ok;
+- one about 5 MB: ok (e2e near-limit);
+- several up to the limit, then one more: refused with no change (unit
+  and e2e, 3 × 4.8 MB);
+- large replaced by smaller: ok, and the project shrinks;
+- small replaced by larger past the limit: refused;
+- replacement is measured as a replacement;
+- duplicate, copy/paste and container paste of large images: refused with
+  a notice past the limit (unit and e2e);
+- cut+paste: allowed;
+- near the limit, every state Undo and Redo can reach still saves
+  (verified state by state);
+- the project grows while a file is read: the late upload is measured
+  against the latest document and refused;
+- exact boundary: the largest payload that fits saves with the longest,
+  most-escaped name; one character more doesn't fit.
+
+Critical invariant holds: no BC-07 operation (upload, replace, paste or
+duplicate of embedded data) can create a state the save path rejects
+because of the image data it introduced.
+
+Outside BC-07 (pre-existing, documented in BC-07.2): data URLs typed into
+the Source URL or Background image fields, and Navigation "Add link"
+copying a link's background (BC-06). Save still refuses an oversized
+project with its existing error.
+
+
+7. ASYNC LIFECYCLE TESTS
+------------------------
+1. Selection changes to another Image: the result is dropped (component
+   test).
+2. The target is deleted: refused, "removed before the upload finished"
+   (unit).
+3. Projects switched: refused via documentSessionId (unit). The section
+   also unmounts and cancels.
+4. Inspector closed (unmount): dropped (component test).
+5. A second upload while reading: ignored by the ticket ref (component
+   test, the busy button).
+6. Undo of another edit while reading: kept, since the commit applies to
+   the latest document (unit).
+7. URL replaced manually while reading: the upload was applied over it.
+   FIXED (BC07-C1): refused with an alert, and the typed URL is kept (unit
+   and component tests, both failing before the fix).
+8. Navigating away: the same unmount path as 4. A page unload ends all
+   work.
+9. Picker cancelled: no change event or an empty list, so nothing happens
+   (component test).
+10. The same file twice: the input is cleared after each choice; the same
+    bytes add no history (unit test).
+
+No ghost Undo entries, no dirty-state changes on refusal (asserted by
+object identity), and no leaked object URLs (stress test).
+
+
+8. ALT TEXT TESTS
+-----------------
+- Covered: Inspector edit (one Undo step per commit, not per keystroke),
+  Canvas `alt`, Preview, Single HTML file, Separate files, save/reopen,
+  Undo/Redo, copy/paste, duplicate, replacement keeps the alt, an empty
+  value gives a decorative `alt=""`.
+- Escaping: `"`, `&`, `<`, `>` and `'` become `&quot; &amp; &lt; &gt; &#39;`
+  exactly once (no double escaping). Café-style Unicode is kept.
+- The Inspector field is a single-line input, so newlines can't be
+  entered; the trimmed value is stored.
+- Alt is printed through escapeHtmlAttribute and the Canvas sets it as a
+  React attribute, so it is never parsed as HTML or JavaScript.
+- Tests:
+  - useEditorStore.imageUpload;
+  - InspectorImageSection.upload;
+  - exportHtmlCss.packaging;
+  - exportHtmlCss.immutability (Unicode, quotes, &, <tag>);
+  - image-upload e2e (`Purple &amp; yellow &quot;card&quot;`);
+  - export-image-assets e2e;
+  - image-parity.
+
+
+9. EXPORT PACKAGING MATRIX
+--------------------------
+Unit (exportHtmlCss.packaging) and e2e (export-image-assets, image-parity):
+- one image;
+- several different images;
+- identical bytes on several elements, and on img + background + poster,
+  are one file;
+- duplicated elements;
+- mixed with remote and relative URLs (unchanged);
+- nested containers;
+- an image targeted by an interaction (the toggle works on the extracted
+  site);
+- custom CSS (opacity, object-fit, border, radius);
+- alt text;
+- two 4.6 MB images with 22 references (performance test).
+
+Verified:
+- asset count and extensions;
+- deterministic names (image-001… in document order, byte-identical
+  repeat ZIPs);
+- no collisions;
+- relative paths resolve from HTML and from styles.css;
+- correct escaping;
+- binary bytes equal;
+- rendering;
+- no missing or duplicate assets.
+
+The project's data URLs are unchanged after export (immutability, section
+13).
+
+
+10. INVALID EMBEDDED IMAGE FALLBACK AUDIT (HIGH PRIORITY)
+---------------------------------------------------------
+What reaches packaging:
+- only image-context sources (<img src>, <video poster>, CSS
+  background-image) that the URL policy already accepts as
+  data:image/(png|jpeg|jpg|gif|webp|avif|bmp|x-icon|svg+xml);
+- data:text/html and other types are dropped by the URL policy before
+  that, with "unsafe-url".
+- An upload can never produce invalid data. Invalid data can only come
+  from older or hand-edited project files, or text typed into a URL
+  field.
+
+Can anything execute? No.
+- Browsers never run script from an image source, SVG included (scripts
+  and onload are disabled in image documents).
+- Proven in e2e (all engines) with an SVG carrying onload plus <script>,
+  and with an HTML/script payload declared as PNG, in:
+  - the editor Canvas;
+  - Preview;
+  - the downloaded Single HTML file opened from disk.
+  The window flag the payloads would set stays unset.
+- The fallback bypasses no upload restriction: it never creates files.
+  Rejected data now creates no file in any mode.
+
+Old behaviour (BC-07.3): Separate files kept invalid raster data inline,
+with a warning. That was inert, but it shipped a broken image in a
+"portable" site (fails condition 4). FIXED (BC07-G1).
+
+New behaviour, per case. Unit test "invalid and unusual embedded sources
+(BC-07.4 fallback audit)", plus e2e:
+
+| Case | Separate files | Single HTML file |
+|---|---|---|
+| Valid legacy raster PNG | EXTRACTED (assets/image-001.png) | embedded |
+| JPEG declared as PNG | EXTRACTED as .jpg + info diagnostic | embedded |
+| Malformed base64 (declared PNG) | BLOCKED: error | PRESERVED + warning |
+| Truncated JPEG | BLOCKED | PRESERVED + warning |
+| Truncated WebP | BLOCKED | PRESERVED + warning |
+| HTML/script declared as PNG | BLOCKED | PRESERVED + warning |
+| Oversized decoded data (>16 MiB) | BLOCKED | PRESERVED + warning |
+| SVG data URL with script | PRESERVED (inert) | PRESERVED (inert) |
+| Unsupported format (BMP) | PRESERVED | PRESERVED |
+| HTML data URL | dropped by URL policy (warning) | dropped by URL policy (warning) |
+
+Messages:
+- BLOCKED: "The embedded image in src can't be exported as a file because
+  <reason>. Replace or remove this image, then export again." The dialog
+  shows "This design can't be exported until the errors below are fixed"
+  and every Download/Save button is disabled.
+- PRESERVED + warning: "…isn't a valid image (<reason>). It was exported
+  as it is, and browsers will show it as a broken image. Replace or
+  remove this image."
+
+The Single HTML file keeps legacy content as it always was; it stays one
+self-contained file, and the user is told accurately. The SVG, AVIF and
+BMP preservation is the pre-BC-07 policy, safe as shown above.
+
+Documented in docs/architecture/export-engine.md.
+
+
+11. BROWSER ZIP TEST RESULTS
+----------------------------
+export-image-assets (Chromium, Firefox, WebKit) and image-upload-stress:
+1. The ZIP opens with tar.exe.
+2. No duplicate entries (builder tests).
+3. No traversal entries (builder and allow-list tests).
+4. index.html present.
+5. styles.css present.
+6. script.js present exactly when there are interactions.
+7. Every asset present.
+8. Bytes equal.
+9. References resolve from the extracted folder.
+10. Opens offline.
+11. Styles render (object-fit, opacity, background).
+12. The interaction toggles.
+13. Alt preserved.
+
+Failure handling: a browser refusal or a build failure is reported and
+nothing downloads (component test). A stale preview blocks it.
+
+Pages without uploads keep "Download all files" (unchanged test in
+ExportCodeDialog.test).
+
+10 repeated ZIP exports: all 2,475 bytes, identical.
+
+
+12. ELECTRON FILESYSTEM SAFETY RESULTS
+--------------------------------------
+Real temporary folders throughout: the Electron spec, plus the service unit
+tests on real folders.
+- Empty folder: index.html, styles.css and assets/ are created.
+- Folder with a previous export: the conflict lists every file. Keep
+  writes nothing; Replace writes them.
+- A cancelled destination: "Save cancelled. Nothing was saved."
+- Unrelated user files (notes.txt, assets/logo.svg): never touched.
+- An existing assets folder is reused.
+- A file named `assets`: refused with a clear error; nothing written.
+- A junction at assets: refused before any read or write (the target
+  stays empty).
+- Real permission failure (new, BC-07.4): a read-only
+  assets/image-001.png (Windows refuses the rename, EPERM).
+  - The export reports the failure ("…Nothing was exported…").
+  - The replaced files are restored, the previous export is
+    byte-identical, and the read-only file is unchanged.
+- Injected write and rename failures (unit): staging cleanup, rollback,
+  and removal of a created assets folder only if it is empty.
+- Repeated export ×5 into the same folder: byte-identical and no
+  temporary files left.
+- Export to a new destination: a complete copy.
+- The exported folder opens in a separate offline Chromium.
+- IPC: unchanged channels and keys. Asset names follow the pattern, the
+  bytes' signature matches the name, there are size and count limits, and
+  no images go to a single-file destination. Nine invalid payloads are
+  refused (unit).
+- Success is reported only after every file is read back and its hash
+  verified.
+
+
+13. DOCUMENT IMMUTABILITY RESULTS
+---------------------------------
+exportHtmlCss.immutability.test.ts: a document with nested images, alt
+text, CSS, an interaction and a selection is exported in both modes and
+zipped, twice, then again after Undo×2 and after Redo. Each time, these are
+compared:
+
+| Compared | Result |
+|---|---|
+| Document object | identical (toBe) |
+| past / future stacks | identical, and their JSON identical |
+| Selection, persistedDocument | identical |
+| Serialized project text | identical |
+| Repeat exports | equal |
+
+Result: zero authored-document differences. The dialog test and the
+browser and Electron e2e tests also assert the unchanged status, Undo
+state and src.
+
+
+14. CANVAS / PREVIEW / EXPORT PARITY
+------------------------------------
+e2e/image-parity.spec.ts, in Chromium, Firefox and WebKit (3/3): six images
+at 320, 375, 768, 1024 and 1440 px. The images are:
+- a transparent PNG with cover, a 3 px border, 12 px radius and opacity
+  0.7;
+- a JPEG with contain;
+- an animated GIF;
+- a hidden WebP;
+- a display:none PNG;
+- an 8192×1 PNG.
+
+Four surfaces:
+- Design and Preview (sheet pinned to the width);
+- the Single HTML file;
+- the portable folder (assets/ from disk, offline).
+
+Each must match within 1 px: natural size, frame position and size,
+image size, object-fit, border, radius, opacity, visibility and display.
+
+All 20 surface/width combinations per engine match.
+
+Intentional differences:
+- source strings (data URL vs assets/ path), by design;
+- a display:none box has no geometry, so only its display is compared.
+
+
+15. LEGACY PROJECT COMPATIBILITY
+--------------------------------
+- Format 1 desktop file:
+  - upload, then File › Save shows "Upgrade Project File?"; Save As
+    (Recommended) leaves the original SHA-256 unchanged and writes
+    format 2 (Electron image-upload);
+  - export of a format 1 file with an upload: the original is unchanged,
+    and Save still prompts; Cancel leaves the original unchanged
+    (Electron export-image-assets);
+  - the format 1 → 2 migration is untouched (projectFormatMigrations
+    suite).
+- Remote, relative and SVG-placeholder sources and no-image projects:
+  unchanged (unit and Electron).
+- Legacy embedded raster images: extracted if valid; blocked or warned if
+  invalid (section 10).
+- No format v3. Serialization changed only by the BC-07.2 refactor, which
+  is output-identical.
+
+
+16. ACCESSIBILITY AUDIT
+-----------------------
+- Upload / Replace button: visible name, and the hint is linked by
+  aria-describedby.
+- Hidden input: aria-label "Upload image file" (the inspector-final-
+  regression name check passes).
+- Remove: aria-label "Remove uploaded image".
+- Alt text: visible label, plus helper text linked by aria-describedby.
+- Errors: role=alert. The busy state: aria-busy plus a polite
+  role=status.
+- Export warnings and errors: the diagnostics list. Transfer errors use
+  role=alert.
+- Keyboard (e2e, all engines):
+  - Shift+Tab path Source URL → Reset → Upload;
+  - Enter and Space open the picker;
+  - focus is kept through reading, success and error;
+  - Remove moves focus back to Upload.
+- Export dialog by keyboard: ArrowRight to Separate files, Tab to the
+  ZIP button, Enter.
+- No traps (the dialog's own trap test is pre-existing). No new motion,
+  so reduced-motion is unaffected.
+
+
+17. PERFORMANCE AND MEMORY RESULTS
+----------------------------------
+Environment: Windows 10, 16 threads, 7.9 GB RAM. Playwright Chromium
+(headless) with 4 workers; times include UI waits.
+
+image-upload-stress (Chromium):
+
+| Operation | Time |
+|---|---|
+| 30 upload → replace → remove cycles (90 operations) | 6,784 ms |
+| 20 Preview round trips | 4,211 ms |
+| 10 ZIP exports | 977 ms |
+
+- Object URLs: 71 created, 71 revoked. That is 60 for upload decode
+  checks, 1 extra upload and 10 downloads, the last revoked after its
+  10 s delay.
+- Window listeners over 20 Preview round trips: net 0.
+- JS heap after forced GC: 19.1 MB at start, 21.0 MB after 61 uploads,
+  21.4 MB at the end. That is +2.3 MB in total, with no sustained growth.
+  The uncapped Undo history keeps each uploaded string by design; these
+  fixtures are small.
+
+Packaging (Vitest), two 4.6 MB images with 22 references: export 283 ms,
+ZIP 64 ms, a 9.24 MB package.
+
+Electron repeated folder exports ×5: identical output.
+
+
+18. CHROMIUM RESULTS
+--------------------
+npx playwright test (full): 257 passed, 0 failed (4.7 min).
+
+That includes the new image-upload-security (3), image-parity (1),
+image-upload-stress (1) and the updated export-image-assets (5).
+
+
+19. FIREFOX RESULTS
+-------------------
+BC-07 specs: all pass (Firefox and WebKit together 54/54):
+- image-upload 6, image-upload-security 3, export-image-assets 5,
+  image-parity 1, project-persistence 6, project-recovery.
+
+Known pre-existing failures: 2 in export-workflow (section 27).
+
+
+20. WEBKIT RESULTS
+------------------
+BC-07 specs: all pass (in the 54/54 above), including the BC07-A1 garbage
+PNG and GIF now refused.
+
+Known pre-existing failures: 4 in export-workflow and 4 in
+preview-export-parity (section 27).
+
+
+21. ELECTRON RESULTS
+--------------------
+After `npm run desktop:build` with every BC-07.4 change:
+- npx playwright test -c playwright.desktop.config.ts:
+  - run 1: 80 passed, 2 skipped, 0 failed (3.3 min);
+  - run 2: 80 passed, 2 skipped, 0 failed (3.1 min).
+- The new and updated specs are included: export-image-assets (4, with
+  repeated exports and a real EPERM rollback) and image-upload (2).
+
+Flake investigation (not dismissed):
+- e2e/desktop/preview-parity.spec.ts:50 failed once in BC-07.3's full run
+  (1 of 3 full runs so far; 0 of 2 today; 6/6 isolated).
+- It plays real video and polls currentTime and pause positions
+  (`time(loop) > 0.5`, `toBeCloseTo(kept, 1)` after resume). That timing
+  depends on media decoding under single-worker suite load.
+- It doesn't involve images, uploads or export, so it isn't BC-07 code.
+  The same media-timing family is recorded in BC-02.
+- The failure's artifacts were overwritten by the BC-07.3 rerun, so its
+  exact assertion isn't known.
+- Recommendation: track it as a pre-existing BC-02 test-stability item.
+
+
+22. FULL UNIT TEST RESULTS
+--------------------------
+npx vitest run: 380 files, 5710 passed, 1 skipped (designed skip). BC-07.3
+had 378 / 5689.
+
+
+23. BUILD / TYPECHECK / LINT RESULTS
+------------------------------------
+- npx tsc --noEmit -p tsconfig.json: clean.
+- npx tsc --noEmit -p desktop/tsconfig.json: clean.
+- npx eslint .: clean.
+- npm run build: succeeded.
+- npm run desktop:build: succeeded.
+
+
+24. CORRECTIVE FIXES
+--------------------
+BC07-A1 (upload validation, Firefox/WebKit):
+- Reproduced by a probe in 3 engines: the garbage PNG was accepted in
+  Firefox and WebKit; the garbage GIF in WebKit.
+- New: src/features/inspector/utils/verifyPngImageData.ts. IDAT is
+  inflated with DecompressionStream("deflate"), output only counted, and
+  must reach the header's filtered size (Adam7-aware).
+- validateImageUpload: runs it for PNG; decodeImageWithBrowser adds an
+  <img> decode (object URL revoked in finally).
+- Tests:
+  - verifyPngImageData.test (6);
+  - e2e image-upload-security garbage cases, which fail in Firefox/WebKit
+    without the fix (probe evidence).
+- Rerun in 3 engines: refused everywhere.
+
+BC07-C1 (async lifecycle):
+- The failing test was written first: commitImageUpload "a source
+  changed while it was reading…" returned ok:true and overwrote.
+- Fix:
+  - commitImageUpload refuses when the node's src ≠ startSrc
+    (IMAGE_COMMIT_MESSAGES.sourceChanged);
+  - useImageUpload captures startSrc at start.
+- Tests: the unit test plus the component test "a URL typed while the
+  file is read wins".
+- The component slow-decode tests now wait until the decoder is really
+  called, so their timing is deterministic with the new PNG step.
+  Assertions unchanged.
+
+BC07-G1 (fallback policy):
+- buildExportDocument now always validates embedded rasters.
+- `embedded-image-invalid` is an error in Separate files and a warning in
+  Single HTML file. It replaces "embedded-image-not-packaged".
+- Tests:
+  - the unit fallback matrix (10 cases × 2 modes);
+  - e2e "an invalid embedded image blocks Separate files, Single HTML file
+    warns, and no embedded payload ever runs";
+  - the old warning-only tests were updated to the new policy.
+- Docs updated.
+
+
+25. FINAL DEFECT REGISTER
+-------------------------
+BC-07-A Upload validation: FIXED (BC07-A1).
+- Evidence: sections 5 and 24; 3-engine security matrix.
+- Coverage: unit, plus e2e in 3 engines.
+- Close.
+
+BC-07-B Project-size integrity: PASS.
+- Evidence: section 6; exact-boundary, replace, Undo/Redo state walk,
+  grow-while-reading, paste/duplicate.
+- Close.
+
+BC-07-C Async upload lifecycle: FIXED (BC07-C1).
+- Evidence: section 7; all 10 scenarios.
+- Close.
+
+BC-07-D Alt text/accessibility: PASS.
+- Evidence: sections 8 and 16; escaping, keyboard, ARIA, the name check.
+- Close.
+
+BC-07-E Browser export packaging: PASS.
+- Evidence: section 11; tar extraction, offline open, 3 engines, repeat
+  identity.
+- Close.
+
+BC-07-F Electron export safety: PASS.
+- Evidence: section 12; real folders, real EPERM rollback, junction/file
+  refusal, IPC validation.
+- Close.
+
+BC-07-G Invalid embedded fallback: FIXED (BC07-G1).
+- Evidence: section 10; per-case table; no-execution proof in 3 engines.
+- Close.
+
+BC-07-H Canvas/Preview/Export parity: PASS.
+- Evidence: section 14; 5 widths × 4 surfaces × 3 engines.
+- Close.
+
+BC-07-I Legacy compatibility: PASS.
+- Evidence: section 15; v1 Save As protection, export of a v1 file.
+- Close.
+
+BC-07-J Performance/memory: PASS.
+- Evidence: section 17; no URL or listener leaks, flat heap, identical
+  output.
+- Close.
+
+No category is OPEN or NOT TESTED.
+
+
+26. REMAINING LIMITATIONS
+-------------------------
+- Export can't decode images (it is synchronous), so a legacy data URL
+  that is structurally valid but has a garbage body (only possible from a
+  hand-edited file, or a pre-BC-07.4 upload in Firefox/WebKit) is packaged
+  byte-for-byte. It renders exactly as it did on the Canvas.
+- A PNG+HTML polyglot is accepted as the valid PNG it is. It is inert in
+  every image context.
+- Not guarded (pre-existing): data URLs typed into the URL fields, and
+  BC-06 Add link copying a background data URL. Save refuses an oversized
+  project with its existing error.
+- File names are shown for the session only. Format 2 has no field for
+  them, by decision.
+- The desktop export writes a folder, with no ZIP. Images from an older
+  export with more images stay unused in assets/; Layoutry never deletes
+  files it didn't write in that export.
+- The uncapped Undo history keeps replaced images in memory, as before.
+- Windows has no atomic multi-file replace: staged renames with rollback.
+
+
+27. KNOWN PRE-EXISTING FAILURES
+-------------------------------
+Firefox/WebKit (these specs are Chromium-only by config):
+- export-workflow:
+  - Firefox: "copies the exact text", "fully keyboard operable";
+  - WebKit: "opens from File › Export…" (focus after click), "copies the
+    exact text", "downloads a single HTML file…", "downloads separate
+    files…".
+- preview-export-parity (WebKit; Playwright's Windows WebKit loads no
+  media): 140, 174, 372 and 414.
+
+Evidence:
+- the same 10, test for test, reproduced at a31387d (before BC-07) in a
+  temporary git worktree during BC-07.2;
+- identical again in BC-07.3 and today (34 passed, 10 failed).
+- None involves upload, packaging or the BC-07 dialog additions.
+
+Electron: preview-parity, the media-timing flake in section 21.
+
+
+28. SOURCE FILES CHANGED (BC-07.4)
+----------------------------------
+- src/features/inspector/utils/verifyPngImageData.ts (new)
+- src/features/inspector/utils/validateImageUpload.ts (PNG check, <img>
+  decode)
+- src/features/inspector/utils/commitImageUpload.ts (startSrc guard,
+  message)
+- src/features/inspector/hooks/useImageUpload.ts (captures startSrc)
+- src/features/export/utils/buildExportDocument.ts (always validate;
+  error/warning policy)
+- src/features/export/utils/packageEmbeddedImages.ts (docs)
+- src/features/export/types/exportDiagnostic.ts (embedded-image-invalid)
+- docs/architecture/export-engine.md (the fallback policy)
+
+
+29. TEST FILES CHANGED
+----------------------
+New:
+- src/features/inspector/utils/verifyPngImageData.test.ts
+- src/features/export/utils/exportHtmlCss.immutability.test.ts
+- e2e/image-upload-security.spec.ts
+- e2e/image-parity.spec.ts
+- e2e/image-upload-stress.spec.ts
+
+Updated:
+- commitImageUpload.test.ts (the BC07-C1 race; 3 size-boundary tests)
+- InspectorImageSection.upload.test.tsx (the BC07-C1 component test;
+  deterministic slow-decode waits)
+- exportHtmlCss.packaging.test.ts (the fallback matrix, replacing the
+  warning-only test)
+- e2e/export-image-assets.spec.ts (the fallback/no-execution test and the
+  keyboard ZIP test, replacing the warning-only test)
+- e2e/desktop/export-image-assets.spec.ts (repeated exports, a new
+  destination, the real EPERM rollback)
+- e2e/support/imageUploads.ts (garbage-body PNG and GIF builders)
+
+No assertion was removed to make a test pass. Two tests encoded the old
+fallback policy and were replaced with tests of the new one.
+
+
+30. GIT WORKING-TREE STATUS
+---------------------------
+Uncommitted.
+- Modified: the 13 files listed by git status.
+- Untracked: 6 new test and source files plus this report.
+- The changelog is in the gitignored changelogs/ folder.
+- No temporary probe or config remains. Nothing is staged.
+
+
+31. QA RECOMMENDATION
+---------------------
+CLOSE BC-07.
+- All 15 acceptance criteria are verified with evidence.
+- The three defects found in this checkpoint are fixed with regression
+  tests.
+- No high-severity issue remains open.
+- The remaining items are documented limitations or pre-existing,
+  baseline-reproduced test-environment failures.
+- BC-08 has not been started.

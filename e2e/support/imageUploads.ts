@@ -76,3 +76,21 @@ export async function insertImage(page: Page): Promise<string> {
   if (!id) throw new Error("Image not inserted");
   return id;
 }
+
+/** BC-07.4: a structurally perfect PNG (valid chunks and CRCs) whose compressed image data is garbage. */
+export function garbageBodyPng(): Buffer {
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(40, 0);
+  header.writeUInt32BE(30, 4);
+  header[8] = 8;
+  header[9] = 6;
+  const junk = Buffer.from(Array.from({ length: 400 }, (_, index) => (index * 37 + 11) & 0xff));
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), pngChunk("IHDR", header), pngChunk("IDAT", junk), pngChunk("IEND", Buffer.alloc(0))]);
+}
+
+/** BC-07.4: the animated GIF fixture with its LZW image data overwritten (structure and trailer intact). */
+export function garbageBodyGif(): Buffer {
+  const gif = Buffer.from(imageFixtureBytes("upload-20x10-animated.gif"));
+  for (let index = 60; index < gif.length - 20; index += 1) if (gif[index - 1] !== 0x00 && gif[index] !== 0x00) gif[index] = (index * 29) & 0xff;
+  return gif;
+}

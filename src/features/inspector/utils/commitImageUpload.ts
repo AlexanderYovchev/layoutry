@@ -7,6 +7,7 @@ export const IMAGE_COMMIT_MESSAGES = {
   projectTooLarge: "This image would make the project too large to save. Choose a smaller image or remove unused content.",
   targetGone: "The image element was removed before the upload finished. Nothing was changed.",
   otherProject: "A different project was opened before the upload finished. Nothing was changed.",
+  sourceChanged: "The image's source changed while the file was being read, so the upload wasn't applied. Nothing was changed.",
 } as const;
 
 export type ImageCommitResult = { ok: true } | { ok: false; message: string };
@@ -24,12 +25,18 @@ export type ImageCommitResult = { ok: true } | { ok: false; message: string };
  * The upload is refused when the document it started against was replaced
  * (another project opened) or its Image no longer exists, so a finished
  * upload can never land on some other element or in another project.
+ *
+ * BC-07.4: it is also refused when the Image's source is no longer the one
+ * it had when the upload started (`startSrc`): a URL typed, an Undo or Redo
+ * of that Image's source while the file was read is newer intent, and a late
+ * upload must not silently overwrite it. Edits to anything else are kept.
  */
-export function commitImageUpload(target: { nodeId: string; documentSessionId: number }, dataUrl: string): ImageCommitResult {
+export function commitImageUpload(target: { nodeId: string; documentSessionId: number; startSrc?: string }, dataUrl: string): ImageCommitResult {
   const state = useEditorStore.getState();
   if (state.documentSessionId !== target.documentSessionId) return { ok: false, message: IMAGE_COMMIT_MESSAGES.otherProject };
   const node = findNodeById(state.document, target.nodeId);
   if (!node || node.tag !== "img") return { ok: false, message: IMAGE_COMMIT_MESSAGES.targetGone };
+  if ("startSrc" in target && node.src !== target.startSrc) return { ok: false, message: IMAGE_COMMIT_MESSAGES.sourceChanged };
   if (node.src === dataUrl) return { ok: true };
   const proposed = setElementSrc(state.document, target.nodeId, dataUrl);
   if (!documentFitsSaveLimit(proposed)) return { ok: false, message: IMAGE_COMMIT_MESSAGES.projectTooLarge };

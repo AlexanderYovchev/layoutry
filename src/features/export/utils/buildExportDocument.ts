@@ -81,8 +81,10 @@ interface BuildState {
   interactions: ExportInteraction[];
   assets: ExportAsset[];
   nodeIds: ReadonlySet<string>;
-  /** Set when embedded images are written as files (BC-07.3, "separate" exports). */
-  packager: EmbeddedImagePackager | null;
+  /** Checks every embedded raster image (BC-07.3/07.4); with `packageImages` its files are exported too. */
+  packager: EmbeddedImagePackager;
+  /** BC-07.3: write valid embedded images as files in assets/ ("separate" exports). */
+  packageImages: boolean;
 }
 
 export interface BuildExportOptions {
@@ -137,16 +139,26 @@ function collectNodeIds(document: EditorElementNode): Set<string> {
 function checkedUrl(state: BuildState, nodeId: string, property: string, url: string | undefined, context: ExportUrlContext): string | undefined {
   if (url === undefined || url === "") return undefined;
   const check = checkExportUrl(url, context);
-  if (check.ok && check.kind === "data" && context === "image" && state.packager) {
+  if (check.ok && check.kind === "data" && context === "image") {
     const packaged = state.packager.packageUrl(check.url);
-    if (packaged.kind === "packaged") {
+    // BC-07.4: an embedded PNG/JPEG/GIF/WebP whose data isn't a valid image
+    // never passes silently. Separate files can't turn it into a file, and
+    // keeping it would ship a broken image in a "portable" site, so the
+    // export is refused. A single HTML file keeps the source exactly as
+    // authored (as before BC-07; an image source can't run script), with a
+    // warning that it will show as a broken image.
+    if (packaged.kind === "rejected") {
+      if (state.packageImages) {
+        report(state, "error", "embedded-image-invalid", `The embedded image in ${property} can't be exported as a file because ${packaged.reason}. Replace or remove this image, then export again.`, nodeId, property);
+        return undefined;
+      }
+      report(state, "warning", "embedded-image-invalid", `The embedded image in ${property} isn't a valid image (${packaged.reason}). It was exported as it is, and browsers will show it as a broken image. Replace or remove this image.`, nodeId, property);
+    } else if (packaged.kind === "packaged" && state.packageImages) {
       state.assets.push({ nodeId, property, url: packaged.path, kind: "packaged" });
       if (packaged.mismatch)
         report(state, "info", "embedded-image-type-mismatch", `The embedded image in ${property} says it is ${packaged.mismatch.declared}, but its data is ${packaged.mismatch.actual}; it was exported as ${packaged.path}.`, nodeId, property);
       return packaged.path;
     }
-    if (packaged.kind === "rejected")
-      report(state, "warning", "embedded-image-not-packaged", `The embedded image in ${property} could not be exported as a file because ${packaged.reason}. It was left embedded in the page, as the Canvas shows it.`, nodeId, property);
   }
   if (check.ok) {
     if (check.kind !== "fragment") state.assets.push({ nodeId, property, url: check.url, kind: check.kind });
@@ -534,7 +546,8 @@ export function buildExportDocument(document: EditorElementNode, limits: Project
     interactions: [],
     assets: [],
     nodeIds: collectNodeIds(parsed.data),
-    packager: options.packageImages ? createEmbeddedImagePackager() : null,
+    packager: createEmbeddedImagePackager(),
+    packageImages: options.packageImages === true,
   };
   const root = buildNode(state, parsed.data, { parentLayoutMode: "flow", parentFlowDisplay: "block" });
   const behaviors = buildExportBehaviors(parsed.data, state.diagnostics);
@@ -546,7 +559,7 @@ export function buildExportDocument(document: EditorElementNode, limits: Project
       interactions: state.interactions,
       behaviors,
       assets: state.assets,
-      assetFiles: state.packager?.files ?? [],
+      assetFiles: state.packageImages ? state.packager.files : [],
       diagnostics: state.diagnostics,
     },
   };

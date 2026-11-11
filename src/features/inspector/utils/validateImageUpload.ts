@@ -1,3 +1,4 @@
+import { verifyPngImageData } from "@/features/inspector/utils/verifyPngImageData";
 import { RASTER_MEDIA_TYPES, sniffRasterImage, type RasterImageFormat } from "@/lib/sniffRasterImage";
 
 /**
@@ -67,18 +68,36 @@ export function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /**
- * Decodes with the browser's own image decoder, off the DOM: no element,
- * no object URL. The decoded bitmap is released at once; only its size is
- * kept.
+ * Decodes with the browser's own image decoders, twice (BC-07.4):
+ * 1. createImageBitmap, off the DOM; the bitmap is released at once and only
+ *    its size is kept;
+ * 2. an <img> decode of the same bytes. WebKit's createImageBitmap accepts
+ *    some damaged PNG and GIF data that its <img> then can't show, and the
+ *    <img> path is exactly what the Canvas, Preview and exported page use.
+ * The object URL for step 2 exists only for the decode and is revoked in
+ * every case. Either failure rejects the file.
  */
 export const decodeImageWithBrowser: DecodeImage = async (bytes, mediaType) => {
   const blob = new Blob([bytes as BlobPart], { type: mediaType });
   const bitmap = await createImageBitmap(blob);
+  let size: { width: number; height: number };
   try {
-    return { width: bitmap.width, height: bitmap.height };
+    size = { width: bitmap.width, height: bitmap.height };
   } finally {
     bitmap.close();
   }
+  if (typeof Image === "function" && typeof URL.createObjectURL === "function") {
+    const url = URL.createObjectURL(blob);
+    try {
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      if (image.naturalWidth === 0 || image.naturalHeight === 0) throw new Error("image decoded empty");
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+  return size;
 };
 
 /**
@@ -92,7 +111,9 @@ export const decodeImageWithBrowser: DecodeImage = async (bytes, mediaType) => {
  * 3. the bytes' own signature and header structure (sniffRasterImage), which
  *    decide the format and the data URL's media type;
  * 4. the header's pixel size, before decoding (no oversized decode);
- * 5. a real decode by the browser, which rejects damaged data, and its size;
+ * 5. for PNG, its compressed image data must really inflate (BC-07.4,
+ *    verifyPngImageData); then a real decode by the browser, which rejects
+ *    damaged data, and its size;
  * 6. base64 of the original bytes.
  * Never throws; every failure is a user-facing message.
  */
@@ -123,6 +144,8 @@ export async function validateImageUpload(file: ImageUploadFile, decode: DecodeI
   if (!validSide(sniffed.width) || !validSide(sniffed.height)) return { ok: false, message: IMAGE_UPLOAD_MESSAGES.damaged };
   if (sniffed.width > MAX_IMAGE_UPLOAD_SIDE || sniffed.height > MAX_IMAGE_UPLOAD_SIDE)
     return { ok: false, message: IMAGE_UPLOAD_MESSAGES.dimensions(sniffed.width, sniffed.height) };
+
+  if (sniffed.format === "png" && (await verifyPngImageData(bytes)) === false) return { ok: false, message: IMAGE_UPLOAD_MESSAGES.damaged };
 
   let decoded: { width: number; height: number };
   try {

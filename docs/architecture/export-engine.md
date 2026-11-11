@@ -123,10 +123,18 @@ single HTML file must stay complete, so it keeps every image embedded.
     header structure and completeness. The bytes decide the format and the
     extension; a declared type that disagrees is an info diagnostic
     (`embedded-image-type-mismatch`).
-- **Failure is never silent.** A source that declares a supported type but
-  fails validation stays embedded exactly as the Canvas shows it, with a
-  warning (`embedded-image-not-packaged`). No broken file reference is ever
-  written.
+- **Failure is never silent (BC-07.4).** A source that declares a supported
+  type but fails validation is `embedded-image-invalid`:
+  - Separate files: an **error**, so the export is refused and the element
+    is named. A "portable" site never ships a broken image or a misleading
+    file.
+  - Single HTML file: a **warning** that it will show as a broken image. The
+    source is exported exactly as authored, as before BC-07; an image source
+    can't run script.
+  - Types it doesn't package (SVG, AVIF, BMP, non-base64) stay embedded in
+    both modes, as before. They are inert in every image context (`<img>`,
+    `poster`, `background-image`); scripts in an SVG image never run. A
+    `data:text/html` source is still dropped by the URL policy.
 - **Deduplication** is by the exact decoded bytes: identical images are one
   file however often, and however spelled, they appear. Each distinct URL
   is decoded once.
