@@ -10,7 +10,8 @@ import type { HtmlCssExportMode } from "@/features/export/types/exportResult";
  * Like project files, the page never sees or sends a path: the main
  * process shows the native dialog and returns an opaque destination token.
  * The page sends only the generated files by their fixed names
- * (index.html, styles.css, script.js), and the main process decides where
+ * (index.html, styles.css, script.js, and since BC-07.3 the numbered
+ * assets/image-NNN.ext files as bytes), and the main process decides where
  * they go.
  */
 
@@ -35,10 +36,8 @@ export type DesktopExportServiceError = z.infer<typeof serviceErrorSchema>;
 export type DesktopExportChooseResult = z.infer<typeof chooseResultSchema>;
 export type DesktopExportWriteResult = z.infer<typeof writeResultSchema>;
 
-export interface DesktopExportFileContent {
-  path: string;
-  content: string;
-}
+/** A generated text file, or (BC-07.3) a packaged image's bytes for assets/. */
+export type DesktopExportFileContent = { path: string; content: string } | { path: string; bytes: Uint8Array };
 
 export interface DesktopExportFiles {
   /**
@@ -86,7 +85,7 @@ export function createDesktopExportFiles(raw: unknown): DesktopExportFiles | nul
       call(writeResultSchema, () =>
         raw.writeExportFiles(
           token,
-          files.map((file) => ({ path: file.path, content: file.content })),
+          files.map((file) => ("bytes" in file ? { path: file.path, bytes: file.bytes } : { path: file.path, content: file.content })),
           overwrite,
         ),
       ),

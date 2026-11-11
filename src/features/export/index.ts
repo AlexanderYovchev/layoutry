@@ -23,6 +23,7 @@ export type {
 } from "@/features/export/types/exportDiagnostic";
 export type {
   ExportAsset,
+  ExportAssetFile,
   ExportAssetKind,
   ExportAttribute,
   ExportAttributeValue,

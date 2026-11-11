@@ -64,14 +64,27 @@ function copySource(value: unknown): Record<string, string> {
   return copy;
 }
 
-/** Export files: a fresh array of fresh {path, content} objects, nothing else. */
-function copyExportFiles(value: unknown): { path: string; content: string }[] {
+/**
+ * Export files: a fresh array of fresh {path, content} objects, or (BC-07.3)
+ * {path, bytes} for a packaged image, with the bytes copied into a new
+ * Uint8Array. Nothing else crosses; the main process validates every name.
+ */
+function copyExportFiles(
+  value: unknown,
+): ({ path: string; content: string } | { path: string; bytes: Uint8Array })[] {
   if (!Array.isArray(value)) throw new TypeError("files must be an array");
   return value.map((file: unknown) => {
     if (typeof file !== "object" || file === null)
       throw new TypeError("file must be an object");
+    const path = requireString(Reflect.get(file, "path"), "path");
+    const bytes: unknown = Reflect.get(file, "bytes");
+    if (bytes !== undefined) {
+      if (!(bytes instanceof Uint8Array))
+        throw new TypeError("bytes must be a Uint8Array");
+      return { path, bytes: new Uint8Array(bytes) };
+    }
     return {
-      path: requireString(Reflect.get(file, "path"), "path"),
+      path,
       content: requireString(Reflect.get(file, "content"), "content"),
     };
   });

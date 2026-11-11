@@ -1,5 +1,5 @@
 import type { ExportDiagnostic } from "@/features/export/types/exportDiagnostic";
-import type { ExportAsset } from "@/features/export/types/exportIr";
+import type { ExportAsset, ExportAssetFile } from "@/features/export/types/exportIr";
 
 export interface ExportFile {
   /** Relative path inside the export, e.g. "index.html". */
@@ -9,8 +9,10 @@ export interface ExportFile {
 }
 
 /**
- * "standalone": one index.html with the stylesheet embedded in <style>.
- * "separate": index.html linking styles.css by a relative path.
+ * "standalone": one index.html with the stylesheet embedded in <style>;
+ * uploaded images stay embedded as data URLs, so the one file is complete.
+ * "separate": index.html linking styles.css by a relative path, with
+ * uploaded (embedded raster) images written as files in assets/ (BC-07.3).
  */
 export type HtmlCssExportMode = "standalone" | "separate";
 
@@ -33,4 +35,9 @@ export interface HtmlCssExportResult {
    * Empty when the export was refused.
    */
   assets: ExportAsset[];
+  /**
+   * The image files a "separate" export ships in assets/ (BC-07.3), in
+   * document order. Always empty for "standalone" and for a refused export.
+   */
+  assetFiles: ExportAssetFile[];
 }

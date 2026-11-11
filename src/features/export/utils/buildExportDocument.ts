@@ -49,6 +49,7 @@ import type { ExportAsset, ExportAttribute, ExportDocument, ExportElement, Expor
 import { buildExportBehaviors } from "@/features/export/utils/buildExportBehaviors";
 import { escapeCssString, stripNullCharacters } from "@/features/export/utils/escapeMarkup";
 import { checkExportUrl, type ExportUrlContext } from "@/features/export/utils/exportUrlPolicy";
+import { createEmbeddedImagePackager, type EmbeddedImagePackager } from "@/features/export/utils/packageEmbeddedImages";
 import { serializeStyleObject } from "@/features/export/utils/serializeStyleObject";
 import { isExportableColor, validateCssDeclarationValue } from "@/features/export/utils/validateExportCssValue";
 
@@ -80,6 +81,17 @@ interface BuildState {
   interactions: ExportInteraction[];
   assets: ExportAsset[];
   nodeIds: ReadonlySet<string>;
+  /** Set when embedded images are written as files (BC-07.3, "separate" exports). */
+  packager: EmbeddedImagePackager | null;
+}
+
+export interface BuildExportOptions {
+  /**
+   * BC-07.3: write embedded PNG/JPEG/GIF/WebP images as files in assets/
+   * and reference them by relative path. Off by default, which keeps every
+   * source exactly as authored (a single-file export must stay complete).
+   */
+  packageImages?: boolean;
 }
 
 export type BuildExportDocumentResult =
@@ -125,6 +137,17 @@ function collectNodeIds(document: EditorElementNode): Set<string> {
 function checkedUrl(state: BuildState, nodeId: string, property: string, url: string | undefined, context: ExportUrlContext): string | undefined {
   if (url === undefined || url === "") return undefined;
   const check = checkExportUrl(url, context);
+  if (check.ok && check.kind === "data" && context === "image" && state.packager) {
+    const packaged = state.packager.packageUrl(check.url);
+    if (packaged.kind === "packaged") {
+      state.assets.push({ nodeId, property, url: packaged.path, kind: "packaged" });
+      if (packaged.mismatch)
+        report(state, "info", "embedded-image-type-mismatch", `The embedded image in ${property} says it is ${packaged.mismatch.declared}, but its data is ${packaged.mismatch.actual}; it was exported as ${packaged.path}.`, nodeId, property);
+      return packaged.path;
+    }
+    if (packaged.kind === "rejected")
+      report(state, "warning", "embedded-image-not-packaged", `The embedded image in ${property} could not be exported as a file because ${packaged.reason}. It was left embedded in the page, as the Canvas shows it.`, nodeId, property);
+  }
   if (check.ok) {
     if (check.kind !== "fragment") state.assets.push({ nodeId, property, url: check.url, kind: check.kind });
     if (check.kind === "relative") {
@@ -490,7 +513,7 @@ function buildNode(state: BuildState, node: EditorElementNode, placement: Placem
  * (limits, then the strict schema) and converts it to the Export IR.
  * Any error-severity finding refuses the export.
  */
-export function buildExportDocument(document: EditorElementNode, limits: ProjectLimits = DEFAULT_PROJECT_LIMITS): BuildExportDocumentResult {
+export function buildExportDocument(document: EditorElementNode, limits: ProjectLimits = DEFAULT_PROJECT_LIMITS, options: BuildExportOptions = {}): BuildExportDocumentResult {
   const limitDiagnostics = checkLimits(document, limits);
   if (limitDiagnostics.length > 0) return { ok: false, diagnostics: limitDiagnostics };
 
@@ -511,6 +534,7 @@ export function buildExportDocument(document: EditorElementNode, limits: Project
     interactions: [],
     assets: [],
     nodeIds: collectNodeIds(parsed.data),
+    packager: options.packageImages ? createEmbeddedImagePackager() : null,
   };
   const root = buildNode(state, parsed.data, { parentLayoutMode: "flow", parentFlowDisplay: "block" });
   const behaviors = buildExportBehaviors(parsed.data, state.diagnostics);
@@ -522,6 +546,7 @@ export function buildExportDocument(document: EditorElementNode, limits: Project
       interactions: state.interactions,
       behaviors,
       assets: state.assets,
+      assetFiles: state.packager?.files ?? [],
       diagnostics: state.diagnostics,
     },
   };

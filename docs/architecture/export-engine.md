@@ -100,8 +100,42 @@ empty-image placeholder icon, and SVG's drag-to-draw `user-select: none`.
   - `children`.
 - `ExportText` holds raw text. Printers escape it for their own syntax.
 - `interactions` — authored click bindings, kept for the EXPORT-1.3 runtime.
-- `assets` — every URL the page loads, classified as remote, relative or data.
+- `assets` — every URL the page loads, classified as remote, relative, data
+  or packaged.
+- `assetFiles` — the image files a "separate" export ships in `assets/`
+  (BC-07.3, below); empty otherwise.
 - `diagnostics`.
+
+### Packaged images (BC-07.3)
+
+`buildExportDocument(document, limits, { packageImages })` turns embedded
+images into files. `exportHtmlCss` enables it for **separate files only**: a
+single HTML file must stay complete, so it keeps every image embedded.
+
+- **Eligible:** an image-context source (`<img src>`, `<video poster>`, CSS
+  `background-image`) that is a base64 `data:` URL declaring PNG, JPEG, GIF
+  or WebP (plus the aliases `image/jpg`, `image/pjpeg`, `image/apng`). SVG,
+  AVIF, BMP and non-base64 data URLs are exported as before.
+- **Validation** (`utils/packageEmbeddedImages.ts`):
+  - strict base64 (alphabet, padding, length);
+  - decoded size bounded before decoding (16 MiB);
+  - then `sniffRasterImage` (`src/lib`, shared with uploads): signature,
+    header structure and completeness. The bytes decide the format and the
+    extension; a declared type that disagrees is an info diagnostic
+    (`embedded-image-type-mismatch`).
+- **Failure is never silent.** A source that declares a supported type but
+  fails validation stays embedded exactly as the Canvas shows it, with a
+  warning (`embedded-image-not-packaged`). No broken file reference is ever
+  written.
+- **Deduplication** is by the exact decoded bytes: identical images are one
+  file however often, and however spelled, they appear. Each distinct URL
+  is decoded once.
+- **Names** are the engine's, never the user's:
+  `assets/image-001.png`, `image-002.jpg`, … numbered in document order, so
+  the same document always gives the same names and bytes.
+- **Rewriting** happens in the IR: the packaged path replaces the URL
+  before printing, so attribute and CSS escaping are the printers' normal
+  ones. The authored document is never changed.
 
 The IR describes the authored design only. It contains no class names, no
 escaping and no file layout. That makes it the input for every future

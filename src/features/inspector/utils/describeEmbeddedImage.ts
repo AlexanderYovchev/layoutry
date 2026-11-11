@@ -1,4 +1,4 @@
-import type { RasterImageFormat } from "@/features/inspector/utils/sniffRasterImage";
+import type { RasterImageFormat } from "@/lib/sniffRasterImage";
 
 const EMBEDDED_RASTER = /^data:image\/(png|jpeg|gif|webp);base64,/;
 const FORMAT_LABELS: Record<RasterImageFormat, string> = { png: "PNG", jpeg: "JPEG", gif: "GIF", webp: "WebP" };

@@ -1,0 +1,681 @@
+LAYOUTRY — BC-07.3: EXPORT IMAGE ASSETS & PORTABLE WEBSITE PACKAGING
+=====================================================================
+Date: 2026-11-11
+Type: Export engine implementation + asset packaging + compatibility + regression tests
+Base commit: 6c55f28 (BC-07.2). Nothing committed.
+Author: Claude (implementation engineer), for ChatGPT QA review
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+An export with "Separate files" is now a portable website:
+- index.html, styles.css, script.js (when needed), and assets/ with every
+  uploaded image as its own file.
+- Files are named assets/image-001.png, image-002.jpg… by the engine, and
+  identical images are written once.
+- HTML and CSS reference these files by relative path.
+
+How users get it:
+- Browser: "Download website (.zip)", one ZIP.
+- Desktop: "Save to Folder…" writes the assets folder next to the files,
+  with the existing staged, confirm-before-replace, roll-back-on-failure
+  write.
+- The exported site works from disk, offline, without Layoutry, the
+  project file or the original images. This was verified in Chromium,
+  Firefox and WebKit, and from a desktop export opened in a separate
+  browser.
+
+What did not change:
+- The project format (still 2) and the stored data URLs.
+- The Inspector.
+- The Single HTML file export: it stays one complete file with images
+  embedded, and now says so.
+- Pages without uploaded images export byte-for-byte as before in both
+  modes.
+- Remote and relative URLs are left exactly as authored.
+
+Safety:
+- Every embedded image is re-validated at export time as untrusted data:
+  strict base64, a size bound, then the same byte signature, structure and
+  completeness check uploads use.
+- An invalid one is never dropped and never turned into a broken file
+  reference. It stays embedded, as the Canvas shows it, with a warning.
+- Export is read-only: no history entry, no unsaved-state change, no
+  selection change. This is tested.
+
+Validation:
+- typecheck (web and desktop) and ESLint are clean;
+- Vitest: 5689 passed, 1 skipped (+67 tests);
+- Chromium full suite: 251/251;
+- Firefox and WebKit targeted runs: 32/32;
+- Electron full suite: 78 passed, 2 skipped, 1 load-only flake that passes
+  6/6 alone;
+- production and desktop builds succeed.
+
+New dependency: fflate 0.8.3 (MIT, no dependencies) for the browser ZIP.
+
+Recommendation: ready for QA review.
+
+
+2. EXISTING EXPORT ARCHITECTURE FINDINGS (audit before coding)
+--------------------------------------------------------------
+1. Formats that exist: HTML + CSS only, in two modes.
+   - "standalone": one index.html with CSS inline, and the interaction
+     runtime inline when needed.
+   - "separate": index.html + styles.css, plus script.js when needed.
+   - There is no Tailwind, React, Vue or ZIP export.
+2. Browser: one download per file ("Download all files" started N
+   downloads). There was no package.
+3. Electron: a single-file Save dialog, or a folder picker that writes the
+   three fixed names (desktop/export/exportFileService.ts).
+   - The write is token-based, staged into temporary files, renamed with
+     rollback, then read back and verified.
+   - Text only: the IPC accepted exactly index.html, styles.css and
+     script.js as strings.
+4. No ZIP library was installed.
+5. Generation:
+   - buildExportDocument builds the IR, validating URLs through
+     checkExportUrl in checkedUrl;
+   - printExportHtml and printExportStylesheet print it;
+   - exportHtmlCss assembles the files. It is pure and deterministic.
+6. The Export dialog has the format "HTML + CSS" and an Output radio group
+   (Single HTML file / Separate files).
+7. Generation is shared: the same exportHtmlCss runs in the browser and in
+   Electron, and only delivery differs.
+8. Resources were already in the IR as ExportAsset
+   {nodeId, property, url, kind: remote|relative|data}, used for the
+   dialog's "loads N files from the internet" note.
+
+Decision: extend at the existing seams:
+- packaging in the IR (checkedUrl);
+- binary files as a new `assetFiles` field beside the text `files`, which
+  leaves every text-file consumer untouched;
+- ZIP at the browser delivery step;
+- assets in the existing desktop write.
+
+
+3. EXPORT MODES IMPLEMENTED (final behaviour per format)
+--------------------------------------------------------
+Single HTML file:
+- Unchanged: one index.html with uploaded images embedded as data URLs, so
+  it is complete on its own.
+- New dialog note when it has uploaded images: "Uploaded images are
+  embedded inside index.html, so this one file is complete. Choose
+  Separate files to get them as image files."
+- It never references assets/.
+
+Separate files: index.html, styles.css, script.js when interactive, and
+uploaded images in assets/.
+- Option description: "…and uploaded images as files in an assets folder."
+- Browser, with uploaded images:
+  - "Download all files" is replaced by "Download website (.zip)" (primary
+    button), since separate downloads can't create a folder;
+  - "Download <selected file>" is kept for single text files.
+- Browser, without uploaded images: exactly as before ("Download all
+  files", one download per file).
+- Desktop: "Save to Folder…" (same button), now writing assets/ too.
+- The dialog lists the image files ("assets/image-001.png · 117 B · used 2
+  times") and says to keep the files and the assets folder together.
+
+No other export format exists or was added.
+
+
+4. ASSET EXTRACTION DESIGN
+--------------------------
+- buildExportDocument(document, limits, { packageImages }) creates one
+  createEmbeddedImagePackager() per export run
+  (src/features/export/utils/packageEmbeddedImages.ts).
+- exportHtmlCss sets packageImages only for "separate".
+- In checkedUrl, an image-context source (<img src>, <video poster>, CSS
+  background-image) that the URL policy accepted as `data` goes through
+  the packager first:
+  - "packaged": the IR receives the relative path; ExportAsset
+    {kind: "packaged", url: path}; an info diagnostic is added if the
+    declared type disagreed with the bytes.
+  - "rejected": stays the data URL (exactly as before), plus a warning.
+  - "not-packageable" (SVG, AVIF, BMP, non-base64): unchanged, with no
+    diagnostic.
+- The packager returns ExportAssetFile {path, bytes, mediaType,
+  references}. exportHtmlCss exposes them as `assetFiles`, empty for
+  standalone and for refused exports.
+- The authored document is never mutated (tested on a deep-frozen
+  document). There is no store access, no history and no dirty flag:
+  export is a pure function of the document.
+- Remote images are never downloaded.
+
+
+5. SUPPORTED FORMATS
+--------------------
+- Packaged: PNG, JPEG, GIF and WebP. Extensions .png, .jpg, .gif, .webp.
+- Declared types accepted for packaging: image/png, image/jpeg, image/gif,
+  image/webp, plus the aliases image/jpg, image/pjpeg and image/apng.
+- Not packaged (left as before): SVG, both URL-encoded and base64 (the
+  default Image placeholder is an SVG data URL), AVIF, BMP, ICO, and any
+  non-base64 data URL. Remote SVG URLs are unchanged.
+- Upload formats are not expanded.
+
+
+6. DATA URL VALIDATION (export time, untrusted)
+-----------------------------------------------
+1. A header `data:<type>[;params];base64`, case-insensitive, with a type
+   from the allow-list above.
+2. Payload length ≤ the base64 of 16 MiB (a project can't hold more
+   than 12 MiB anyway), checked before decoding.
+3. Strict base64: alphabet [A-Za-z0-9+/] only, ≤ 2 "=" padding, length a
+   multiple of 4. Whitespace is refused.
+4. Decoding (atob) happens once per distinct URL.
+5. sniffRasterImage(bytes), moved to src/lib and shared with BC-07.2
+   uploads:
+   - signature;
+   - header structure;
+   - completeness (PNG IDAT before IEND, JPEG end marker after the scan,
+     GIF trailer, WebP RIFF size).
+   It decides format, extension and media type.
+6. A declared/actual mismatch (e.g. data:image/png holding a JPEG) is
+   packaged by its real type as .jpg, with the info diagnostic
+   "embedded-image-type-mismatch".
+7. Any failure in 1–5 for an eligible type is "rejected": the source stays
+   embedded, with the warning "embedded-image-not-packaged": "…could not
+   be exported as a file because <reason>. It was left embedded in the
+   page, as the Canvas shows it."
+
+Policy rationale: the documented safe fallback. It keeps the export
+faithful to the Canvas (which shows the same data URL), never omits an
+image, and never writes a misleading file.
+
+Tested cases:
+- HTML, text or SVG declared as PNG/JPEG;
+- cut-off PNG and GIF;
+- invalid characters, bad length and whitespace in the base64;
+- an oversized payload;
+- the mismatch case.
+
+
+7. ASSET NAMING
+---------------
+- `assets/image-NNN.<ext>`: three or more digits, numbered by the export
+  in the order it meets each distinct image (document order, CSS
+  backgrounds in node order).
+- Never derived from user data: no file names, ids or alt text. So there
+  is no traversal, no absolute path, no separator and no unsafe character.
+- No collisions: the numbers are unique, and the text files' fixed names
+  are at the root.
+- Stable: the same document and mode always give the same names and
+  bytes. Tested in unit tests and as a byte-identical repeat ZIP in the
+  browser.
+- Defence in depth:
+  - the ZIP builder accepts only `index.html|styles.css|script.js|
+    assets/image-\d{3,6}.(png|jpg|gif|webp)`;
+  - the desktop main process accepts only that asset pattern, plus a
+    signature check.
+
+
+8. DEDUPLICATION
+----------------
+- The key is the exact decoded bytes (the binary string), so identical
+  bytes are one file however the URL is spelled. Tested: different case,
+  parameters, the same bytes from an img and a background or poster.
+- Different bytes are always different files (tested with a 1-byte
+  difference).
+- A per-URL cache means an exact repeated string is decoded once and only
+  counted (`references`).
+- Both maps live in the per-run packager. There is no global cache, and
+  the result is deterministic.
+- Savings measured (section 19): 22 references to 2 images give 2 files
+  (9.24 MB package) instead of 135 MB of inline base64.
+
+
+9. HTML REWRITING
+-----------------
+- Structured, not string replacement: the packaged path replaces the URL
+  inside the IR before printing.
+  - <img>/<video poster> attributes go through escapeHtmlAttribute.
+  - CSS url() values go through escapeCssString (`url("assets/…")`, which
+    resolves from styles.css at the root).
+  - Paths contain no characters needing escapes, so there is no double
+    escaping.
+- Everything else prints exactly as before. Tested:
+  - id and class kept (`<img id="hero" class="ly-node-2-media hero wide"
+    src="assets/image-001.png" alt="Hero &quot;photo&quot; &amp;
+    &lt;logo&gt;">`);
+  - alt kept;
+  - opacity/filters, object-fit and other styles kept;
+  - interactions kept (script.js; the toggle works on the extracted site);
+  - document order kept.
+- Remote, relative and SVG placeholder sources are byte-identical.
+
+
+10. BROWSER ZIP PACKAGING
+-------------------------
+- zipExportPackage(files, assetFiles), in
+  src/features/export/utils/zipExportPackage.ts, using fflate.zipSync:
+  - text is UTF-8 encoded and deflated (level 6);
+  - images are stored (level 0): already compressed, never recompressed,
+    copied once;
+  - fixed timestamps (2000-01-01 local), so the same files give the same
+    bytes;
+  - path allow-list, no duplicates, index.html required.
+- Errors raise ExportPackageError, which becomes "Layoutry couldn't build
+  the website package. Nothing was downloaded."
+- Download: src/lib/downloadBlob.ts, extracted from downloadTextFile,
+  which now delegates to it with the same behaviour.
+  - The Blob type is application/zip. The name is "<project name>.zip",
+    sanitized (Windows/macOS/Linux-unsafe characters replaced, trimmed,
+    at most 100 characters, "website.zip" fallback).
+  - Message: "Download of My Site.zip started. Unzip it and open
+    index.html; keep the assets folder next to it."
+  - A browser refusal becomes "The browser refused the download. Nothing
+    was downloaded." (role=alert).
+- The ZIP is built from the snapshot on screen; a stale preview still
+  blocks it, as for every transfer.
+- Why fflate:
+  - the brief prefers an established, maintained library;
+  - it is about 8 KB gzip in the client bundle, MIT, no transitive
+    dependencies;
+  - npm audit doesn't flag it (all audit findings are pre-existing:
+    next, zod, postcss and others);
+  - the alternative was a hand-written ZIP writer.
+
+
+11. ELECTRON EXPORT PACKAGING
+-----------------------------
+- Destination policy: unchanged. Separate files uses the folder picker,
+  and the website is written into that folder, with assets/ inside it. No
+  ZIP on desktop: the least disruptive choice, since a folder is what the
+  existing flow produces.
+- The IPC surface is unchanged: the same two channels, with payload keys
+  still exactly {token, files, overwrite}. Images travel in `files` as
+  {path, bytes}:
+  - preload copyExportFiles copies the bytes into a fresh Uint8Array and
+    passes nothing else;
+  - the renderer bridge sends {path, bytes} for assets and {path, content}
+    for text.
+- Main-process validation (expectFiles):
+  - names must match `assets/image-\d{3,6}.(png|jpg|gif|webp)`;
+  - bytes must be a Uint8Array, 1 B–16 MiB each, at most 64 MiB and 4,096
+    images in total;
+  - the file signature must match the extension (PNG, JPEG FFD8FF,
+    GIF87a/89a, RIFF…WEBP);
+  - no duplicates, exactly {path, bytes} keys;
+  - images are refused for a single-file destination;
+  - a text file sent as an image, or an image sent as text, is refused.
+- Target paths are joined inside `<folder>/assets` and re-checked to stay
+  there.
+
+
+12. DESTINATION AND OVERWRITE SAFETY
+------------------------------------
+- `assets` must be missing (it is then created with a non-recursive mkdir)
+  or a real folder.
+  - A junction or symbolic link is refused before anything is read or
+    written through it (tested with a real junction: nothing appears in
+    its target).
+  - A file named `assets` is refused ("…is a file, so the exported images
+    can't go in an assets folder there…"); nothing is written.
+- Existing assets/image-NNN files join the existing conflict question
+  ("assets/image-001.png, assets/image-002.jpg, styles.css, index.html
+  already exist in “Site”. Replace them?").
+  - Keep existing files writes nothing; Replace writes them.
+- Other files in the folder or in assets/ are never touched (tested: notes.txt,
+  assets/logo.svg).
+  - Consequence: images left over from an older export with more images
+    remain in assets/. They are unused and harmless, and not deleted by
+    design, since Layoutry never deletes files it didn't write in this
+    export.
+
+
+13. FAILURE RECOVERY
+--------------------
+Order:
+1. Validate the payload.
+2. Check the folder and the assets folder.
+3. Read the targets (conflict check).
+4. Create assets/ if missing.
+5. Stage every file to a temporary next to its target and flush it.
+6. Rename images first, then styles.css, script.js, and index.html last.
+7. Read back every file and compare SHA-256 hashes.
+
+Failures:
+- While staging (disk full, permissions): the temporaries are removed,
+  and an assets folder this export created is removed (rmdir, only if
+  empty). Nothing visible changed. Tested with an injected ENOSPC: the
+  folder is empty afterwards.
+- While renaming: the replaced files are put back (earlier bytes restored,
+  new files removed only if still exactly what was written) and the
+  created assets folder is removed if empty. The message says what
+  happened. Tested with EACCES on index.html: styles.css is restored, no
+  assets folder is left.
+- Success is reported only after the read-back verification of every
+  file.
+- A cancelled dialog gives "Save cancelled. Nothing was saved." (tested in
+  Electron).
+- Limit (as before): Windows has no atomic multi-file or directory
+  replace. The staged rename with rollback is the documented strategy.
+
+
+14. CANVAS / PREVIEW / EXPORT PARITY
+------------------------------------
+- Canvas and Preview still use the data URL; the package uses relative
+  files. Parity is checked on rendering and bytes, not source strings.
+- Every exported image file's bytes equal the uploaded fixture, for PNG,
+  JPEG, GIF and WebP. That covers transparency (the PNG has alpha) and
+  GIF animation (both frames are in the identical bytes).
+- Extracted site, opened from disk with http(s) blocked:
+  - natural sizes 40×30, 32×24, 20×10 and 24×16 match the Canvas;
+  - object-fit contain and cover are kept;
+  - the frame's opacity is 0.6, as authored;
+  - alt text matches;
+  - the background image resolves to assets/image-002.jpg and loads
+    (32 px wide);
+  - the toggle interaction hides its target.
+
+
+15. PROJECT IMMUTABILITY
+------------------------
+- Unit: a deep-frozen document exports without error, and its JSON is
+  unchanged.
+- Dialog test: after the ZIP download, the store's document, past (history),
+  persistedDocument and selection are the same objects.
+- Browser: after the ZIP export, the Image src is unchanged, the project
+  status is unchanged, and Undo availability is unchanged.
+- Electron: after Save to Folder, the project status is unchanged and the
+  src is unchanged.
+- Repeated exports are byte-identical: the files, the asset bytes, and
+  the ZIP itself.
+
+
+16. ALT TEXT PRESERVATION
+-------------------------
+- Alt is printed on the same <img> as before; only `src` changes.
+- Escaping is tested (`&quot; &amp; &lt; &gt; &#39;`).
+- Covered in unit tests (both modes), the browser ZIP test ("Blue &amp;
+  orange swatch") and the Electron folder test ("Swatch").
+
+
+17. LEGACY COMPATIBILITY
+------------------------
+- Projects without uploaded images: separate output is unchanged
+  (unit-tested), and no assets folder appears.
+- Remote, relative and SVG data URL sources: unchanged in both modes.
+- Format 1 project (Electron, PROJECT-1.1 fixture):
+  - a JPEG uploaded into it exports as assets/image-001.jpg;
+  - its remote, relative and SVG sources are exported as before;
+  - the original file's SHA-256 is unchanged by the export;
+  - File › Save still shows BC-05's "Upgrade Project File?"; Cancel leaves
+    the original unchanged.
+- Project serialization, format 2 and the upload validator are unchanged.
+  The validator only moved its sniffer import to src/lib.
+
+
+18. ACCESSIBILITY
+-----------------
+- Export modes are the existing native radio inputs with visible labels
+  and descriptions. The Separate files description now names the assets
+  folder.
+- The image-file list is a <ul> labelled by its explanation (asserted by
+  role and name).
+- The new button "Download website (.zip)" is a native button with its
+  visible name.
+- Keyboard (browser test): ArrowRight from Single HTML file selects
+  Separate files, Tab reaches the ZIP button, and Enter downloads.
+- Status and generation text use the existing polite live regions:
+  "Code ready: 2 files and 2 image files". Errors use role=alert.
+- No custom controls and no traps; existing focus handling is unchanged.
+
+
+19. PERFORMANCE MEASUREMENTS
+----------------------------
+Vitest measurement (exportHtmlCss.packaging.performance.test.ts): two
+1100×1100 uncompressed PNGs (4.62 MB each, a project-size-limit-sized
+pair) plus 20 duplicate references.
+
+| Measure | Result |
+|---|---|
+| Separate-mode export (schema validation, decode once, dedup) | 283 ms |
+| ZIP | 64 ms |
+| Package size | 9.24 MB (text files 9.9 KB) |
+| Inline base64 equivalent | 135.4 MB |
+| Repeat export | identical |
+
+- Generation already runs after a macrotask so "Generating…" paints
+  first, as before.
+- Realistic projects (a few images) are far below these numbers.
+- Memory: one decode per distinct URL, one Uint8Array per distinct image,
+  and the ZIP buffer (about the image total). Images aren't copied again
+  for storing.
+
+
+20. SECURITY REVIEW
+-------------------
+- Embedded data is untrusted at export:
+  - strict parsing;
+  - the size bound comes before decoding;
+  - the bytes decide the type;
+  - incomplete or forged images are not packaged.
+- No user-controlled names anywhere in the package. Allow-listed paths
+  are enforced in the ZIP builder and in the main process.
+- Electron:
+  - no new channels and no path from the renderer;
+  - asset bytes are validated (name, size, signature);
+  - writes stay inside <folder>/assets;
+  - links and files at assets are refused;
+  - staged writes with rollback; other files are never touched.
+  - Sandbox, context isolation, CSP and fuses are unchanged.
+- Exported files are written, never opened or executed. SVG is never
+  packaged.
+- New dependency: fflate, zero transitive dependencies, used in the
+  renderer only.
+
+
+21. MODIFIED FILES
+------------------
+Modified:
+- package.json, package-lock.json: fflate ^0.8.3.
+- src/features/export/types/exportIr.ts: "packaged" kind, ExportAssetFile,
+  assetFiles.
+- src/features/export/types/exportResult.ts: assetFiles; mode docs.
+- src/features/export/types/exportDiagnostic.ts: two codes.
+- src/features/export/utils/buildExportDocument.ts: packageImages option;
+  packaging in checkedUrl.
+- src/features/export/utils/exportHtmlCss.ts: packaging for separate;
+  assetFiles.
+- src/features/export/hooks/useExportCodeSession.ts: downloadPackage;
+  assets to desktop; saved-file summary.
+- src/features/export/components/ExportCodeDialog.tsx: description, image
+  list, ZIP button, embedded note, status count.
+- src/features/export/desktop/desktopExportFiles.ts: {path, bytes} entries.
+- src/features/export/index.ts: exports ExportAssetFile.
+- src/lib/downloadTextFile.ts: delegates to downloadBlob.
+- src/features/inspector/utils/validateImageUpload.ts and
+  describeEmbeddedImage.ts: sniffer import path only.
+- desktop/preload/preload.ts: copies {path, bytes}.
+- desktop/export/exportFileService.ts: asset payloads, assets folder,
+  staging/rollback, signature checks.
+- docs/architecture/export-engine.md, export-ui.md: packaging, ZIP, and
+  desktop rules.
+
+Moved:
+- src/features/inspector/utils/sniffRasterImage(.test).ts →
+  src/lib/sniffRasterImage(.test).ts. It is now shared by uploads and
+  export, and is framework-independent. The rename is staged by git mv.
+
+New:
+- src/features/export/utils/packageEmbeddedImages.ts
+- src/features/export/utils/zipExportPackage.ts
+- src/lib/downloadBlob.ts
+
+
+22. NEW TESTS
+-------------
+Unit and component:
+- export/utils/packageEmbeddedImages.test.ts (22): four formats with exact
+  bytes, deterministic order, dedup by bytes and aliases, different bytes,
+  mismatch, aliases, eight untrusted-data rejections, the oversize bound,
+  five not-packageable kinds.
+- export/utils/exportHtmlCss.packaging.test.ts (9): the mixed document
+  (dedup across img, background and poster), structured rewriting with id,
+  class, alt, styles and interaction, asset kinds, standalone unchanged,
+  determinism and immutability, the no-upload page unchanged, mismatch
+  info, rejected-stays-embedded, refused export.
+- export/utils/zipExportPackage.test.ts (11): contents and bytes,
+  deterministic ZIP, seven bad paths, duplicates, missing index.html, the
+  file name sanitizer.
+- export/utils/exportHtmlCss.packaging.performance.test.ts (1): the
+  measurement in section 19.
+- export/components/ExportCodeDialog.packaging.test.tsx (6): the
+  description and list, the embedded note, the ZIP contents equal the
+  engine output, the project untouched, single-file download, a refused
+  download, desktop sends bytes and the summary message.
+- export/desktop/desktopExportFiles.test.ts (+1): the bytes bridge.
+- desktop/export/exportFileService.assets.test.ts (17, real temp folders):
+  creates assets with exact bytes, reuses assets keeping other files, the
+  conflict-then-Replace flow, rename-failure rollback and folder removal,
+  staging-failure cleanup, junction and file refusal, nine invalid
+  payloads, duplicates, oversize, extra keys, non-Uint8Array, text as
+  image, images for a single-file destination.
+
+Updated:
+- editor/stores/useEditorStore.imageUpload.test.ts: BC-07.2's export
+  assertion now expects Separate files to package the image (same bytes,
+  same escaped alt). This is the intended BC-07.3 change, not a weakening.
+- inspector/components/InspectorImageSection.upload.test.tsx: an explicit
+  20 s timeout for its heavy project-size test, which timed out once at
+  5 s under parallel load (1.4 s alone). Assertions unchanged.
+
+End-to-end:
+- e2e/export-image-assets.spec.ts (4): upload → ZIP → extracted by the OS
+  tar (libarchive) → opened offline; mixed sources, dedup, styles,
+  background, interaction, a byte-identical repeat; standalone embeds; the
+  invalid embed warning plus a keyboard-only ZIP download.
+- e2e/desktop/export-image-assets.spec.ts (3): a cancelled dialog,
+  folder export with exact bytes, the conflict Keep/Replace flow, the site
+  opened offline in a separate Chromium; an `assets` file blocks the
+  export; a format 1 project exports while the original stays protected.
+
+
+23. EXACT TEST COMMANDS AND RESULTS
+-----------------------------------
+- npx tsc --noEmit -p tsconfig.json → clean
+- npx tsc --noEmit -p desktop/tsconfig.json → clean
+- npx eslint . → clean
+- npx vitest run → 378 files: 5689 passed, 1 skipped (BC-07.2 baseline:
+  372 / 5622 / 1)
+- npx playwright test (Chromium, full) → 251 passed, 0 failed (4.3 min)
+- npx playwright test e2e/export-image-assets.spec.ts → 4 passed
+- npx playwright test -c playwright.zz-xbrowser.config.ts
+  e2e/export-image-assets.spec.ts e2e/image-upload.spec.ts
+  e2e/project-persistence.spec.ts → 32 passed (Firefox and WebKit, 16
+  each)
+- npx playwright test -c playwright.zz-xbrowser.config.ts
+  e2e/export-workflow.spec.ts e2e/preview-export-parity.spec.ts
+  --workers=2 → 34 passed, 10 failed: exactly the 10 pre-existing failures
+  BC-07.2 reproduced at a31387d, test for test. Nothing new.
+- npm run desktop:build, then
+  npx playwright test -c playwright.desktop.config.ts → 78 passed,
+  2 skipped, 1 failed
+  - The failure: e2e/desktop/preview-parity.spec.ts:50 (Preview media
+    hiding; it doesn't use the export).
+  - Rerun alone with --repeat-each=3 → 6 passed. A load-only flake; that
+    spec family is known to be media-timing-sensitive under full-suite
+    load.
+- npx playwright test -c playwright.desktop.config.ts
+  e2e/desktop/export-image-assets.spec.ts → 3 passed
+- npm run build → succeeded
+- npm run desktop:build → succeeded
+- npm audit --omit=dev → pre-existing findings only; fflate not flagged.
+- (ELECTRON_RUN_AS_NODE was removed for every Electron command. The
+  temporary playwright.zz-xbrowser.config.ts was deleted after use.)
+
+
+24. CHROMIUM RESULTS
+--------------------
+- Full suite: 251/251, including all existing export-workflow, parity and
+  interaction specs (separate-mode output for pages without uploads is
+  unchanged).
+- New: export-image-assets 4/4.
+
+
+25. FIREFOX RESULTS
+-------------------
+- export-image-assets 4/4, image-upload 6/6, project-persistence 6/6.
+- Pre-existing (unchanged): export-workflow "copies the exact text" and
+  "fully keyboard operable" fail in Firefox at a31387d as well
+  (clipboard/permission and focus engine behaviour).
+
+
+26. WEBKIT RESULTS
+------------------
+- export-image-assets 4/4, image-upload 6/6, project-persistence 6/6.
+- Pre-existing (unchanged): 4 export-workflow tests (focus after click,
+  copy, two download tests) and 4 preview-export-parity media tests.
+  Playwright's Windows WebKit loads no media. All of these fail at a31387d
+  too.
+- The new ZIP download, extraction and offline-open test passes in
+  WebKit.
+
+
+27. ELECTRON RESULTS
+--------------------
+- export-image-assets 3/3; full suite 78 passed, 2 skipped (designed
+  skips).
+- One load-only flake (preview-parity), 6/6 alone (section 23).
+- The real folder export, the junction and file refusals, the rollback
+  (unit tests on real temporary folders) and the offline open of the
+  exported folder are all verified.
+
+
+28. BUILD / TYPECHECK / LINT RESULTS
+------------------------------------
+Web and desktop typecheck: clean. ESLint: clean. Production build:
+succeeded. Desktop build: succeeded.
+
+
+29. REMAINING LIMITATIONS
+-------------------------
+- The desktop app has no ZIP option, by design (it writes a folder).
+- Re-exporting into a folder that held an older export with more images
+  leaves the extra images in assets/. They are unused, and never deleted
+  by design.
+- SVG uploads don't exist, and SVG data URLs stay embedded, as planned.
+- An embedded image that fails validation stays embedded in the page,
+  with a warning. The browser may still be unable to show it, exactly as
+  on the Canvas.
+- Windows can't replace several files atomically: staged renames with
+  rollback (unchanged strategy).
+- The browser can only report that a download started.
+- Export runs on the main thread after a macrotask: about 0.3 s for the
+  extreme measured case.
+
+
+30. KNOWN DEFECTS
+-----------------
+- None found in BC-07.3 scope.
+- Still open from earlier: PRJ-K1 (Ctrl+S ignored while an authored open
+  Dialog exists).
+- Pre-existing Firefox/WebKit export-workflow and preview-export-parity
+  failures: 10 tests, identical at a31387d. Those specs run in Chromium
+  only by config.
+
+
+31. GIT WORKING-TREE STATUS
+---------------------------
+Uncommitted.
+- Modified: the files in section 21, plus the two updated tests.
+- Rename staged (from git mv): sniffRasterImage(.test).ts →
+  src/lib/. Nothing else is staged.
+- Untracked:
+  - the new source and test files;
+  - two new specs;
+  - this report.
+- The changelog is in the gitignored changelogs/ folder.
+- No temporary files remain (the cross-browser config was deleted).
+
+
+32. QA RECOMMENDATION
+---------------------
+Ready for QA review. All 15 acceptance criteria are met.
+- The product owner may want to confirm two UX choices:
+  - in the browser, "Download all files" becomes "Download website (.zip)"
+    only when the page has uploaded images;
+  - desktop exports a folder, with no ZIP.
+- BC-07.4 has not been started.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef } from "react";
-import { Copy, Download, FolderDown, LoaderCircle, RefreshCw, Save, TriangleAlert } from "lucide-react";
+import { Copy, Download, FileArchive, FolderDown, LoaderCircle, RefreshCw, Save, TriangleAlert } from "lucide-react";
 import { Dialog } from "@/components/ui/Dialog";
 import { primaryButtonClass, secondaryButtonClass } from "@/components/ui/dialogButtons";
 import { cn } from "@/lib/utils";
@@ -30,8 +30,22 @@ interface ExportCodeDialogProps {
 
 const OUTPUT_OPTIONS: { mode: HtmlCssExportMode; label: string; description: string }[] = [
   { mode: "standalone", label: "Single HTML file", description: "index.html with the CSS, and any interaction script, inside it." },
-  { mode: "separate", label: "Separate files", description: "index.html, styles.css, and script.js when the page has interactions." },
+  {
+    mode: "separate",
+    label: "Separate files",
+    description: "index.html, styles.css, script.js when the page has interactions, and uploaded images as files in an assets folder.",
+  },
 ];
+
+/** An uploaded-style embedded raster image (what Separate files would turn into a file). */
+const UPLOADED_IMAGE_DATA_URL = /^data:image\/(?:png|jpe?g|gif|webp);base64,/i;
+
+/** "117 B", "4.8 MB" (1024-based, like the upload limit). */
+function formatByteSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 /**
  * File › Export Code… (EXPORT-1.4): generates HTML and CSS from the
@@ -39,10 +53,16 @@ const OUTPUT_OPTIONS: { mode: HtmlCssExportMode; label: string; description: str
  * file as text with the engine's diagnostics, and copies, downloads (in a
  * browser) or saves natively (in the desktop app) exactly the files on
  * screen. Exporting never saves the project or changes its unsaved state.
+ *
+ * BC-07.3: in Separate files, uploaded images become files in assets/.
+ * A browser then downloads the whole export as one ZIP ("Download website
+ * (.zip)"), since separate downloads can't create a folder; the desktop
+ * app writes the assets folder next to the files. A single HTML file keeps
+ * its images embedded, and says so.
  */
 export function ExportCodeDialog({ open, onClose, title, desktop, entitlement = developmentExportEntitlement, exporter }: ExportCodeDialogProps) {
   const session = useExportCodeSession({ open, title, entitlement, desktop, exporter });
-  const { generation, snapshot, stale, exportable, files, transfer, busy } = session;
+  const { generation, snapshot, stale, exportable, files, assetFiles, transfer, busy } = session;
   const cancelRef = useRef<HTMLButtonElement>(null);
 
   const diagnostics = useMemo(
@@ -53,6 +73,10 @@ export function ExportCodeDialog({ open, onClose, title, desktop, entitlement = 
   const assets = useMemo(() => (snapshot ? summarizeExportAssets(snapshot.result.assets) : null), [snapshot]);
   const refused = snapshot !== null && !snapshot.result.ok;
   const separate = session.mode === "separate";
+  /** BC-07.3: a "separate" export with packaged images can only be downloaded whole, as a ZIP. */
+  const packaged = separate && assetFiles.length > 0;
+  const embeddedImages = !separate && snapshot !== null && snapshot.result.assets.some((asset) => asset.kind === "data" && UPLOADED_IMAGE_DATA_URL.test(asset.url));
+  const imageCount = assetFiles.length === 1 ? "1 image file" : `${assetFiles.length} image files`;
 
   const statusText =
     generation.status === "checking" || generation.status === "generating"
@@ -60,7 +84,7 @@ export function ExportCodeDialog({ open, onClose, title, desktop, entitlement = 
       : generation.status === "ready" && snapshot
         ? refused
           ? "Export refused: the design has errors that must be fixed first."
-          : `Code ready: ${files.length === 1 ? "1 file" : `${files.length} files`}${diagnosticSummary ? `, ${diagnosticSummary}` : ""}.`
+          : `Code ready: ${files.length === 1 ? "1 file" : `${files.length} files`}${packaged ? ` and ${imageCount}` : ""}${diagnosticSummary ? `, ${diagnosticSummary}` : ""}.`
         : "";
 
   return (
@@ -168,7 +192,29 @@ export function ExportCodeDialog({ open, onClose, title, desktop, entitlement = 
               )}
               {separate && files.length > 0 && (
                 <p className="mt-1.5 text-xs" data-testid="export-keep-together">
-                  Keep {joinFileNames(files.map((file) => file.path))} together in one folder: index.html links to the other files by name.
+                  {packaged
+                    ? `Keep ${joinFileNames([...files.map((file) => file.path), "the assets folder"])} together: index.html links to the other files by name.`
+                    : `Keep ${joinFileNames(files.map((file) => file.path))} together in one folder: index.html links to the other files by name.`}
+                </p>
+              )}
+              {packaged && (
+                <div className="mt-1.5 text-xs" data-testid="export-image-files">
+                  <p id="export-image-files-label">
+                    Uploaded images are exported as {imageCount}. Identical images are saved once.
+                  </p>
+                  <ul aria-labelledby="export-image-files-label" className="text-fg-secondary mt-1 flex max-h-16 flex-col gap-0.5 overflow-y-auto">
+                    {assetFiles.map((asset) => (
+                      <li key={asset.path} className="truncate">
+                        {asset.path} · {formatByteSize(asset.bytes.length)}
+                        {asset.references > 1 ? ` · used ${asset.references} times` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {embeddedImages && (
+                <p className="mt-1.5 text-xs" data-testid="export-embedded-images">
+                  Uploaded images are embedded inside index.html, so this one file is complete. Choose Separate files to get them as image files.
                 </p>
               )}
             </div>
@@ -224,15 +270,22 @@ export function ExportCodeDialog({ open, onClose, title, desktop, entitlement = 
               <Download aria-hidden="true" className="size-3.5" />
               Download {session.selectedPath}
             </button>
-            <button
-              type="button"
-              onClick={() => session.downloadFiles(files.map((file) => file.path))}
-              disabled={!exportable || busy}
-              className={primaryButtonClass}
-            >
-              <Download aria-hidden="true" className="size-3.5" />
-              Download all files
-            </button>
+            {packaged ? (
+              <button type="button" onClick={session.downloadPackage} disabled={!exportable || busy} className={primaryButtonClass}>
+                <FileArchive aria-hidden="true" className="size-3.5" />
+                Download website (.zip)
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => session.downloadFiles(files.map((file) => file.path))}
+                disabled={!exportable || busy}
+                className={primaryButtonClass}
+              >
+                <Download aria-hidden="true" className="size-3.5" />
+                Download all files
+              </button>
+            )}
           </>
         ) : (
           <button type="button" onClick={() => session.downloadFiles(["index.html"])} disabled={!exportable || busy} className={primaryButtonClass}>

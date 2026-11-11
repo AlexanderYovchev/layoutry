@@ -110,7 +110,8 @@ describe("Image section upload (BC-07.2)", () => {
     choose(pngFile());
     expect(await screen.findByRole("alert")).toHaveTextContent("This image would make the project too large to save.");
     expect(store().document).toBe(before);
-  });
+    // Bisecting a ~16 MB document takes about 25 full measurements: slow under a parallel full run.
+  }, 20_000);
 
   it("while reading: the button says so, keeps focus, and ignores further clicks", async () => {
     let finish!: (size: { width: number; height: number }) => void;

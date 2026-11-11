@@ -55,7 +55,11 @@ export interface ExportInteraction {
   action: InteractionAction;
 }
 
-export type ExportAssetKind = "remote" | "relative" | "data";
+/**
+ * "packaged" (BC-07.3): an embedded raster image written as its own file
+ * in the export's assets folder; `url` is then that file's relative path.
+ */
+export type ExportAssetKind = "remote" | "relative" | "data" | "packaged";
 
 /** A URL the exported page loads at view time. */
 export interface ExportAsset {
@@ -75,5 +79,17 @@ export interface ExportDocument {
   /** What those bindings do at runtime — the input of every interaction runtime (EXPORT-1.3). */
   behaviors: ExportBehaviors;
   assets: ExportAsset[];
+  /** Image files a "separate" export ships in its assets folder (BC-07.3); empty otherwise. */
+  assetFiles: ExportAssetFile[];
   diagnostics: ExportDiagnostic[];
+}
+
+/** One packaged image file (BC-07.3): the exact embedded bytes, under an engine-chosen name. */
+export interface ExportAssetFile {
+  /** Relative path inside the export, e.g. "assets/image-001.png". */
+  path: string;
+  bytes: Uint8Array;
+  mediaType: string;
+  /** How many source references (img src, poster, background image) point at it. */
+  references: number;
 }

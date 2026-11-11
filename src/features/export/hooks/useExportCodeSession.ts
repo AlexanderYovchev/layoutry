@@ -9,6 +9,9 @@ import type { ExportFile, HtmlCssExportMode, HtmlCssExportOptions, HtmlCssExport
 import { copyTextToClipboard } from "@/features/export/utils/copyTextToClipboard";
 import { exportHtmlCss } from "@/features/export/utils/exportHtmlCss";
 import { joinFileNames } from "@/features/export/utils/joinFileNames";
+import { exportPackageFileName, zipExportPackage } from "@/features/export/utils/zipExportPackage";
+import type { ExportAssetFile } from "@/features/export/types/exportIr";
+import { downloadBlob } from "@/lib/downloadBlob";
 import { downloadTextFile } from "@/lib/downloadTextFile";
 
 /**
@@ -56,6 +59,14 @@ export interface UseExportCodeSessionOptions {
 const GENERATION_FAILED =
   "Layoutry couldn't generate code for this design. Nothing was exported. Try Regenerate; if it keeps failing, save your project and report the problem.";
 const STALE_BEFORE_SAVE = "The design changed while you were choosing where to save, so nothing was saved. Regenerate the code, then save again.";
+
+/** "index.html, styles.css and 2 image files in assets" — packaged images are summarized, not listed one by one. */
+function describeSavedFiles(fileNames: readonly string[]): string {
+  const images = fileNames.filter((name) => name.startsWith("assets/")).length;
+  const others = fileNames.filter((name) => !name.startsWith("assets/"));
+  if (images === 0) return joinFileNames(others);
+  return joinFileNames([...others, `${images === 1 ? "1 image file" : `${images} image files`} in assets`]);
+}
 
 /**
  * The export dialog's state machine (EXPORT-1.4), kept out of the
@@ -139,6 +150,8 @@ export function useExportCodeSession({ open, title, entitlement, desktop, export
   const snapshot = generation.status === "ready" ? generation.snapshot : null;
   const stale = snapshot !== null && currentDocument !== null && (currentDocument !== snapshot.document || title !== snapshot.title);
   const files: readonly ExportFile[] = snapshot?.result.ok ? snapshot.result.files : [];
+  /** BC-07.3: the image files a "separate" export ships in assets/. */
+  const assetFiles: readonly ExportAssetFile[] = snapshot?.result.ok ? snapshot.result.assetFiles : [];
   const exportable = snapshot !== null && snapshot.result.ok && !stale;
 
   function setMode(nextMode: HtmlCssExportMode) {
@@ -192,13 +205,37 @@ export function useExportCodeSession({ open, title, entitlement, desktop, export
     });
   }
 
+  /**
+   * BC-07.3: the whole "separate" export — text files and assets/ — as one
+   * ZIP, the only way a browser download can keep the assets folder. Built
+   * from the snapshot on screen, like every other transfer.
+   */
+  function downloadPackage() {
+    if (!exportable || !snapshot || transferBusyRef.current) return;
+    const name = exportPackageFileName(snapshot.title);
+    let bytes: Uint8Array;
+    try {
+      bytes = zipExportPackage(snapshot.result.files, snapshot.result.assetFiles);
+    } catch {
+      setTransfer({ status: "error", message: "Layoutry couldn't build the website package. Nothing was downloaded. Try Regenerate." });
+      return;
+    }
+    try {
+      downloadBlob(name, new Blob([bytes as BlobPart], { type: "application/zip" }));
+    } catch {
+      setTransfer({ status: "error", message: "The browser refused the download. Nothing was downloaded." });
+      return;
+    }
+    setTransfer({ status: "done", message: `Download of ${name} started. Unzip it and open index.html; keep the assets folder next to it.` });
+  }
+
   function writeToDesktop(token: string, overwrite: boolean, saving: ExportSnapshot): Promise<ExportTransferState> {
     if (!desktop) return Promise.resolve({ status: "idle" });
     const latest = useEditorStore.getState().document;
     if (latest !== saving.document || titleRef.current !== saving.title) return Promise.resolve({ status: "error", message: STALE_BEFORE_SAVE });
     setTransfer({ status: "busy", message: "Saving…" });
-    return desktop.writeExportFiles(token, saving.result.files, overwrite).then((result): ExportTransferState => {
-      if (result.status === "saved") return { status: "done", message: `Saved ${joinFileNames(result.fileNames)} to “${result.label}”.` };
+    return desktop.writeExportFiles(token, [...saving.result.files, ...saving.result.assetFiles], overwrite).then((result): ExportTransferState => {
+      if (result.status === "saved") return { status: "done", message: `Saved ${describeSavedFiles(result.fileNames)} to “${result.label}”.` };
       if (result.status === "conflict") return { status: "conflict", token, label: result.label, existing: result.existing };
       return { status: "error", message: result.error.message };
     });
@@ -235,6 +272,7 @@ export function useExportCodeSession({ open, title, entitlement, desktop, export
     stale,
     exportable,
     files,
+    assetFiles,
     selectedPath,
     setSelectedPath,
     regenerate,
@@ -242,6 +280,7 @@ export function useExportCodeSession({ open, title, entitlement, desktop, export
     busy: transfer.status === "busy",
     copySelected,
     downloadFiles,
+    downloadPackage,
     saveToDesktop,
     resolveConflict,
   };

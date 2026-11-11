@@ -21,11 +21,15 @@ const SCRIPT_MEDIA_TYPE = "text/javascript; charset=utf-8";
  * - "standalone": index.html with the stylesheet in <style> and, when
  *   needed, the runtime in a <script> at the end of <body>.
  * - "separate": index.html + styles.css, plus script.js only when needed —
- *   a static page stays exactly two files with no script at all.
+ *   a static page stays exactly two files with no script at all. Embedded
+ *   PNG/JPEG/GIF/WebP images become files in assets/ (BC-07.3,
+ *   `assetFiles`), referenced by relative path from the HTML and CSS; a
+ *   page without them exports exactly as before.
  */
 export function exportHtmlCss(document: EditorElementNode, options: HtmlCssExportOptions): HtmlCssExportResult {
-  const built = buildExportDocument(document);
-  if (!built.ok) return { ok: false, files: [], diagnostics: built.diagnostics, assets: [] };
+  // Only separate files can deliver an assets folder; a single HTML file keeps images embedded (BC-07.3).
+  const built = buildExportDocument(document, undefined, { packageImages: options.mode === "separate" });
+  if (!built.ok) return { ok: false, files: [], diagnostics: built.diagnostics, assets: [], assetFiles: [] };
 
   const diagnostics = [...built.document.diagnostics];
   const css = printExportStylesheet(built.document);
@@ -55,5 +59,5 @@ export function exportHtmlCss(document: EditorElementNode, options: HtmlCssExpor
   }
 
   const ok = !diagnostics.some((diagnostic) => diagnostic.severity === "error");
-  return { ok, files: ok ? files : [], diagnostics, assets: ok ? built.document.assets : [] };
+  return { ok, files: ok ? files : [], diagnostics, assets: ok ? built.document.assets : [], assetFiles: ok ? built.document.assetFiles : [] };
 }

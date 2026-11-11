@@ -1,4 +1,4 @@
-import { RASTER_MEDIA_TYPES, sniffRasterImage, type RasterImageFormat } from "@/features/inspector/utils/sniffRasterImage";
+import { RASTER_MEDIA_TYPES, sniffRasterImage, type RasterImageFormat } from "@/lib/sniffRasterImage";
 
 /**
  * Upload limits (BC-07.2, approved by the product owner). "MB" means

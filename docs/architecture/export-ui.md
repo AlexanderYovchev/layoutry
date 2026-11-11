@@ -95,6 +95,16 @@ itself stores clipboard text with CRLF line endings.
   "Download all files", which starts one download per file. Browsers may ask
   permission for multiple downloads, or block them; the message says so and
   points to the per-file button. The dialog says to keep the files together.
+- **Separate files with uploaded images (BC-07.3):** separate downloads
+  can't create a folder, so "Download all files" becomes **Download website
+  (.zip)**: one ZIP (`<project name>.zip`) with the text files at its root
+  and the images in `assets/`, built with `fflate` from the files on screen
+  (`utils/zipExportPackage.ts`; text deflated, images stored as they are,
+  fixed timestamps so the same files give the same bytes, and only the
+  engine's own paths accepted). The dialog lists the image files with their
+  sizes and use counts.
+- **Single HTML file with uploaded images:** the images stay embedded, and
+  the dialog says so and points to Separate files.
 - The message says a download *started*. Only the browser knows whether the
   user kept it.
 - Nothing is uploaded; there is no backend.
@@ -111,6 +121,10 @@ itself stores clipboard text with CRLF line endings.
   If any of `index.html`, `styles.css` or `script.js` already exists there,
   Layoutry lists them and asks: **Replace** or **Keep existing files**.
   Nothing else in the folder is touched.
+- **Separate files with uploaded images (BC-07.3):** the images go in an
+  `assets` folder inside the chosen folder, created if missing. Existing
+  `assets/image-NNN.*` files are part of the same Replace question; other
+  files in `assets` are never touched (images from an older export stay).
 - The result names the files and folder, never a full path. Cancel saves
   nothing and says so.
 
@@ -130,6 +144,13 @@ itself stores clipboard text with CRLF line endings.
   `script.js`. A single-file destination takes exactly `index.html` (written
   to the chosen file name); a folder needs `index.html` and `styles.css`.
   No duplicates, at most 16 Mi characters per file and 32 Mi in total.
+- **Packaged images (BC-07.3)** travel in the same `files` array as
+  `{path, bytes}` (a `Uint8Array`, copied by the preload). The only accepted
+  names are `assets/image-NNN.(png|jpg|gif|webp)`; the bytes must start with
+  that format's signature; at most 16 MiB each, 64 MiB and 4,096 images in
+  total; only for a folder destination.
+- **The assets folder** must be missing or a real folder: a link or a file
+  named `assets` is refused before anything is read through it.
 - **No links.** The destination folder and every target file must not be a
   symbolic link or junction (`lstat`); target files must be regular files.
 - **Nothing executes.** Files are written as text; nothing is opened.
@@ -143,11 +164,14 @@ staged:
    its bytes and SHA-256), and stop with a conflict if files exist and the
    user hasn't confirmed.
 2. **Stage:** write and flush every file to a uniquely named temporary file
-   (`.<name>.<random>.layoutry-export-tmp`) in the destination folder. If
-   this fails (disk full, permissions), the temporaries are removed and
-   nothing visible has changed.
-3. **Replace** each file by renaming its temporary over it, `index.html`
-   last so the folder never links to files that aren't there yet. Just
+   (`.<name>.<random>.layoutry-export-tmp`) next to its target. An `assets`
+   folder is created first when needed. If this fails (disk full,
+   permissions), the temporaries are removed, an `assets` folder this export
+   created is removed again (only if empty), and nothing visible has
+   changed.
+3. **Replace** each file by renaming its temporary over it, images first
+   and `index.html` last so the folder never links to files that aren't
+   there yet. Just
    before each rename, the target is checked again: a file that appeared or
    changed since step 1 stops the export. Renames blocked for a moment
    (antivirus, indexer) are retried briefly.
@@ -230,11 +254,8 @@ Keeping the open state in a store saved another ~80 ms: re-rendering the
 editor root would re-render every Canvas node through the drag-and-drop
 context.
 
-## Future: ZIP packaging (EXPORT-1.8)
+## ZIP packaging (BC-07.3)
 
-Separate files are downloaded one by one today. A ZIP would make that one
-download. It belongs at the delivery step, not in the engine: the engine
-already returns the file list with relative paths, and the desktop service
-already validates names. Points to settle then: a dependency-free ZIP
-writer (store or deflate), a size limit, and keeping the per-file buttons
-for users who don't want an archive.
+The browser ZIP exists for Separate files with uploaded images (see Browser
+downloads). Pages without them keep the one-download-per-file behaviour and
+the per-file buttons. The desktop app writes a folder; it has no ZIP option.

@@ -22,6 +22,20 @@ describe("desktop export bridge", () => {
     expect(raw.writeExportFiles).toHaveBeenCalledWith("t", [{ path: "index.html", content: "<p>" }], false);
   });
 
+  it("sends a packaged image as its path and bytes only (BC-07.3)", async () => {
+    const raw = {
+      chooseExportDestination: vi.fn(),
+      writeExportFiles: vi.fn(async () => ({ status: "saved", label: "Site", fileNames: ["assets/image-001.png", "index.html"] })),
+    };
+    const bridge = createDesktopExportFiles(raw);
+    if (!bridge) throw new Error("no bridge");
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const asset = { path: "assets/image-001.png", bytes, mediaType: "image/png", references: 2 };
+    const html = { path: "index.html", content: "<p>", mediaType: "text/html" };
+    await bridge.writeExportFiles("t", [html, asset], true);
+    expect(raw.writeExportFiles).toHaveBeenCalledWith("t", [{ path: "index.html", content: "<p>" }, { path: "assets/image-001.png", bytes }], true);
+  });
+
   it("turns malformed results and failed calls into an honest error", async () => {
     const bridge = createDesktopExportFiles({
       chooseExportDestination: async () => ({ status: "chosen", destination: { token: 5 } }),

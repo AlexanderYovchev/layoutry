@@ -91,14 +91,20 @@ describe("Image alt text (BC-07.2)", () => {
     const reopened = saveAndReopen();
     expect(findNodeById(reopened, imageId)).toMatchObject({ src: PNG_DATA_URL, displayName: `A "quoted" <b> & 'single'` });
 
-    for (const mode of ["standalone", "separate"] as const) {
-      const result = exportHtmlCss(reopened, { mode, title: "Alt" });
-      expect(result.ok).toBe(true);
-      const html = result.files.find((file) => file.path === "index.html")!.content;
-      expect(html).toContain(`src="${PNG_DATA_URL}" alt="A &quot;quoted&quot; &lt;b&gt; &amp; &#39;single&#39;"`);
-      expect(result.assets).toContainEqual({ nodeId: imageId, property: "src", url: PNG_DATA_URL, kind: "data" });
-      expect(result.diagnostics.filter((d) => d.nodeId === imageId)).toEqual([]);
-    }
+    const escapedAlt = `alt="A &quot;quoted&quot; &lt;b&gt; &amp; &#39;single&#39;"`;
+    // Single HTML file: the image stays embedded.
+    const standalone = exportHtmlCss(reopened, { mode: "standalone", title: "Alt" });
+    expect(standalone.ok).toBe(true);
+    expect(standalone.files[0].content).toContain(`src="${PNG_DATA_URL}" ${escapedAlt}`);
+    expect(standalone.assets).toContainEqual({ nodeId: imageId, property: "src", url: PNG_DATA_URL, kind: "data" });
+    expect(standalone.diagnostics.filter((d) => d.nodeId === imageId)).toEqual([]);
+    // Separate files (BC-07.3): the same bytes as assets/image-001.png, the alt text unchanged.
+    const separate = exportHtmlCss(reopened, { mode: "separate", title: "Alt" });
+    expect(separate.ok).toBe(true);
+    expect(separate.files.find((file) => file.path === "index.html")!.content).toContain(`src="assets/image-001.png" ${escapedAlt}`);
+    expect(separate.assets).toContainEqual({ nodeId: imageId, property: "src", url: "assets/image-001.png", kind: "packaged" });
+    expect(Buffer.from(separate.assetFiles[0].bytes).equals(fixture("images", "upload-40x30.png"))).toBe(true);
+    expect(separate.diagnostics.filter((d) => d.nodeId === imageId)).toEqual([]);
   });
 });
 

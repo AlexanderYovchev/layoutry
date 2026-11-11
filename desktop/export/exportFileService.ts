@@ -23,15 +23,20 @@ import {
  * native Save dialog (one HTML file) or folder picker (separate files) —
  * and gets an opaque token. It then sends the generated files by name;
  * only index.html, styles.css and script.js are accepted, and each is
- * written directly inside the chosen folder.
+ * written directly inside the chosen folder. A separate-files export may
+ * also send packaged images (BC-07.3), as bytes, named only
+ * assets/image-NNN.(png|jpg|gif|webp): they go in an "assets" folder inside
+ * the chosen folder, created if missing, and only if it is a real folder.
  *
  * Several files can't be replaced in one atomic step on Windows, so a
  * write is staged: every file is first written and flushed to a temporary
- * file in the destination folder (nothing visible changes if that fails),
+ * file next to its destination (nothing visible changes if that fails),
  * then each is renamed over its destination. If a rename fails, the files
  * already replaced are put back — earlier contents restored, files that
  * didn't exist removed (only if they still hold exactly what this export
- * wrote) — and nothing else in the folder is ever touched.
+ * wrote) — and nothing else in the folder is ever touched. An assets
+ * folder this export created is removed again on failure, only if empty.
+ * Images are renamed into place first, index.html always last.
  */
 
 export type ExportMode = "standalone" | "separate";
@@ -39,6 +44,35 @@ export type ExportMode = "standalone" | "separate";
 /** The only names an export may write — exactly what exportHtmlCss produces. */
 export const EXPORT_FILE_NAMES = ["index.html", "styles.css", "script.js"] as const;
 type ExportFileName = (typeof EXPORT_FILE_NAMES)[number];
+
+/** Packaged image names (BC-07.3): the export engine's own numbering, nothing user-chosen. */
+const ASSET_PATH = /^assets\/image-\d{3,6}\.(png|jpg|gif|webp)$/;
+export const EXPORT_ASSET_FOLDER = "assets";
+/** A project holds at most 16 Mi characters, so its embedded images decode to under 12 MiB in total. */
+export const MAX_EXPORT_ASSET_BYTES = 16 * 1024 * 1024;
+export const MAX_EXPORT_ASSET_TOTAL_BYTES = 64 * 1024 * 1024;
+const MAX_EXPORT_ASSETS = 4096;
+
+/**
+ * The bytes must really be the image their name says. This is defence in
+ * depth at the process boundary: the renderer already checked them fully.
+ */
+function hasImageSignature(bytes: Uint8Array, extension: string): boolean {
+  const starts = (offset: number, values: readonly number[]) => values.every((value, index) => bytes[offset + index] === value);
+  const ascii = (offset: number, text: string) => starts(offset, Array.from(text, (char) => char.charCodeAt(0)));
+  switch (extension) {
+    case "png":
+      return starts(0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    case "jpg":
+      return starts(0, [0xff, 0xd8, 0xff]);
+    case "gif":
+      return ascii(0, "GIF87a") || ascii(0, "GIF89a");
+    case "webp":
+      return ascii(0, "RIFF") && ascii(8, "WEBP");
+    default:
+      return false;
+  }
+}
 
 /** A 20,000-element page (the project maximum) exports ~1.9 MB of CSS; this leaves wide headroom. */
 export const MAX_EXPORT_FILE_CHARACTERS = 16 * 1024 * 1024;
@@ -68,11 +102,19 @@ export type WriteExportFilesResult =
 /** fs calls, injectable so tests can fail any step. */
 export interface ExportFileOps extends Omit<ProjectFileOps, "lstat"> {
   lstat: (filePath: string) => Promise<{ size: number; isFile(): boolean; isDirectory(): boolean; isSymbolicLink(): boolean }>;
+  /** Creates one folder (not recursive); fails if anything exists there. */
+  mkdir: (folderPath: string) => Promise<void>;
+  /** Removes one folder, only if it is empty. */
+  rmdir: (folderPath: string) => Promise<void>;
 }
 
 export const nodeExportFileOps: ExportFileOps = {
   ...nodeProjectFileOps,
   lstat: (filePath) => nodeFs.lstat(filePath),
+  mkdir: async (folderPath) => {
+    await nodeFs.mkdir(folderPath);
+  },
+  rmdir: (folderPath) => nodeFs.rmdir(folderPath),
 };
 
 export interface ExportFileServiceOptions {
@@ -101,10 +143,19 @@ type Destination =
   | { kind: "folder"; folder: string; label: string };
 
 interface Target {
-  name: ExportFileName;
+  /** index.html, styles.css, script.js, or assets/image-NNN.ext. */
+  name: string;
   filePath: string;
   /** The name the user sees: the chosen file name, or the fixed name in the folder. */
   label: string;
+  bytes: Buffer;
+}
+
+/** A validated write request's files. */
+interface ExportPayload {
+  texts: Map<ExportFileName, string>;
+  /** BC-07.3: packaged images, by their assets/ path. */
+  assets: Map<string, Buffer>;
 }
 
 class ExportError extends Error {
@@ -168,11 +219,28 @@ function expectMode(value: unknown): ExportMode {
   return value;
 }
 
-function expectFiles(value: unknown): Map<ExportFileName, string> {
-  if (!Array.isArray(value) || value.length < 1 || value.length > EXPORT_FILE_NAMES.length) throw new InvalidPayloadError("files must be an array of 1–3 files");
+function expectFiles(value: unknown): ExportPayload {
+  if (!Array.isArray(value) || value.length < 1 || value.length > EXPORT_FILE_NAMES.length + MAX_EXPORT_ASSETS)
+    throw new InvalidPayloadError("files must be an array of 1–3 files plus packaged images");
   const files = new Map<ExportFileName, string>();
+  const assets = new Map<string, Buffer>();
   let total = 0;
+  let assetTotal = 0;
   for (const entry of value) {
+    if (typeof entry === "object" && entry !== null && "bytes" in entry) {
+      const asset = expectKeys(entry, ["path", "bytes"]);
+      const assetPath = asset.path;
+      const match = typeof assetPath === "string" ? ASSET_PATH.exec(assetPath) : null;
+      if (typeof assetPath !== "string" || !match) throw new InvalidPayloadError("unexpected asset name");
+      if (assets.has(assetPath)) throw new InvalidPayloadError("duplicate asset");
+      if (!(asset.bytes instanceof Uint8Array)) throw new InvalidPayloadError("asset bytes must be a Uint8Array");
+      if (asset.bytes.length === 0 || asset.bytes.length > MAX_EXPORT_ASSET_BYTES) throw new InvalidPayloadError("asset size out of range");
+      if (!hasImageSignature(asset.bytes, match[1])) throw new InvalidPayloadError("asset bytes don't match its type");
+      assetTotal += asset.bytes.length;
+      if (assetTotal > MAX_EXPORT_ASSET_TOTAL_BYTES) throw new InvalidPayloadError("assets too large");
+      assets.set(assetPath, Buffer.from(asset.bytes));
+      continue;
+    }
     const file = expectKeys(entry, ["path", "content"]);
     const name = EXPORT_FILE_NAMES.find((candidate) => candidate === file.path);
     if (!name) throw new InvalidPayloadError("unexpected export file name");
@@ -183,7 +251,8 @@ function expectFiles(value: unknown): Map<ExportFileName, string> {
     if (total > MAX_EXPORT_TOTAL_CHARACTERS) throw new InvalidPayloadError("export too large");
     files.set(name, file.content);
   }
-  return files;
+  if (files.size === 0) throw new InvalidPayloadError("an export needs at least index.html");
+  return { texts: files, assets };
 }
 
 export function createExportFileService(options: ExportFileServiceOptions) {
@@ -223,7 +292,7 @@ export function createExportFileService(options: ExportFileServiceOptions) {
     if (!stat.isDirectory()) throw new ExportError("not-a-folder", `“${folderLabel(folder)}” isn't a folder.`);
   }
 
-  async function observe(target: Target, folder: string): Promise<TargetState> {
+  async function observe(target: Pick<Target, "filePath" | "label">, folder: string): Promise<TargetState> {
     let stat;
     try {
       stat = await ops.lstat(target.filePath);
@@ -268,7 +337,7 @@ export function createExportFileService(options: ExportFileServiceOptions) {
     }
     const folder = path.dirname(filePath);
     await assertRealFolder(folder);
-    const state = await observe({ name: "index.html", filePath, label: path.basename(filePath) }, folder);
+    const state = await observe({ filePath, label: path.basename(filePath) }, folder);
     lastFolder = folder;
     const label = folderLabel(folder);
     return {
@@ -291,27 +360,65 @@ export function createExportFileService(options: ExportFileServiceOptions) {
     return { status: "chosen", destination: { token: issue(ownerId, { kind: "folder", folder, label }), label } };
   }
 
-  function targetsFor(destination: Destination, files: Map<ExportFileName, string>): Target[] {
+  function targetsFor(destination: Destination, payload: ExportPayload): Target[] {
+    const { texts: files, assets } = payload;
+    const textBytes = (name: ExportFileName) => Buffer.from(files.get(name) ?? "", "utf8");
     if (destination.kind === "file") {
-      if (files.size !== 1 || !files.has("index.html")) throw new InvalidPayloadError("a single-file export is exactly index.html");
-      return [{ name: "index.html", filePath: destination.filePath, label: path.basename(destination.filePath) }];
+      if (files.size !== 1 || !files.has("index.html") || assets.size > 0) throw new InvalidPayloadError("a single-file export is exactly index.html");
+      return [{ name: "index.html", filePath: destination.filePath, label: path.basename(destination.filePath), bytes: textBytes("index.html") }];
     }
     if (!files.has("index.html") || !files.has("styles.css")) throw new InvalidPayloadError("a separate-files export needs index.html and styles.css");
-    // index.html last: until it is in place, the folder never links to files that aren't there yet.
+    const assetsFolder = path.join(destination.folder, EXPORT_ASSET_FOLDER);
+    // Images first and index.html last: until it is in place, the folder never links to files that aren't there yet.
+    const imageTargets: Target[] = [...assets.entries()].map(([name, bytes]) => {
+      const filePath = path.join(assetsFolder, name.slice(EXPORT_ASSET_FOLDER.length + 1));
+      // Engine-numbered names can't escape the assets folder; checked anyway.
+      if (path.dirname(filePath) !== assetsFolder) throw new InvalidPayloadError("export file outside its folder");
+      return { name, filePath, label: name, bytes };
+    });
     const order: ExportFileName[] = ["styles.css", "script.js", "index.html"];
-    return order
+    const textTargets = order
       .filter((name) => files.has(name))
       .map((name) => {
         const filePath = path.join(destination.folder, name);
         // Fixed names can't escape the folder; checked anyway.
         if (path.dirname(filePath) !== destination.folder) throw new InvalidPayloadError("export file outside its folder");
-        return { name, filePath, label: name };
+        return { name, filePath, label: name, bytes: textBytes(name) };
       });
+    return [...imageTargets, ...textTargets];
   }
 
-  function tempPathFor(target: Target, folder: string): string {
+  /**
+   * The assets folder an image export writes into (BC-07.3): missing (to be
+   * created) or a real folder. A link (symbolic link or junction) or a file
+   * there is refused before anything is read or written through it.
+   */
+  async function inspectAssetsFolder(folder: string): Promise<"missing" | "folder"> {
+    const assetsFolder = path.join(folder, EXPORT_ASSET_FOLDER);
+    let stat;
+    try {
+      stat = await ops.lstat(assetsFolder);
+    } catch (error) {
+      if (errnoOf(error) === "ENOENT") return "missing";
+      throw errorFromErrno(error, EXPORT_ASSET_FOLDER, folderLabel(folder));
+    }
+    if (stat.isSymbolicLink())
+      throw new ExportError(
+        "symbolic-link",
+        `“${EXPORT_ASSET_FOLDER}” in “${folderLabel(folder)}” is a shortcut link (symbolic link or junction). Layoutry doesn't write through links; remove it or choose another folder.`,
+      );
+    if (!stat.isDirectory())
+      throw new ExportError(
+        "not-a-folder",
+        `“${EXPORT_ASSET_FOLDER}” in “${folderLabel(folder)}” is a file, so the exported images can't go in an assets folder there. Rename it or choose another folder.`,
+      );
+    return "folder";
+  }
+
+  /** Next to its target, so the final rename never crosses folders or volumes. */
+  function tempPathFor(target: Target): string {
     const suffix = (hooks.randomSuffix ?? (() => randomBytes(12).toString("hex")))();
-    return path.join(folder, `.${path.basename(target.filePath, path.extname(target.filePath))}.${suffix}${TEMP_EXTENSION}`);
+    return path.join(path.dirname(target.filePath), `.${path.basename(target.filePath, path.extname(target.filePath))}.${suffix}${TEMP_EXTENSION}`);
   }
 
   async function renameWithRetry(from: string, to: string): Promise<void> {
@@ -349,10 +456,14 @@ export function createExportFileService(options: ExportFileServiceOptions) {
     return unrestored;
   }
 
-  async function writeFiles(destination: Destination, targets: Target[], files: Map<ExportFileName, string>, overwrite: boolean): Promise<WriteExportFilesResult> {
+  async function writeFiles(destination: Destination, targets: Target[], overwrite: boolean): Promise<WriteExportFilesResult> {
     const { folder } = destination;
     const shownFolder = folderLabel(folder);
     await assertRealFolder(folder);
+    const hasImages = targets.some((target) => target.name.startsWith(`${EXPORT_ASSET_FOLDER}/`));
+    const assetsFolder = path.join(folder, EXPORT_ASSET_FOLDER);
+    // Checked before any file inside it is looked at, so nothing is ever read through a link.
+    const assetsFolderState = hasImages ? await inspectAssetsFolder(folder) : "folder";
 
     const before = new Map<Target, TargetState>();
     for (const target of targets) before.set(target, await observe(target, folder));
@@ -367,19 +478,35 @@ export function createExportFileService(options: ExportFileServiceOptions) {
       if (existing.length > 0) return { status: "conflict", label: destination.kind === "file" ? shownFolder : destination.label, existing: existing.map((target) => target.label) };
     }
 
+    // 0. BC-07.3: the assets folder, when this export brings images and it doesn't exist yet.
+    let createdAssetsFolder = false;
+    if (hasImages && assetsFolderState === "missing") {
+      try {
+        await ops.mkdir(assetsFolder);
+      } catch (error) {
+        throw errorFromErrno(error, EXPORT_ASSET_FOLDER, shownFolder);
+      }
+      createdAssetsFolder = true;
+    }
+    // Only ever a folder this export created, and only while it is empty (rmdir refuses otherwise).
+    const removeCreatedAssetsFolder = async () => {
+      if (createdAssetsFolder) await ops.rmdir(assetsFolder).catch(() => undefined);
+    };
+
     // 1. Stage: every file written and flushed to a temporary file. Nothing visible has changed yet.
     const staged = new Map<Target, { tempPath: string; written: FileFingerprint }>();
     const discardStaged = async () => {
       for (const { tempPath } of staged.values()) await ops.unlink(tempPath).catch(() => undefined);
     };
     for (const target of targets) {
-      const bytes = Buffer.from(files.get(target.name) ?? "", "utf8");
-      const tempPath = tempPathFor(target, folder);
+      const bytes = target.bytes;
+      const tempPath = tempPathFor(target);
       let file;
       try {
         file = await ops.createExclusive(tempPath);
       } catch (error) {
         await discardStaged();
+        await removeCreatedAssetsFolder();
         throw errorFromErrno(error, target.label, shownFolder);
       }
       staged.set(target, { tempPath, written: fingerprintOf(bytes) });
@@ -390,6 +517,7 @@ export function createExportFileService(options: ExportFileServiceOptions) {
       } catch (error) {
         await file.close().catch(() => undefined);
         await discardStaged();
+        await removeCreatedAssetsFolder();
         throw errorFromErrno(error, target.label, shownFolder);
       }
     }
@@ -413,6 +541,7 @@ export function createExportFileService(options: ExportFileServiceOptions) {
       if (failure) {
         await discardStaged();
         const unrestored = await rollBack(replaced, folder);
+        await removeCreatedAssetsFolder();
         const outcome =
           unrestored.length === 0
             ? replaced.length === 0
@@ -456,13 +585,13 @@ export function createExportFileService(options: ExportFileServiceOptions) {
       const request = expectKeys(payload, ["token", "files", "overwrite"]);
       const token = expectToken(request.token);
       if (typeof request.overwrite !== "boolean") throw new InvalidPayloadError("overwrite must be a boolean");
-      const files = expectFiles(request.files);
+      const exportFiles = expectFiles(request.files);
       const destination = FILE_TOKEN_PATTERN.test(token) ? owners.get(ownerId)?.get(token) : undefined;
       if (!destination)
         return { status: "error", error: { code: "invalid-token", message: "Layoutry no longer has access to that destination. Save again and choose where to save." } };
-      const targets = targetsFor(destination, files);
+      const targets = targetsFor(destination, exportFiles);
       try {
-        const result = await writeFiles(destination, targets, files, request.overwrite);
+        const result = await writeFiles(destination, targets, request.overwrite);
         // One successful write per choice: the next export asks again.
         if (result.status === "saved") owners.get(ownerId)?.delete(token);
         return result;
