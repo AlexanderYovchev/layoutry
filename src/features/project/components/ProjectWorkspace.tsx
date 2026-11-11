@@ -12,6 +12,7 @@ import {
 import type { FileMenuCommands } from "@/components/layout/applicationMenus";
 import type { ProjectIdentityInfo } from "@/components/layout/ProjectIdentity";
 import { EditorApp } from "@/features/editor/components/EditorApp";
+import { registerDocumentSaveLimitGuard } from "@/features/editor/rules/documentSaveLimitGuard";
 import { createProjectCommands } from "@/features/project/commands/projectCommands";
 import { createProjectWorkflow } from "@/features/project/commands/projectWorkflow";
 import {
@@ -26,6 +27,7 @@ import {
   ProjectErrorDialog,
   UnsavedChangesDialog,
 } from "@/features/project/components/ProjectConfirmDialogs";
+import { documentFitsProjectFile } from "@/features/project/rules/projectSaveLimit";
 import { ProjectLibraryDialog } from "@/features/project/components/ProjectLibraryDialog";
 import { ProjectNameDialog } from "@/features/project/components/ProjectNameDialog";
 import { ProjectToast } from "@/features/project/components/ProjectToast";
@@ -194,6 +196,10 @@ export function ProjectWorkspace({
 
   useUnsavedChangesWarning(desktop === null);
   useDesktopIntegration(workflow, desktop);
+
+  // The editor refuses image uploads, pastes and duplicates that would make
+  // the project too large to save, by this feature's own file limit (BC-07.2).
+  useEffect(() => registerDocumentSaveLimitGuard(documentFitsProjectFile), []);
 
   // Loads the library once so File › Open Recent is populated.
   useEffect(() => {

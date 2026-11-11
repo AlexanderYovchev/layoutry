@@ -14,6 +14,10 @@ interface InspectorMediaTextFieldProps {
   onCommit: (value: string) => void;
   onReset: () => void;
   error?: string;
+  /** Visible helper text under the field, linked with aria-describedby (BC-07.2, Alt text). */
+  description?: string;
+  /** Commit an emptied field as "" instead of reverting it (BC-07.2: an empty alt is a real, decorative value). */
+  allowEmpty?: boolean;
 }
 
 /**
@@ -56,7 +60,10 @@ export function InspectorMediaTextField({
   onCommit,
   onReset,
   error,
+  description,
+  allowEmpty = false,
 }: InspectorMediaTextFieldProps) {
+  const descriptionId = description ? `${id}-description` : undefined;
   const [draft, setDraft] = useState(value);
   const [touched, setTouched] = useState(false);
   const suppressNextBlurCommitRef = useRef(false);
@@ -71,7 +78,7 @@ export function InspectorMediaTextField({
     if (!touched) return;
     setTouched(false);
     const trimmed = draft.trim();
-    if (trimmed === "") {
+    if (trimmed === "" && !allowEmpty) {
       setDraft(value);
       return;
     }
@@ -113,6 +120,7 @@ export function InspectorMediaTextField({
         id={id}
         type="text"
         aria-invalid={error ? true : undefined}
+        aria-describedby={descriptionId}
         value={draft}
         placeholder={placeholder}
         onChange={(event) => {
@@ -126,6 +134,11 @@ export function InspectorMediaTextField({
           error ? "border-red-400 dark:border-red-600" : "border-zinc-200 dark:border-zinc-800",
         )}
       />
+      {description && (
+        <p id={descriptionId} className="text-[11px] text-fg-secondary">
+          {description}
+        </p>
+      )}
     </InspectorPropertyRow>
   );
 }

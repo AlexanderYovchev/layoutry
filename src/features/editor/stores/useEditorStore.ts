@@ -19,6 +19,7 @@ import {
   setElementPlaceholder as setElementPlaceholderCommand,
   setElementPoster as setElementPosterCommand,
   setElementSrc as setElementSrcCommand,
+  setImageAltText as setImageAltTextCommand,
   setElementTag as setElementTagCommand,
   setElementText as setElementTextCommand,
   setElementTitle as setElementTitleCommand,
@@ -144,6 +145,7 @@ import {
   type EditorSelection,
 } from "@/features/editor/types/selection";
 import { describeStyleLockNotice, getStyleProtection, type StyleProtectionResult } from "@/features/editor/rules/styleProtection";
+import { documentFitsSaveLimit, subtreeHasEmbeddedData } from "@/features/editor/rules/documentSaveLimitGuard";
 import { clampGridChildPlacement } from "@/features/editor/utils/clampGridChildPlacement";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
 import { cloneNodeWithFreshIds } from "@/features/editor/utils/cloneNodeWithFreshIds";
@@ -231,6 +233,13 @@ interface EditorState {
    * state only, never touched by pushHistory/undo/redo.
    */
   editorNotice: { message: string; id: number } | null;
+  /**
+   * Increments every time replaceDocument loads a different document
+   * (BC-07.2). Asynchronous work that started against one document (an
+   * image upload being read and decoded) compares it before committing, so
+   * it can never land in a project opened in the meantime.
+   */
+  documentSessionId: number;
 
   /**
    * SVG Edit Mode (Checkpoint 1.15.6) — the id of the one SVG document
@@ -525,6 +534,8 @@ interface EditorState {
 
   /** One-shot media/embed source URL edit (Checkpoint 1.15 — Video's and Iframe's own Source URL field). Same action-level no-op guard as every other one-shot field command. */
   setElementSrc: (nodeId: string, src: string | undefined) => void;
+  /** One-shot Image alt text edit (BC-07.2), stored in displayName; empty clears it. */
+  setElementAltText: (nodeId: string, alt: string | undefined) => void;
   /** One-shot Video poster URL edit (Checkpoint 1.15). */
   setElementPoster: (nodeId: string, poster: string | undefined) => void;
   /** One-shot Video Controls toggle (Checkpoint 1.15). */
@@ -842,6 +853,13 @@ function guardedBulkStyleMutation(
  * committing every animation frame) from spamming re-renders or
  * restarting EditorNoticeBanner's own auto-dismiss timer (section 23).
  */
+/**
+ * Paste and Duplicate refuse a copy of embedded image data that would make
+ * the project too large to save (BC-07.2): no document change, no history,
+ * this notice instead. Checked only when the copy carries inline data.
+ */
+export const COPY_TOO_LARGE_NOTICE = "This copy would make the project too large to save. Remove unused images, or use an image URL instead of an uploaded image.";
+
 function nextEditorNoticeState(state: EditorState, message: string): Partial<EditorState> {
   if (state.editorNotice?.message === message) return {};
   return { editorNotice: { message, id: (state.editorNotice?.id ?? 0) + 1 } };
@@ -931,6 +949,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   transactionSnapshot: null,
   historyMergeSnapshot: null,
   editorNotice: null,
+  documentSessionId: 0,
   editorMode: DEFAULT_EDITOR_MODE,
   runtimeVisibility: {},
   svgEditingNodeId: null,
@@ -1453,6 +1472,13 @@ export const useEditorStore = create<EditorState>()((set) => ({
       return { ...pushHistory(state), document };
     }),
 
+  setElementAltText: (nodeId, alt) =>
+    set((state) => {
+      const document = setImageAltTextCommand(state.document, nodeId, alt);
+      if (document === state.document) return {};
+      return { ...pushHistory(state), document };
+    }),
+
   setElementPoster: (nodeId, poster) =>
     set((state) => {
       const document = setElementPosterCommand(state.document, nodeId, poster);
@@ -1788,6 +1814,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
       // A pasted trigger may still point at a target deleted since the
       // copy; that binding is removed, as deleting the target would have.
       const document = removeInteractionsWithMissingTargets(insertNode(state.document, destinationParentId, clone));
+      if (subtreeHasEmbeddedData(clone) && !documentFitsSaveLimit(document)) return nextEditorNoticeState(state, COPY_TOO_LARGE_NOTICE);
       return {
         ...pushHistory(state),
         document,
@@ -1806,6 +1833,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
         referenceId: node.id,
         placement: "after",
       });
+      if (subtreeHasEmbeddedData(clone) && !documentFitsSaveLimit(document)) return nextEditorNoticeState(state, COPY_TOO_LARGE_NOTICE);
       return { ...pushHistory(state), document, selection: selectionFromSingle(clone.id) };
     }),
 
@@ -1962,8 +1990,9 @@ export const useEditorStore = create<EditorState>()((set) => ({
     }),
 
   replaceDocument: (document) =>
-    set({
+    set((state) => ({
       document,
+      documentSessionId: state.documentSessionId + 1,
       persistedDocument: document,
       selection: EMPTY_SELECTION,
       past: [],
@@ -1979,7 +2008,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
       activeSvgTool: "select",
       svgDraft: null,
       activeSnapGuides: null,
-    }),
+    })),
 
   markDocumentPersisted: (document) => set({ persistedDocument: document }),
 }));

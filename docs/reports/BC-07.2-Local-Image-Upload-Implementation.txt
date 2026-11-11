@@ -1,0 +1,748 @@
+LAYOUTRY — BC-07.2: LOCAL IMAGE UPLOAD IMPLEMENTATION
+=====================================================
+Date: 2026-11-11
+Type: Feature implementation + security validation + persistence + regression tests
+Base commit: a31387d (main). Nothing committed.
+Author: Claude (implementation engineer), for ChatGPT QA review
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Users can now upload a PNG, JPEG, GIF or WebP file from their computer
+into an Image element. The upload works the same in the browser editor
+and the desktop app.
+
+How an uploaded image is stored and used:
+- The file's exact bytes are embedded as a data URL in the Image's
+  existing `src` field.
+- Canvas, Preview, Save, Reopen, crash recovery and Export all use that
+  value unchanged.
+- Project format stays 2. There is no migration, no asset registry and
+  no new desktop IPC.
+
+Checks before anything is committed:
+- Each file is checked by its bytes: signature, header structure and
+  completeness, then a real browser decode.
+- Limits: 5 MB per file and 8192 pixels per side.
+- SVG is refused.
+- The proposed document is measured with Save's own serializer against
+  Save's own size limit, before commit.
+
+Undo/Redo:
+- Upload, Replace and Remove are one Undo step each.
+- A rejected or cancelled upload changes nothing: document, history and
+  unsaved state are all untouched.
+
+Alt text:
+- A new Alt text field writes the value the Canvas, Preview and Export
+  already render as `alt`.
+
+Duplicate and Paste:
+- These now refuse a copy of embedded data that would make the project
+  unsaveable. The user sees a notice and nothing changes.
+
+Two findings came out of cross-browser testing and are fixed here:
+- Firefox and WebKit "decode" a cut-off PNG, JPEG or GIF as a partly
+  blank image instead of failing. A decode alone therefore cannot prove
+  a file is complete.
+- The validator now also checks each format's structural completeness:
+  - PNG: chunks fit the file, with IDAT before IEND;
+  - JPEG: an end-of-image marker after the scan;
+  - GIF: the trailer byte;
+  - WebP: the RIFF size.
+
+Validation:
+- typecheck and lint are clean;
+- Vitest: 5622 passed, 1 skipped (+88 tests);
+- Chromium full suite: 247/247;
+- image upload in Firefox and WebKit: 6/6 each;
+- Electron full suite: 76 passed, 2 skipped;
+- production and desktop builds succeed.
+
+The full Chromium run caught one real defect in this checkpoint: the
+hidden file input had no accessible name (inspector-final-regression's
+"every Inspector form control has an accessible name"). Fixed with
+aria-label "Upload image file".
+
+Recommendation: ready for QA review.
+
+
+2. APPROVED PRODUCT DECISIONS (all implemented as approved)
+-----------------------------------------------------------
+- Formats: PNG, JPEG, GIF and WebP. SVG is excluded.
+- Limits:
+  - 5 MB per file, which is 5 × 1024 × 1024 = 5,242,880 bytes. The same
+    1024-based reading is used in the check, the messages and the size
+    the Inspector shows.
+  - 8192 pixels per side.
+- Storage: an embedded data URL in Image `src`. Project format 2, no
+  migration.
+- Export: data URLs stay embedded. Separate asset files are deferred to
+  BC-07.3.
+- Alt text is editable.
+- Undo: one atomic step per source change.
+- Project size is validated before commit.
+
+
+3. INSPECTOR UI IMPLEMENTATION
+------------------------------
+The Image section (InspectorImageSection) now has three rows, in the
+existing Inspector row style:
+
+1. "Image file" (new, InspectorImageUploadField):
+   - When the source is an uploaded image, a thumbnail card shows:
+     - the original file name, this session only;
+     - "PNG · 40 × 30 · 117 B".
+     For a reopened project it shows "Uploaded PNG image · PNG · 117 B",
+     taken from the data URL itself, because format 2 has no field for a
+     file name.
+   - The button reads "Upload image…", "Replace image…" once an upload
+     is the source, or "Reading image…" while busy.
+   - A "Remove" button appears while an upload is the source.
+   - A visible hint: "PNG, JPEG, GIF or WebP, up to 5 MB and 8192 pixels
+     on each side."
+   - Errors appear in the row's existing role="alert" message.
+   - A hidden <input type="file"> carries the picker filter. It has no
+     `multiple`, tabIndex is -1, and it is aria-hidden: the same pattern
+     as Import Project.
+2. Source URL: the existing field.
+   - When an upload is the source, the field shows empty with the
+     placeholder "Or paste an image URL", not megabytes of base64.
+   - Typing a URL replaces the upload.
+   - Its Reset is for URL sources and is disabled while an upload is the
+     source; Remove clears an upload.
+   - URL validation is unchanged (isValidLinkHref).
+3. Alt text (new): see section 11.
+
+No other Inspector section was changed.
+
+One addition to the shared InspectorMediaTextField: two optional props.
+- `description`: visible helper text, linked with aria-describedby.
+- `allowEmpty`: commit "" instead of reverting.
+
+Both are off by default, so its four existing users behave exactly as
+before.
+
+
+4. SUPPORTED FORMATS
+--------------------
+- PNG: includes APNG, which is still a PNG.
+- JPEG: baseline and progressive.
+- GIF: 87a and 89a; animation is kept.
+- WebP: lossy (VP8), lossless (VP8L) and extended (VP8X).
+
+Data URL media types are image/png, image/jpeg, image/gif and
+image/webp, always taken from the bytes.
+
+
+5. FILE VALIDATION ARCHITECTURE
+-------------------------------
+validateImageUpload(file, decode):
+  src/features/inspector/utils/validateImageUpload.ts
+
+It never throws, and the cheapest checks run first:
+1. Name and reported type. An .svg/.svgz name or an image/svg+xml type
+   gives the SVG message. A name extension or a non-empty type outside
+   the raster allow-list is refused. A matching name or type proves
+   nothing.
+2. Size from File.size: an empty file, or more than 5 MB. This runs
+   BEFORE the file is read.
+3. Read once (arrayBuffer). The size is re-checked on the bytes actually
+   read, in case the file changed on disk.
+4. sniffRasterImage(bytes) (src/features/inspector/utils/sniffRasterImage.ts)
+   identifies the format by signature and validates header structure and
+   completeness:
+   - PNG: a 13-byte IHDR first, then every chunk must fit the file, with
+     IDAT before IEND.
+   - JPEG: marker segments are walked with every length bounds-checked
+     (fill bytes, standalone markers). A frame header (SOF0–3, 5–7, 9–11,
+     13–15) must come before the first scan, and an end-of-image marker
+     must exist after the scan. An EXIF thumbnail's end marker sits in an
+     APP segment before the scan, so it can't satisfy this.
+   - GIF: a GIF87a/89a header and logical screen; the file must end with
+     the 0x3B trailer (zero padding after it is allowed).
+   - WebP: "RIFF"…"WEBP"; the RIFF size must fit the file; then a
+     VP8/VP8L/VP8X header with its signature.
+   - Markup (optional BOM or whitespace, then "<") gives the SVG message;
+     anything else is "unsupported".
+5. Header width/height: zero or invalid means damaged; more than 8192 is
+   refused BEFORE any decode.
+6. Real decode: createImageBitmap(Blob), closed immediately. A failure
+   means damaged. The decoded size is checked again independently (EXIF
+   rotation can swap it).
+7. Base64 of the original bytes.
+
+The decoder is injectable, so unit tests run without a browser decoder.
+No custom image decoder was written: only headers are parsed.
+
+
+6. SIZE AND DIMENSION LIMITS
+----------------------------
+- 5 MB = 5,242,880 bytes.
+  - Exactly 5,242,880 is accepted; one byte more is refused before
+    reading or decoding (unit-tested with a spy on arrayBuffer and the
+    decoder).
+  - Message: "Image is too large. Maximum file size is 5 MB."
+- 8192 px per side.
+  - 8192×1 is accepted and 8193×1 refused, from the header, without
+    decoding (unit and browser tests use real fixtures).
+  - Message: "This image is 8193 × 1 pixels. The maximum is 8192 pixels
+    on each side."
+- Memory:
+  - One ArrayBuffer of the file (≤ 5 MB).
+  - One decoded bitmap, held only for its size and closed in `finally`.
+    Worst case 8192² × 4 B = 256 MB, transient; reached only after the
+    size and header gates.
+  - The base64 string.
+  - No object URL is created anywhere: the decode takes a Blob directly,
+    so there is nothing to revoke and nothing can leak.
+
+
+7. DATA URL GENERATION
+----------------------
+- Format: `data:<sniffed type>;base64,<base64 of the original bytes>`.
+- Base64 is built in 32 KiB chunks with String.fromCharCode, then btoa.
+  A test confirms it equals Node's encoder across chunk boundaries.
+- There is no re-encoding, resizing or format conversion, so GIF
+  animation, alpha and colour data survive. Unit tests compare decoded
+  data URL bytes with the fixture bytes.
+- Never stored: file:// paths, absolute paths, blob: URLs or asset ids.
+
+
+8. TOTAL PROJECT-SIZE PREFLIGHT
+-------------------------------
+Shared logic (no second limit):
+- serializeProject's text building is extracted, unchanged, into
+  `formatProjectFileText(project)` (src/features/project/utils/
+  serializeProject.ts). serializeProject still runs its integrity check,
+  then this function, then its full re-parse.
+- `documentFitsProjectFile(document)`
+  (src/features/project/rules/projectSaveLimit.ts):
+  - measures `formatProjectFileText` against the same
+    DEFAULT_PROJECT_LIMITS.maxFileCharacters (16 Mi characters) that
+    parseProjectFile enforces when saving;
+  - uses the WORST-CASE metadata the schema admits: a 128-character id
+    and a 256-character name of lone surrogates, which JSON escapes to 6
+    characters each. A later rename can therefore never push an accepted
+    document over the limit.
+  - The conservative margin is about 1.6 KB of 16 Mi (tested < 2 KB).
+- Environments: the browser library and recovery store this same text.
+  The desktop write limit (MAX_PROJECT_TEXT_LENGTH) is the same 16 Mi
+  characters, and the desktop read limit (48 MiB) is above it. So a
+  document that fits saves in both environments, and no
+  environment-specific policy is needed.
+  - Browser IndexedDB quota is not predictable. The existing
+    QuotaExceededError message ("There isn't enough storage space…")
+    still applies at Save.
+- Boundary test: bisection finds the exact largest payload that fits; one
+  character more does not. Whatever fits saves and reopens even with the
+  longest, most-escaped names.
+
+Commit (commitImageUpload, src/features/inspector/utils/commitImageUpload.ts),
+synchronous, all in one turn of the event loop:
+1. Read the latest store state.
+2. Check the document session and that the target exists and is an
+   `img`.
+3. Build the proposed document with the store's own pure setElementSrc
+   command. The replaced source is gone from it, so a replacement is
+   measured as a replacement (tested: two 7.5 Mi images, a third
+   replacing one of them is accepted).
+4. Measure it, then commit.
+
+No other edit can land between measuring and committing.
+
+Refusal message: "This image would make the project too large to save.
+Choose a smaller image or remove unused content." The document, history,
+redo stack and saved-state baseline are all identical objects afterwards
+(tested with toBe).
+
+Cost: one canonical copy plus one JSON.stringify per committed upload,
+never per render or keystroke. Measured in the browser size test: three
+4.8 MB uploads plus the checks finished well inside the test's timeouts
+(section 20).
+
+
+9. ATOMICITY AND ASYNCHRONOUS LIFECYCLE
+---------------------------------------
+useImageUpload (src/features/inspector/hooks/useImageUpload.ts) gives
+every upload a ticket.
+
+The ticket is invalidated by:
+- a newer upload;
+- the section switching to another Image;
+- the section unmounting: selection cleared, multi-selection, Inspector
+  closed, or another project opened, which clears selection.
+
+A result arriving on an invalid ticket is dropped silently.
+
+A second start while reading is ignored. The guard is a ref, so two
+clicks in one frame can't both start.
+
+A valid result is still committed only to the Image id and document
+session captured at start:
+- A new store field, `documentSessionId`, is advanced by every
+  replaceDocument. The store's field-contract test was updated to record
+  that decision, and a new test proves loads advance it and edits don't.
+- An upload whose Image was deleted is refused ("…removed before the
+  upload finished. Nothing was changed.").
+- So is an upload whose project was replaced.
+- Edits made while reading are kept: the commit applies to the latest
+  document.
+
+Picker cancel: no change event or an empty file list, so nothing happens.
+Selecting the same file again works: the input is cleared after every
+choice.
+Failed reads and decode errors give user messages, never exceptions.
+
+All of these cases are tested in commitImageUpload.test.ts and in
+InspectorImageSection.upload.test.tsx (switch, unmount, busy, cancel).
+
+
+10. UPLOAD / REPLACE / CLEAR
+----------------------------
+- Upload: the picker opens, then validation, preflight and commit, in
+  one history entry.
+- Replace: the same flow. The old image doesn't need removing first. Alt
+  text and all CSS (size, fit, border, radius, opacity, visibility) are
+  untouched; a test compares the node before and after except `src`.
+- Clear: "Remove" calls setElementSrc(undefined), the existing valid
+  empty source: the Canvas shows the icon placeholder and export emits
+  the existing missing-source warning. One history entry. Focus moves to
+  the Upload button.
+- Choosing the identical image again adds no history.
+
+
+11. ALT TEXT
+------------
+- Stored in `displayName`: the field ImageElement and buildExportDocument
+  already render as `alt`. There is no new document field and no schema
+  change.
+- New command setImageAltText (editor/commands/documentCommands.ts) and
+  store action setElementAltText.
+  - Only `img` nodes change.
+  - "" or undefined removes the field, which renders `alt=""` for a
+    decorative image.
+- UI: "Alt text", with visible helper text linked by aria-describedby:
+  "Describe the image for people using screen readers. Leave empty for
+  decorative images."
+  - It commits on Enter or blur: one Undo step per edit, not per
+    keystroke (tested).
+  - Escape reverts. Emptying the field commits a decorative alt.
+- Replacing the image keeps the authored alt.
+- Export escapes it (`"` → &quot;, `<` → &lt;, & → &amp;, ' → &#39;).
+  This is tested in both export modes and in the browser export dialog.
+- Not required: existing projects without alt stay valid and export
+  `alt=""`.
+- Side effect, by design of the existing model: `displayName` is also
+  the Structure panel's label, so an Image with alt text is listed under
+  that text.
+- No AI-generated descriptions.
+
+
+12. UNDO/REDO
+-------------
+- Upload, Replace, Remove and each Alt text commit are exactly one
+  history entry.
+- Rejected or cancelled uploads add zero entries.
+- File reading never creates an entry; only the final commit does.
+- Undo and Redo restore each source (unit tests; browser test: PNG →
+  JPEG → Undo → PNG → Redo → JPEG).
+- Memory: history snapshots share unchanged node objects, so each
+  distinct image string is held once, however many entries reference it
+  (BC-07.1 probe).
+
+
+13. CANVAS / PREVIEW / EXPORT PARITY
+------------------------------------
+Measured in Chromium, Firefox and WebKit:
+
+| Check | Result |
+|---|---|
+| Canvas src | the exact data URL |
+| Canvas natural size | 40×30 (PNG), 32×24 (JPEG), 20×10 (GIF), 24×16 (WebP), 8192×1 |
+| Preview | the same src and size |
+| Export | the same src and alt in the export dialog text |
+| Exported page, all network blocked | `naturalWidth`/`naturalHeight` 40×30 |
+
+Export paths audited:
+- Standalone HTML and Separate files (index.html + styles.css
+  [+ script.js]) are the only formats that exist.
+- Both carry the data URL unchanged in `<img src>`. Unit-tested on both;
+  the browser export dialog and a desktop "Save HTML File…" export were
+  checked too.
+- There is no ZIP, framework or asset-directory export, and none was
+  added.
+
+CSS is untouched by upload (section 10). The responsive Canvas sizes and
+layout modes render the <img> exactly as before, because only `src`
+changed.
+
+
+14. BROWSER PERSISTENCE
+-----------------------
+There is no new persistence layer: the image is part of the project
+text.
+
+Tested:
+- Library Save → page reload → Open Project: same src, size and alt
+  (Chromium, Firefox, WebKit).
+- Recovery snapshot round trip (unit: prepareRecoverySnapshot → parse).
+- After reopening, the file name is gone (session-only) and the card
+  reads "Uploaded JPEG image".
+
+Storage limits:
+- The preflight keeps every document within the 16 Mi save limit.
+- Browser quota failures still surface the existing error at Save.
+
+
+15. ELECTRON PERSISTENCE
+------------------------
+e2e/desktop/image-upload.spec.ts runs in the real Electron window:
+- Upload through the renderer's picker. Playwright intercepted Chromium's
+  file chooser in Electron, which proves the button opens the real
+  chooser.
+- Save to a real file: format 2, img src equal to the fixture's bytes,
+  alt saved.
+- A rejected SVG leaves the project "saved" and the file unchanged.
+- Save As: the original is byte-identical; the copy has the image.
+- Export → "Save HTML File…": the file contains src plus alt.
+- The copy is moved to another folder, and the app is relaunched with
+  it: same image (40×30) and alt.
+
+No desktop code changed: no IPC, preload, CSP, sandbox or fuse change.
+The CSP already allowed `data:` images.
+
+
+16. LEGACY COMPATIBILITY
+------------------------
+- Format 1 (PROJECT-1.1 fixture): upload plus alt, then serialize gives
+  format 2 and reopens (unit).
+- Desktop: open the v1 file and upload a JPEG. File › Save shows BC-05's
+  "Upgrade Project File?". Save As (Recommended) leaves the original
+  SHA-256 unchanged; the new file is format 2 with the JPEG.
+- File › Save is used there because that file contains an authored open
+  Dialog (PRJ-K1, BC-06.3).
+- No migration was added, and existing remote, relative and data URLs are
+  untouched.
+
+
+17. COPY/PASTE AND DUPLICATION
+------------------------------
+- Duplicate and copy/paste give new ids, keep src and alt, and are one
+  Undo step each, with Undo and Redo. Save/reopen of the copies equals
+  the store.
+- Duplicating a parent also works.
+- A copy is independent: replacing the copy's image leaves the original
+  alone (browser test).
+
+New guard (the smallest that closes the easy path):
+- pasteClipboard and duplicateSelection check the save limit ONLY when
+  the copy carries inline `data:` in src, poster or background image.
+- If the result would not fit, they refuse with the editor notice "This
+  copy would make the project too large to save. Remove unused images, or
+  use an image URL instead of an uploaded image."
+- No change and no history.
+- Tested: duplicate, paste of a container, cut+paste allowed, and the
+  browser duplicate after two 4.8 MB uploads.
+
+Mechanism:
+- The editor can't import the project feature, which already depends on
+  the editor.
+- ProjectWorkspace registers `documentFitsProjectFile` into
+  editor/rules/documentSaveLimitGuard.ts on mount.
+- With nothing registered (editor-only unit tests) nothing is refused.
+
+Pre-existing paths NOT guarded (reported, not changed):
+- Typing or pasting a huge data: URL into Source URL or Background image
+  URL.
+- Adding thousands of elements past the 20,000-element limit.
+- Save already refuses these with its existing error.
+
+
+18. SECURITY REVIEW
+-------------------
+- Raster-only allow-list by bytes. Signature, structure and completeness
+  are checked before a real decode, and the decode result is checked too.
+- Spoofing: renamed HTML, SVG and text files with .png/.jpg names and
+  image/* types are all refused (unit and all three browsers). A JPEG
+  named .png is stored correctly as image/jpeg.
+- SVG: refused by name, by type, and by content (any markup).
+- Uploaded content is never executed: it is shown only through
+  <img src="data:image/…">.
+- No filesystem access beyond the user-chosen File, no path ever in the
+  renderer, and no new IPC.
+- Electron sandbox, context isolation, fuses and CSP are unchanged.
+- No object/blob URLs created or persisted. Data URL media types are
+  generated, never copied from input.
+- Errors are fixed user messages with no exception text.
+- Resource exhaustion: there are size and dimension gates before decode;
+  the JPEG/PNG walks are bounded and always move forward.
+
+
+19. ACCESSIBILITY RESULTS
+-------------------------
+- Accessible names:
+  - the Upload/Replace button names itself;
+  - the hidden file input has aria-label "Upload image file" (caught by
+    the existing "every Inspector form control has an accessible name"
+    test);
+  - Remove has the aria-label "Remove uploaded image";
+  - the hint is linked by aria-describedby (asserted).
+- Keyboard (browser test, all three engines):
+  - Shift+Tab from Source URL reaches the Reset button, then Upload.
+  - Enter opens the picker, and so does Space.
+  - Focus stays on the same button through reading and after success
+    ("Replace image…").
+  - Tab reaches Remove; Enter removes, and focus returns to Upload.
+  - An error is announced (role=alert) while focus stays on the button.
+  - There is no keyboard trap.
+- While busy the button is aria-disabled and aria-busy, never `disabled`,
+  so focus isn't dropped. A polite role=status says "Reading image…".
+- Errors are text in an alert, not only colour.
+- Alt text has a visible label and associated helper text.
+- No motion was added, so reduced-motion is unaffected.
+
+
+20. PERFORMANCE OBSERVATIONS
+----------------------------
+- Validation reads the file once, encodes once and decodes once.
+- The preflight runs once per commit, and once per paste/duplicate only
+  when the copy carries inline data.
+- describeEmbeddedImage reads only the prefix and the string length, so
+  rendering the Inspector costs nothing per megabyte.
+- Browser size test: three 1100×1100 uncompressed PNGs (4.8 MB each).
+  Two were uploaded and the third refused. Then a refused duplicate and a
+  Save of an approximately 13 Mi-character project. The whole test runs
+  in about 10–15 s in Chromium.
+- The whole spec, 6 tests, ran in about 21–37 s with 4 workers.
+- No listeners or timers were added. The file-name memory is a bounded
+  map (64 entries).
+
+
+21. MODIFIED SOURCE FILES
+-------------------------
+Modified:
+- src/features/editor/commands/documentCommands.ts — setImageAltText.
+- src/features/editor/stores/useEditorStore.ts — documentSessionId,
+  setElementAltText, the paste/duplicate save-limit guard and
+  COPY_TOO_LARGE_NOTICE.
+- src/features/inspector/components/InspectorImageSection.tsx — the
+  upload field, the URL field when embedded, and Alt text.
+- src/features/inspector/components/InspectorMediaTextField.tsx —
+  optional `description` and `allowEmpty`.
+- src/features/project/components/ProjectWorkspace.tsx — registers the
+  save-limit guard.
+- src/features/project/utils/serializeProject.ts — extracts
+  formatProjectFileText; behaviour unchanged.
+
+New:
+- src/features/editor/rules/documentSaveLimitGuard.ts
+- src/features/inspector/components/InspectorImageUploadField.tsx
+- src/features/inspector/hooks/useImageUpload.ts
+- src/features/inspector/utils/sniffRasterImage.ts
+- src/features/inspector/utils/validateImageUpload.ts
+- src/features/inspector/utils/commitImageUpload.ts
+- src/features/inspector/utils/describeEmbeddedImage.ts
+- src/features/inspector/utils/uploadedImageDetails.ts
+- src/features/project/rules/projectSaveLimit.ts
+
+
+22. NEW AND UPDATED TESTS
+-------------------------
+New unit and component tests (88 new tests in total):
+- inspector/utils/sniffRasterImage.test.ts: formats, markup, malformed
+  and incomplete files, WebP variants, the JPEG segment walk.
+- inspector/utils/validateImageUpload.test.ts: four formats with exact
+  data URLs, spoofing, SVG, the size boundary, the dimension boundary,
+  decode failure, cut-off files, read failure, base64.
+- inspector/utils/commitImageUpload.test.ts: Upload/Replace/Clear
+  history, same-file no-op, other content untouched, preflight refusal,
+  replacement sizing, stale session, deleted target, wrong tag, latest
+  document, selection-independence.
+- inspector/components/InspectorImageSection.upload.test.tsx: picker
+  wiring, upload, card, reopened card, rejection changes nothing,
+  preflight message, busy state and focus, switching and unmount
+  cancellation, picker cancel, Remove, URL over upload, the Alt text
+  label/description, commit, empty, Escape.
+- editor/stores/useEditorStore.imageUpload.test.ts: alt history, empty,
+  non-img no-op, alt kept on replace, save/reopen and escaped export in
+  both modes, PNG and GIF through save, recovery and export, format 1
+  file, no-alt compatibility, duplicate/paste ids and history, refused
+  duplicate, refused paste of a container, cut+paste allowed, no guard
+  means no refusal.
+- project/rules/projectSaveLimit.test.ts: exact boundary, fits means it
+  saves with the worst names, margin < 2 KB, unwritable document, an
+  ordinary page.
+
+Updated:
+- editor/stores/useEditorStore.persistence.test.ts: documentSessionId is
+  recorded in the field-contract list (that test is designed to force
+  this decision), plus a new test that loads advance it.
+- No test was weakened or removed.
+
+New browser and desktop specs:
+- e2e/image-upload.spec.ts (6 tests).
+- e2e/desktop/image-upload.spec.ts (2 tests).
+- e2e/support/imageUploads.ts: helpers, a deterministic large PNG
+  builder and an oversized file.
+
+Fixtures, test/fixtures/images/ (covered by the existing
+`test/fixtures/** -text`, so line endings are never converted):
+- upload-40x30.png (with alpha)
+- upload-32x24.jpg
+- upload-20x10-animated.gif (2 frames)
+- upload-24x16.webp
+- upload-8192x1.png, upload-8193x1.png
+- upload-truncated.png
+- svg-image.svg (contains a script)
+- svg-renamed.png, html-renamed.png, text-renamed.jpg
+
+All are smaller than 1 KB. They were generated once by a scratch script
+(a Node PNG encoder, a hand-built GIF, Chromium canvas for JPEG/WebP) and
+verified to decode in Chromium.
+
+Regression value: every new behaviour test fails on a31387d, which has
+no upload control, no alt field, no setElementAltText,
+documentSessionId, documentFitsProjectFile or paste/duplicate guard.
+
+
+23. EXACT TEST COMMANDS AND COUNTS
+----------------------------------
+- npx tsc --noEmit -p tsconfig.json → clean
+- npx tsc --noEmit -p desktop/tsconfig.json → clean
+- npx eslint . → clean
+- npx vitest run → 372 files, 5622 passed, 1 skipped (baseline 366 /
+  5534 / 1)
+- npx playwright test (Chromium, full):
+  - first run: 245 passed, 2 failed. One was a real defect (an unnamed
+    file input, fixed); the other was a test race (section 24).
+  - after the fixes: 247 passed, 0 failed (4.2 min).
+- npx playwright test e2e/image-upload.spec.ts
+  e2e/inspector-final-regression.spec.ts --repeat-each=3 → 54 passed
+- npx playwright test e2e/image-upload.spec.ts (Chromium)
+  → 6 passed; --repeat-each=3 → 18 passed
+- npx playwright test -c playwright.zz-xbrowser.config.ts (a temporary
+  config: base + Firefox and WebKit projects, deleted after use):
+  - e2e/image-upload.spec.ts → 12 passed (6 per engine).
+  - Targeted set → 100 passed, 12 failed (4 workers):
+    - image-upload
+    - project-persistence
+    - export-workflow
+    - preview-export-parity
+    - inspector-final-regression
+    - navigation-links
+  - At 2 workers, 10 of the 12 failed again, all in export-workflow and
+    preview-export-parity (clipboard, downloads, focus after click, and
+    media in Firefox/WebKit).
+  - The SAME 10 fail at the untouched base commit a31387d. This was
+    checked in a temporary git worktree with a webpack dev server; the
+    worktree and its junction were removed afterwards.
+  - These specs run in Chromium only by project config, so the failures
+    are pre-existing engine limits, not BC-07.2 regressions. The other 2
+    of the 12 were load-related and passed at 2 workers.
+- npm run desktop:build, then
+  npx playwright test -c playwright.desktop.config.ts
+  → 76 passed, 2 skipped, 0 failed (3.0 min), including
+    e2e/desktop/image-upload.spec.ts (2).
+- npm run build → succeeded (static /, /_not-found, icons)
+- npm run desktop:build → succeeded
+- (ELECTRON_RUN_AS_NODE removed from the environment for every Electron
+  command.)
+
+
+24. BROWSER RESULTS
+-------------------
+- Chromium: all image-upload tests pass, and the full suite is in
+  section 23.
+- Firefox and WebKit: all 6 image-upload tests pass in each, after the
+  completeness fix (section 1). They failed before it.
+- Genuine engine difference found: Firefox and WebKit resolve
+  createImageBitmap for a cut-off PNG, JPEG or GIF; Chromium rejects it.
+  The structural checks now refuse these files before decoding, in every
+  engine.
+- Test race, fixed in the test: in two loaded runs, the keyboard test's
+  Enter press reached the focused Upload button, but no "filechooser"
+  event arrived.
+  - Cause: Playwright enables file-chooser interception asynchronously
+    when waitForEvent is registered, so a key press sent immediately
+    after can win.
+  - Fix: the spec turns interception on in beforeEach, with a no-op
+    listener. Nothing was weakened; every assertion is the same.
+  - After the fix: 54/54 with --repeat-each=3, then the full suite
+    247/247.
+- Not BC-07.2 (pre-existing, verified at a31387d): the 10 Firefox/WebKit
+  failures in export-workflow and preview-export-parity (section 23).
+
+
+25. ELECTRON RESULTS
+--------------------
+- e2e/desktop/image-upload.spec.ts: 2 passed.
+- Full desktop suite: 76 passed, 2 skipped (both skips are pre-existing
+  and designed).
+- Coverage limitation: the operating system's own file dialog can't be
+  driven by automation. Playwright intercepts Chromium's chooser request
+  at the point the dialog would open, which proves the button reaches
+  it, then supplies the file. Choosing a file by hand in a real dialog
+  is not automated.
+
+
+26. BUILD / TYPECHECK / LINT RESULTS
+------------------------------------
+- npx tsc --noEmit -p tsconfig.json: clean.
+- npx tsc --noEmit -p desktop/tsconfig.json: clean.
+- npx eslint .: clean.
+- npm run build: succeeded.
+- npm run desktop:build: succeeded.
+All of these were re-run after the final edits.
+
+
+27. KNOWN LIMITATIONS
+---------------------
+- The original file name is shown only in the session that uploaded the
+  image. Format 2 has no field for it, by decision.
+- About 11–12 MB of uploaded images fit per project, since base64 costs
+  4/3. Copies count again: there is no dedup, by decision.
+- Exported pages embed images inline in both modes. Separate asset files
+  are BC-07.3.
+- An Image's alt text is also its Structure-panel label, because both
+  come from displayName.
+- Undo history is uncapped, as before, so replaced images stay in memory
+  until the project is closed.
+- Not guarded, and pre-existing: a huge data: URL typed into Source URL
+  or Background image. Save still refuses an oversized project with its
+  existing error.
+- There is no drag-and-drop from the operating system, and none was
+  requested.
+
+
+28. REMAINING DEFECTS
+---------------------
+- None found in BC-07.2 scope.
+- Still open from earlier (not touched): PRJ-K1. Ctrl+S, Ctrl+Shift+S,
+  Ctrl+O and Ctrl+N are ignored while an authored open Dialog exists.
+
+
+29. GIT WORKING-TREE STATUS
+---------------------------
+Uncommitted.
+- Modified: the 6 source files in section 21, plus
+  useEditorStore.persistence.test.ts.
+- Untracked:
+  - the new source files (section 21);
+  - the new tests and the 2 new specs plus their helper (section 22);
+  - test/fixtures/images/;
+  - this report;
+  - docs/reports/BC-07.1-…txt, from the previous checkpoint, still
+    uncommitted.
+- The changelog is in the gitignored changelogs/ folder.
+- The temporary playwright.zz-xbrowser.config.ts was deleted after use.
+
+
+30. QA RECOMMENDATION
+---------------------
+Ready for QA review. All 18 acceptance criteria are met; criteria 7 and
+17 are covered by the shared preflight and the paste/duplicate guard.
+No new high-severity regressions remain: the Chromium full suite and the
+Electron full suite are green, and the only Firefox/WebKit failures are
+reproduced identically at the base commit.
+BC-07.3 has not been started.

@@ -683,6 +683,38 @@ export function setElementSrc(
 }
 
 /**
+ * Sets an Image's alt text (BC-07.2). Alt is stored in `displayName`, the
+ * field the Canvas, Preview and export already render as `alt` (no new
+ * document field, so project format 2 is unchanged). An empty string or
+ * `undefined` clears it, which renders `alt=""`, the correct value for a
+ * decorative image. Only `img` nodes are changed; anything else is a no-op.
+ */
+export function setImageAltText(
+  root: EditorElementNode,
+  nodeId: string,
+  alt: string | undefined,
+): EditorElementNode {
+  const next = alt === "" ? undefined : alt;
+  if (root.id === nodeId) {
+    if (root.tag !== "img" || root.displayName === next) return root;
+    const updated = { ...root, displayName: next };
+    if (next === undefined) delete updated.displayName;
+    return updated;
+  }
+
+  if (!root.children) return root;
+
+  let changed = false;
+  const children = root.children.map((child) => {
+    const updatedChild = setImageAltText(child, nodeId, alt);
+    if (updatedChild !== child) changed = true;
+    return updatedChild;
+  });
+
+  return changed ? { ...root, children } : root;
+}
+
+/**
  * Sets (or clears, via `poster: undefined`) nodeId's Video poster URL
  * (Checkpoint 1.15) — same generic, tag-agnostic, no-op-guarded shape as
  * setElementSrc.

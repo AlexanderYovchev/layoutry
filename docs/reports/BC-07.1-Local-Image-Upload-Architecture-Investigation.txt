@@ -1,0 +1,855 @@
+LAYOUTRY — BC-07.1: LOCAL IMAGE UPLOAD ARCHITECTURE INVESTIGATION
+====================================================================
+Date: 2026-11-10
+Type: Read-only architectural investigation (no product code changed)
+Base commit: a31387d (main), working tree clean before and after
+Author: Claude (implementation engineer), for ChatGPT QA review
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Layoutry has no image upload today, but most of the pipeline an upload
+needs already exists and already works with embedded image data:
+
+- An Image element stores its source in one document field,
+  `EditorElementNode.src` (a string). Every part of the pipeline reads
+  that field: Inspector, Canvas, Preview, save, reopen, recovery, export.
+- `data:image/*` URLs in `src` already work end-to-end. The default
+  Image placeholder is itself a `data:image/svg+xml` URL. A probe
+  confirmed that a `data:image/png;base64,…` source is stored, saved,
+  reopened and exported (inlined into `<img src>`) with no new code.
+- `blob:`, `file:` and Windows paths are accepted by the Inspector and
+  saved, but export drops them with a warning. The Canvas would show
+  something the exported site cannot.
+- The hard limit is the project file size: 16 Mi characters. Measured:
+  about 11 MiB of raw image bytes per project embeds and saves; 12 MiB is
+  refused ("The project file is larger than 16777216 characters").
+
+The project envelope and every node schema are Zod `strictObject`s, so
+ANY new stored field (an asset registry, an asset id on a node, a stored
+filename) is a project-format change. In practice that means format v3,
+because older builds reject unknown keys. It would also send every
+existing v2 desktop file through BC-05's "Upgrade Project File?" prompt.
+
+RECOMMENDATION (needs product approval, see section 21):
+- BC-07.2 stores uploaded images as validated, raster-only `data:image/*`
+  URLs in the existing `src` field.
+- Project format stays v2: no schema change, no migration, no new IPC
+  channel for the upload itself.
+- Bytes are read in the renderer from a standard file input, in both the
+  browser and Electron. The renderer never sees a filesystem path.
+- Export packaging is a separate, export-side step (proposed BC-07.3).
+  "Separate files" export would extract embedded images into
+  content-addressed files such as `assets/image-3f9a1c2b.png`, deduplicated
+  by hash. That needs a binary-capable desktop export write and a ZIP or
+  folder download in the browser.
+- A true project asset registry (format v3) is deferred until a real
+  need appears: images over the size budget, video/audio, or fonts.
+  Today's data URLs migrate into such a registry deterministically
+  (hash = id), so this is not a dead end.
+- SVG upload is deferred. BC-07.2 accepts PNG, JPEG, GIF and WebP only.
+
+Proposed breakdown: BC-07.2 upload into `src` plus validation;
+BC-07.3 export packaging; BC-07.4 final QA. One extra checkpoint is
+justified because packaging touches the desktop IPC contract and the
+browser download model (section 26).
+
+Two pre-existing findings relevant to BC-07:
+- BC07-F1: every Image exports `alt=""`. `alt` comes from
+  `node.displayName`, which no UI ever writes, so all images are
+  announced as decorative.
+- BC07-F2: Canvas/export parity is already broken for `blob:`, `file:`
+  and `C:\…` sources (shown on Canvas, silently dropped by export).
+
+
+2. CURRENT IMAGE SOURCE ARCHITECTURE
+------------------------------------
+Model: `src?: string` on EditorElementNode
+(src/features/editor/types/document.ts:121-122). It is a document-node
+field, shared by img, video, audio and iframe. It is not a CSS property,
+not a resource reference, and not an attribute bag. Related fields:
+- `poster?: string` (video) and `background.image?: string`
+  (src/features/editor/types/background.ts:93), the CSS background image;
+- `displayName?: string`, used as `alt`.
+
+Defaults (createImageNode, src/features/editor/factories/elementFactories.ts:716-728):
+`src = DEFAULT_IMAGE_SRC`, an inline 400x300 SVG data URL. Data-display
+compositions (Avatar etc.) use DATA_DISPLAY_IMAGE_PLACEHOLDER_SRC, also
+an SVG data URL (dataDisplayCompositions.ts:153).
+
+Trace of one value:
+1. Inspector: InspectorImageSection → InspectorMediaTextField
+   ("Source URL") → isValidLinkHref (rejects only `javascript:`) →
+   store.setElementSrc (useEditorStore.ts:1449) → setElementSrc command
+   (documentCommands.ts:663). One history entry per commit.
+2. Document state: `node.src`, verbatim.
+3. Canvas DOM: ImageElement.tsx renders
+   `<img src={node.src} alt={node.displayName ?? ""}>` inside the layout
+   div; no src means an icon placeholder.
+4. Preview DOM: the same ImageElement (only isPreview changes the style
+   recipe). Preview equals Canvas by construction.
+5. Saved project: serializeProject writes the field verbatim. The schema
+   (editorDocumentSchema.ts:444) uses `navigableUrl`: any string except a
+   `javascript:` URL.
+6. Exported HTML: buildExportDocument.ts:426-430 → checkedUrl(…, "image")
+   → checkExportUrl (exportUrlPolicy.ts). Allowed values are printed as
+   `<img src="…" alt="…">` and recorded in `assets` (kind remote,
+   relative or data).
+
+Validation and security rules that exist today:
+- Inspector and schema: only `javascript:` is refused (isValidLinkHref).
+- Background image field: isValidBackgroundImageUrl refuses whitespace,
+  quotes, backticks and backslashes (CSS-string breakout guard).
+- Export (checkExportUrl): image context allows http, https,
+  protocol-relative, relative and fragment URLs, plus `data:image/(png|
+  jpeg|jpg|gif|webp|avif|bmp|x-icon|svg+xml)`. blob/file/filesystem are
+  "non-portable" (warning, dropped); every other scheme, including
+  data:text/html, is "unsafe" (warning, dropped). Control/whitespace
+  scheme-bypass normalization is applied.
+- Desktop CSP (desktop/security/contentSecurityPolicy.ts): `img-src
+  'self' data: blob: http: https:`, `media-src` likewise. `file:` is NOT
+  allowed, so a file:// image cannot load in the desktop Canvas.
+- Web build CSP: only frame-ancestors/X-Frame-Options (next.config.ts),
+  so img-src is unrestricted on the web.
+
+Probe results (temporary Vitest probe, run against the real store,
+serializer, parser and exporter, then deleted):
+
+  source                     stored  save/reopen  export
+  https://…                  yes     ok           <img src> kept, asset remote
+  assets/photo.png           yes     ok           kept, asset relative + info
+  data:image/png;base64      yes     ok           kept inline, asset data
+  data:image/svg+xml(script) yes     ok           kept inline, asset data
+  blob:http://…              yes     ok           DROPPED, warning non-portable
+  file:///C:/…               yes     ok           DROPPED, warning non-portable
+  C:\Users\…\photo.png       yes     ok           DROPPED, warning unsafe ("c:")
+  data:text/html             yes     ok           DROPPED, warning unsafe
+  (A "missing-media-source" warning appeared in every case; it comes from
+  an empty media element in the starter fixture, not from the probed image.)
+
+Support matrix today:
+- Remote HTTPS: yes.
+- Relative paths: yes. Export says the file must be published alongside.
+- Data URLs: yes, end-to-end.
+- Blob URLs: stored, but not portable (dropped on export).
+- SVG sources: yes, as URLs or data URLs. Shown through <img>, where
+  scripts never run.
+- Background images: yes, via `background.image`, a separate field and
+  validator.
+- Picture/source: no. "picture" and "source" are not in knownElementTags.
+
+
+3. INSPECTOR BEHAVIOR
+---------------------
+- InspectorImageSection (rendered from InspectorNodeSummary.tsx:157 for
+  `img` only) contains one field: Source URL (InspectorMediaTextField:
+  draft, commit on Enter or blur, Escape reverts, a Reset button clears
+  `src`, error "Enter a valid image URL.").
+- It sits outside InspectorProtectedStyleGroup: semantic data, not CSS.
+- There is no alt-text field, no upload, no filename and no preview
+  thumbnail.
+- InspectorMediaSection / Media Fit handles object-fit and
+  object-position.
+- Background > Image (InspectorBackgroundImageControls) has its own URL
+  field.
+- Drag and drop from the operating system: NOT supported anywhere. No
+  canvas or Inspector element handles native `drop`/`dataTransfer`; the
+  only drag system is dnd-kit for internal nodes. In Electron,
+  hardenWebContents blocks `will-navigate`, so a file dropped on the
+  window does not navigate away.
+- Reuse: two Image elements can carry the same `src` string. Nothing
+  models "the same asset", and there is no asset list.
+
+
+4. CANVAS RENDERING PATH
+------------------------
+src/features/canvas/components/document/elements/ImageElement.tsx:
+- The outer div is the layout box: drag source, drop target, selection
+  and resize target.
+- The inner <img> takes `src` straight from the document, the media-fit
+  inner style, and `alt=displayName ?? ""`.
+- No URL transformation, no lazy loading, no decoding hints.
+- The browser decodes and caches per URL string. For a data URL the
+  string is the key, so identical data URLs share one decode.
+
+
+5. PREVIEW RENDERING PATH
+-------------------------
+Preview uses the same DocumentNodeRenderer and ImageElement; only
+`isPreview` changes the style recipe. No separate DOM or iframe exists
+for Preview. Any source shown on the Canvas is shown identically in
+Preview, so Canvas/Preview parity for images is structural.
+
+
+6. EXPORT RENDERING PATH
+------------------------
+- exportHtmlCss(document, {mode}) (src/features/export/utils/exportHtmlCss.ts)
+  returns ExportFile[] with string content only.
+- Modes: "standalone" (index.html with inline CSS) and "separate"
+  (index.html + styles.css, plus script.js when there are interactions).
+- There is no ZIP export, no framework export, no Tailwind export, and
+  no binary file type in the export result.
+- img: buildMediaFrame(… { tag: "img", attributes: [src, alt] }), keeping
+  the Canvas's outer frame plus inner <img> structure.
+- assets: ExportAsset { nodeId, property, url, kind: remote|relative|data }
+  (types/exportIr.ts:58-67). summarizeExportAssets lists remote and
+  relative URLs for the dialog ("Export never downloads or bundles
+  these"). Data URLs "need nothing".
+- Browser delivery: useExportCodeSession.downloadFiles calls
+  downloadTextFile once per file (several browser downloads for
+  "separate"). No ZIP library is installed.
+- Desktop delivery: desktop/export/exportFileService.ts is a token-based
+  destination. EXPORT_FILE_NAMES is exactly index.html, styles.css and
+  script.js; content must be a string ≤ 16 Mi chars (32 Mi total); writes
+  are staged then renamed, with rollback. Image files cannot be written
+  through this channel today.
+
+Consequence today: an embedded image is exported inline as a data URL in
+both modes. The exported page then needs nothing from the original
+computer, which is already correct, but the HTML grows by about 4/3 of
+the image size.
+
+
+7. BROWSER PERSISTENCE
+----------------------
+- Project library: IndexedDB `layoutry-projects` v1
+  (src/features/project/storage/indexedDbProjectRepository.ts). Two
+  stores: `summaries` and `documents` {id, text}, where `text` is the
+  canonical .layoutry JSON from serializeProject.
+- Writes are explicit (Save / Save As), atomic across both stores, with
+  conflict detection ("saved from another tab…").
+- Crash recovery: a separate IndexedDB (indexedDbRecoveryStorage.ts).
+  Timing (recoveryPolicy.ts): debounce 2 s, max wait 30 s; up to 5
+  snapshots per project and 128 Mi characters in total. The snapshot
+  text is prepared in a worker (PROJECT-1.5).
+- Errors: QuotaExceededError gives the message "There isn't enough
+  storage space…"; SecurityError/InvalidStateError give "This browser
+  isn't letting Layoutry store projects…".
+- localStorage holds only panel widths.
+- Size: serializeProject runs checkDocumentIntegrity, then re-parses, so
+  the 16 Mi character limit is enforced at save time and save fails with
+  a clear error.
+
+How a local image survives a browser restart: if the bytes live inside
+the document (`src` data URL), they are part of the saved project text
+and of every recovery snapshot. Nothing else needs to persist. Blob URLs
+die with the page and must never be stored.
+
+
+8. ELECTRON PERSISTENCE
+-----------------------
+- Electron 44.9.0, sandboxed renderer, context isolation, and a closed
+  IPC surface (desktop/ipc/channels.ts, no generic invoke).
+- Project files: desktop/files/projectFileService.ts plus
+  projectFileSystem.ts. Token-based Open, Save and Save As; the renderer
+  never handles paths. Atomic replace with a SHA-256 fingerprint
+  conflict check. Text limit is MAX_PROJECT_TEXT_LENGTH = 16 Mi chars;
+  reads are size-checked at 48 MiB.
+- Format: one JSON .layoutry text file. There are no adjacent asset
+  folders and no archive.
+- Recovery: desktop/recovery/* holds per-session records. Header plus
+  text, same policy in bytes. Measured today: a 9.73 MB project is
+  protected in 411 ms with no main-thread long task.
+- Legacy protection (BC-05): saving a format-1 file asks "Upgrade Project
+  File?" and recommends Save As; the original stays byte-identical. Any
+  change that keeps format v2 leaves this path completely untouched. A
+  new format v3 would make every v2 file a "legacy" file and trigger this
+  prompt for all existing users.
+- Moving projects between computers: a single self-contained .layoutry
+  file with embedded data URLs is fully portable. An adjacent asset
+  directory or absolute paths are not (Save As, copying and e-mailing all
+  break them).
+
+Recommendation: embed images in the project file, as data URLs in `src`
+for BC-07. No adjacent directory and no archive.
+
+
+9. EXISTING ASSET INFRASTRUCTURE
+--------------------------------
+- export: ExportAsset/ExportAssetKind, summarizeExportAssets and the
+  export dialog's "needs from outside" listing. This is URL
+  classification only; nothing stores bytes.
+- project: sha256Hex.ts and canonicalJson.ts are reusable for content
+  hashing.
+- lib: downloadTextFile.ts (text Blob plus object URL; revokes it).
+- No asset registry, no binary storage, no image decoding or
+  validation, no MIME sniffing, no thumbnailing.
+
+
+10. ARCHITECTURE OPTIONS COMPARISON
+-----------------------------------
+A. Data URLs in `src` (embedded)
+   + Works today end-to-end; no format change, migration or IPC.
+   + Fully portable; survives restart, recovery, Save As and moving.
+   + History: snapshots share unchanged node objects. Measured: the img
+     node object is identical across an unrelated edit's entries, so the
+     bytes are held once, not per entry.
+   - About 33% base64 overhead. Total budget ≈ 11 MiB raw per project
+     (measured).
+   - Duplicating an image element stores the bytes again in the file.
+     They are shared in memory (same JS string), but JSON writes each copy.
+   - Every recovery snapshot and every save rewrites the full image text.
+   - Replaced images stay alive in the uncapped Undo history.
+   - No filename or metadata can be stored without a schema change.
+B. Blob URLs
+   + Cheap display of large files.
+   - Session-only: they die on reload, are never portable, and export
+     already drops them. They need careful revocation (leak otherwise).
+   Verdict: a display optimization at most, never persistent storage.
+   Not needed for BC-07 at the proposed limits.
+C. Project asset registry (assets keyed by id or hash, nodes reference
+   ids)
+   + Deduplication, reuse, metadata (name, size, dimensions), bytes kept
+     out of node history, natural export packaging.
+   - Needs format v3: a strict envelope plus a new node field. That means
+     migration, BC-05 upgrade prompts for every v2 file, older-build
+     incompatibility, and garbage collection rules.
+   - Cross-project paste: the clipboard survives replaceDocument
+     (useEditorStore doc comment), so a pasted node would reference an
+     asset missing from the target project unless the clipboard carries
+     the bytes.
+D. Electron adjacent asset directory
+   - Breaks the single-file model: Save As, copy, mail and move between
+     computers can all lose images.
+   - Needs new filesystem IPC (path traversal surface) and doesn't exist
+     in the browser.
+   Rejected.
+E. Hybrid
+   One shared asset model (A now, C later); browser and Electron differ
+   only in how the project text is stored (IndexedDB vs file). Because
+   both platforms already persist the same .layoutry text, option A is
+   already a hybrid that needs zero platform-specific code.
+
+
+11. RECOMMENDED ASSET MODEL
+---------------------------
+BC-07.2: "embedded image" = a validated data URL in `node.src`.
+- Upload flow:
+  1. pick a file (standard <input type="file">);
+  2. size check;
+  3. read bytes;
+  4. signature sniff;
+  5. decode check (createImageBitmap / HTMLImageElement.decode);
+  6. dimension check;
+  7. budget check;
+  8. build `data:<sniffed-type>;base64,…`;
+  9. setElementSrc: one history entry.
+- The MIME type in the URL comes from the signature, never from the
+  file's claimed type or extension.
+- One pure, feature-owned validator module
+  (src/features/editor/utils/… or a new `assets` area inside the editor
+  feature) that both the Inspector and future background upload reuse.
+- "Is this an embedded upload?" is derivable from the value itself
+  (`data:image/(png|jpeg|gif|webp);base64,`), so the Inspector can say
+  "Embedded image · PNG · 1200×800 · 184 KB" with no new field.
+
+Later (only when approved, format v3): an asset registry, migrated
+deterministically from existing data URLs (id = SHA-256 of the bytes),
+for dedup, metadata, large files and non-image media.
+
+
+12. PROJECT FORMAT COMPATIBILITY
+--------------------------------
+- Recommendation A needs no schema change: `src` already accepts data
+  URLs, and the export URL policy already allows `data:image/*`.
+- A registry (C) or any stored filename or asset id is a format change:
+  projectFileV2Schema and every node schema are z.strictObject.
+  - Smallest compatible migration if ever needed: v2 → v3 adds an
+    optional top-level `assets` map and leaves `src` unchanged.
+  - A later step could rewrite `src` to an `asset:` reference.
+  - Keep migrateSpacingZerosToUnset (1→2) exactly as is and chain 2→3
+    after it.
+  - Not implemented, and not recommended for BC-07.
+- Old projects with remote/relative/data image URLs are unchanged under
+  A; nothing reinterprets them.
+
+
+13. EXPORT PACKAGING DESIGN
+---------------------------
+Expected outcome: the exported website shows uploaded images without
+the original computer.
+- Today, and after BC-07.2 unchanged: both modes inline the data URL.
+  The outcome is already met, at the cost of HTML size.
+- Proposed BC-07.3 (export-side only, document untouched):
+  - Standalone (single index.html): keep the data URLs inline. It is the
+    point of a single file.
+  - Separate:
+    - extract each distinct embedded raster data URL into
+      `assets/image-<first 8+ hex of SHA-256>.<ext>`;
+    - reference it as `<img src="assets/image-3f9a1c2b.png" alt="…">`;
+      background images become `url("assets/…")`;
+    - dedupe identical bytes to one file;
+    - "unused assets" cannot exist, because files come only from
+      referenced values;
+    - the hash names avoid collisions; on a true 8-hex clash, extend the
+      prefix;
+    - extension and MIME come from the sniffed type;
+    - names are fixed by Layoutry, never user filenames, so there is no
+      escaping or path-traversal surface.
+  - ExportFile needs a binary variant (Uint8Array content), and the
+    export IR records extracted assets.
+  - Desktop: exportFileService must accept `assets/…` names that match a
+    strict pattern, plus binary payloads and a size cap. This is an IPC
+    contract change, so it needs its own tests.
+  - Browser: "separate" with N images means N+2 downloads. A ZIP (new
+    dependency, e.g. fflate) or the File System Access directory picker
+    (Chromium only) is needed. Product decision.
+- Parity tests: Canvas, Preview and export render the same naturalWidth
+  and naturalHeight. The exported asset bytes' SHA-256 equals the
+  uploaded bytes. The MIME type equals the sniffed type.
+
+
+14. FILE SELECTION UX
+---------------------
+(Full recommendation in section 17.)
+- Upload while an Image is selected: yes, in the Image section.
+- Upload as part of "add an Image": not needed for BC-07.2. Insert keeps
+  the placeholder; the Inspector opens on the new image with the Upload
+  button visible.
+- OS drag and drop: not supported today. Recommend deferring to a later
+  checkpoint (it needs drop-target hit testing in dnd-kit's world).
+- Reuse across elements: possible by copy/paste/duplicate. An explicit
+  asset picker would need a registry, so it is deferred.
+- Distinguish uploaded vs URL: yes, derived from the value. The URL
+  field shows a short summary instead of 1 MB of base64.
+
+
+15. SECURITY RECOMMENDATIONS
+----------------------------
+- Picker filter (`accept="image/png,image/jpeg,image/gif,image/webp"`)
+  is a hint only. The checks below run after the file is chosen.
+- Validation order:
+  1. size (File.size) before reading;
+  2. read;
+  3. magic bytes:
+     - PNG: 89 50 4E 47 0D 0A 1A 0A;
+     - JPEG: FF D8 FF;
+     - GIF: "GIF87a"/"GIF89a";
+     - WebP: "RIFF"…"WEBP";
+  4. decode in the browser engine; malformed data is rejected with a
+     friendly error;
+  5. dimensions check.
+- The type in the data URL is the sniffed type. A spoofed extension or
+  MIME type never decides anything.
+- No SVG and no AVIF/BMP/ICO in BC-07.2. Export already allows them as
+  URLs; upload stays narrower.
+- Filenames: not stored (no field), shown only transiently. On export,
+  names are Layoutry-generated, so no unsafe-filename or traversal path
+  exists.
+- Electron:
+  - no new filesystem IPC for upload; bytes come through the renderer's
+    File object;
+  - Electron 44 has no File.path, and webUtils is not exposed by the
+    preload;
+  - file chooser is not a permission, and the hardened session denies
+    all permissions; verify in BC-07.2 that the chooser still opens;
+  - CSP already allows `data:` images; no CSP change.
+- Blob URLs: not persisted. If any are used for transient preview,
+  revoke them on change and unmount.
+- Resource exhaustion: decode happens only after the size gate; reject
+  dimensions above the limit before allocating a full bitmap where
+  possible (read header dimensions first).
+- Pre-existing: the Inspector accepts blob:/file:/C:\ sources that
+  cannot export (BC07-F2). Recommend a warning in the field in BC-07.2,
+  since it's directly in the same UI.
+
+
+16. SVG POLICY RECOMMENDATION
+-----------------------------
+Defer SVG upload. BC-07.2 is raster-only.
+- Inside <img>, SVG scripts and external loads never run, which is why
+  today's SVG data URL placeholders are safe.
+- The risk comes with export packaging: an extracted assets/x.svg opened
+  directly in a browser, or later inlined or used as an <object>, runs
+  its scripts.
+- foreignObject and external references behave differently across
+  engines.
+- Safe support needs a real sanitizer (an allow-list parser, e.g.
+  DOMPurify with an SVG profile, a new dependency) and a policy for
+  CSS/`<style>` inside SVG. That is its own checkpoint.
+- Existing SVG URL and data-URL sources stay as they are.
+
+
+17. RECOMMENDED UX DESIGN (Image section)
+-----------------------------------------
+Layout (inside the existing "Image" InspectorSection, same rows and
+tokens):
+- Row "Source" with a two-option segmented control: "Upload" | "URL".
+  It reuses the existing segmented-row pattern and is derived from the
+  value: an embedded upload shows Upload; anything else shows URL.
+- Upload state:
+  - a small thumbnail (max 48 px tall, object-fit contain) plus the
+    summary "PNG · 1200 × 800 · 184 KB";
+  - the filename only during this session ("photo.png"), because it
+    can't be persisted without a format change; product decision;
+  - buttons "Replace image…" and "Remove". Remove returns to the
+    placeholder: the default src, not "no src", so the element keeps its
+    look and size. One Undo step.
+- Empty / placeholder state: a primary "Upload image…" button plus a
+  hint "PNG, JPEG, GIF or WebP, up to 5 MB."
+- URL state: today's Source URL field, unchanged. A warning appears for
+  blob:/file:/C:\ values: "This address only works on this computer and
+  won't appear in exported pages."
+- Errors (inline, role=alert, the existing invalid row state):
+  - "That file isn't a supported image. Use PNG, JPEG, GIF or WebP."
+  - "That image is 9.2 MB. The limit is 5 MB."
+  - "That image is 12000 × 9000 pixels. The limit is 8192 pixels on each
+    side."
+  - "That image couldn't be read. It may be damaged."
+  - "This project doesn't have room for that image (projects can hold
+    about 11 MB of images). Remove other images or use a URL."
+- Loading: the button shows "Reading image…" and is disabled while
+  reading and decoding. The document is unchanged until success. A newer
+  selection or an element change cancels the stale result (last-seen-id
+  pattern, see the Inspector local-state staleness lessons).
+- Keyboard: the buttons are real <button>s; the hidden file input is
+  triggered by the button (the same pattern as Import Project); focus
+  returns to the Replace button after success and to the Upload button
+  after cancel or error.
+- Labels: "Upload image for <element name>", "Replace image", "Remove
+  uploaded image".
+- Alt text: add an "Alt text" field (BC07-F1). It requires a place to
+  store it: displayName already exists and already feeds alt. Writing it
+  is a model decision, so it needs product approval.
+- Preview feedback: the Canvas updates immediately (same src); no extra
+  confirmation toast.
+
+
+18. UNDO/REDO DESIGN
+--------------------
+- Upload, Replace and Remove each go through setElementSrc: one history
+  entry each. Undo restores the previous string and Redo the new one.
+  This is the existing behaviour of the command.
+- Bytes in history: history stores full document snapshots, but
+  unchanged nodes are shared by reference (probe: the same img node
+  object across entries), and JS strings are immutable and shared. Each
+  distinct image is therefore held once in memory, however many entries
+  reference it.
+- Cost: every replaced image stays reachable while its entry is in the
+  (uncapped) history. With a 5 MB per-file limit this is bounded by user
+  actions. Recommend no change in BC-07.2; revisit with a byte-budgeted
+  history only if soak tests show a problem.
+- No separate asset garbage collection is needed: bytes are freed with
+  the last snapshot or node referencing them.
+- A registry (later) would keep bytes outside snapshots, with GC on
+  save: reachable from the document or the history, never on Undo.
+
+
+19. COPY/PASTE AND DUPLICATION
+------------------------------
+- The clipboard (types/clipboard.ts) is internal and in memory. It holds
+  the node subtree verbatim; paste and duplicate use
+  cloneNodeWithFreshIds.
+- Probe: a duplicated image keeps the same `src`, with new ids.
+- With data URLs in `src`, every case below stays valid automatically:
+  - duplicate;
+  - copy and paste;
+  - duplicating a parent;
+  - pasting into another project (the clipboard survives
+    replaceDocument);
+  - deleting and Undo;
+  - Save As / project duplication.
+  No asset reference can dangle.
+- Cost: each copy writes the bytes again in the saved JSON, and the
+  budget check must count it.
+- Under a future registry, cross-project paste is the main hazard (see
+  10.C).
+
+
+20. FUTURE EXTENSIBILITY
+------------------------
+- CSS background images: the same validator and upload control can
+  write `background.image`. isValidBackgroundImageUrl already accepts
+  data URLs (base64 contains no forbidden characters), and export
+  already allows data:image in CSS. A good BC-07 follow-up.
+- Video poster: the same path (`poster`).
+- Picture/source: not modelled; it needs new tags and a model.
+- Video, audio and fonts: too large for data URLs in a 16 Mi-char
+  project, so they need the asset registry (format v3) and binary
+  storage. That is the real trigger for option C.
+- The validator module should be media-agnostic (signature table keyed
+  by kind) so the registry can reuse it.
+
+
+21. REQUIRED PRODUCT DECISIONS
+------------------------------
+D1 Initial formats.
+   Recommended: PNG, JPEG, GIF, WebP.
+   Alternatives: add AVIF (engine support is uneven, especially in older
+   WebKit), or add SVG (see D7).
+   Benefit: universal rendering and simple signatures.
+   Risk: none known.
+   Future impact: the list can be extended per format.
+D2 Maximum file size.
+   Recommended: 5 MiB per image.
+   Alternatives: 2 MiB (safer for autosave) or 10 MiB (near the whole
+   project budget).
+   Benefit: typical photos fit, and at least two images fit in a project.
+   Risk: large camera photos are refused, since there is no resizing.
+   Future impact: can be raised with a registry.
+D3 Maximum dimensions.
+   Recommended: 8192 px per side.
+   Alternatives: none, or 16384 px.
+   Benefit: bounds decode memory (8192² × 4 B = 256 MB worst case).
+   Risk: very wide panoramas are refused.
+D4 Asset storage.
+   Recommended: data URL in `src` (format v2).
+   Alternative: a registry (v3).
+   Benefit: zero migration, fully portable.
+   Risk: about 11 MiB per project, duplicate copies cost bytes.
+   Future impact: migratable to a registry.
+D5 Browser/Electron persistence.
+   Recommended: unchanged; the image lives in the project text.
+   Alternatives: IndexedDB blob store, or an adjacent folder.
+   Benefit: no new code and one code path.
+   Risk: larger saves and recovery snapshots.
+D6 Export packaging.
+   Recommended: standalone inline; separate extracts hashed files in
+   assets/; browser ZIP via a new small dependency.
+   Alternatives: inline in both modes (status quo), or a directory picker.
+   Benefit: a real website folder.
+   Risk: desktop IPC contract change and a new dependency.
+D7 SVG.
+   Recommended: defer.
+   Alternative: support with a sanitizer.
+   Risk of supporting it now: script and active content in packaged
+   files.
+D8 Deduplication.
+   Recommended: none in the document (copies repeat bytes); dedupe at
+   export by hash.
+   Alternative: a registry.
+D9 UX placement.
+   Recommended: the Image section with an Upload/URL segmented row, as
+   in section 17. Defer OS drag and drop and an asset picker.
+D10 Format migration policy.
+   Recommended: no v3 in BC-07; v3 only together with a registry when
+   video, fonts or large files demand it.
+D11 Filename display.
+   Recommended: session-only, not saved.
+   Alternative: store it (needs a schema field, so v3).
+D12 Alt text (BC07-F1).
+   Recommended: add an "Alt text" field that writes `displayName`
+   (already exported as alt), or a dedicated `alt` field (schema change).
+   This changes what the Structure panel shows, because displayName is
+   also the tree label.
+
+
+22. TEST STRATEGY
+-----------------
+BC-07.2 required:
+- Unit:
+  - signature sniffing per format, including spoofed extension and MIME,
+    and truncated headers;
+  - size, dimension and budget gates;
+  - data URL building (type from sniff);
+  - setElementSrc history: Upload, Replace and Remove each one entry,
+    with Undo and Redo;
+  - duplicate and copy/paste keep the source;
+  - save → reopen deep-equal;
+  - recovery snapshot round trip;
+  - export standalone inlines the data URL; the asset kind is data;
+  - blob:/file: warning in the Inspector;
+  - malformed data URL handling.
+- Component (RTL):
+  - Image section states: placeholder, URL, embedded;
+  - errors use role=alert;
+  - the busy state;
+  - focus return;
+  - stale-result cancel when the selection changes.
+- Browser (Playwright, Chromium plus Firefox/WebKit targeted):
+  - setInputFiles with real PNG, JPEG, GIF and WebP fixtures; Canvas
+    naturalWidth matches; Preview matches;
+  - Replace and Remove with Undo;
+  - library Save → reload → reopen;
+  - recovery after a kill;
+  - export standalone renders the image offline (bytes equal);
+  - invalid file, oversized file and corrupt PNG rejected;
+  - a keyboard-only upload flow.
+- Electron:
+  - the file chooser path via setInputFiles;
+  - Save, Save As and reopen;
+  - move the .layoutry file to another folder and reopen (the image
+    survives);
+  - a v1 legacy file plus upload still triggers the BC-05 prompt, and
+    the original is byte-identical;
+  - CSP shows the data URL.
+- Security:
+  - a .png containing HTML or SVG text is rejected;
+  - a zero-byte file;
+  - a huge declared dimension in a small file (decompression bomb);
+  - data:text/html pasted as a URL still not exported.
+BC-07.3 (packaging):
+- hash naming and dedup;
+- binary IPC payload validation (names, size, traversal names like
+  `assets/../x`);
+- the ZIP or folder contents;
+- exported bytes' SHA equals the source;
+- separate-mode parity (visual-parity harness);
+- MIME and extension consistency.
+BC-07.4 final QA:
+- the full matrix plus a soak with several 5 MB images (autosave
+  timing, memory, Undo depth), cross-browser and Electron.
+
+
+23. BASELINE TEST RESULTS
+-------------------------
+All run on a clean tree at a31387d, before and after the probe (the
+probe was deleted before the runs that count):
+- npx vitest run src/features/export src/features/project
+  …/ImageElement.test.tsx …/InspectorImageSection.test.tsx
+  …/InspectorMediaSection.test.tsx …/InspectorBackgroundImageControls.test.tsx
+  …/cloneNodeWithFreshIds.test.ts desktop
+  → 70 files, 953 passed, 1 skipped.
+- npx vitest run (full)
+  → 366 files, 5534 passed, 1 skipped.
+- npx playwright test e2e/export-interactions.spec.ts
+  e2e/export-visual-parity.spec.ts e2e/export-workflow.spec.ts
+  e2e/preview-export-parity.spec.ts e2e/preview-media-lifecycle.spec.ts
+  e2e/project-persistence.spec.ts e2e/project-recovery.spec.ts
+  (Chromium)
+  → 55 passed (1.6 min). Recovery perf: offered 262 ms after hydration;
+    5,000-element snapshot in 181 ms, longest task 0 ms.
+- npm run desktop:build (ELECTRON_RUN_AS_NODE removed), then
+  npx playwright test -c playwright.desktop.config.ts
+  e2e/desktop/export.spec.ts e2e/desktop/preview-media.spec.ts
+  e2e/desktop/projects.spec.ts e2e/desktop/recovery.spec.ts
+  → 15 passed (59 s). Recovery perf: a 9.73 MB project protected in
+    411 ms, longest main-thread task 0 ms.
+- Temporary probe: src/features/zz-bc071-image-source.probe.test.ts
+  → 10 passed; results in section 2 and sections 18/19. Deleted.
+Not run: Firefox/WebKit (there is no image upload behaviour to compare
+yet), the packaged app, typecheck/lint (no source changes).
+
+
+24. SOURCE FILES AND FUNCTIONS INVESTIGATED
+-------------------------------------------
+Editor:
+- types/document.ts (src, poster, displayName)
+- types/background.ts (image, isValidBackgroundImageUrl)
+- types/link.ts (isValidLinkHref)
+- types/history.ts (HistoryEntry)
+- types/clipboard.ts (EditorClipboard)
+- schemas/editorDocumentSchema.ts (navigableUrl, backgroundImageUrl,
+  strictObject nodes)
+- commands/documentCommands.ts (setElementSrc)
+- stores/useEditorStore.ts (setElementSrc, copy/paste/duplicate,
+  replaceDocument)
+- factories/elementFactories.ts (createImageNode, DEFAULT_IMAGE_SRC)
+- factories/dataDisplayCompositions.ts
+- rules/knownElementTags.ts
+- utils/elementDisplayName.ts
+- utils/cloneNodeWithFreshIds.ts
+Canvas:
+- components/document/elements/ImageElement.tsx
+- utils/elementStyleRecipes (resolveImageElementStyle)
+Inspector:
+- InspectorImageSection.tsx
+- InspectorMediaTextField.tsx
+- InspectorNodeSummary.tsx
+- InspectorBackgroundImageControls.tsx
+- InspectorIdentitySection.tsx
+Export:
+- utils/exportHtmlCss.ts
+- utils/buildExportDocument.ts (checkedUrl, img/media frames)
+- utils/exportUrlPolicy.ts (checkExportUrl)
+- utils/summarizeExportAssets.ts
+- types/exportIr.ts
+- types/exportResult.ts
+- hooks/useExportCodeSession.ts (downloadFiles, writeToDesktop)
+- lib/downloadTextFile.ts
+Project:
+- schemas/projectFileSchema.ts (strict v2 envelope)
+- utils/serializeProject.ts
+- utils/parseProjectFile.ts
+- utils/projectFormatMigrations.ts
+- rules/projectLimits.ts
+- rules/recoveryPolicy.ts
+- storage/indexedDbProjectRepository.ts
+- storage/indexedDbRecoveryStorage.ts
+- components/ProjectWorkspace.tsx (file input pattern)
+Desktop:
+- files/projectFileService.ts (MAX_PROJECT_TEXT_LENGTH)
+- export/exportFileService.ts (EXPORT_FILE_NAMES, limits, staging)
+- ipc/channels.ts
+- preload/preload.ts
+- security/contentSecurityPolicy.ts
+- security/hardenSession.ts
+- security/hardenWebContents.ts
+- recovery/recoveryRecord.ts
+Config and docs:
+- next.config.ts
+- docs/architecture/project-format.md, project-storage.md,
+  desktop-files.md, export-engine.md, project-recovery.md
+
+
+25. RISKS AND BLOCKERS
+----------------------
+No blockers for BC-07.2 under the recommended model.
+Risks:
+- R1 Project budget: about 11 MiB of images per project; duplicates count.
+  Mitigation: a per-file limit plus a pre-commit budget check and a clear
+  message.
+- R2 Autosave/recovery cost grows with embedded bytes. Measured 9.73 MB
+  → 411 ms off the main thread (desktop). Acceptable; soak-test in final
+  QA.
+- R3 Uncapped Undo history retains replaced images. Bounded by user
+  actions; monitor.
+- R4 Large inline base64 in exported HTML until packaging (BC-07.3).
+  The page is still correct.
+- R5 Export packaging changes the desktop IPC contract and may add a
+  dependency (ZIP). This is why it is a separate checkpoint.
+- R6 BC07-F1: all images export alt="". It is an accessibility issue
+  independent of upload, but the upload UX is the natural place to fix it.
+- R7 BC07-F2: non-portable sources pass the Inspector silently.
+- R8 Electron's native file chooser under the hardened session is
+  unverified (expected to work; not a permission request). Verify first
+  in BC-07.2.
+- R9 Playwright's Windows WebKit loads no media (known from BC-02); image
+  checks there may need engine-aware assertions.
+- R10 If product chooses a registry or stored filenames, format v3 and
+  BC-05 upgrade prompts for all v2 files follow. That should be its own
+  decision and checkpoint.
+
+
+26. RECOMMENDED CHECKPOINT BREAKDOWN
+------------------------------------
+- BC-07.2 Implementation: upload into Image `src`.
+  - Validator module, Inspector Upload/URL UX, errors, budget,
+    non-portable warning.
+  - Alt text if D12 is approved.
+  - Tests per section 22 "BC-07.2 required".
+  - No format change, no export change.
+- BC-07.3 Export packaging (new intermediate checkpoint):
+  - separate-mode asset extraction and dedup;
+  - binary ExportFile;
+  - desktop exportFileService `assets/` support plus IPC tests;
+  - browser ZIP/folder delivery;
+  - parity harness with real image bytes.
+  - Justification: it is the only part that changes a security-reviewed
+    IPC contract and the download model. The upload itself is complete
+    and correct without it (standalone already embeds).
+- BC-07.4 Final QA: the full regression matrix, soak and cross-browser.
+- (Optional later) Background-image upload, reusing the BC-07.2
+  validator.
+If product prefers inline-only export for now, BC-07.3 can be dropped
+and the roadmap returns to BC-07.2 → BC-07.3 Final QA as briefed.
+
+
+27. GIT WORKING-TREE STATUS
+---------------------------
+- Before: clean at a31387d.
+- After: only this report (untracked, docs/reports/) plus the changelog
+  (gitignored).
+- The temporary probe was created and deleted; no product file was
+  modified. The desktop build regenerated ignored output only.
+
+
+28. QA RECOMMENDATION
+---------------------
+Approve the investigation and take decisions D1–D12, chiefly:
+- D4: data URLs in `src`, format v2;
+- D6: export packaging as its own checkpoint;
+- D7: defer SVG;
+- D12: alt text.
+After that, BC-07.2 can start with no format change and no IPC change.
+BC-07.2 not started.

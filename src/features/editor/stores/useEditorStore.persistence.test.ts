@@ -99,6 +99,16 @@ describe("replaceDocument — the atomic restoration contract", () => {
     expect(store().document).toBe(loadedDocument);
   });
 
+  it("advances documentSessionId on every load (BC-07.2), and editing never changes it", () => {
+    const before = store().documentSessionId;
+    makeEdit();
+    expect(store().documentSessionId).toBe(before);
+    store().replaceDocument(loadedDocument);
+    expect(store().documentSessionId).toBe(before + 1);
+    store().replaceDocument(loadedDocument);
+    expect(store().documentSessionId).toBe(before + 2);
+  });
+
   it("decides every store field: each is either reset by replaceDocument or deliberately kept", () => {
     const reset = [
       "document",
@@ -109,6 +119,8 @@ describe("replaceDocument — the atomic restoration contract", () => {
       "transactionSnapshot",
       "historyMergeSnapshot",
       "editorNotice",
+      // BC-07.2: advanced (not zeroed) by every load, so work started against the old document can tell.
+      "documentSessionId",
       "editorMode",
       "runtimeVisibility",
       "svgEditingNodeId",

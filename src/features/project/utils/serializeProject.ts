@@ -61,6 +61,29 @@ export function touchProjectMetadata(
 }
 
 /**
+ * The canonical `.layoutry` text of a project, with no checks: exactly the
+ * text serializeProject writes, so anything that needs to know how large a
+ * saved file will be (projectSaveLimit, BC-07.2) measures the same bytes.
+ * Throws ProjectSerializationError on a value JSON can't represent.
+ */
+export function formatProjectFileText(project: LayoutryProject): string {
+  let body: unknown;
+  try {
+    body = {
+      format: PROJECT_FILE_FORMAT,
+      formatVersion: CURRENT_PROJECT_FORMAT_VERSION,
+      project: toCanonicalJsonValue(project.metadata, "project"),
+      document: toCanonicalJsonValue(project.document, "document"),
+    };
+  } catch (error) {
+    throw new ProjectSerializationError(
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+  return `${JSON.stringify(body, null, 2)}\n`;
+}
+
+/**
  * Serializes a project to canonical `.layoutry` JSON. Pure: never mutates
  * its input, never regenerates ids, never changes timestamps.
  *
@@ -81,21 +104,7 @@ export function serializeProject(
       integrityError.path,
     );
 
-  let body: unknown;
-  try {
-    body = {
-      format: PROJECT_FILE_FORMAT,
-      formatVersion: CURRENT_PROJECT_FORMAT_VERSION,
-      project: toCanonicalJsonValue(project.metadata, "project"),
-      document: toCanonicalJsonValue(project.document, "document"),
-    };
-  } catch (error) {
-    throw new ProjectSerializationError(
-      error instanceof Error ? error.message : String(error),
-    );
-  }
-
-  const text = `${JSON.stringify(body, null, 2)}\n`;
+  const text = formatProjectFileText(project);
   const check = parseProjectFile(text, limits);
   if (!check.ok)
     throw new ProjectSerializationError(check.error.message, check.error.path);
