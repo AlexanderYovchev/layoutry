@@ -1,0 +1,828 @@
+LAYOUTRY — BC-08.2: MULTI-PROVIDER VIDEO EMBED
+PARSER, COMPONENT LIBRARY & INSPECTOR
+==================================================================
+Date: 2026-11-12
+Type: Feature implementation (provider parsing, Inspector, Canvas
+placeholder, persistence, history) with regression tests.
+Base commit: 57fa030 (main). Nothing was committed or pushed.
+Not touched: iframe sandbox policy, Electron permissions or security
+code, project format (still version 2), document schema.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+A new "Video Embed" card (Media > Video, next to Video) creates a video
+element that reuses the existing Embed element (tag "iframe").
+
+Paste a link in the Inspector and Layoutry:
+- validates it with one central, security-hardened parser;
+- detects the provider;
+- rebuilds a canonical https embed URL from the validated video ID only;
+- stores it as one Undo step.
+
+Providers:
+- Implemented: YouTube, Vimeo, Loom and Wistia.
+- Recognized, but deferred with an exact blocker message: Dailymotion
+  and Twitch.
+
+The Canvas shows a static placeholder and loads no provider iframe,
+image, script or metadata, in Design or in Preview. No provider request
+is made; this is tested in Chromium, Firefox, WebKit and Electron.
+
+Interim behavior until BC-08.3:
+- Preview shows the same placeholder, labelled as such.
+- Export writes the empty layout box with a warning, never an iframe.
+So nothing can play without the lifecycle that stops it.
+
+Unchanged:
+- Generic Embeds behave exactly as before.
+- No new document field, tag or format version.
+- The iframe sandbox, CSP and Electron hardening are untouched.
+
+Three real bugs were found and fixed while testing:
+- B1: YouTube's playlist path "videoseries" is 11 characters and passed
+  the video-ID pattern.
+- B2: a free-layout Video Embed would have used the Embed's 400x300
+  default size instead of 16:9.
+- B3: the placeholder repeated the provider's default title ("Vimeo
+  video" twice), visually and in its accessible label.
+
+Validation:
+- Vitest: 5912 passed, 1 skipped.
+- Chromium full suite: 267/267.
+- Video Embed and embed-safety specs in Chromium, Firefox and WebKit:
+  117/117.
+- Electron full suite: 81 passed, 2 skipped, 1 known media flake that
+  passes 3/3 alone.
+- Typecheck, ESLint, production build and desktop build: all clean.
+
+QA recommendation: APPROVE BC-08.2. BC-08.3 adds playback, export and
+lifecycle.
+
+
+2. EXISTING ARCHITECTURE FINDINGS
+---------------------------------
+(Read before coding; see BC-08.1 sections 2-4 for the full audit.)
+
+- Embed element: tag "iframe".
+  - Factory: createIframeNode (title "Embedded content").
+  - Canvas: IframeElement, which uses resolveIframeSourcePolicy (BC-02.3
+    sandbox) and MediaInteractionShield.
+  - Inspector: InspectorIframeSection (Source URL, Title).
+  - Export: buildExportDocument's iframe branch, with a sandboxed iframe.
+- Component library: creationToolbarCategories.ts mediaCategory().
+  - elementType maps to FACTORIES_BY_TYPE (InsertableElementType).
+  - Insertion goes through useInsertElement / resolveDragEndInsertion.
+- Inspector: InspectorNodeSummary routes by tag.
+  - Element-data fields use InspectorMediaTextField (draft / commit on
+    Enter or blur / Escape reverts) and InspectorBooleanToggle (role
+    switch).
+  - Errors render via InspectorPropertyRow with role="alert".
+- History:
+  - Every one-shot setter pushes one entry; same-value writes are no-ops.
+  - Several writes can be merged into ONE entry with
+    beginTransaction({ mergeHistory: true }), mergeTransactionWrite and
+    commitTransaction.
+- Persistence:
+  - The project file is format 2.
+  - The schema is strict (z.strictObject).
+  - docs/architecture/project-format.md requires a format bump for ANY
+    new EditorElementNode field.
+  - The node shape is flat, so every node already accepts src, controls,
+    autoplay, muted, loop, title and aspectRatio.
+- Copy/paste and duplicate clone every field.
+- Free-layout default sizes were looked up by TAG only
+  (getDefaultFreeElementSize), the source of bug B2 below.
+- Electron:
+  - every non-app:// request is denied by the CSP (frame-src http(s));
+  - the navigation guards and the deny-all permission handler are
+    unchanged.
+  - The e2e harness records and cancels every non-app request
+    (__layoutryNonAppRequests), which the new desktop spec asserts is
+    empty.
+
+
+3. IMPLEMENTED PROVIDERS
+------------------------
+Each has a documented embed URL built only from a validated ID, defined
+settings, a viable BC-08.3 path, a security model (exact hosts) and
+tests.
+
+  Provider  Accepted links                               Stored canonical source
+  --------  -------------------------------------------  ---------------------------------------------
+  YouTube   (www.|m.|music.)youtube.com/watch?v=ID,      https://www.youtube-nocookie.com/embed/ID
+            /shorts/ID, /live/ID, /embed/ID; youtu.be/ID; [?start=N]  (www.youtube.com when privacy
+            (www.)youtube-nocookie.com/embed/ID           mode is off)
+  Vimeo     (www.)vimeo.com/ID, /ID/HASH (unlisted),      https://player.vimeo.com/video/ID
+            /channels/NAME/ID, /groups/NAME/videos/ID;    [?h=HASH][&dnt=1][#t=Ns]
+            player.vimeo.com/video/ID?h=HASH
+  Loom      (www.)loom.com/share/ID, /share/Title-ID,     https://www.loom.com/embed/ID[?t=Ns]
+            /embed/ID
+  Wistia    fast.wistia.net|com/embed/(iframe|medias)/ID; https://fast.wistia.net/embed/iframe/ID
+            <account>.wistia.com/medias/ID; wi.st/medias/ID [?doNotTrack=true][&time=N]
+
+ID patterns:
+- YouTube [A-Za-z0-9_-]{11}, excluding "videoseries".
+- Vimeo \d{1,12}; hash [0-9a-f]{6,20}.
+- Loom [0-9a-f]{32}.
+- Wistia [a-z0-9]{10}.
+
+Patterns marked [ASSUMED] in BC-08.1 (Loom 32 hex, Wistia 10 lowercase
+alphanumerics, Vimeo hash length) come from the providers' own examples,
+not a published rule.
+
+
+4. DEFERRED PROVIDERS AND EXACT BLOCKERS
+----------------------------------------
+Their links are recognized, so the user gets a specific message. No
+embed URL is ever built for them, and nothing is stored.
+
+DAILYMOTION. Pending product approval.
+- The only documented iframe URL is
+  geo.dailymotion.com/player/{PLAYER ID}.html?video=ID.
+  The Player ID belongs to the owner's Dailymotion account; Layoutry
+  cannot supply it.
+- No player-ID-free form was found on the official pages; the fetched
+  deprecation and migration pages returned 404 on 2026-11-11.
+- Only video and playlist are documented iframe parameters. Autoplay,
+  loop and start are configured in the account, not the URL, so the
+  approved muted-only autoplay policy cannot be enforced (autoplay off
+  cannot be guaranteed).
+- Dailymotion documents its iframe embed as suitable only for AMP-like
+  environments.
+- It requires a Referer header (same problem as YouTube in desktop and
+  local-file pages).
+- Message shown: "Dailymotion videos aren't supported yet. Their embed
+  needs a player set up in the owner's Dailymotion account, and autoplay
+  can't be controlled from the page."
+- Possible future path, for approval: let users paste their own
+  geo.dailymotion.com/player/{ID}.html link and accept that autoplay is
+  account-controlled. That conflicts with the autoplay decision.
+
+TWITCH. Pending product approval.
+- Every embed requires parent=<exact domain of the page>.
+- Unknown while designing.
+- Impossible for the desktop app (app://) and local files.
+- Not known at export time either.
+- Live channels also autoplay by default.
+- Message shown: "Twitch videos aren't supported yet. Twitch requires the
+  exact website address the video will appear on, which isn't known while
+  you design."
+- Possible future path: a "Published website domain" setting at export
+  time (BC-08.3+). It needs a product decision.
+
+WISTIA was evaluated against its "account-specific host" concern and IS
+supported:
+- the embed host is the account-independent fast.wistia.net;
+- public links are on Wistia's own <account>.wistia.com hosts, matched as
+  exactly one DNS label under wistia.com (not a substring check);
+- custom domains are refused ("Only Wistia's own links are accepted").
+
+
+5. PROVIDER REGISTRY DESIGN
+---------------------------
+src/lib/videoEmbed/ (framework-free; shared by Inspector, Canvas and
+Export like src/lib/iframeSandbox.ts):
+
+  videoEmbedProviders.ts
+    VIDEO_EMBED_PROVIDERS: one typed record per provider.
+      - id, displayName, defaultTitle, embedHosts;
+      - capabilities: Record<VideoEmbedCapability,
+        "documented" | "unverified" | "unsupported">;
+      - unsupportedNotes (why, shown in the Inspector);
+      - limitations (the provider's own rules).
+    DEFERRED_VIDEO_PROVIDERS (id, displayName, blocker).
+    Type guards: isVideoEmbedProviderId, isDeferredVideoProviderId.
+    providerSupports(id, capability).
+  parseVideoEmbedUrl.ts
+    The only link parser.
+    Each provider has a host predicate and path rules; deferred hosts are
+    in a table.
+    Returns { ok, reference: { provider, videoId, hash?, startSeconds?,
+    privacy? } } or a typed failure reason (and provider when known).
+  buildVideoEmbedUrl.ts
+    The only place embed URLs are assembled:
+      - buildVideoEmbedSource: the stored canonical src;
+      - buildVideoEmbedPlayerUrl: src plus playback parameters, for
+        BC-08.3; nothing loads it yet;
+      - readVideoEmbedSource;
+      - resolveVideoEmbedSourceInput: a pasted link becomes a src;
+      - withVideoEmbedPrivacy, withVideoEmbedStart.
+  videoEmbedTime.ts
+    Start-time parsing and formatting ("90", "1:30", "1m30s"; at most
+    24 h).
+
+Adding a provider touches:
+- one registry entry;
+- one parser function;
+- one case in each builder;
+- test rows.
+The Inspector and placeholder read the matrix and need no change.
+Nothing provider-specific lives in a React component.
+
+
+6. URL PARSING AND NORMALIZATION
+--------------------------------
+- WHATWG URL parser only. ASCII tab/newline are removed first, as a
+  browser does.
+- A scheme-less link ("youtu.be/ID") is read as https.
+- Refused, each with its own reason:
+  - "//host" and "\\host" (protocol-relative);
+  - http: (not-https);
+  - javascript:, data:, file:, blob:, ftp: and other schemes
+    (unsafe-scheme);
+  - user-info (credentials);
+  - an explicit port;
+  - unknown hosts;
+  - unsupported paths and invalid IDs.
+- Hosts are matched exactly (Set lookups). The Wistia account rule is
+  structural: exactly three labels, ending "wistia.com", with the first a
+  valid DNS label.
+- Path segments: an empty segment ("//watch") is unsupported, and one
+  trailing slash is allowed. pathname keeps percent-escapes, so encoded
+  slashes and payloads fail the ID pattern.
+- Query values are read only for known keys: v, start/t, h, dnt, time,
+  doNotTrack, t (Loom). A repeated key counts as absent (ambiguous).
+  Everything else (si, utm_*, sid, feature, list, autoplay, mute, …) is
+  dropped.
+- Output is always rebuilt with new URL() and searchParams on the
+  provider's embed host. It is deterministic:
+  buildVideoEmbedSource(readVideoEmbedSource(src)) === src (unit-tested
+  for every provider).
+- Privacy on paste:
+  - the link's own statement wins (the nocookie host, dnt=0/1,
+    doNotTrack=true/false);
+  - otherwise the current choice is kept for the same provider;
+  - otherwise a new provider starts with privacy ON (approved default).
+  The start time comes from the pasted link only.
+- No network: no redirects are followed and no oEmbed lookup is made.
+  Shorteners (bit.ly) are unknown hosts.
+
+
+7. SECURITY VALIDATION
+----------------------
+Unit-tested refusals (src/lib/videoEmbed/parseVideoEmbedUrl.test.ts), all
+required by the brief:
+- youtube.com.evil.example;
+- evil.example/youtube.com;
+- evil.example/?u=youtu.be/…;
+- youtube.com@evil.example and evil.example@www.youtube.com;
+- user:pass@;
+- a trailing-dot host;
+- a Cyrillic look-alike host (punycode);
+- notyoutube.com and youtube.co;
+- bit.ly;
+- example.com/embed/ID;
+- explicit ports;
+- javascript: (any case, with a tab inside);
+- data:text/html, data:video;
+- file:///;
+- blob:;
+- vbscript:;
+- ftp:;
+- http:;
+- "//" and "\\\\";
+- malformed hosts (space, NUL, an unclosed IPv6 bracket);
+- empty input;
+- %3Cscript%3E and "\"><script>" IDs, and the double-encoded %2522;
+- an encoded slash in the path ("/embed%2FID", "ID%2F..%2F");
+- a backslash or encoded-slash user-info trick;
+- empty or repeated v=.
+An IDNA-normalized spelling of the real host (fullwidth letters) is the
+real host. That is accepted, and the output is rebuilt anyway.
+
+Defense in depth:
+- the Canvas renders NO iframe for a Video Embed;
+- the export renders no iframe either (section 19);
+- so in BC-08.2 a stored src never reaches an iframe anywhere.
+The stored src is also always one of four fixed https embed hosts.
+A hand-edited project with a hostile src in a Video Embed is read back
+as "no valid video" (readVideoEmbedSource returns undefined): the
+placeholder shows the empty state, nothing loads, and the schema still
+refuses javascript:.
+
+
+8. PRIVACY DEFAULTS
+-------------------
+- YouTube: www.youtube-nocookie.com by default (approved).
+  - Inspector text: "It reduces tracking until the video is played; it
+    doesn't remove it."
+  - Marked "Not yet confirmed with this provider's player": the nocookie
+    host is not on YouTube's parameters page.
+- Vimeo: dnt=1 by default (approved). "Some essential cookies remain"
+  (Vimeo's own wording).
+- Wistia: doNotTrack=true by default. This is Wistia's documented option
+  ("Asks Wistia not to track viewing sessions"). The default follows the
+  approved principle of "documented privacy options where available".
+- Loom: no documented privacy option, so none is invented. "Loom has no
+  privacy-enhanced mode."
+- The user can switch privacy mode off (one Undo step).
+- Design and Preview fetch nothing from any provider: no thumbnail, no
+  metadata, no player.
+
+
+9. CAPABILITY MATRIX
+--------------------
+  Capability     YouTube      Vimeo          Loom           Wistia
+  -------------  -----------  -------------  -------------  --------------
+  Autoplay       documented   documented     documented     documented
+  Muted          UNVERIFIED   documented     documented     documented
+  Loop           documented   documented     unsupported    documented
+  Controls       documented   unsupported*   unsupported    unsupported**
+  Start time     documented   documented     documented     documented
+  Privacy mode   UNVERIFIED   documented     unsupported    documented
+  Fullscreen     documented   documented     documented     documented
+                 (eligibility only; enabled in BC-08.3, browsers)
+  *  controls=0 needs the video OWNER's paid Vimeo plan.
+  ** Wistia only has playbar/controlsVisibleOnLoad; neither means "no
+     controls".
+
+"unverified" means the parameter is in common use but missing from the
+official parameter page. YouTube's mute is one, and it is needed for
+muted autoplay.
+All real playback behavior is verified live in BC-08.3, in the opt-in
+live suite.
+The Inspector shows "Not yet confirmed with this provider's player."
+under each unverified control.
+
+Player URL mapping (buildVideoEmbedPlayerUrl, unit-tested, used from
+BC-08.3):
+  YouTube: autoplay=1, mute=1, loop=1&playlist=ID, controls=0, start=N.
+  Vimeo:   autoplay=1|0 (always explicit), muted=1, loop=1, #t=Ns, h, dnt.
+  Loom:    autoplay=1, muted=1, t=Ns.
+  Wistia:  autoPlay=true|false (always explicit), muted=true,
+           endVideoBehavior=loop, time=N, doNotTrack.
+Unsupported settings add nothing.
+
+
+10. COMPONENT LIBRARY INTEGRATION
+---------------------------------
+- New card "Video Embed" in Media > Video, after "Video".
+  - Description: "YouTube, Vimeo, Loom or Wistia video from a link".
+  - Icon: lucide MonitorPlay (generic, no provider logo).
+- New InsertableElementType "videoEmbed":
+  - FACTORIES_BY_TYPE uses createVideoEmbedNode;
+  - the Free-layout default size is 480x270.
+- Insertion, placement, selection and the Structure panel are the
+  existing machinery:
+  - one Undo step (unit and browser tested);
+  - Structure shows "Video Embed" with the MonitorPlay icon;
+  - the generic Embed keeps "Embed" and AppWindow.
+
+
+11. COMPONENT IDENTITY
+----------------------
+Rule (src/features/editor/types/videoEmbed.ts, isVideoEmbedNode):
+  tag === "iframe" AND `controls` is set (true or false).
+
+Why this field:
+- A new field or tag would need project format v3 (project-format.md),
+  which is forbidden.
+- `controls` already exists on every node and means the same thing here:
+  the player's controls.
+- createVideoEmbedNode always stores controls: true.
+- No Layoutry code path ever sets it on a generic Embed: the Embed
+  Inspector has no Controls control, and no bulk editor touches it
+  (grep-verified).
+
+What the rule guarantees:
+- An empty Video Embed (no URL) is still a Video Embed and shows the
+  Video Inspector.
+- Save/reopen, copy/paste, duplicate, undo and redo keep it, because
+  they keep every field (unit tests plus the browser save/reopen test).
+- The URL host never decides identity, so an existing generic Embed with
+  a YouTube URL stays a generic Embed (unit and browser tested).
+- The Video Inspector never offers a Reset that would clear controls.
+
+Compatibility:
+- Only a hand-edited file putting `controls` on an iframe would be read
+  as a Video Embed.
+- An older Layoutry build opens a BC-08.2 file without error (all fields
+  existed) and shows a generic Embed with the canonical embed URL.
+
+Display name: getElementDisplayName returns "Video Embed" (a user-set
+displayName still wins).
+
+
+12. INSPECTOR UX
+----------------
+InspectorVideoEmbedSection, routed by InspectorNodeSummary only when
+isVideoEmbedNode is true:
+- Video URL (InspectorMediaTextField):
+  - placeholder "https://www.youtube.com/watch?v=…";
+  - helper text "YouTube, Vimeo, Loom or Wistia link" until valid.
+- Provider: a read-only row ("None yet" / provider name).
+- Playback (section 13): only the provider's supported controls; one
+  line explains each unsupported one.
+- Start at: "1:30", "90" or "1m30s"; stored in the source; Reset removes
+  it.
+- Privacy mode (where supported), with the provider's honest wording.
+- Title: the accessible name. It defaults to "Embedded video", then the
+  provider's title (e.g. "YouTube video") when a link is pasted, unless
+  the user changed it.
+- A limitations block: the provider's own rules (Referer, owner-disabled
+  embedding, domain restrictions, sharing settings), and "Video playback
+  in Preview and in exported pages comes in a later update…".
+- Width, height, aspect ratio, spacing, border, radius, background,
+  visibility and position remain in the existing CSS sections (unchanged
+  iframe capabilities).
+
+Invalid URL policy (approved decision 13), commitVideoEmbedUrl:
+- invalid: an error with role="alert" and aria-invalid; the draft stays
+  in the field; the stored src is untouched; no history entry; the
+  project is not marked unsaved;
+- valid: the canonical src (plus the default title when applicable) as
+  ONE Undo step, via beginTransaction({ mergeHistory: true });
+- the same video again: nothing.
+- Messages:
+  - "That isn't a YouTube, Vimeo, Loom or Wistia link."
+  - "Only https:// video links are supported."
+  - "Use the video's https:// link."
+  - "Paste the full link, starting with https://."
+  - "That <Provider> link isn't a single video. …"
+  - "That <Provider> link has an invalid video ID."
+  - the deferred-provider blockers;
+  - the credentials and port refusals.
+
+
+13. PLAYBACK SETTINGS
+---------------------
+- Muted, Autoplay, Loop and Controls are the existing generic one-shot
+  setters (one Undo step each).
+- They are stored on the node and preserved across provider switches.
+  A setting the new provider can't use is hidden and explained, and
+  comes back when switching back (browser test: Loop on YouTube, then
+  Vimeo, Loom, back to YouTube).
+- Muted-only autoplay:
+  - The Inspector says "Starts by itself only when Muted is also on."
+  - With Autoplay on and Muted off: "Autoplay won't start until Muted is
+    on. Layoutry only autoplays muted videos."
+  - Muted is never switched on automatically (unit and browser tests).
+  - The Canvas summary lists "Autoplay" only when it would start.
+  - buildVideoEmbedPlayerUrl emits autoplay only when autoplay AND muted.
+- Pending verification in BC-08.3: real provider behavior of every
+  parameter (especially YouTube mute=1 and muted autoplay without
+  allow="autoplay").
+
+
+14. CANVAS PLACEHOLDER
+----------------------
+VideoEmbedPlaceholder, rendered by IframeElement for a Video Embed in
+place of the iframe:
+- Content:
+  - the MonitorPlay icon;
+  - "<Provider> video" (or "Video Embed");
+  - the title, only when it is not that same default (bug B3);
+  - the applied settings ("Muted · Autoplay · Loop · Starts at 1:30 ·
+    Privacy mode");
+  - a note: "Paste a video link in the Inspector" / "No video is loaded
+    while you design" / "The player isn't available in Preview yet".
+- role="img" with an aria-label combining those lines.
+- It lives inside the same wrapper div, so selection outline, drag,
+  resize, Flow/Free/Flex/Grid placement and the authored border, radius,
+  background and filters are the Embed's own.
+- MediaGuideOverlay skips Video Embeds (the placeholder is their empty
+  state).
+- Containment:
+  - absolute inset-0, overflow hidden, and every line truncates;
+  - browser-verified in all three engines: the placeholder rectangle is
+    inside the element's box, measured in one synchronous read.
+  - An earlier two-call measurement showed a 2.5 px offset; that was the
+    canvas scrolling to the new element between the reads, not an
+    overflow.
+- No network: unit test (no iframe/img/script/video/object/embed/link
+  elements, no provider string in the markup); browser and Electron
+  tests (no provider request at all).
+
+
+15. RESPONSIVE APPEARANCE
+-------------------------
+- Default: aspectRatio { ratio 16:9 }.
+  - In Flow, the existing media-frame default gives width 100% and drops
+    the fixed height when a ratio is set, so the height follows the
+    width (computed aspect-ratio "16 / 9", box ratio ≈ 1.78; browser
+    tested).
+  - In Free layout it starts at 480x270 (fixed: bug B2).
+- Nothing is locked: the user can resize it, change or remove the ratio,
+  and use every existing size control (drag and resize in Free layout
+  are browser-tested, one Undo step each).
+
+BUG B2 (fixed): Free-layout default sizes were resolved from the tag
+alone, so the new card's 480x270 entry would never be used; a Video
+Embed would have landed at Embed's 400x300 (4:3).
+- Added getDefaultFreeElementSizeForNode (the Video Embed size, else the
+  tag size), used by resolveFreeDestinationPlacement.
+- Unit-tested; the generic Embed keeps 400x300.
+
+
+16. GENERIC EMBED COMPATIBILITY
+-------------------------------
+Unchanged, and verified:
+- the Source URL / Title Inspector (unit routing test plus browser test);
+- the IframeElement iframe path and sandbox (unit test plus all 29
+  embed-safety specs in Chromium, Firefox and WebKit);
+- export markup: a sandboxed iframe, no allow / allowfullscreen / new
+  attributes (unit test, including a generic Embed with a YouTube URL);
+- save/reopen and duplicate (unit test);
+- the existing IframeElement, InspectorIframeSection and
+  buildExportDocument suites all pass unchanged.
+- A generic Embed whose src is a YouTube URL stays generic.
+
+
+17. PERSISTENCE
+---------------
+- No schema, tag or format change. A saved file is formatVersion 2
+  (unit and Electron tests).
+- The src is canonical and stable after reopen (round trip unit-tested).
+- Tested: insert, URL, provider change, settings, undo, redo, duplicate,
+  copy/paste, save, reopen:
+  - the store unit test (serializeProject, then parseProjectFile, deep
+    equal);
+  - the browser library save, reload and Open;
+  - Electron: save to a .layoutry file, restart, Open.
+- Export: the interim gate (section 19).
+
+
+18. UNDO/REDO
+-------------
+  Action                         Steps   Evidence
+  -----------------------------  ------  -----------------------------------
+  Insert Video Embed             1       unit + browser (Undo then disabled)
+  Valid URL (src + title)        1       unit + browser
+  Invalid URL draft              0       unit + browser (history count)
+  Same video again               0       unit
+  Provider change                1       unit
+  Playback toggle                1 each  unit (store + component)
+  Start time / privacy mode      1       component unit
+  Duplicate                      1       unit
+  Paste                          1       unit
+  Free drag, resize              1 each  browser
+
+
+19. PREVIEW/EXPORT INTERIM BEHAVIOR (end of BC-08.2)
+----------------------------------------------------
+- Design: the static placeholder.
+- Preview: the same static placeholder, saying "The player isn't
+  available in Preview yet".
+  - No iframe exists, so nothing can keep playing after Preview exits or
+    when hidden (BC-08.1 R1 cannot occur).
+- Export (Single file and Separate files): the Video Embed's layout box
+  is written with its CSS but WITHOUT an inner iframe.
+  - The exported page contains no provider URL.
+  - The warning "video-embed-not-exported" appears: "Video Embeds aren't
+    exported as players yet, so this video's box is empty in the
+    exported page."
+  - Documented in docs/architecture/export-engine.md.
+- The player URL builder exists and is unit-tested, but nothing loads it.
+- Not claimed: any real provider playback.
+- BC-08.3 replaces the gate with the player, its lifecycle and browser
+  fullscreen.
+
+
+20. ELECTRON SECURITY
+---------------------
+- No desktop/ file changed: no permission, CSP, navigation, preload or
+  window option changes.
+- The new desktop spec (e2e/desktop/video-embed.spec.ts) checks:
+  - insert, invalid links (evil host, file:///), valid link, settings,
+    Preview;
+  - zero iframes, a single frame, zero non-app requests (the harness
+    cancels and records them), one window;
+  - save to .layoutry (format 2), restart, Open: identity and settings
+    intact, still zero requests.
+- Existing isolation, navigation and permission specs were re-run:
+  embed-safety, security, files and the rest (section 28).
+
+
+21. ACCESSIBILITY
+-----------------
+- Labelled fields: Video URL, Start at, Title (label htmlFor).
+- Switches: role="switch" with aria-checked and an accessible name.
+- Errors: role="alert" plus aria-invalid on the field. The URL helper
+  text uses aria-describedby.
+- Provider identification: the visible Provider row and the
+  placeholder's role="img" aria-label.
+- Unsupported settings are explained in text, not silently missing.
+- Default titles: "Embedded video", then "<Provider> video", editable,
+  with the hint "Screen readers announce this name for the video."
+- Keyboard (browser test, 3 engines): type a link in Video URL and press
+  Enter; Tab to Muted, toggle with Space; type a start time and press
+  Enter.
+- Focus order follows the DOM: URL, Provider, toggles, Start at,
+  Privacy, Title.
+
+
+22. MODIFIED SOURCE FILES
+-------------------------
+New:
+  src/lib/videoEmbed/videoEmbedProviders.ts
+  src/lib/videoEmbed/parseVideoEmbedUrl.ts
+  src/lib/videoEmbed/buildVideoEmbedUrl.ts
+  src/lib/videoEmbed/videoEmbedTime.ts
+  src/features/editor/types/videoEmbed.ts
+  src/features/canvas/components/document/elements/VideoEmbedPlaceholder.tsx
+  src/features/canvas/utils/videoEmbedSummary.ts
+  src/features/inspector/components/InspectorVideoEmbedSection.tsx
+  src/features/inspector/utils/commitVideoEmbedUrl.ts
+Modified:
+  src/features/editor/factories/elementFactories.ts
+      createVideoEmbedNode, "videoEmbed" type and size,
+      getDefaultFreeElementSizeForNode
+  src/features/editor/utils/resolveFreeDestinationPlacement.ts
+      node-aware default size (B2)
+  src/features/editor/utils/elementDisplayName.ts
+      "Video Embed"
+  src/features/editor/components/structure/elementIcon.ts,
+  StructureTreeNode.tsx
+      Video Embed icon
+  src/components/layout/creationToolbarCategories.ts
+      Video Embed card
+  src/features/canvas/components/document/elements/IframeElement.tsx
+      placeholder branch
+  src/features/canvas/components/overlay/MediaGuideOverlay.tsx
+      skip Video Embeds
+  src/features/inspector/components/InspectorNodeSummary.tsx
+      routing
+  src/features/export/utils/buildExportDocument.ts,
+  export/types/exportDiagnostic.ts
+      interim gate, new code
+  docs/architecture/export-engine.md
+      gate documented
+
+
+23. NEW TESTS
+-------------
+Unit (Vitest):
+  src/lib/videoEmbed/parseVideoEmbedUrl.test.ts
+      every link form, deferred providers, 34-row security table
+  src/lib/videoEmbed/buildVideoEmbedUrl.test.ts
+      canonical sources, determinism, privacy defaults, player URL and
+      muted-only autoplay, capability matrix
+  src/lib/videoEmbed/videoEmbedTime.test.ts
+  src/features/editor/stores/useEditorStore.videoEmbed.test.ts
+      identity, format 2 save/reopen, history, duplicate, copy/paste,
+      generic Embed, default size
+  src/features/inspector/utils/commitVideoEmbedUrl.test.ts
+      invalid preservation, one-step commit, provider switch, title,
+      messages
+  src/features/inspector/components/InspectorVideoEmbedSection.test.tsx
+      per-provider controls, alerts, autoplay text, start time, privacy,
+      routing
+  src/features/canvas/components/document/elements/IframeElement.videoEmbed.test.tsx
+      no iframe or network resources in Design/Preview, summary, wrapper,
+      16:9, generic Embed
+  src/features/export/utils/exportHtmlCss.videoEmbed.test.ts
+      gate in both modes; generic Embed markup unchanged
+Updated, to the new card (assertions extended, none removed):
+  src/components/layout/creationToolbarCategories.test.ts
+      Media list adds "Video Embed"
+  src/features/export/utils/buildExportDocument.test.ts
+      82 catalog entries; the Video Embed's gate warning expected
+Browser (Playwright): e2e/video-embed.spec.ts, 10 tests, 3 engines
+  insertion; 4 providers; invalid links; provider switching; muted-only
+  autoplay; 16:9 and containment; drag/resize; save/reopen and Preview;
+  generic Embed; keyboard. Every test asserts zero requests to provider
+  hosts (all such requests are routed, recorded and aborted).
+Electron: e2e/desktop/video-embed.spec.ts, 2 tests.
+
+
+24. EXACT TEST COMMANDS AND RESULTS
+-----------------------------------
+All runs were on the final code unless noted. A temporary three-engine
+Playwright config (zz-xbrowser.config.ts, the same as playwright.config.ts
+plus Firefox and WebKit projects) was used and then deleted; the
+repository config runs Chromium only.
+
+  npm run typecheck                                   clean
+  npm run lint                                        clean (0 problems)
+  npx vitest run (full)                               388 files, 5912 passed, 1 skipped, 0 failed
+  npx vitest run src/lib/videoEmbed                   3 files, 162 passed
+  npx playwright test --project=chromium (full)       267 passed, 0 failed (4.9 min)
+  npx playwright test -c zz-xbrowser.config.ts e2e/video-embed.spec.ts e2e/embed-safety.spec.ts
+                                                      117 passed, 0 failed (39 per engine)
+  npm run desktop:build                               exit 0 (includes tsc -p desktop/tsconfig.json)
+  npx playwright test -c playwright.desktop.config.ts (full Electron suite)
+                                                      81 passed, 1 failed, 2 skipped (see section 28)
+  npx playwright test -c playwright.desktop.config.ts e2e/desktop/preview-media.spec.ts --repeat-each=3
+                                                      3 passed
+  npm run build                                       exit 0
+
+Earlier runs during development, kept for the record:
+- An intermediate Vitest run of the touched features had 3 failures:
+  - the toolbar Media list and the 81-entry catalog count, both updated
+    to the new card (section 23);
+  - the 19,999-element export scale test, timing out under parallel load
+    (it passes alone, and in both full runs).
+- The first Electron run had the 2 new tests failing on test mistakes:
+  the request recorder also logs the app's own file:// bundle loads, and
+  a click landed on the Design interaction shield. Both were fixed in the
+  test.
+  That run also exposed a duplicated title in the placeholder ("Vimeo
+  video" twice), which was fixed in VideoEmbedPlaceholder and unit-tested.
+
+25. CHROMIUM RESULTS
+--------------------
+- Full suite: 267/267 passed. This includes all 10 new video-embed tests
+  and the existing embed-safety, preview, export and inspector specs.
+- No pre-existing failures in Chromium.
+
+26. FIREFOX RESULTS
+-------------------
+- e2e/video-embed.spec.ts: 10/10.
+- e2e/embed-safety.spec.ts (BC-02.3 iframe sandbox regression): 29/29.
+- Firefox is not part of the repository's default config. The
+  pre-existing non-BC-08 Firefox failures in export-workflow and
+  preview-export-parity (BC-07.4 baseline) were not re-run, since nothing
+  they cover changed.
+
+27. WEBKIT RESULTS
+------------------
+- e2e/video-embed.spec.ts: 10/10.
+- e2e/embed-safety.spec.ts: 29/29.
+- WebKit's known Windows limitation (it loads no media at all) does not
+  affect these specs: Video Embed loads nothing by design.
+
+28. ELECTRON RESULTS
+--------------------
+- Full suite after desktop:build: 81 passed, 2 skipped, 1 failed.
+  - Both new Video Embed tests passed, with zero network requests and
+    zero iframes.
+  - embed-safety (hostile iframe isolation), security (navigation,
+    popups, permissions denied, no Node.js in frames, CSP) and files all
+    passed.
+- The one failure: preview-media.spec.ts:78. It waited 20 s for a real
+  video's readyState under load. Rerun alone with --repeat-each=3: 3/3
+  passed.
+  This is the same test-stability item recorded in BC-07.4 (it plays
+  real media and touches no BC-08 code).
+- The 2 skips are the existing environment-gated tests, as in BC-07.4.
+- No desktop/ source file changed.
+
+29. BUILD / TYPECHECK / LINT RESULTS
+------------------------------------
+- npm run typecheck: clean. The schema drift guards pass, confirming no
+  document-model change.
+- npm run lint: clean.
+- npm run build (web production): succeeded.
+- npm run desktop:build (static export plus desktop tsc): succeeded.
+
+30. KNOWN LIMITATIONS
+---------------------
+- No playback anywhere yet (by design, the BC-08.3 gate). Exported pages
+  contain an empty box with a warning.
+- Real provider behavior is unverified until BC-08.3's opt-in live
+  suite: YouTube mute and nocookie, sandbox compatibility, autoplay
+  without allow="autoplay".
+- Provider rules Layoutry cannot override:
+  - YouTube and Dailymotion require a Referer (desktop and local-file
+    pages, BC-08.1 F3/F4);
+  - owners can disable embedding or restrict domains (YouTube, Vimeo);
+  - Vimeo hides controls only on the owner's paid plan;
+  - Loom videos must be shared with "Anyone with the link";
+  - browsers block unmuted autoplay.
+- ID patterns for Loom, Wistia and the Vimeo hash are taken from
+  provider examples, not a published rule. A valid but unusual ID would
+  be refused.
+- Wistia custom-domain links are refused by design.
+- Paste replaces the start time with the pasted link's own (or none).
+- No Shorts-specific 9:16 default (16:9 always, per decision 12).
+- Identity rides on `controls`: a hand-edited file with controls on an
+  iframe becomes a Video Embed.
+
+
+31. OUTSTANDING PRODUCT DECISIONS
+---------------------------------
+1. Dailymotion: keep deferred, or accept owner-player links with
+   account-controlled autoplay (conflicts with decision 7).
+2. Twitch: keep deferred, or add a "published domain" export setting.
+3. Wistia: confirm the doNotTrack=true default (applied by analogy with
+   decision 5).
+4. Wording of the interim Preview/Export notes (removed in BC-08.3).
+5. For BC-08.4 (unchanged from BC-08.1): the desktop Referer identity and
+   the scoped fullscreen permission.
+
+
+32. GIT WORKING-TREE STATUS
+---------------------------
+- Modified (14): the files in section 22's "Modified" list, plus the two
+  updated tests (creationToolbarCategories.test.ts,
+  buildExportDocument.test.ts).
+- Untracked:
+  - the 9 new source files in section 22;
+  - the 8 new unit test files;
+  - e2e/video-embed.spec.ts and e2e/desktop/video-embed.spec.ts;
+  - this report.
+  docs/reports/BC-08.1-Multi-Provider-Video-Embed-Investigation.txt is
+  still untracked from BC-08.1.
+- Gitignored: changelogs/2026-11-11-multi-provider-video-embed-implementation-BC-08.2.txt
+- Deleted temporary files: zz-xbrowser.config.ts.
+- Nothing is staged, committed or pushed.
+
+33. QA RECOMMENDATION
+---------------------
+APPROVE BC-08.2. The acceptance criteria are met:
+1-3 card, model, identity; 4-6 providers and blockers; 7 malicious
+links; 8-9 detection and invalid drafts; 10-11 controls and autoplay;
+12-13 placeholder and 16:9; 14 atomic history; 15 generic Embed; 16
+format; 17 security; 18 evidence.
+BC-08.3 has not been started.

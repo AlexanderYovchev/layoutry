@@ -1,4 +1,5 @@
 import { getInputType, type InputType } from "@/features/editor/types/input";
+import { isVideoEmbedNode } from "@/features/editor/types/videoEmbed";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
 /**
@@ -121,6 +122,8 @@ export function getElementDisplayName(node: EditorElementNode): string {
   if (node.tag === "input") return INPUT_TYPE_DISPLAY_NAMES[getInputType(node)];
   if (node.tag === "option") return optionDisplayName(node);
   if (node.tag === "th" || node.tag === "td") return tableCellDisplayName(node);
+  // BC-08.2: a Video Embed is an Embed underneath, but reads as what it is.
+  if (isVideoEmbedNode(node)) return "Video Embed";
   return TAG_DISPLAY_NAMES[node.tag] ?? node.tag;
 }
 

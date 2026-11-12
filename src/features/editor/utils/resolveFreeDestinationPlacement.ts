@@ -1,4 +1,4 @@
-import { getDefaultFreeElementSize } from "@/features/editor/factories/elementFactories";
+import { getDefaultFreeElementSizeForNode } from "@/features/editor/factories/elementFactories";
 import { getLayoutMode, getResizeConstraintsForTag } from "@/features/editor/types/layout";
 import { approximateFreeContainerSize } from "@/features/editor/utils/approximateFreeContainerSize";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
@@ -35,7 +35,7 @@ export function resolveFreeDestinationPlacement(
   const existingGeometries = (parent.children ?? [])
     .map((child) => child.freeLayout)
     .filter((geometry): geometry is FreeLayoutGeometry => geometry !== undefined);
-  const size = node.freeLayout ?? getDefaultFreeElementSize(node.tag);
+  const size = node.freeLayout ?? getDefaultFreeElementSizeForNode(node);
 
   const position = resolveFreeInsertionPosition(existingGeometries, size, parentBounds);
   const freeLayout = normalizeFreeLayoutGeometry(

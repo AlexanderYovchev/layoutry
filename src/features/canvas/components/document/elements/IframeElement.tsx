@@ -4,10 +4,12 @@ import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useHostOrigin } from "@/features/canvas/hooks/useHostOrigin";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { MediaInteractionShield } from "@/features/canvas/components/document/elements/MediaInteractionShield";
+import { VideoEmbedPlaceholder } from "@/features/canvas/components/document/elements/VideoEmbedPlaceholder";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
 import { resolveVideoOrIframeElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { isVideoEmbedNode } from "@/features/editor/types/videoEmbed";
 import { resolveIframeSourcePolicy } from "@/lib/iframeSandbox";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
@@ -44,6 +46,12 @@ import type { DocumentElementProps } from "@/features/canvas/types/documentRende
  * change of policy gets a fresh frame instead of an old document running
  * under stale flags. No other iframe attribute is ever copied from the
  * document.
+ *
+ * Video Embed (BC-08.2): an Embed marked as a Video Embed (see
+ * isVideoEmbedNode) renders NO iframe at all on the Canvas, in Design or
+ * (until BC-08.3 adds the player lifecycle) in Preview — only the static
+ * VideoEmbedPlaceholder inside the same wrapper, so no provider is ever
+ * contacted from the Canvas and the generic iframe path above is unchanged.
  */
 export function IframeElement({ node, parentId, parentLayoutMode, parentFlowDisplay }: DocumentElementProps) {
   const dropRef = useNodeDropRegistration(node);
@@ -51,6 +59,7 @@ export function IframeElement({ node, parentId, parentLayoutMode, parentFlowDisp
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
   const recipe = resolveVideoOrIframeElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
   const hostOrigin = useHostOrigin();
+  const isVideoEmbed = isVideoEmbedNode(node);
   const policy = resolveIframeSourcePolicy(hostOrigin === null ? undefined : node.src, hostOrigin ?? "");
 
   return (
@@ -61,15 +70,19 @@ export function IframeElement({ node, parentId, parentLayoutMode, parentFlowDisp
       style={recipe.style}
       {...listeners}
     >
-      <iframe
-        key={policy.sandbox}
-        sandbox={policy.sandbox}
-        src={policy.src}
-        title={node.title}
-        id={node.htmlId}
-        className={node.className}
-        style={recipe.innerStyle}
-      />
+      {isVideoEmbed ? (
+        <VideoEmbedPlaceholder node={node} isPreview={isPreview} />
+      ) : (
+        <iframe
+          key={policy.sandbox}
+          sandbox={policy.sandbox}
+          src={policy.src}
+          title={node.title}
+          id={node.htmlId}
+          className={node.className}
+          style={recipe.innerStyle}
+        />
+      )}
       <MediaInteractionShield />
     </div>
   );

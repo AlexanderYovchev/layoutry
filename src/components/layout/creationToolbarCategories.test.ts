@@ -69,9 +69,9 @@ describe("creationToolbarCategories — one primary home per element (Checkpoint
     ]);
   });
 
-  it("Media owns Image/Video/Audio/SVG/Embed, with exactly one enabled card per primitive", () => {
+  it("Media owns Image/Video/Video Embed/Audio/SVG/Embed, with exactly one enabled card per primitive (BC-08.2 adds Video Embed next to Video)", () => {
     const mediaNames = enabledCardNames("Media");
-    expect(mediaNames).toEqual(["Image", "Video", "Audio Player", "SVG", "Embed"]);
+    expect(mediaNames).toEqual(["Image", "Video", "Video Embed", "Audio Player", "SVG", "Embed"]);
   });
 
   it("Checkpoint 1.15.6.13.1 — Components -> Data Display contains exactly 6 enabled compositions, Progress Bar now joining the existing five", () => {

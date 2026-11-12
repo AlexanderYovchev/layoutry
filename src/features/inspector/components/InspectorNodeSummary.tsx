@@ -14,6 +14,8 @@ import { InspectorGridChildSection } from "@/features/inspector/components/Inspe
 import { InspectorHeadingLevelSection } from "@/features/inspector/components/InspectorHeadingLevelSection";
 import { InspectorIdentitySection } from "@/features/inspector/components/InspectorIdentitySection";
 import { InspectorIframeSection } from "@/features/inspector/components/InspectorIframeSection";
+import { InspectorVideoEmbedSection } from "@/features/inspector/components/InspectorVideoEmbedSection";
+import { isVideoEmbedNode } from "@/features/editor/types/videoEmbed";
 import { InspectorImageSection } from "@/features/inspector/components/InspectorImageSection";
 import { InspectorInteractionsSection } from "@/features/inspector/components/InspectorInteractionsSection";
 import { InspectorLayoutSection } from "@/features/inspector/components/InspectorLayoutSection";
@@ -158,7 +160,7 @@ export function InspectorNodeSummary({
       {node.tag === "video" && <InspectorVideoSection node={node} />}
       {node.tag === "audio" && <InspectorAudioSection node={node} />}
       {node.tag === "progress" && <InspectorProgressSection node={node} />}
-      {node.tag === "iframe" && <InspectorIframeSection node={node} />}
+      {node.tag === "iframe" && (isVideoEmbedNode(node) ? <InspectorVideoEmbedSection node={node} /> : <InspectorIframeSection node={node} />)}
       {getElementCapabilities(node.tag).supportsSvgSettings && !isEditingThisSvg && (
         <InspectorSvgSection node={node} protection={protection} />
       )}

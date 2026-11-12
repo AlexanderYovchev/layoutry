@@ -60,6 +60,7 @@ import {
   SquareDashed,
   Table,
   Video,
+  MonitorPlay,
   Tag,
   TextCursorInput,
   TextQuote,
@@ -113,6 +114,7 @@ export type InsertableCardType =
   | "audio"
   | "progress"
   | "iframe"
+  | "videoEmbed"
   | "svg"
   | "dialog"
   | "primaryButton"
@@ -502,6 +504,12 @@ function mediaCategory(): ToolbarCategoryContent {
           description: "Video files or URLs, with playback controls",
           elementType: "video",
           icon: Video,
+        },
+        {
+          name: "Video Embed",
+          description: "YouTube, Vimeo, Loom or Wistia video from a link",
+          elementType: "videoEmbed",
+          icon: MonitorPlay,
         },
         { name: "Video Background", description: "Looping background video" },
       ]),

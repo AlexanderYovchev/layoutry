@@ -6,12 +6,14 @@ import { cn } from "@/lib/utils";
 import {
   FALLBACK_ELEMENT_ICON,
   TAG_ICONS,
+  VIDEO_EMBED_ICON,
 } from "@/features/editor/components/structure/elementIcon";
 import {
   getElementDisplayName,
   shouldShowTagBadge,
 } from "@/features/editor/utils/elementDisplayName";
 import type { EditorElementNode } from "@/features/editor/types/document";
+import { isVideoEmbedNode } from "@/features/editor/types/videoEmbed";
 
 // Bounded lookup so indentation stays on the canonical Tailwind spacing
 // scale instead of an inline style; six levels comfortably covers a
@@ -81,7 +83,7 @@ export function StructureTreeNode({
   const isSelected = selectedIds.includes(node.id);
   const isPrimary = node.id === primarySelectedId;
   const displayName = getElementDisplayName(node);
-  const Icon = TAG_ICONS[node.tag] ?? FALLBACK_ELEMENT_ICON;
+  const Icon = isVideoEmbedNode(node) ? VIDEO_EMBED_ICON : (TAG_ICONS[node.tag] ?? FALLBACK_ELEMENT_ICON);
 
   function handleRowKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     switch (event.key) {

@@ -17,6 +17,7 @@ import {
   ListOrdered,
   Menu,
   Minus,
+  MonitorPlay,
   MousePointerClick,
   Newspaper,
   PanelBottom,
@@ -114,3 +115,10 @@ export const TAG_ICONS: Record<string, LucideIcon> = {
   // Progress (Checkpoint 1.15.6.12.4).
   progress: Gauge,
 };
+
+/**
+ * A Video Embed's Structure icon (BC-08.2): it is an iframe underneath
+ * (TAG_ICONS' "iframe" entry) but shows the video-player icon its library
+ * card uses. StructureTreeNode picks it with isVideoEmbedNode.
+ */
+export const VIDEO_EMBED_ICON: LucideIcon = MonitorPlay;

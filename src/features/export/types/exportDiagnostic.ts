@@ -34,7 +34,8 @@ export type ExportDiagnosticCode =
   | "control-characters-removed"
   | "unmuted-autoplay"
   | "embedded-image-invalid"
-  | "embedded-image-type-mismatch";
+  | "embedded-image-type-mismatch"
+  | "video-embed-not-exported";
 
 export interface ExportDiagnostic {
   code: ExportDiagnosticCode;

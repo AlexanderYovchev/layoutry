@@ -5,6 +5,7 @@ import { useHostOrigin } from "@/features/canvas/hooks/useHostOrigin";
 import { useMeasuredNodeRect } from "@/features/canvas/hooks/useMeasuredNodeRect";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
+import { isVideoEmbedNode } from "@/features/editor/types/videoEmbed";
 import { resolveIframeSourcePolicy } from "@/lib/iframeSandbox";
 
 interface MediaGuideOverlayProps {
@@ -26,8 +27,9 @@ interface MediaGuide {
 // An embed whose source the iframe policy refuses (BC-02.3: data:, blob:,
 // file:, about:, ...) renders as an empty frame too, so it gets a guide
 // saying why instead of looking silently broken.
+// A Video Embed (BC-08.2) shows its own empty state in its placeholder.
 function collectMediaGuides(node: EditorElementNode, hostOrigin: string | null, guides: MediaGuide[] = []): MediaGuide[] {
-  if (EMPTY_SOURCE_MEDIA_TAGS.has(node.tag)) {
+  if (EMPTY_SOURCE_MEDIA_TAGS.has(node.tag) && !isVideoEmbedNode(node)) {
     if (!node.src) guides.push({ node, hint: EMPTY_SOURCE_HINT });
     else if (node.tag === "iframe" && hostOrigin !== null && resolveIframeSourcePolicy(node.src, hostOrigin).refused) guides.push({ node, hint: REFUSED_EMBED_HINT });
   }

@@ -51,6 +51,7 @@ import {
 import { generateNodeId } from "@/features/editor/utils/generateNodeId";
 import { DEFAULT_SVG_FILL } from "@/features/editor/types/svg";
 import { DEFAULT_LINK_HREF } from "@/features/editor/types/link";
+import { isVideoEmbedNode } from "@/features/editor/types/videoEmbed";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { FlexContainerSettings } from "@/features/editor/types/flowLayout";
 import type { ElementSpacing } from "@/features/editor/types/spacing";
@@ -102,6 +103,7 @@ export type InsertableElementType =
   | "video"
   | "audio"
   | "iframe"
+  | "videoEmbed"
   | "svg"
   | "dialog"
   | "primaryButton"
@@ -848,6 +850,27 @@ export function createIframeNode(): EditorElementNode {
 }
 
 /**
+ * Video Embed (BC-08.2) — the existing Embed element (`tag: "iframe"`),
+ * marked as a Video Embed by an explicit `controls: true` (see
+ * isVideoEmbedNode in types/videoEmbed.ts for why that field). Starts
+ * empty (no URL: the Canvas shows the video placeholder), with a neutral
+ * accessible title the Inspector replaces with the provider's own default
+ * when a link is pasted, and a responsive 16:9 box: the CSS aspect-ratio
+ * shapes its height from whatever width it gets (full width in Flow; in
+ * Free layout its default size below is 16:9 too). Nothing is locked: the
+ * user can resize it or change the ratio like any other element.
+ */
+export function createVideoEmbedNode(): EditorElementNode {
+  return {
+    id: generateNodeId("iframe"),
+    tag: "iframe",
+    title: "Embedded video",
+    controls: true,
+    aspectRatio: { mode: "ratio", width: 16, height: 9 },
+  };
+}
+
+/**
  * SVG Foundation (Checkpoint 1.15.5) — a genuine `tag: "svg"` leaf.
  * Ships with an explicit starter Rectangle and a visible accent fill
  * (DEFAULT_SVG_FILL — see types/svg.ts's own doc comment for why this
@@ -921,6 +944,7 @@ const FACTORIES_BY_TYPE: Record<InsertableElementType, () => EditorElementNode> 
   audio: createAudioNode,
   progress: createProgressNode,
   iframe: createIframeNode,
+  videoEmbed: createVideoEmbedNode,
   svg: createSvgNode,
   dialog: createDialogNode,
   primaryButton: createPrimaryButtonNode,
@@ -1030,6 +1054,7 @@ const DEFAULT_FREE_ELEMENT_SIZE: Record<InsertableElementType, { width: number; 
    */
   audio: { width: 300, height: 54 },
   iframe: { width: 400, height: 300 },
+  videoEmbed: { width: 480, height: 270 },
   svg: { width: 200, height: 200 },
   dialog: { width: 320, height: 200 },
   primaryButton: { width: 120, height: 44 },
@@ -1121,4 +1146,13 @@ const INSERTABLE_TYPE_BY_TAG: Record<string, InsertableElementType> = {
 export function getDefaultFreeElementSize(tag: string): { width: number; height: number } {
   const type = INSERTABLE_TYPE_BY_TAG[tag];
   return type ? DEFAULT_FREE_ELEMENT_SIZE[type] : DEFAULT_FREE_SIZE_FALLBACK;
+}
+
+/**
+ * A node's default Free-layout size: its tag's, except a Video Embed
+ * (BC-08.2), which shares the iframe tag with Embed but starts at its own
+ * 16:9 size (480x270) instead of Embed's 400x300.
+ */
+export function getDefaultFreeElementSizeForNode(node: Pick<EditorElementNode, "tag" | "controls">): { width: number; height: number } {
+  return isVideoEmbedNode(node) ? DEFAULT_FREE_ELEMENT_SIZE.videoEmbed : getDefaultFreeElementSize(node.tag);
 }

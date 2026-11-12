@@ -1,0 +1,1489 @@
+LAYOUTRY — BC-08.1: MULTI-PROVIDER VIDEO EMBEDS
+ARCHITECTURE & SECURITY INVESTIGATION
+==================================================================
+Date: 2026-11-11
+Type: Read-only investigation. Nothing was implemented.
+Base commit: 57fa030 (main, clean working tree at the start).
+Product code, sandbox permissions, fullscreen and the document schema
+are unchanged. Nothing was committed or pushed.
+
+Confidence markers used below:
+  [CODE]     confirmed by reading Layoutry's source
+  [PROBE]    confirmed live by a temporary probe this checkpoint
+             (Chromium, Firefox and WebKit through Playwright, and the
+             real Electron app); the probes were deleted afterwards
+  [DOCS]     stated by the provider's official documentation (read
+             2026-11-11; URLs in section 5)
+  [ASSUMED]  believed true; needs live verification against the real
+             provider before it is relied on
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Layoutry already has the right building blocks:
+- An Embed component: a real <iframe> with a fixed sandbox, a URL
+  policy shared by Canvas and Export, and an interaction shield.
+- A native Video component with the muted-only autoplay policy.
+
+There is no YouTube, Vimeo or other provider support, and no video-
+specific embed. All of BC-08 can be built without a new node type and
+without changing the project format (it stays version 2).
+
+Key findings:
+
+F1 [PROBE] Fullscreen is technically easy in browsers.
+  Adding allow="fullscreen" to today's sandboxed iframe enables
+  fullscreen in Chromium, Firefox and WebKit. No sandbox token changes,
+  and none is needed. Without it (today), fullscreen is refused.
+
+F2 [PROBE] Electron is different.
+  With allow="fullscreen", the embed is told fullscreen is available,
+  but its request never completes: it neither succeeds nor fails. The
+  cause is the shipped permission handler, which denies every
+  permission.
+  Enabling fullscreen on desktop therefore needs a reviewed change to
+  desktop/security/hardenSession.ts. That is an Electron security
+  change and needs explicit approval.
+
+F3 [PROBE] The desktop app sends no Referer header to embeds.
+  Requests from app://layoutry/ arrive without one.
+  [DOCS] YouTube requires an HTTP Referer from every embedding client.
+  [DOCS] Dailymotion blocks playback without one.
+  [ASSUMED] So YouTube and Dailymotion embeds will likely refuse to
+  play in the desktop app until this is addressed.
+
+F4 [PROBE] An exported page opened as a local file sends no Referer.
+  This covers file://, i.e. double-clicking index.html, in all three
+  browsers. The same providers will likely refuse to play there
+  [ASSUMED]. They should work once the page is served from a website.
+  The export dialog should say so.
+
+F5 [CODE] The Embed component has no media lifecycle.
+  Native video and audio are paused when Preview ends and when an
+  interaction hides them (BC-02.2 / BC-02.5). An <iframe> is not:
+  - it is never remounted on mode change;
+  - the export runtime only pauses <video>/<audio>.
+  A provider video playing in Preview would keep playing, with sound,
+  after Preview exits or after its parent is hidden. BC-08 must solve
+  this before players can be used.
+
+F6 [CODE] The Embed component loads its page live on the Design canvas.
+  A provider iframe there would contact the provider as soon as the
+  project opens, before the user ever presses Play.
+
+F7 [DOCS] Twitch cannot work for Layoutry's exports.
+  Every embed must name the exact parent domain, which Layoutry cannot
+  know at export time; for the desktop app's app:// origin it may not
+  be possible at all.
+  [DOCS] Dailymotion's iframe embed is documented as suitable only for
+  JavaScript-restricted environments (AMP), and it needs a per-account
+  player ID for configuration.
+
+Recommendations (each needs approval; see section 22):
+- Providers: Option A, YouTube + Vimeo first. Loom is a cheap later
+  addition; Dailymotion, Wistia and Twitch are deferred.
+- Model: reuse the existing iframe tag and the existing node fields. A
+  new "Video Embed" toolbar item creates it; the provider is derived
+  from the URL, never stored.
+- Canvas: a static placeholder in Design (zero third-party requests).
+  The real player loads only in Preview and on exported pages.
+- Lifecycle: tear the player down on Preview exit and when hidden. The
+  playback position is NOT kept; this is stated honestly.
+- Autoplay: provider autoplay only when autoplay AND muted (existing
+  getEffectiveAutoplay), and no allow="autoplay" delegation.
+- Privacy: youtube-nocookie.com and Vimeo dnt=1 by default; an explicit
+  referrerpolicy; no thumbnails fetched in Design.
+- Fullscreen: ENABLE (restricted) for recognized provider embeds only,
+  after approval:
+  - browsers: in Preview and on exported pages;
+  - desktop: only with a scoped permission allowance, in its own
+    checkpoint.
+  Generic embeds stay without fullscreen.
+- Roadmap: five checkpoints rather than three (section 23). The desktop
+  fullscreen/Referer work is security-sensitive and isolated in its own
+  checkpoint.
+
+QA recommendation: APPROVE BC-08.1 as complete, and record the product
+decisions in section 22 before BC-08.2 starts.
+
+
+2. CURRENT COMPONENT ARCHITECTURE
+---------------------------------
+Component inventory [CODE]:
+
+  Component              Exists?  Notes
+  ---------------------  -------  -------------------------------------
+  Native HTML Video      YES      tag "video"; toolbar Media > Video
+  Iframe (generic)       YES      tag "iframe"; toolbar Media > Embeds >
+                                  "Embed"
+  Video Embed            NO
+  YouTube-specific       NO       (no provider code anywhere in src/)
+  Vimeo-specific         NO
+  Generic embed          YES      = the Iframe above
+  Audio                  YES      tag "audio" (shares the media fields)
+  "Video Background"     LISTED   toolbar card with no elementType
+                                  (placeholder, not creatable)
+
+How each is built:
+- Creation:
+  - src/components/layout/creationToolbarCategories.ts mediaCategory();
+  - src/features/editor/factories/elementFactories.ts:
+    - createVideoNode() gives { tag: "video" }, size 400x225;
+    - createIframeNode() gives { tag: "iframe", title: "Embedded
+      content" }, size 400x300.
+- Model: EditorElementNode in src/features/editor/types/document.ts is
+  ONE flat shape for every tag. The schema
+  (src/features/editor/schemas/editorDocumentSchema.ts, z.strictObject)
+  already accepts, on any node:
+    src, poster, controls, autoplay, muted, loop, title, aspectRatio,
+    mediaFit, dimensions, border, borderRadius, ...
+  So an iframe can carry controls/autoplay/muted/loop TODAY with no
+  schema change. The fields are just not shown for iframes.
+- Capabilities: src/features/editor/rules/elementCapabilities.ts.
+  - video: supportsIntrinsicAspectRatio + supportsMediaFit.
+  - iframe: deliberately has no media-fit, since object-fit has no
+    effect on an embedded document.
+- Inspector routing: InspectorNodeSummary.tsx
+  - tag "video" shows InspectorVideoSection;
+  - tag "iframe" shows InspectorIframeSection.
+- Canvas: src/features/canvas/components/document/elements/
+  IframeElement.tsx and VideoElement.tsx, with the shared
+  MediaInteractionShield.tsx.
+- Export: src/features/export/utils/buildExportDocument.ts, the media
+  branch around lines 468-485.
+
+The feature-ownership rules in CLAUDE.md fit this work cleanly:
+- The provider parser/normaliser is shared by canvas, inspector and
+  export with no React dependency. Like src/lib/iframeSandbox.ts, it
+  belongs in src/lib.
+- Settings commands belong in editor.
+- The placeholder belongs in canvas.
+- The controls belong in inspector.
+- The markup belongs in export.
+
+
+3. CURRENT VIDEO AND IFRAME BEHAVIOR
+------------------------------------
+NATIVE VIDEO (tag "video") [CODE]
+- Source: node.src (any http/https/relative URL or data:video).
+- Inspector (InspectorVideoSection + InspectorMediaPlaybackFields):
+  Source URL, Poster URL, Controls, Autoplay, Muted, Loop, media fit.
+- Canvas Design:
+  - a real <video> with no autoplay attribute (gated on Preview);
+  - a MediaInteractionShield blocks the controls so clicks select;
+  - an empty source shows MediaGuideOverlay.
+- Canvas Preview:
+  - the shield is removed;
+  - usePreviewMediaPlayback (canvas/hooks) calls play() on entry only
+    for muted autoplay, and pause() on exit, unmount and hide;
+  - RuntimeHiddenContext keeps hidden media mounted, but paused.
+- Export:
+  - <video src poster controls autoplay muted loop>, where autoplay
+    comes from getEffectiveAutoplay;
+  - an "unmuted-autoplay" warning appears when autoplay is dropped;
+  - exportInteractionRuntime.ts pauses video/audio in hidden targets.
+- Save/reopen: plain fields, project format 2.
+
+IFRAME / EMBED (tag "iframe") [CODE]
+- Source: node.src.
+- Inspector (InspectorIframeSection.tsx):
+  - Source URL, refused unless isValidLinkHref and the iframe policy
+    allows it;
+  - Title.
+  - No playback fields.
+- Canvas Design:
+  - a real <iframe> that LOADS THE PAGE (F6);
+  - sandbox and src come from resolveIframeSourcePolicy
+    (src/lib/iframeSandbox.ts); the iframe is keyed on the sandbox
+    value;
+  - no src until the host origin is known (useHostOrigin);
+  - a MediaInteractionShield is required, because clicks inside a
+    frame never reach the editor;
+  - a refused source shows MediaGuideOverlay's REFUSED_EMBED_HINT.
+- Canvas Preview: the same iframe, with the shield removed. Nothing
+  pauses or reloads it on exit or hide (F5).
+- Export:
+  - checkExportUrl(..., "frame") allows http/https/relative only;
+  - then <iframe sandbox="..." src title>, using EXPORTED_PAGE_ORIGIN
+    to decide allow-same-origin.
+- Save/reopen: plain fields.
+- Attributes never written anywhere: allow, allowfullscreen,
+  referrerpolicy, loading, srcdoc. The strict schema refuses
+  sandbox/srcdoc/allow/referrerPolicy fields at import (BC-02.3).
+
+
+4. EXISTING SECURITY MODEL
+--------------------------
+Iframe policy (src/lib/iframeSandbox.ts, BC-02.3) [CODE]:
+- Frameable protocols: http: and https: only (relative and protocol-
+  relative URLs resolve to them).
+- Never framed: data:, blob:, file:, about:, javascript: and everything
+  else.
+- sandbox is always present: "allow-forms allow-popups allow-scripts".
+  "allow-same-origin" is added only when the URL's origin differs from
+  the host page's origin.
+- Never granted:
+  - allow-top-navigation (and its -by-user-activation and
+    -to-custom-protocols forms);
+  - allow-popups-to-escape-sandbox;
+  - allow-modals, allow-downloads, allow-pointer-lock,
+    allow-presentation, allow-orientation-lock,
+    allow-storage-access-by-user-activation.
+- No allow= (Permissions Policy) at all, so embedded fullscreen is OFF.
+  Verified again this checkpoint (F1 baseline).
+
+Web hosting (next.config.ts):
+- frame-ancestors 'none' plus X-Frame-Options DENY, so the editor can
+  never be framed, not even through a redirect.
+
+Export URL policy (src/features/export/utils/exportUrlPolicy.ts):
+- Per-context scheme allowlists.
+- Scheme detection is hardened against tab/newline/control-character
+  tricks.
+
+Electron (desktop/) [CODE]:
+- main.ts webPreferences: contextIsolation: true, nodeIntegration:
+  false, sandbox: true, webSecurity: true, webviewTag: false.
+  app.enableSandbox().
+- security/contentSecurityPolicy.ts:
+  - frame-src http: https:;
+  - script-src 'self' 'unsafe-inline' (no eval, no remote script);
+  - object-src 'none'; base-uri 'none'; form-action 'none';
+    frame-ancestors 'none'.
+- security/hardenWebContents.ts:
+  - setWindowOpenHandler denies every popup;
+  - will-navigate / will-redirect only allow app://layoutry/;
+  - will-frame-navigate only lets subframes go to http/https/
+    about:blank;
+  - will-attach-webview is always prevented.
+- security/hardenSession.ts: every permission request and check is
+  denied, explicitly including fullscreen.
+- The preload bridge is exposed to the main frame only; embeds have no
+  require/process/bridge (e2e/desktop/embed-safety.spec.ts).
+
+Approved BC-02 product decisions that BC-08 must keep:
+- sandboxed iframes;
+- no top navigation;
+- no unrestricted same-origin;
+- safe URL validation;
+- no weaker Electron security;
+- muted-only autoplay;
+- fullscreen disabled until BC-08 decides it.
+
+
+5. PROVIDER COMPARISON
+----------------------
+Official sources read on 2026-11-11 (all loaded):
+  YouTube parameters:  developers.google.com/youtube/player_parameters
+  YouTube RMF:         developers.google.com/youtube/terms/required-minimum-functionality
+  Vimeo parameters:    help.vimeo.com/hc/en-us/articles/12426260232977
+  Dailymotion:         developers.dailymotion.com/docs/iframe-web
+                       developers.dailymotion.com/docs/referrer-policy-and-player-embedding
+                       developers.dailymotion.com/product-deprecations
+  Twitch:              dev.twitch.tv/docs/embed/video-and-clips/
+  Wistia:              docs.wistia.com/docs/iframe-embed-options
+                       docs.wistia.com/docs/embed-options-and-plugins
+  Loom:                support.atlassian.com/loom/docs/embed-your-video-into-a-webpage/
+                       support.atlassian.com/loom/docs/make-embedded-videos-autoplay-or-play-at-a-specific-time/
+
+5.1 YOUTUBE
+- Public URL forms [ASSUMED from common usage, needs a test table]:
+  - www./m./music.youtube.com/watch?v=ID (other query keys ignored);
+  - youtu.be/ID;
+  - youtube.com/shorts/ID;
+  - youtube.com/live/ID;
+  - youtube.com/embed/ID and youtube-nocookie.com/embed/ID.
+- Official embed URL [DOCS]: https://www.youtube.com/embed/VIDEO_ID.
+  The privacy-enhanced host www.youtube-nocookie.com/embed/ID is not
+  described on the parameters page [ASSUMED from Google's support
+  article; verify].
+- Video ID: 11 characters, [A-Za-z0-9_-] [ASSUMED; widely relied on,
+  not formally promised].
+- Parameters [DOCS]:
+  - autoplay 0/1; controls 0/1; start (seconds, keyframe-rounded);
+    end; fs 0 (hides the fullscreen button); playsinline 0/1;
+  - loop 1, which for a single video REQUIRES playlist=VIDEO_ID;
+  - enablejsapi 1 together with origin, for the IFrame API;
+  - cc_load_policy, cc_lang_pref, iv_load_policy, disablekb, hl, color.
+  - rel=0 no longer disables related videos (it limits them to the
+    same channel).
+  - modestbranding is deprecated with no effect; showinfo was removed.
+  - mute is NOT on the official page. It is widely used and needed for
+    muted autoplay [ASSUMED; must be verified live].
+- RMF terms [DOCS]:
+  - embedding clients MUST send an HTTP Referer; do not use a
+    Referrer-Policy that suppresses it;
+  - recommended policy: strict-origin-when-cross-origin;
+  - desktop and WebView clients must set it manually: an HTTPS URL
+    whose domain identifies the app;
+  - viewport at least 200x200 (16:9 at least 480x270 recommended);
+  - autoplay only once the player is more than half visible, and only
+    one autoplaying player per page;
+  - no overlays over the player.
+- Error 153 ("player configuration error") is the failure reported when
+  no usable referrer arrives (community sources; not on the RMF page).
+- Privacy: nocookie host [ASSUMED: no cookies before playback;
+  tracking still happens after playback starts].
+- Muted playback: needs mute=1 [ASSUMED]. Loop: yes, via playlist.
+  Fullscreen: needs allow="fullscreen" (F1); fs=0 hides the button.
+- Electron: no Referer from app:// (F3). Likely Error 153 until a
+  Referer is supplied [ASSUMED].
+- Limitations:
+  - owners can disable embedding;
+  - age-restricted videos do not play embedded [ASSUMED];
+  - the official iframe example uses no sandbox. Whether every player
+    feature works under Layoutry's sandbox (popups stay sandboxed) is
+    [ASSUMED].
+
+5.2 VIMEO
+- Public URL forms [ASSUMED]:
+  - vimeo.com/ID;
+  - vimeo.com/ID/HASH (unlisted);
+  - vimeo.com/channels/NAME/ID;
+  - vimeo.com/groups/NAME/videos/ID;
+  - player.vimeo.com/video/ID?h=HASH.
+  Showcase/album URLs are not single videos and are out of scope.
+- Official embed URL [DOCS]: https://player.vimeo.com/video/ID?params
+- ID: numeric. Unlisted videos need the h= hash. The h= parameter is NOT
+  in the official parameter table [ASSUMED from Vimeo's own generated
+  embed codes].
+- Parameters [DOCS]:
+  - free on every video: autoplay, muted, loop, dnt, playsinline,
+    autopause, title, byline, portrait, keyboard, #t=1m2s (start time,
+    URL fragment);
+  - paid plan only (Creator or higher, owned by the VIDEO OWNER):
+    controls, background, fullscreen, pip, speed, color and others.
+- dnt=1 blocks session data and analytics; "some essential cookies
+  will still be active" [DOCS].
+- Fullscreen: official examples use allowfullscreen.
+- Limitations:
+  - owners can restrict embedding to specific domains [ASSUMED]. The
+    editor origin, app:// and file:// will then show a privacy error.
+  - Referer behavior for app:// and file:// needs live verification.
+
+5.3 DAILYMOTION
+- Embed URL [DOCS]:
+  - https://geo.dailymotion.com/player/{PLAYER_ID}.html?video={ID};
+  - the legacy www.dailymotion.com/embed/video/ID redirects to a
+    default player from September 2025.
+- Public forms: dailymotion.com/video/xID, dai.ly/xID [ASSUMED].
+- Query parameters on the iframe page [DOCS]: video, playlist, and mute
+  (in an example). No loop, startTime or autoplay as iframe query
+  parameters; player behavior is configured per Player ID in their
+  partner dashboard.
+- The page states the iframe embed is appropriate only for environments
+  that restrict JavaScript (AMP); they recommend their script embeds.
+- Referer is REQUIRED [DOCS]: "the player will block video playback"
+  without it.
+- Recommended allow="autoplay; fullscreen; picture-in-picture;
+  web-share" [DOCS].
+- Verdict: it works without per-user configuration only through a
+  default player, with almost no controllable settings.
+
+5.4 TWITCH
+- Embed URLs [DOCS]:
+  - player.twitch.tv/?channel=|video=v123|collection=...&parent=DOMAIN
+  - clips.twitch.tv/embed?clip=SLUG&parent=DOMAIN
+- parent is REQUIRED: one per domain the site uses. Without it there is
+  a playback error.
+- Size: at least 400x300.
+- Parameters: autoplay (live/VOD default TRUE), muted, time (VOD).
+- Verdict: an exported site's domain is unknown at export time; the
+  editor's own origin, app:// and file:// cannot be named. Also, live
+  autoplay is on by default, so it must always be sent explicitly.
+  DEFER.
+
+5.5 WISTIA
+- Embed URL [DOCS]: https://fast.wistia.net/embed/iframe/{hashedId}?opts
+- Public URLs are per-account subdomains ({account}.wistia.com/medias/
+  ID) or custom domains, so a hostname allowlist cannot be exact
+  [ASSUMED].
+- Options [DOCS: names listed on the options page]: autoPlay, muted,
+  endVideoBehavior (loop), controlsVisibleOnLoad, doNotTrack, time.
+  Exact values are not on the iframe page.
+- Verdict: business-hosting audience; wildcard hosts. DEFER.
+
+5.6 LOOM
+- URL forms [DOCS]:
+  - share: loom.com/share/{ID};
+  - embed: loom.com/embed/{ID};
+  - older docs show useloom.com/embed/{ID}.
+  The ID is a 32-character hex string [ASSUMED].
+- Parameters [DOCS]: autoplay, muted, t=80s, hide_owner, hide_share,
+  hide_title, hideEmbedTopBar, hide_speed.
+- No loop and no controls parameter.
+- Requires the video's privacy to be "anyone with the link".
+- Verdict: simple and low-risk; a good later addition.
+
+5.7 SUPPORT MATRIX (what a Layoutry control could actually do)
+
+  Setting          YouTube        Vimeo            Dailymotion  Loom
+  ---------------  -------------  ---------------  -----------  -------
+  Muted            mute=1 [A]     muted=1          mute=true    muted=1
+  Autoplay (muted) autoplay=1     autoplay=1       player cfg   autoplay=1
+  Loop             loop+playlist  loop=1           player cfg   no
+  Hide controls    controls=0     paid plan only   player cfg   no
+  Start time       start=N        #t=Ns            no           t=Ns
+  Privacy mode     nocookie host  dnt=1            no           no
+  Fullscreen       allow attr     allow attr       allow attr   allow attr
+  Needs Referer    YES [DOCS]     [A] domain lock  YES [DOCS]   [A]
+  ([A] = assumed, verify live)
+
+
+5.8 PROVIDER SUPPORT RECOMMENDATION
+-----------------------------------
+Recommended: OPTION A, YouTube + Vimeo.
+- Together they cover the overwhelming majority of what beginners paste
+  [ASSUMED, market knowledge].
+- Both have stable, documented URL parameters for exactly the settings
+  in Layoutry's existing media model.
+- Two providers keep the security test matrix (hostname spoofing,
+  Referer, sandbox compatibility, lifecycle) manageable in all three
+  engines plus Electron.
+
+Option B (+ Dailymotion) adds little:
+- its iframe embed is officially second-class;
+- most settings live in a per-account player ID that Layoutry cannot
+  set;
+- it requires a Referer, which fails in two of Layoutry's three runtime
+  contexts (desktop, local file).
+
+Option C (all six) is not recommended:
+- Twitch's parent requirement cannot be satisfied for exports;
+- Wistia needs wildcard or custom hosts;
+- the support matrix becomes mostly "not supported" cells, which
+  invites controls that silently do nothing.
+
+Suggested follow-on: Loom after BC-08, as a one-provider add-on.
+
+The design in section 5.9 makes adding a provider a local change.
+
+5.9 Provider table shape (design only)
+One record per provider, each with:
+- exact input hosts;
+- path patterns;
+- an ID pattern;
+- the embed host(s);
+- which settings it supports and how each maps to a URL;
+- the default title;
+- the default aspect ratio.
+
+
+6. URL PARSING AND NORMALIZATION DESIGN
+---------------------------------------
+One centralized, pure module, used by the Inspector (validation and
+detection), Canvas (placeholder and Preview src), Export (markup and
+diagnostics) and the desktop shell (if a host list is needed). None of
+them parses URLs on its own.
+
+Proposed: src/lib/videoEmbed/ (name for approval), framework-free:
+  parseVideoEmbedUrl(input: string)
+      -> { ok: true; provider; videoId; hash?; startSeconds? }
+       | { ok: false; reason }
+  buildVideoEmbedSrc(ref, settings)
+      -> string (the only place an embed URL is ever assembled)
+  detectVideoEmbed(src)
+      -> the same result for a stored src
+       (used by Canvas, Export and the Inspector)
+
+Rules:
+1. Parse with the WHATWG URL parser (new URL), never regexes over the
+   raw string. Trim whitespace first. Reject on throw.
+2. Scheme:
+   - accept https:, and http: for well-known public URLs (rebuilt as
+     https);
+   - refuse everything else: javascript:, data:, file:, blob:, about:,
+     ftp:, and custom schemes;
+   - protocol-relative input ("//youtu.be/x") is refused, or resolved
+     against https: only (a decision; recommend refuse, with the
+     message "Paste the full link").
+3. Hostname is an EXACT match after the parser's normalization.
+   - The parser lowercases and converts Unicode to punycode, so
+     lookalike hosts (for example a Cyrillic "о") become xn--... and
+     fail the match.
+   - No endsWith, includes or startsWith checks.
+   - The allowed subdomains are listed explicitly (www., m., music.
+     for YouTube).
+4. url.username === "" and url.password === "" (refuses
+   "https://youtube.com@evil.example/" and
+   "https://evil.example@youtube.com/").
+5. url.port === "" (refuses https://www.youtube.com:8443/...).
+6. Path matched with anchored patterns per provider.
+   Example: ^/watch$, ^/shorts/([A-Za-z0-9_-]{11})/?$, ^/embed/(...).
+7. The video ID is validated with a strict anchored pattern:
+   - YouTube [A-Za-z0-9_-]{11}; Vimeo \d{1,12}; Vimeo hash [0-9a-f]+.
+   - The parser has already percent-decoded nothing in the path, so
+     "%2F", "%253C" and similar fail the character class. Double
+     encoding can therefore never produce a valid ID.
+8. The query string is NEVER passed through.
+   - Only known keys are read: v, t/start, h, list (ignored).
+   - Everything else is dropped: si, utm_*, feature, pp, and any
+     payload.
+   - The output URL is BUILT from validated parts, never edited from
+     the input.
+9. No network access in the parser: no redirect following, no oEmbed
+   lookup. Short links (youtu.be) are resolved by pattern, not by
+   fetching.
+   - A pasted URL-shortener link (bit.ly, ...) is refused: "Paste the
+     video's own YouTube or Vimeo link."
+   - At runtime, a provider's own redirects stay inside the sandbox and
+     are already limited by will-frame-navigate on desktop.
+10. Existing embed URLs are accepted:
+    - youtube.com/embed/ID, youtube-nocookie.com/embed/ID;
+    - player.vimeo.com/video/ID?h=...
+    Their own parameters are read only where Layoutry supports them.
+11. Output is always an https URL on the provider's official embed
+    host, and is then also passed through resolveIframeSourcePolicy and
+    checkExportUrl as today (defence in depth).
+
+Security cases (all must be unit tests in BC-08.2):
+
+  Input                                       Expected
+  ------------------------------------------  --------------------------
+  https://youtube.com.evil.example/watch?v=…  refused (exact host)
+  https://evil.example/youtube.com/watch?v=…  refused (host is evil.example)
+  https://evil.example/?u=https://youtu.be/…  refused
+  javascript:alert(1) / JaVaScRiPt: / java\tscript:  refused (scheme)
+  data:text/html,… / data:video/mp4,…         refused
+  file:///C:/x.mp4                            refused
+  https://www.youtube.com/watch?v=%3Cscript%3E   refused (ID pattern)
+  https://www.youtube.com/watch?v=abc%2522…   refused (double-encoded)
+  https://user:pass@www.youtube.com/watch?v=… refused (user-info)
+  https://youtube.com@evil.example/…          refused (host evil.example)
+  https://www.youtube.com:444/watch?v=…       refused (port)
+  https://www.yоutube.com/… (Cyrillic о)      refused (punycode host)
+  //youtu.be/ID                               refused (or https; decision)
+  https://youtu.be/ID?si=TRACK&utm_source=x   accepted; tracking dropped
+  https://www.youtube.com/watch?v=ID&t=1m30s  accepted; start=90 (if supported)
+  https://www.youtube.com/watch?v=ID"><script>   refused (ID pattern)
+  https://player.vimeo.com/video/123?h=abc&x=y   accepted; only h kept
+  https://vimeo.com/123/abcdef                accepted; hash kept
+  https://custom-host.example/embed/123       not a provider (generic Embed)
+
+Relation to the generic Embed: a URL that is not a recognized provider
+URL is still allowed in the generic Embed component, under the
+unchanged BC-02.3 policy. The Video Embed accepts only recognized
+provider URLs.
+
+
+7. DOCUMENT MODEL RECOMMENDATION
+--------------------------------
+Compared:
+
+  Criterion             A. existing iframe   B. extend video     C. new tag
+  --------------------  -------------------  ------------------  -----------------
+  Schema change         none                 none                new enum value
+  Project format        stays v2             stays v2            v2 files would be
+                                                                 refused by older
+                                                                 builds; likely v3
+  Native semantics      correct (<iframe>)   wrong: <video>      correct
+                                             cannot play a
+                                             provider page
+  Inspector eligibility iframe section,      video section       new section +
+                        branch on provider   misapplies media    capability entries
+                                             fit, poster
+  Undo/Redo, copy/paste existing commands    existing            existing generic
+  Export                existing iframe      new branch inside   new branch
+                        branch + derive src  video branch
+  Legacy compatibility  see 7.2              none needed         none needed
+  Provider settings     reuse controls/      same fields         same fields
+                        autoplay/muted/loop
+
+RECOMMENDED: A, the existing iframe tag (least disruptive).
+- A new toolbar card "Video Embed" (Media > Video, next to Video)
+  creates { tag: "iframe", title: "Embedded video" }. Its default size
+  and aspect come from section 22, item 13.
+- The provider is DERIVED from node.src through detectVideoEmbed, and
+  never stored.
+- What is stored where:
+    src       the canonical embed URL Layoutry built itself. It carries
+              the video identity and the privacy choice:
+                https://www.youtube-nocookie.com/embed/ID[?start=N]
+                https://player.vimeo.com/video/ID?h=HASH&dnt=1[#t=Ns]
+    autoplay, muted, loop, controls
+              the existing optional fields (schema already accepts
+              them on iframe)
+    title     the existing accessible name
+    dimensions, aspectRatio, border, borderRadius, ...
+              unchanged
+- At render and export time, buildVideoEmbedSrc adds the playback
+  parameters from the fields. They are never stored in src, so one
+  setting has one home.
+- No new field. Start time and privacy ride in src. This keeps BC-08
+  within format v2 and avoids any migration.
+
+7.1 What A needs from other features (all small):
+- elementCapabilities: none (iframe already has the right sizing and
+  aspect behavior).
+- Inspector: InspectorIframeSection branches. A provider src shows the
+  Video Embed controls; anything else shows today's Source URL + Title.
+- Display name: elementDisplayName could show "YouTube video" for a
+  provider iframe (decision; cosmetic).
+
+7.2 Legacy iframes that already point at YouTube or Vimeo
+An existing generic Embed whose src is, say,
+"https://www.youtube.com/embed/ID?autoplay=1" would be detected as a
+provider embed.
+
+Recommendation, which needs approval:
+- treat it as a provider embed (placeholder in Design, lifecycle in
+  Preview);
+- never rewrite its stored src silently;
+- the playback parameters come only from the node's fields, so the
+  legacy ?autoplay=1 (unmuted) is NOT honored. This is what muted-only
+  autoplay requires anyway;
+- export reports an info diagnostic naming the ignored parameters;
+- the Inspector shows the parsed settings and writes a canonical src
+  the first time the user edits it.
+
+Alternative: leave legacy provider iframes completely untouched,
+treating only nodes created by the new card as video embeds. That
+needs a stored marker, i.e. a schema field. Not recommended.
+
+
+8. INSPECTOR UX RECOMMENDATION
+------------------------------
+One "Video" section for a provider iframe, using the existing
+primitives:
+- InspectorSection;
+- InspectorMediaTextField (commit on Enter/blur, with error text);
+- the toggle rows in InspectorMediaPlaybackFields;
+- Appearance and size stay in the existing CSS sections.
+
+  Video source
+    Video URL       paste any supported link; stored only when it
+                    parses, otherwise an inline error and no command
+    Provider        read-only chip ("YouTube" / "Vimeo"), derived
+    Feedback        errors that name the problem: "That isn't a YouTube
+                    or Vimeo video link.", "Only https links are
+                    supported.", "Paste the video's own link, not a
+                    shortened one."
+  Playback          shown per provider (matrix 5.7)
+    Muted           both
+    Autoplay        both. The muted-only rule is shown in place:
+                    "Starts by itself only when Muted is on." This is
+                    the same wording family as the existing
+                    unmuted-autoplay export warning.
+    Loop            both (YouTube via playlist=ID, hidden from the user)
+    Show controls   YouTube only. For Vimeo it is NOT shown, with a
+                    one-line note: "Vimeo shows its own controls; hiding
+                    them needs the video owner's paid Vimeo plan."
+                    Rationale: no control that silently does nothing.
+    Start at        both, as seconds or m:ss (stored in src; decision)
+  Privacy & permissions
+    Privacy-enhanced mode   YouTube: nocookie host. Vimeo: dnt=1.
+                    On by default. Wording must not promise "no
+                    tracking": "Reduces tracking until the video is
+                    played."
+    Fullscreen      only if approved. A read-only line if it is not
+                    approved: "Fullscreen isn't available for embedded
+                    videos."
+  Accessibility
+    Title           existing field; default "YouTube video" / "Vimeo
+                    video"
+
+Unsupported settings are hidden for that provider, with one short
+explanatory line. They are not shown disabled and silent. Switching
+the URL from YouTube to Vimeo keeps the shared fields (muted, autoplay,
+loop) and drops what the new provider cannot do (start-time syntax
+differs and is re-encoded; controls has no effect and is hidden).
+
+State: follow the documented local-state staleness pattern (reset by
+last-seen node id), as InspectorIframeSection already does.
+
+
+9. CANVAS BEHAVIOR RECOMMENDATION
+---------------------------------
+Recommended for Design: a static, local placeholder for provider
+embeds. It shows:
+- a provider glyph, using Layoutry's own generic icon (no provider logo
+  asset, so no branding);
+- the provider name;
+- the title;
+- a settings summary ("Muted · Autoplay · Loop");
+- the hint "Plays in Preview".
+
+It makes NO network request: no iframe and no thumbnail. It renders
+inside the same wrapper div, so selection outlines, drag, resize,
+snapping and Flow/Flex/Grid participation are exactly those of today's
+Iframe. There is nothing live to intercept the pointer, so the shield
+becomes unnecessary for this branch; keep it for uniformity.
+
+Rejected alternatives:
+- Live iframe in Design (today's generic behavior, F6):
+  - third-party tracking from merely opening a project;
+  - a playing video during editing;
+  - cost with many embeds;
+  - YouTube RMF forbids overlays over the player, which the shield
+    technically is;
+  - a sound-producing player in Design, with no lifecycle to stop it.
+- Provider thumbnail (img.youtube.com, vumbnail, oEmbed): a third-party
+  request in Design, the same privacy issue; Vimeo also needs an API
+  call. Could be an opt-in later.
+- "Load video" button in Design: blurs Design and Preview, and would
+  need the full lifecycle in Design too. Preview already is the "load
+  it" action.
+
+Generic (non-provider) Embeds keep today's live Design behavior,
+unchanged.
+
+
+10. PREVIEW BEHAVIOR RECOMMENDATION
+-----------------------------------
+- On Preview entry the placeholder is replaced by the real iframe:
+  - src from buildVideoEmbedSrc;
+  - sandbox from resolveIframeSourcePolicy, unchanged;
+  - title;
+  - referrerpolicy="strict-origin-when-cross-origin";
+  - loading="lazy";
+  - allow="fullscreen" only if approved.
+- Initialization and loading are the provider's own. Layoutry loads no
+  provider SDK script (section 18).
+- Autoplay: the provider's autoplay and mute parameters are emitted
+  only when getEffectiveAutoplay(node) is true, i.e. authored autoplay
+  AND muted. Unmuted autoplay is never requested, and authored unmuted
+  media is never auto-muted (BC-02.2.1).
+- Do not emit allow="autoplay". Chromium allows muted autoplay without
+  delegation [ASSUMED for provider players, verify in BC-08.3]. Granting
+  delegation would let a provider script start sound.
+- If a provider does not start muted autoplay without it, the
+  recommendation is to drop autoplay for that provider, not to delegate.
+- YouTube RMF also requires at most one autoplaying player per page,
+  and only when visible. Layoutry should warn when two YouTube embeds
+  are both muted-autoplay (an export/Inspector notice; decision).
+- Stopping: see section 11 (teardown).
+- Provider errors (embedding disabled, private, Error 153, offline)
+  render inside the provider's frame. Layoutry cannot read them across
+  origins and should not try. Preview shows whatever the provider
+  shows. An offline network gives the browser's own frame error.
+- Repeated Preview sessions: each entry mounts a fresh frame, so
+  behavior is deterministic and nothing leaks between sessions.
+- Escape: while keyboard focus is inside a cross-origin player,
+  keydown never reaches the editor [CODE: frame isolation, the same
+  reason the shield exists]. So Escape does not exit Preview until
+  focus leaves the frame. This is a known, explainable limit, to be
+  tested and mentioned in the exit hint.
+
+
+11. MEDIA LIFECYCLE RECOMMENDATION
+----------------------------------
+Pausing a native <video> does nothing for a provider iframe (F5). The
+two options:
+
+(1) Teardown, RECOMMENDED: the iframe is rendered only while
+    isPreview && !hidden.
+    - Preview exit: the iframe unmounts and its sound stops at once.
+    - Hidden by an interaction (RuntimeHiddenContext): the iframe
+      unmounts; when shown again it mounts fresh. Muted autoplay starts
+      again, from the start time.
+    - Selection change: no effect (Preview has no selection; in Design
+      it is a placeholder).
+    - Project open/new, editor unmount: editorMode resets, so the
+      iframe unmounts.
+    - Reduced motion (prefers-reduced-motion: reduce): recommend
+      treating it like the unmuted case, i.e. no provider autoplay
+      (decision).
+      Native video today does NOT do this; BC-02 only covered
+      transitions. Changing it would be a policy change for native
+      video too, so for parity the recommendation is an embed-only
+      rule, or none, as decided.
+    - Exported page: the export runtime (exportInteractionRuntime.ts)
+      gets a matching rule. Hiding a target clears each provider
+      iframe's src (kept in a data attribute) and showing it restores
+      the src. This needs no provider API, is the same in all engines,
+      and has no editor dependency.
+    - Position is NOT preserved. Showing a video again restarts it.
+      This is stated in the Inspector help and the report.
+
+(2) Provider postMessage APIs, OPTIONAL later: pause/resume keeping the
+    position.
+    - YouTube needs enablejsapi=1&origin=... and its command message
+      format. The origin parameter is meaningless for app:// and
+      file:// [ASSUMED].
+    - Vimeo uses {"method":"pause"}.
+    - Each is provider-specific, undocumented in parts, and needs
+      message listeners on the host page, which BC-02.3 deliberately
+      has none of.
+    Not recommended for BC-08.
+
+Exact playback-position restoration is feasible only with (2) and is
+not promised.
+
+
+12. FULLSCREEN SECURITY ANALYSIS
+--------------------------------
+Mechanisms:
+- allow="fullscreen" (Permissions Policy):
+  - the current standard way to delegate the fullscreen feature to a
+    cross-origin frame;
+  - its default allowlist is 'self', so cross-origin frames are
+    refused without it.
+- allowfullscreen (HTML attribute):
+  - the legacy equivalent, treated as allow="fullscreen *" for that
+    frame.
+- Sandbox tokens: there is NO sandbox token for fullscreen.
+  Fullscreen is not one of the sandbox restrictions in current engines.
+- Provider controls: the player's fullscreen button only calls
+  element.requestFullscreen(), which works only if delegated.
+  YouTube's fs=0 hides the button.
+
+Live evidence [PROBE]. Setup: a sandboxed cross-origin frame with
+Layoutry's exact tokens
+  "allow-forms allow-popups allow-scripts allow-same-origin".
+Results:
+
+  Context                     no attribute      allow="fullscreen" / allowfullscreen
+  --------------------------  ----------------  ------------------------------------
+  Chromium (hosted page)      refused           fullscreenEnabled; entered
+  Firefox  (hosted page)      refused           fullscreenEnabled; entered
+  WebKit   (hosted page)      refused           fullscreenEnabled; entered
+  Electron (app://layoutry)   refused           fullscreenEnabled = true, but
+                                                requestFullscreen() never settles
+                                                (hardenSession denies "fullscreen")
+
+Required recommendation:
+1. Feasibility: YES in browsers, with one attribute and no sandbox
+   change. Electron: yes, but only with a permission-handler change.
+2. Attribute change: add allow="fullscreen" (and no other allow
+   features), only on recognized provider embeds:
+   - in Preview and Export;
+   - not in Design (the placeholder has no iframe);
+   - not on generic embeds.
+   Whether to also write allowfullscreen is a test question: only if a
+   supported engine needs it (all three passed with allow alone in the
+   probe).
+3. Browser limits:
+   - user activation is required;
+   - Escape always exits, and browsers show their own "press Esc"
+     notice;
+   - iOS Safari only fullscreens <video>, so players do it their own
+     way [ASSUMED];
+   - Escape exits fullscreen first; a second Escape may exit Preview.
+     To test.
+4. Electron limits:
+   - hardenSession must grant "fullscreen" only when ALL of these hold:
+     - requesting frame is not the main frame;
+     - requesting origin is an exact provider embed origin
+       (www.youtube-nocookie.com, www.youtube.com, player.vimeo.com);
+     - the web contents is the main window.
+     Everything else stays denied.
+   - The window then enters HTML fullscreen (enter-html-full-screen).
+     Electron shows NO browser exit notice, so the editor should show
+     its own hint ("Press Esc to exit fullscreen").
+   - Window restore after exit must be tested at the minimum window
+     size (DESKTOP lesson).
+   - Today's hang (F2) also means an approved web-only fullscreen would
+     look broken in the desktop app. So either do both together or
+     omit allow= in desktop builds.
+5. Security implications, overall LOW for allowlisted providers:
+   - fullscreen spoofing/phishing by the embedded page (mitigated:
+     only exact provider hosts get it; browsers show an exit notice);
+   - no navigation, same-origin or Node.js exposure changes (sandbox,
+     CSP and navigation guards are unchanged);
+   - the Electron permission grant is the only new privileged surface,
+     and it is scoped as above.
+6. Tests: see section 19, "Fullscreen, if approved".
+7. Recommendation: ENABLE, RESTRICTED.
+   - Provider embeds only; Preview and Export.
+   - Web browsers first (BC-08.3); Electron only in the dedicated
+     desktop checkpoint (BC-08.4).
+   - Until that ships, desktop builds omit allow= so nothing hangs.
+   - Generic embeds keep fullscreen off.
+   - This needs explicit product-owner approval. Nothing is enabled now.
+
+
+13. PRIVACY ANALYSIS
+--------------------
+Network behavior:
+- Canvas Design, today, generic Embed: loads the remote page when the
+  project opens (F6).
+- Canvas Design, recommended, provider embed: zero requests.
+- Preview: loads the provider. Entering Preview is a deliberate user
+  action. For the editor user this is a reasonable "consent" moment.
+- Exported website: loads the provider when the page loads. This is
+  the site owner's decision, but visitors are third parties.
+
+Recommended baseline:
+- YouTube: www.youtube-nocookie.com by default (privacy-enhanced).
+  [ASSUMED] It avoids cookies until playback; after playback YouTube
+  tracking applies; localStorage and other identifiers may still be
+  used. Never claim "no tracking".
+- Vimeo: dnt=1 by default. [DOCS] "some essential cookies will still be
+  active".
+- Referrer:
+  - explicit referrerpolicy="strict-origin-when-cross-origin": the
+    browser default, and YouTube's documented recommendation;
+  - sends only the origin cross-site, never the page path;
+  - protects against a site-wide no-referrer meta tag breaking
+    YouTube.
+- Cookies: unchanged. Third-party cookie rules are the browser's
+  (BC-02.3 observed them blocked). The sandbox's allow-same-origin on
+  cross-origin frames is what lets the provider use its own storage at
+  all.
+- No thumbnails in Design (they are third-party requests).
+- Consent-before-load on exported pages (a "click to load" facade):
+  - recommended as a later, optional per-embed setting, OFF by default;
+  - it needs a local poster and the YouTube RMF rules for thumbnails
+    (at least 120x70);
+  - legal requirements such as GDPR are the site owner's
+    responsibility;
+  - Layoutry should not claim compliance.
+
+Product decision, item 6.
+
+
+14. EXPORT INTEGRATION
+----------------------
+A provider embed exports as (illustrative):
+
+  <iframe sandbox="allow-forms allow-popups allow-scripts allow-same-origin"
+          src="https://www.youtube-nocookie.com/embed/ID?mute=1&autoplay=1&playlist=ID&loop=1"
+          title="YouTube video"
+          referrerpolicy="strict-origin-when-cross-origin"
+          loading="lazy"
+          [allow="fullscreen"  only if approved]></iframe>
+
+- src comes from buildVideoEmbedSrc, with the same parameters as
+  Preview. It still passes through checkExportUrl(…, "frame") and
+  resolveIframeSourcePolicy(…, EXPORTED_PAGE_ORIGIN).
+- The sandbox is identical to today's. It is never weakened to make a
+  player work. If a provider proves unable to work under it, that
+  provider is dropped and the sandbox stays.
+- The CSS is preserved: the same buildMediaFrame / wrapper styles as
+  the Iframe today. Responsive sizing comes from the existing
+  aspectRatio + width settings (default in section 22, item 13).
+- Title: the accessible name; never empty (fallback "<Provider>
+  video").
+- Autoplay: only when getEffectiveAutoplay(node) is true.
+  - The existing "unmuted-autoplay" warning is reused, so the wording
+    is the same as for <video>.
+  - An info diagnostic is reported for ignored legacy parameters
+    (7.2).
+- Lifecycle: the export runtime's hide/show rule for provider iframes
+  (section 11). No editor runtime and no provider SDK.
+- NEW diagnostic recommended, "provider-needs-hosted-page":
+  - Info, for Single file and Separate files exports that contain
+    YouTube or Vimeo embeds.
+  - Text: "YouTube and Vimeo videos play only when the page is opened
+    from a website (http or https). Opened as a local file, the player
+    may refuse to play."
+  - Basis: F4 [PROBE] (no Referer from file://) and [DOCS] YouTube RMF.
+- Both export modes produce the same markup. Nothing is packaged as an
+  asset (BC-07.3 packaging is for embedded images only).
+
+Acceptable Canvas, Preview and Export differences:
+- Design shows a placeholder.
+- Preview and Export show the player with identical src, sandbox,
+  allow and referrer attributes.
+- Remaining differences: the exported page loads at page load, Preview
+  on entry; Preview remounts per session; the host origins differ,
+  which matters only for allow-same-origin, which is cross-origin in
+  both.
+
+
+15. ELECTRON SECURITY
+---------------------
+Audit result: today's protections are intact (15/15 Electron specs,
+section 19).
+- Webview: blocked (webviewTag: false, will-attach-webview prevented).
+- Iframe navigation:
+  - subframes are limited to http/https/about:blank;
+  - top-level navigation is limited to app://layoutry/.
+- Popups: all denied (setWindowOpenHandler). The provider's "Watch on
+  YouTube" or logo links will do nothing in the desktop app [CODE].
+  That is acceptable; optionally a reviewed, provider-only
+  openExternal. Not recommended for BC-08.
+- External links: not opened.
+- Permissions: all denied, including fullscreen (F2).
+- CSP: frame-src http: https: already allows provider frames. No CSP
+  change is needed.
+- Context isolation, sandbox, nodeIntegration false, preload in the
+  main frame only: unchanged; embeds cannot reach Node.js (tested).
+
+New risks from provider iframes:
+- None to Node.js or the editor's DOM. They are cross-origin, sandboxed
+  and site-isolated, exactly like any embed today.
+- Referer (F3): desktop playback likely needs a Referer.
+  - [DOCS] YouTube asks desktop clients to set one: an HTTPS URL whose
+    domain identifies the app.
+  - Mechanism: session.webRequest.onBeforeSendHeaders, adding
+    Referer: https://<approved-identity-domain>/ only for requests to
+    the exact provider embed hosts, never to other hosts.
+  - It changes what Layoutry tells a third party. It needs product
+    approval: the identity domain, and whether to do it at all.
+  - If it is declined, desktop Preview shows the provider's error for
+    YouTube [ASSUMED]. The editor should then show a desktop-specific
+    hint.
+- Fullscreen: see section 12, item 4.
+
+Do not:
+- expose Node.js;
+- allow navigation;
+- add allow-popups-to-escape-sandbox;
+- grant any permission other than scoped fullscreen.
+
+
+16. SAVE/REOPEN AND UNDO/REDO
+-----------------------------
+Atomic semantics, the same as the existing Inspector:
+- Video URL:
+  - InspectorMediaTextField commits on Enter/blur only;
+  - the value is parsed first, and an invalid value shows an error and
+    issues NO command, so no invalid URL ever reaches history;
+  - a valid value commits ONE setElementSrc with the canonical URL;
+  - re-committing the same canonical URL is a no-op (the existing
+    action-level guard).
+- Toggles: one command, one Undo step each. The existing autoplay,
+  muted, loop and controls commands are tag-agnostic setters.
+- Start time / privacy: one setElementSrc with the rebuilt canonical
+  URL.
+- Copy/paste and Duplicate: generic node cloning copies all fields. The
+  documentSaveLimitGuard is irrelevant here (tiny strings).
+- Save/reopen: plain v2 fields, no migration. A file with a provider
+  iframe opens in today's build as a generic Embed showing the canonical
+  embed URL live, so it degrades gracefully. That is forward
+  compatibility at no cost.
+- Export: reads the same fields, so it is deterministic.
+
+Test plan (BC-08.2/08.3):
+- add embed;
+- paste watch URL, check the stored src is canonical;
+- paste an invalid URL: no history entry;
+- switch the provider;
+- toggle each setting;
+- resize;
+- Undo and Redo for each step;
+- copy/paste and Duplicate: independent nodes;
+- save, reopen, deep-equal;
+- export markup snapshot;
+- a legacy-iframe fixture (7.2).
+
+
+17. ACCESSIBILITY
+-----------------
+- Title:
+  - default "YouTube video" / "Vimeo video";
+  - editable, and never exported empty;
+  - the Inspector nudges toward a descriptive one ("Product demo
+    video").
+- Design placeholder: a non-interactive figure-like box. Its visible
+  text is the provider and title, so screen-reader users of the editor
+  hear what it is. It is not focusable (selection works as for other
+  nodes).
+- Keyboard in Preview: the iframe is in tab order; the provider's
+  controls take over inside. Escape-inside-frame limit: section 10.
+- Player controls: provider-owned. Their accessibility is NOT verified
+  and must not be claimed.
+- Error messages: Inspector errors use the existing error slot of
+  InspectorMediaTextField, which is associated with the field.
+- Reduced motion: section 11 (embed autoplay off under reduce;
+  decision).
+- Settings labels: real <label> elements via the existing primitives.
+  Provider-specific notes go in aria-describedby text.
+
+
+18. PERFORMANCE
+---------------
+- Design: placeholders cost nothing; N embeds give zero frames and zero
+  requests.
+- Preview: each player is a full cross-origin document, often more than
+  1 MB of script [ASSUMED]. loading="lazy" defers off-screen players.
+  Teardown on exit frees them, so repeated sessions do not accumulate.
+  The BC-07.4 stress pattern (object URL and listener counters, CDP
+  heap) can be reused against a local fake provider.
+- Export: loading="lazy" too.
+- No provider SDK (YouTube iframe_api, Vimeo player.js) is loaded
+  globally. The teardown approach needs none.
+- Network in tests: none by default (section 19).
+
+
+19. PERMANENT TEST STRATEGY AND BASELINE TEST RESULTS
+-----------------------------------------------------
+19.1 PROPOSED PERMANENT TESTS
+
+Two strictly separated layers:
+
+DETERMINISTIC, OFFLINE (the default suite; must never need the
+internet):
+Unit (Vitest):
+- the provider detection table, per form in section 5;
+- the normalization output, character by character;
+- the spoofing table in section 6, every row;
+- ID validation;
+- query filtering (si, utm, payloads dropped);
+- each playback setting's URL mapping per provider;
+- autoplay only when autoplay && muted, never mute forced;
+- reduced-motion rule (if approved);
+- export markup and diagnostics (unmuted autoplay, ignored legacy
+  parameters, hosted-page notice);
+- save/reopen round trip;
+- Undo/Redo granularity;
+- the legacy-iframe fixture;
+- Electron:
+  - the permission-handler predicate (if fullscreen is approved);
+  - the Referer-injection host predicate (if approved).
+Browser (Playwright; Chromium, Firefox, WebKit):
+- Fake providers: context.route serves pages for the exact provider
+  embed hosts (www.youtube-nocookie.com, player.vimeo.com).
+  - The editor host page is the real dev server, so routed frames load.
+    The BC-02 lesson is that a route-fulfilled HOST page cannot load
+    frames.
+  - The fake player records its URL parameters and Referer, can play a
+    local media file, and exposes state.
+- Inspector: paste, detect, errors, toggles, keyboard operation, axe.
+- Canvas: the placeholder in Design, with no request made to the
+  provider hosts (assert the route was never hit); selection, drag and
+  resize as with Iframe.
+- Preview:
+  - a frame is mounted with the exact attributes;
+  - Preview exit and hidden interaction tear it down;
+  - re-show and re-entry mount fresh;
+  - repeated sessions;
+  - document integrity (no history from Preview).
+- Export:
+  - the same attributes;
+  - the runtime hide/show clears and restores src;
+  - Single and Separate modes.
+- Reduced motion (contextOptions).
+- Fullscreen, if approved: allow present only on provider embeds;
+  fullscreenEnabled inside the fake player; generic embeds still
+  refused.
+  Note: WebKit on Windows loads no media at all, so media assertions
+  there are limited to frame attributes and lifecycle, as in BC-02.
+Electron (offline, protocol.handle fake https hosts, as
+embed-safety.spec.ts does):
+- provider iframe isolation: no require/process/bridge;
+- navigation and popup attempts from the fake player are blocked;
+- permission requests:
+  - only scoped fullscreen is granted (if approved);
+  - everything else is still denied, including fullscreen from a
+    generic embed;
+- Referer injection reaches only the provider hosts (if approved);
+- export and save/reopen;
+- fullscreen enter/exit and window restore at the minimum size (if
+  approved).
+
+LIVE PROVIDER INTEGRATION (opt-in only, never in the default run):
+- A separate Playwright project or config gated by an env variable
+  (name for approval).
+- Real YouTube and Vimeo test videos, in all three engines plus
+  Electron:
+  - plays under the sandbox;
+  - muted autoplay without allow="autoplay";
+  - mute parameter honored;
+  - loop;
+  - start;
+  - fullscreen button;
+  - Error 153 status in Electron with and without Referer;
+  - file:// export behavior.
+- Its results are recorded in reports, not used as merge gates.
+
+
+19.2 BASELINE RUNS (this checkpoint, at 57fa030)
+------------------------------------------------
+Vitest, targeted media/embed/export/desktop-security files (17 files):
+  src/lib/iframeSandbox.test.ts, IframeElement.test.tsx,
+  MediaInteractionShield.test.tsx, MediaGuideOverlay.test.tsx,
+  InspectorIframeSection.test.tsx, InspectorVideoSection.test.tsx,
+  InspectorMediaSection.test.tsx, buildExportDocument.test.ts,
+  exportInteractionRuntime.test.ts, exportUrlPolicy.test.ts,
+  usePreviewMediaPlayback.test.tsx, editor/types/video.test.ts,
+  next.config.test.ts, desktop/security/*.test.ts
+  -> 236 passed, 0 failed.
+Vitest, full suite (npx vitest run):
+  -> 380 files, 5710 passed, 1 skipped, 0 failed (210.9 s).
+
+Playwright, browsers. A temporary three-engine config was used and
+then deleted; the repo config runs Chromium only.
+Command:
+  npx playwright test -c zz-xbrowser.config.ts e2e/embed-safety.spec.ts
+    e2e/preview-media-lifecycle.spec.ts e2e/bc02-final-regression.spec.ts
+    e2e/preview-export-parity.spec.ts
+Result: 132 passed, 13 failed, 2 skipped (7.6 min).
+- Chromium: all passed.
+- WebKit, 12 failures:
+  - preview-media-lifecycle: 8;
+  - preview-export-parity: 4 (media-in-hidden-target, the reduced-motion
+    panel with media, document integrity).
+  Every one waits for media to load. Playwright's Windows WebKit loads
+  no media at all, a platform limit recorded since BC-02. These match
+  the pre-existing failure set noted in BC-07.4.
+- Firefox, 1 failure: preview-media-lifecycle.spec.ts:164 ("media
+  hidden by an interaction during Preview is not left playing after
+  exit"). Rerun alone with --repeat-each=3: 3/3 passed, so it is
+  load-sensitive under 4 parallel workers. Recorded as a test-stability
+  item; it touches no BC-08 code.
+
+Playwright, Electron (after npm run desktop:build, exit 0; with
+ELECTRON_RUN_AS_NODE unset):
+  npx playwright test -c playwright.desktop.config.ts
+    e2e/desktop/embed-safety.spec.ts e2e/desktop/security.spec.ts
+    e2e/desktop/preview-media.spec.ts e2e/desktop/preview-parity.spec.ts
+    e2e/desktop/export.spec.ts
+  -> 15 passed, 0 failed.
+
+Temporary probes (written, run, deleted; not part of the suite):
+  e2e/zz-probe-bc081.spec.ts (3 engines, 12 cases): all ran. Findings:
+    - F1: no attribute = refused; allow or allowfullscreen = entered.
+    - F4: hosted page Referer = page origin; file:// = no Referer.
+  e2e/desktop/zz-probe-bc081.spec.ts (Electron, 2 cases). Findings:
+    - F3: Referer from app://layoutry/ = none.
+    - F2: allow="fullscreen" gives fullscreenEnabled true and a
+      requestFullscreen() that never settled within 4 s; the window
+      did not go fullscreen.
+
+Not run: the full Chromium e2e suite and the full Electron suite. This
+checkpoint changed no product code; the BC-07.4 full runs on the same
+code (257/257 Chromium, 80 passed / 2 skipped Electron) stand.
+
+
+20. SOURCE FILES AND FUNCTIONS INSPECTED
+----------------------------------------
+Editor:
+  features/editor/types/document.ts        EditorElementNode (src, poster,
+                                           controls, autoplay, muted, loop, title)
+  features/editor/types/video.ts           getMediaControls, getEffectiveAutoplay
+  features/editor/schemas/editorDocumentSchema.ts   strictObject node schema
+  features/editor/factories/elementFactories.ts     createVideoNode,
+                                           createIframeNode, default sizes
+  features/editor/rules/elementCapabilities.ts      video / iframe entries
+  features/editor/rules/knownElementTags.ts
+  features/editor/commands/documentCommands.ts      setElementSrc, poster,
+                                           controls, autoplay, muted, loop, title
+  features/editor/stores/useEditorStore.ts          the corresponding actions
+  features/project/types/projectFile.ts    CURRENT_PROJECT_FORMAT_VERSION = 2
+Canvas:
+  canvas/components/document/elements/IframeElement.tsx
+  canvas/components/document/elements/VideoElement.tsx
+  canvas/components/document/elements/MediaInteractionShield.tsx
+  canvas/components/overlay/MediaGuideOverlay.tsx   REFUSED_EMBED_HINT
+  canvas/hooks/useHostOrigin.ts
+  canvas/hooks/usePreviewMediaPlayback.ts
+  canvas/components/document/previewRuntimeContext  RuntimeHiddenContext
+Inspector:
+  inspector/components/InspectorNodeSummary.tsx     tag routing
+  inspector/components/InspectorIframeSection.tsx   handleSrcCommit
+  inspector/components/InspectorVideoSection.tsx, InspectorMediaPlaybackFields.tsx,
+  InspectorMediaTextField.tsx
+Shared:
+  lib/iframeSandbox.ts       resolveIframeSourcePolicy, EXPORTED_PAGE_ORIGIN
+  components/layout/creationToolbarCategories.ts    mediaCategory()
+Export:
+  export/utils/buildExportDocument.ts      video/audio and iframe branches
+  export/utils/exportUrlPolicy.ts          checkExportUrl
+  export/utils/exportInteractionRuntime.ts mediaIn / hidden pause
+Hosting and desktop:
+  next.config.ts (+ test)                  frame-ancestors / X-Frame-Options
+  desktop/main/main.ts                     webPreferences, enableSandbox
+  desktop/security/contentSecurityPolicy.ts, hardenSession.ts,
+  hardenWebContents.ts, navigationPolicy.ts
+Tests read:
+  e2e/desktop/embed-safety.spec.ts (fake-https pattern),
+  e2e/support/embedAttackPages.ts, previewMedia.ts
+Reports read:
+  BC-02.3 (sections 3-5, 10, 13-15), and BC-02.1/02.2/02.2.1/02.5/02.5.1/
+  02.6 through the project memory and targeted greps (fullscreen, allow,
+  referrer).
+  BC-07.3 and BC-07.4 (this session).
+
+
+21. RISK REGISTER
+-----------------
+  ID    Risk                                                   Sev    Mitigation
+  ----  -----------------------------------------------------  -----  -----------------------------
+  R1    Provider keeps playing after Preview exit or hide      HIGH   Teardown lifecycle (sec 11)
+        (F5)                                                          before any player ships
+  R2    YouTube/Dailymotion refuse in desktop: no Referer      HIGH   Approved scoped Referer
+        (F3)                                                          injection, or a documented
+                                                                      desktop limitation
+  R3    Exported page opened as a file: providers refuse       MED    Export info diagnostic; docs
+        (F4)
+  R4    Hostname spoofing / injection via pasted URL           MED    Central parser, exact hosts,
+                                                                      rebuilt URLs, spoof table tests
+  R5    A provider may not work under the sandbox (popups      MED    Live opt-in verification;
+        sandboxed, no top-nav)                                        drop the provider, never
+                                                                      weaken the sandbox
+  R6    Fullscreen in Electron hangs if allow= is added        MED    Omit in desktop until 08.4;
+        without a permission change (F2)                              scoped permission + tests
+  R7    Fullscreen spoofing by the embedded page; Electron     LOW    Provider-only grant; editor's
+        shows no Esc notice                                           own Esc hint
+  R8    Legacy provider iframes change behavior (Design        LOW    Approval (7.2); info diagnostic
+        placeholder, ignored params)
+  R9    Third-party tracking on exported sites                 LOW    nocookie / dnt defaults; honest
+                                                                      wording; optional consent facade
+  R10   Muted autoplay without allow="autoplay" may not start  LOW    Drop autoplay for that provider
+        on some provider/engine
+  R11   Vimeo controls=0 depends on the owner's plan           LOW    Not offered for Vimeo
+  R12   Escape does not reach the editor while focus is in     LOW    Hint text; test
+        a player
+  R13   Provider URL formats and parameters change over time   LOW    Table-driven provider module;
+                                                                      opt-in live suite
+  R14   Firefox preview-media-lifecycle:164 load-sensitive     LOW    Test-stability follow-up
+        (pre-existing)
+
+
+22. REQUIRED PRODUCT DECISIONS
+------------------------------
+Each item gives: the recommendation, the alternatives, and whether
+approval is required. Benefits, risks and compatibility are in the
+referenced sections.
+
+1. Initial providers.
+   REC: YouTube + Vimeo (Option A).
+   ALT: B (+ Dailymotion), C (all). Section 5.8.
+   Approval: YES.
+2. URL-only versus dropdown plus URL.
+   REC: URL-only, with the provider auto-detected and shown as a chip.
+   ALT: a dropdown first, which adds a step and can disagree with the
+   URL.
+   Approval: YES (UX).
+3. Existing iframe versus dedicated component.
+   REC: the existing iframe tag plus a "Video Embed" toolbar card; no
+   schema change.
+   ALT: a new tag (format/compatibility cost), extending video (wrong
+   semantics). Section 7.
+   Approval: YES.
+4. Canvas placeholder versus live player.
+   REC: a static placeholder in Design; the live player only in
+   Preview.
+   ALT: live (privacy, sound, overlay issues), thumbnail (third-party
+   request). Section 9.
+   Approval: YES.
+5. Privacy-enhanced defaults.
+   REC: ON (YouTube nocookie, Vimeo dnt=1), user-switchable, with
+   honest wording.
+   ALT: off by default.
+   Approval: YES.
+6. Consent-before-load.
+   REC: not in BC-08; a later optional "Load on click" for exports.
+   ALT: build it now (scope), or default it ON (breaks autoplay
+   entirely).
+   Approval: YES.
+7. Supported playback controls.
+   REC: Muted, Autoplay, Loop for both; Show controls for YouTube only;
+   Start at for both (in src).
+   ALT: omit Start at (simpler).
+   Approval: YES.
+8. Autoplay enforcement.
+   REC: provider autoplay only when autoplay && muted
+   (getEffectiveAutoplay); never auto-mute; no allow="autoplay"; drop
+   autoplay for any provider that can't honor this. Optional: a warning
+   for more than one YouTube autoplay per page.
+   Approval: the policy is already approved (BC-02.2.1); the extensions
+   need confirmation.
+9. Loop.
+   REC: offered; YouTube is implemented with playlist=ID.
+   ALT: none.
+   Approval: confirm.
+10. Fullscreen permission.
+    REC: ENABLE RESTRICTED. allow="fullscreen" on provider embeds only,
+    in Preview and Export; browsers in 08.3, Electron in 08.4 with a
+    scoped permission. Section 12.
+    ALT: defer entirely; or enable for all embeds (not recommended).
+    Approval: YES, REQUIRED (security policy change).
+11. Preview media cleanup.
+    REC: teardown on exit and hide; position not preserved.
+    ALT: postMessage APIs (provider-specific).
+    Approval: YES.
+12. Provider error handling.
+    REC: show the provider's own error in-frame; add Layoutry hints for
+    the known contexts (desktop Referer, local file).
+    ALT: try to detect errors (impossible cross-origin without SDKs).
+    Approval: confirm.
+13. Responsive aspect ratio.
+    REC: 16:9 by default (YouTube, Vimeo), using the existing
+    aspectRatio setting with width 100% of its container up to 640 px;
+    9:16 suggested when a Shorts URL is pasted.
+    ALT: a fixed 400x300 like Embed.
+    Approval: YES (UX).
+14. Export sandbox policy.
+    REC: unchanged sandbox, plus referrerpolicy and loading="lazy" (and
+    allow="fullscreen" if item 10 is approved).
+    ALT: none weaker.
+    Approval: YES for the new attributes.
+15. Electron permission behavior.
+    REC: keep deny-all, except scoped provider fullscreen (if item 10)
+    and a scoped provider-only Referer header, with the identity domain
+    to be chosen.
+    ALT: no Referer, accepting a documented desktop playback
+    limitation.
+    Approval: YES, REQUIRED.
+16. (Extra) Legacy provider iframes.
+    REC: detect them as provider embeds and ignore their stored
+    parameters, with a diagnostic. Section 7.2.
+    Approval: YES.
+17. (Extra) Reduced motion.
+    REC: no provider autoplay under prefers-reduced-motion. Native
+    video is unchanged unless also decided.
+    Approval: YES.
+
+
+23. RECOMMENDED IMPLEMENTATION CHECKPOINTS
+------------------------------------------
+BC-08.2  Provider parsing, model and Inspector (no live player yet).
+         Includes:
+         - the src/lib provider module with full spoof/normalization
+           tests;
+         - the "Video Embed" toolbar card;
+         - the Inspector Video section;
+         - the Design placeholder;
+         - export markup with the derived src (no fullscreen) and the
+           hosted-page diagnostic;
+         - save/reopen and Undo/Redo tests.
+         In Preview the player is mounted only behind the teardown
+         lifecycle, so R1 never ships. If lifecycle slips, 08.2 keeps
+         the placeholder in Preview too.
+BC-08.3  Preview and Export lifecycle and parity, web fullscreen.
+         Includes:
+         - teardown on exit and hide;
+         - the export runtime hide/show rule;
+         - reduced-motion rule;
+         - parity specs with fake providers in 3 engines;
+         - allow="fullscreen" for provider embeds in web builds (if
+           approved);
+         - the opt-in live provider suite and its first recorded run.
+BC-08.4  Desktop provider integration (security-sensitive, isolated).
+         Includes:
+         - scoped Referer injection (if approved);
+         - scoped fullscreen permission in hardenSession (if approved),
+           enter/exit/window-restore tests, and the editor's Esc hint;
+         - the full Electron suite.
+BC-08.5  Final regression and QA, in the BC-07.4 format.
+
+Justification for 5 instead of 4: the provisional 08.3 bundled
+lifecycle, export and fullscreen. Desktop fullscreen and Referer
+changes are Electron security-policy changes, and BC-02 kept such
+changes in their own reviewed checkpoint. Splitting them keeps each
+change small and reviewable.
+
+
+24. GIT WORKING-TREE STATUS
+---------------------------
+At start: clean (main, 57fa030).
+At end:
+  Untracked:
+    docs/reports/BC-08.1-Multi-Provider-Video-Embed-Investigation.txt
+  Gitignored (not shown by git status):
+    changelogs/2026-11-11-video-embed-architecture-investigation-BC-08.1.txt
+  No product, test, configuration or schema file changed.
+  The temporary files were created and deleted:
+    zz-xbrowser.config.ts
+    e2e/zz-probe-bc081.spec.ts
+    e2e/desktop/zz-probe-bc081.spec.ts
+  Nothing is staged. Nothing is committed or pushed.
+
+
+25. QA RECOMMENDATION
+---------------------
+APPROVE BC-08.1 as complete. BC-08.2 should start only after the
+product owner records decisions 1-17 (section 22). The three
+"approval REQUIRED" items are 10 (fullscreen), 15 (Electron) and
+3 (model).
+
+Points that most need QA scrutiny:
+- F5: today, embeds have no Preview lifecycle at all.
+- F3 and F4: Referer gaps that will decide whether YouTube works on
+  desktop and in local-file exports.
+- F2: fullscreen in Electron hangs, rather than failing, under the
+  current permission handler.
+

@@ -163,6 +163,12 @@ printer: a Tailwind printer maps `declarations` to utilities, React maps
 - Image, video, audio and iframe keep the Canvas structure: an outer layout
   frame `<div>` around the genuine media element. The authored id and class
   go on the inner element.
+- A Video Embed (an iframe marked by `controls`, see
+  `features/editor/types/videoEmbed.ts`) is feature-gated until BC-08.3:
+  it exports as its empty layout frame with no inner iframe, and reports
+  the warning `video-embed-not-exported`. Its player URL, sandbox, `allow`
+  and referrer attributes and its hide/show lifecycle are added together
+  in BC-08.3. Generic Embeds are unchanged.
 - Attribute order is fixed: `id`, `class`, then the element's own
   attributes in recipe order. Boolean attributes print bare (`checked`,
   `controls`, `open`, `hidden`). Void elements have no end tag. SVG

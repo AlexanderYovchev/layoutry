@@ -35,6 +35,7 @@ import { getSelectedOptionValue } from "@/features/editor/types/select";
 import { DEFAULT_SVG_FILL, formatSvgViewBox, getSvgKind, resolveSvgFill, resolveSvgStroke, resolveSvgStrokeWidth, resolveSvgViewBox } from "@/features/editor/types/svg";
 import { hasSvgScene, resolveSvgScene, type SvgVectorObject } from "@/features/editor/types/svgScene";
 import { getEffectiveAutoplay, getMediaControls } from "@/features/editor/types/video";
+import { isVideoEmbedNode } from "@/features/editor/types/videoEmbed";
 import { EXPORTED_PAGE_ORIGIN, resolveIframeSourcePolicy } from "@/lib/iframeSandbox";
 import { formatSvgPoints, pathCommandsToD } from "@/features/editor/utils/svgObjectGeometry";
 import { SVG_CIRCLE_GEOMETRY, SVG_RECTANGLE_GEOMETRY, SVG_STAR_POINTS, SVG_TRIANGLE_POINTS } from "@/features/editor/utils/svgPrimitiveGeometry";
@@ -473,6 +474,16 @@ function buildElement(state: BuildState, node: EditorElementNode, styleKey: stri
     if (node.autoplay === true && !getEffectiveAutoplay(node)) report(state, "warning", "unmuted-autoplay", "Autoplay was left out because the media is not muted. Layoutry only autoplays muted media; the controls still start it.", node.id, "autoplay");
     const recipe = tag === "video" ? resolveVideoOrIframeElementStyle(node, context) : resolveAudioElementStyle(node, context);
     return buildMediaFrame(state, node, styleKey, recipe, { tag, attributes });
+  }
+
+  if (tag === "iframe" && isVideoEmbedNode(node)) {
+    // BC-08.2 feature gate: the player, its sandbox/allow/referrer
+    // attributes and its hidden/shown lifecycle arrive together in BC-08.3.
+    // Until then a Video Embed exports as its empty layout box (no iframe,
+    // so nothing is framed, nothing plays and no provider is contacted),
+    // and the export says so.
+    report(state, "warning", "video-embed-not-exported", "Video Embeds aren't exported as players yet, so this video's box is empty in the exported page.", node.id, "src");
+    return buildMediaFrame(state, node, styleKey, resolveVideoOrIframeElementStyle(node, context), undefined);
   }
 
   if (tag === "iframe") {

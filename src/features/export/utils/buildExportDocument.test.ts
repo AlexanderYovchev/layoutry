@@ -245,12 +245,14 @@ describe("buildExportDocument — coverage", () => {
     expect(document.diagnostics.filter((diagnostic) => diagnostic.code === "unsupported-element")).toEqual([]);
   });
 
-  it("exports all 81 catalog entries, flagging only source-less images", () => {
-    expect(INSERTABLE_ELEMENT_TYPES).toHaveLength(81);
+  it("exports all 82 catalog entries, flagging only source-less images and the not-yet-exported Video Embed", () => {
+    expect(INSERTABLE_ELEMENT_TYPES).toHaveLength(82);
     const document = build(catalogDocument());
     const codes = new Set(document.diagnostics.map((diagnostic) => diagnostic.code));
-    expect([...codes].sort()).toEqual(["missing-media-source"]);
+    expect([...codes].sort()).toEqual(["missing-media-source", "video-embed-not-exported"]);
     // Only image cards whose factory leaves the image empty for the user to fill in.
     for (const diagnostic of document.diagnostics.filter((entry) => entry.code === "missing-media-source")) expect(diagnostic.nodeId).toMatch(/^img-/);
+    // BC-08.2 feature gate: exactly the one Video Embed card (an iframe underneath).
+    expect(document.diagnostics.filter((entry) => entry.code === "video-embed-not-exported").map((entry) => entry.nodeId)).toEqual([expect.stringMatching(/^iframe-/)]);
   });
 });
