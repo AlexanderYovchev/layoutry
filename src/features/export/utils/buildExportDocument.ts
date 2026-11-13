@@ -37,6 +37,9 @@ import { hasSvgScene, resolveSvgScene, type SvgVectorObject } from "@/features/e
 import { getEffectiveAutoplay, getMediaControls } from "@/features/editor/types/video";
 import { isVideoEmbedNode } from "@/features/editor/types/videoEmbed";
 import { EXPORTED_PAGE_ORIGIN, resolveIframeSourcePolicy } from "@/lib/iframeSandbox";
+import { readVideoEmbedSource } from "@/lib/videoEmbed/buildVideoEmbedUrl";
+import { resolveVideoEmbedPlayerConfig } from "@/lib/videoEmbed/videoEmbedPlayerConfig";
+import { getVideoEmbedPlaybackBlocker } from "@/lib/videoEmbed/videoEmbedProviders";
 import { formatSvgPoints, pathCommandsToD } from "@/features/editor/utils/svgObjectGeometry";
 import { SVG_CIRCLE_GEOMETRY, SVG_RECTANGLE_GEOMETRY, SVG_STAR_POINTS, SVG_TRIANGLE_POINTS } from "@/features/editor/utils/svgPrimitiveGeometry";
 // Deep import by necessity: the project feature's index.ts also re-exports
@@ -477,13 +480,54 @@ function buildElement(state: BuildState, node: EditorElementNode, styleKey: stri
   }
 
   if (tag === "iframe" && isVideoEmbedNode(node)) {
-    // BC-08.2 feature gate: the player, its sandbox/allow/referrer
-    // attributes and its hidden/shown lifecycle arrive together in BC-08.3.
-    // Until then a Video Embed exports as its empty layout box (no iframe,
-    // so nothing is framed, nothing plays and no provider is contacted),
-    // and the export says so.
-    report(state, "warning", "video-embed-not-exported", "Video Embeds aren't exported as players yet, so this video's box is empty in the exported page.", node.id, "src");
-    return buildMediaFrame(state, node, styleKey, resolveVideoOrIframeElementStyle(node, context), undefined);
+    // BC-08.3: the same player configuration Preview uses
+    // (resolveVideoEmbedPlayerConfig), with the exported page's stand-in
+    // origin, fullscreen delegated (an exported page runs in a browser),
+    // and autoplay decided per viewer by the runtime:
+    // - src is the player WITHOUT autoplay, so a page with no script, or a
+    //   viewer who prefers reduced motion, never autoplays;
+    // - data-ly-video-src is the player as authored (muted autoplay
+    //   included); the runtime mounts a fresh player from it when the
+    //   embed is shown and the viewer allows motion, and removes the
+    //   player whenever the embed is hidden (exportInteractionRuntime.ts).
+    // A missing or invalid source exports the empty layout box, never a
+    // fallback iframe.
+    const recipe = resolveVideoOrIframeElementStyle(node, context);
+    const config = resolveVideoEmbedPlayerConfig(node, { hostOrigin: EXPORTED_PAGE_ORIGIN, reducedMotion: false, fullscreenAllowed: true });
+    const frameChecked = config ? checkExportUrl(config.src, "frame").ok && checkExportUrl(config.stillSrc, "frame").ok : false;
+    const source = readVideoEmbedSource(node.src);
+    const blocker = source ? getVideoEmbedPlaybackBlocker(source.provider) : undefined;
+    if (blocker) {
+      report(state, "warning", "video-embed-blocked", `${blocker} Its box is empty in the exported page.`, node.id, "src");
+      return buildMediaFrame(state, node, styleKey, recipe, undefined);
+    }
+    if (!config || !frameChecked) {
+      report(
+        state,
+        "warning",
+        "video-embed-invalid",
+        node.src ? "This Video Embed's link isn't a supported video, so its box is empty in the exported page. Paste the video's link again." : "This Video Embed has no video link, so its box is empty in the exported page.",
+        node.id,
+        "src",
+      );
+      return buildMediaFrame(state, node, styleKey, recipe, undefined);
+    }
+    if (!state.diagnostics.some((diagnostic) => diagnostic.code === "video-embed-needs-website")) {
+      report(state, "info", "video-embed-needs-website", "Video players load from YouTube, Vimeo, Loom or Wistia: they need an internet connection, and some play only when the page is opened from a website (http or https), not as a local file.");
+    }
+    if (node.autoplay === true && node.muted !== true) report(state, "warning", "unmuted-autoplay", "Autoplay was left out because the video is not muted. Layoutry only autoplays muted videos; the player's own controls still start it.", node.id, "autoplay");
+    return buildMediaFrame(state, node, styleKey, recipe, {
+      tag: "iframe",
+      attributes: [
+        { name: "sandbox", value: config.sandbox },
+        { name: "src", value: config.stillSrc },
+        { name: "title", value: config.title },
+        ...attribute("allow", config.allow),
+        { name: "referrerpolicy", value: config.referrerPolicy },
+        { name: "loading", value: config.loading },
+        { name: "data-ly-video-src", value: config.src },
+      ],
+    });
   }
 
   if (tag === "iframe") {

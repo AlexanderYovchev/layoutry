@@ -4,7 +4,7 @@ import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useHostOrigin } from "@/features/canvas/hooks/useHostOrigin";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { MediaInteractionShield } from "@/features/canvas/components/document/elements/MediaInteractionShield";
-import { VideoEmbedPlaceholder } from "@/features/canvas/components/document/elements/VideoEmbedPlaceholder";
+import { VideoEmbedFrame } from "@/features/canvas/components/document/elements/VideoEmbedFrame";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
 import { resolveVideoOrIframeElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
@@ -47,11 +47,11 @@ import type { DocumentElementProps } from "@/features/canvas/types/documentRende
  * under stale flags. No other iframe attribute is ever copied from the
  * document.
  *
- * Video Embed (BC-08.2): an Embed marked as a Video Embed (see
- * isVideoEmbedNode) renders NO iframe at all on the Canvas, in Design or
- * (until BC-08.3 adds the player lifecycle) in Preview — only the static
- * VideoEmbedPlaceholder inside the same wrapper, so no provider is ever
- * contacted from the Canvas and the generic iframe path above is unchanged.
+ * Video Embed (BC-08.2/08.3): an Embed marked as a Video Embed (see
+ * isVideoEmbedNode) renders VideoEmbedFrame inside the same wrapper: a
+ * static placeholder in Design (no provider contact at all) and the real
+ * provider player in Preview only while it is shown, unmounted on hide and
+ * on Preview exit. The generic iframe path above is unchanged.
  */
 export function IframeElement({ node, parentId, parentLayoutMode, parentFlowDisplay }: DocumentElementProps) {
   const dropRef = useNodeDropRegistration(node);
@@ -71,7 +71,7 @@ export function IframeElement({ node, parentId, parentLayoutMode, parentFlowDisp
       {...listeners}
     >
       {isVideoEmbed ? (
-        <VideoEmbedPlaceholder node={node} isPreview={isPreview} />
+        <VideoEmbedFrame node={node} isPreview={isPreview} innerStyle={recipe.innerStyle} />
       ) : (
         <iframe
           key={policy.sandbox}

@@ -35,7 +35,9 @@ export type ExportDiagnosticCode =
   | "unmuted-autoplay"
   | "embedded-image-invalid"
   | "embedded-image-type-mismatch"
-  | "video-embed-not-exported";
+  | "video-embed-invalid"
+  | "video-embed-blocked"
+  | "video-embed-needs-website";
 
 export interface ExportDiagnostic {
   code: ExportDiagnosticCode;

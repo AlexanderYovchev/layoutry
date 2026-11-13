@@ -35,7 +35,7 @@ export function exportHtmlCss(document: EditorElementNode, options: HtmlCssExpor
   const css = printExportStylesheet(built.document);
   const title = options.title?.trim() || "Untitled page";
   const lang = options.lang?.trim() || "en";
-  const interactive = needsInteractionRuntime(built.document.behaviors);
+  const interactive = needsInteractionRuntime(built.document.behaviors, built.document.root);
 
   let files: ExportFile[];
   if (options.mode === "standalone") {

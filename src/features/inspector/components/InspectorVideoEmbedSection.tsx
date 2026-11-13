@@ -120,6 +120,12 @@ export function InspectorVideoEmbedSection({ node }: InspectorVideoEmbedSectionP
           {provider ? provider.displayName : "None yet"}
         </span>
       </InspectorPropertyRow>
+      {provider?.playback.status === "blocked" && (
+        <p data-testid="video-embed-playback-blocked" role="status" className="px-0.5 text-[11px] text-red-600 dark:text-red-400">
+          {provider.playback.reason}
+        </p>
+      )}
+      {provider?.playback.status === "unverified" && <Note>{provider.playback.note}</Note>}
 
       {provider && source && (
         <>
@@ -139,7 +145,7 @@ export function InspectorVideoEmbedSection({ node }: InspectorVideoEmbedSectionP
               <Note>
                 {node.autoplay === true && node.muted !== true
                   ? "Autoplay won't start until Muted is on. Layoutry only autoplays muted videos."
-                  : "Starts by itself only when Muted is also on."}
+                  : "Starts by itself only when Muted is also on, and never for visitors who ask for reduced motion. Browsers and the provider can still block it."}
               </Note>
             </>
           ) : (
@@ -213,7 +219,9 @@ export function InspectorVideoEmbedSection({ node }: InspectorVideoEmbedSectionP
           {provider.limitations.map((limitation) => (
             <Note key={limitation}>{limitation}</Note>
           ))}
-          <Note>Video playback in Preview and in exported pages comes in a later update; for now the canvas shows a placeholder.</Note>
+          <Note>{`The video plays in Preview and on exported pages; the canvas shows a placeholder and loads nothing from ${provider.displayName} while you design.`}</Note>
+          <Note>{`It plays from ${provider.displayName}'s site, so it needs an internet connection.`}</Note>
+          {provider.capabilities.fullscreen !== "unsupported" && <Note>{"Fullscreen works in browsers. In the desktop app's Preview it isn't available yet."}</Note>}
         </div>
       )}
     </InspectorSection>

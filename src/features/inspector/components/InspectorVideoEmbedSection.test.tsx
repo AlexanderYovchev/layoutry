@@ -68,8 +68,9 @@ describe("InspectorVideoEmbedSection (BC-08.2)", () => {
     for (const name of ["Muted", "Autoplay", "Loop", "Controls", "Privacy mode"]) expect(screen.getByRole("switch", { name })).toBeInTheDocument();
     expect(screen.getByLabelText("Start at")).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Privacy mode" })).toHaveAttribute("aria-checked", "true");
-    // Unverified capabilities say so.
-    expect(screen.getAllByText("Not yet confirmed with this provider's player.")).toHaveLength(2);
+    // Mute and the nocookie host were confirmed live (BC-08.3): no "not yet confirmed" caveats remain for YouTube.
+    expect(screen.queryAllByText("Not yet confirmed with this provider's player.")).toHaveLength(0);
+    expect(screen.queryByTestId("video-embed-playback-blocked")).toBeNull();
   });
 
   it("Vimeo hides Controls and says why", () => {
@@ -78,6 +79,19 @@ describe("InspectorVideoEmbedSection (BC-08.2)", () => {
     expect(screen.queryByRole("switch", { name: "Controls" })).toBeNull();
     expect(screen.getByText(/Hiding them needs the video owner's paid Vimeo plan/)).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Loop" })).toBeInTheDocument();
+  });
+
+  it("Vimeo: its playback blocker is announced (BC-08.3)", () => {
+    store().setElementSrc(embedId, "https://player.vimeo.com/video/76979871?dnt=1");
+    renderSection();
+    expect(screen.getByTestId("video-embed-playback-blocked")).toHaveAttribute("role", "status");
+    expect(screen.getByTestId("video-embed-playback-blocked")).toHaveTextContent(/^Vimeo videos can't play yet: Vimeo's player needs a browser permission \(encrypted media\)/);
+  });
+
+  it("Loom says its playback is not yet confirmed (BC-08.3)", () => {
+    store().setElementSrc(embedId, `https://www.loom.com/embed/${"a".repeat(32)}`);
+    renderSection();
+    expect(screen.getByText("Playback hasn't been confirmed with a real Loom video yet.")).toBeInTheDocument();
   });
 
   it("Loom hides Loop, Controls and Privacy mode and says why", () => {
@@ -91,7 +105,7 @@ describe("InspectorVideoEmbedSection (BC-08.2)", () => {
   it("muted-only autoplay is explained, and Muted is never switched on for the user", () => {
     store().setElementSrc(embedId, `https://www.youtube-nocookie.com/embed/${YT}`);
     const { rerender } = renderSection();
-    expect(screen.getByText("Starts by itself only when Muted is also on.")).toBeInTheDocument();
+    expect(screen.getByText(/^Starts by itself only when Muted is also on, and never for visitors who ask for reduced motion./)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("switch", { name: "Autoplay" }));
     rerender(<InspectorVideoEmbedSection node={node()} />);
     expect(node().autoplay).toBe(true);

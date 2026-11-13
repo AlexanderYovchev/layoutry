@@ -19,14 +19,20 @@ interface VideoEmbedPlaceholderProps {
  * Embed. Every line truncates and the wrapper clips, so the text never
  * escapes a small box.
  *
- * Preview (interim, until BC-08.3 adds the player and its lifecycle): the
- * same placeholder, saying so, so nothing plays without the lifecycle that
- * stops it.
+ * Preview (BC-08.3) shows the real player instead (VideoEmbedFrame); the
+ * placeholder appears there only while no player is mounted (a hidden
+ * embed, or no valid link).
  */
 export function VideoEmbedPlaceholder({ node, isPreview }: VideoEmbedPlaceholderProps) {
-  const { providerName, settings } = summarizeVideoEmbed(node);
+  const { providerName, settings, blocker } = summarizeVideoEmbed(node);
   const heading = providerName ? `${providerName} video` : "Video Embed";
-  const note = !providerName ? "Paste a video link in the Inspector" : isPreview ? "The player isn't available in Preview yet" : "No video is loaded while you design";
+  const note = !providerName
+    ? "Paste a video link in the Inspector"
+    : blocker
+      ? blocker
+      : isPreview
+        ? "Player not loaded"
+        : "Plays in Preview. No video is loaded while you design";
   // The title is shown only when it adds something (not the provider's own default, e.g. "YouTube video").
   const title = node.title && node.title !== heading ? node.title : undefined;
   const label = [heading, title, note].filter(Boolean).join(". ");

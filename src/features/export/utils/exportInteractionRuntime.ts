@@ -1,4 +1,5 @@
 import type { ExportBehaviors } from "@/features/export/types/exportBehavior";
+import type { ExportElement } from "@/features/export/types/exportIr";
 
 /*
  * The exported page's interaction runtime (EXPORT-1.3): a constant,
@@ -37,6 +38,18 @@ import type { ExportBehaviors } from "@/features/export/types/exportBehavior";
  *   for muted media, BC-02.2.1). Anything else stays paused until the
  *   user plays it. Preview gets the same result by unmounting hidden
  *   content.
+ * - Video Embed players (BC-08.3): iframe[data-ly-video-src]. A provider
+ *   player cannot be paused from outside, so it is REMOVED whenever it is
+ *   not shown — hidden by an interaction on it or an ancestor, inside a
+ *   closed dialog, or not rendered at all (authored display: none) — and
+ *   a fresh one is created from the original element when it is shown
+ *   again, starting from its configured state (Preview does the same by
+ *   unmounting). The markup's src has no autoplay; a shown player is
+ *   loaded from data-ly-video-src (authored muted autoplay included)
+ *   unless the viewer prefers reduced motion, in which case the
+ *   no-autoplay src is kept. Removing an iframe ends its document, so no
+ *   sound continues. New frames are new elements, never navigations of an
+ *   existing one, so no history entries are added.
  * One delegated listener per event type; no per-element click handlers.
  */
 export const EXPORT_INTERACTION_RUNTIME = `(function () {
@@ -60,6 +73,29 @@ export const EXPORT_INTERACTION_RUNTIME = `(function () {
   function isHidden(element) {
     return Boolean(element.closest("[hidden], dialog:not([open])"));
   }
+  var reducedMotion = Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  var players = [];
+  function isShown(element) {
+    return !isHidden(element) && element.getClientRects().length > 0;
+  }
+  function freshPlayer(player) {
+    var frame = player.original.cloneNode(false);
+    if (!reducedMotion) frame.setAttribute("src", player.original.getAttribute("data-ly-video-src") || "");
+    return frame;
+  }
+  function syncPlayers() {
+    players.forEach(function (player) {
+      var shown = isShown(player.slot);
+      if (!shown && player.frame) {
+        player.frame.remove();
+        player.frame = null;
+      } else if (shown && !player.frame) {
+        player.frame = freshPlayer(player);
+        player.slot.appendChild(player.frame);
+      }
+    });
+  }
+
   function mediaIn(element) {
     var media = Array.prototype.slice.call(element.querySelectorAll("video, audio"));
     if (element.matches("video, audio")) media.unshift(element);
@@ -86,6 +122,7 @@ export const EXPORT_INTERACTION_RUNTIME = `(function () {
     (expanders[token] || []).forEach(function (trigger) {
       trigger.setAttribute("aria-expanded", shown ? "true" : "false");
     });
+    syncPlayers();
   }
 
   function openRelationships() {
@@ -126,6 +163,20 @@ export const EXPORT_INTERACTION_RUNTIME = `(function () {
       element.showModal();
     }
   });
+  // A hidden player is removed at once. A shown one is kept when its
+  // markup already loads the right URL (no autoplay requested, or reduced
+  // motion); otherwise it is replaced by a fresh frame with autoplay.
+  each("iframe[data-ly-video-src]", function (frame) {
+    if (!frame.parentNode) return;
+    var player = { original: frame.cloneNode(false), slot: frame.parentNode, frame: frame };
+    var wanted = reducedMotion ? frame.getAttribute("src") : frame.getAttribute("data-ly-video-src");
+    if (!isShown(player.slot) || frame.getAttribute("src") !== wanted) {
+      frame.remove();
+      player.frame = null;
+    }
+    players.push(player);
+  });
+  syncPlayers();
 
   window.addEventListener("click", function (event) {
     var target = event.target;
@@ -166,7 +217,13 @@ export const EXPORT_INTERACTION_RUNTIME = `(function () {
 })();
 `;
 
-/** Whether a page needs the runtime at all: anything clickable, or a dialog that opens at load. */
-export function needsInteractionRuntime(behaviors: ExportBehaviors): boolean {
-  return behaviors.triggers.length > 0 || behaviors.targets.some((target) => target.kind === "dialog");
+/** Whether the exported tree contains a Video Embed player (BC-08.3). */
+export function hasVideoEmbedPlayers(element: ExportElement): boolean {
+  if (element.attributes.some((attribute) => attribute.name === "data-ly-video-src")) return true;
+  return element.children.some((child) => child.kind === "element" && hasVideoEmbedPlayers(child));
+}
+
+/** Whether a page needs the runtime at all: anything clickable, a dialog that opens at load, or a Video Embed player. */
+export function needsInteractionRuntime(behaviors: ExportBehaviors, root?: ExportElement): boolean {
+  return behaviors.triggers.length > 0 || behaviors.targets.some((target) => target.kind === "dialog") || (root !== undefined && hasVideoEmbedPlayers(root));
 }

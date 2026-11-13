@@ -13,18 +13,30 @@
  *
  * Capability status:
  *   "documented"   the provider's own documentation describes the setting
+ *   "verified"     not on the provider's official parameter page, but
+ *                  confirmed against the real player (BC-08.3 live run)
  *   "unverified"   in common use, but not on the provider's official
- *                  parameter page; must be confirmed live (BC-08.3)
+ *                  parameter page, and not yet confirmed live
  *   "unsupported"  the provider offers no URL setting Layoutry can use;
  *                  the Inspector hides the control and explains why
- * Real playback behavior of every setting is verified in BC-08.3.
+ *
+ * Playback (BC-08.3), from the live run against each provider's real
+ * player under Layoutry's unchanged sandbox and allow="fullscreen":
+ *   "verified"    plays in Preview and on exported pages
+ *   "unverified"  no public test video was available to confirm it; the
+ *                 player is still loaded, and the Inspector says so
+ *   "blocked"     the provider's player does not work under the approved
+ *                 permissions; no player is loaded anywhere, and the
+ *                 Inspector, Preview and export explain why
  */
 
 export type VideoEmbedProviderId = "youtube" | "vimeo" | "loom" | "wistia";
 export type DeferredVideoProviderId = "dailymotion" | "twitch";
 
 export type VideoEmbedCapability = "autoplay" | "muted" | "loop" | "controls" | "startTime" | "privacyMode" | "fullscreen";
-export type VideoEmbedCapabilityStatus = "documented" | "unverified" | "unsupported";
+export type VideoEmbedCapabilityStatus = "documented" | "verified" | "unverified" | "unsupported";
+
+export type VideoEmbedPlayback = { status: "verified" } | { status: "unverified"; note: string } | { status: "blocked"; reason: string };
 
 export interface VideoEmbedProvider {
   id: VideoEmbedProviderId;
@@ -38,6 +50,8 @@ export interface VideoEmbedProvider {
   unsupportedNotes: Readonly<Partial<Record<VideoEmbedCapability, string>>>;
   /** The provider's own rules Layoutry cannot override. */
   limitations: readonly string[];
+  /** Whether its real player works under Layoutry's approved iframe policy (BC-08.3 live run). */
+  playback: VideoEmbedPlayback;
 }
 
 export const VIDEO_EMBED_PROVIDERS: Readonly<Record<VideoEmbedProviderId, VideoEmbedProvider>> = {
@@ -48,14 +62,14 @@ export const VIDEO_EMBED_PROVIDERS: Readonly<Record<VideoEmbedProviderId, VideoE
     embedHosts: ["www.youtube-nocookie.com", "www.youtube.com"],
     capabilities: {
       autoplay: "documented",
-      // `mute` is not on YouTube's player-parameters page.
-      muted: "unverified",
+      // `mute` is not on YouTube's player-parameters page; confirmed live (BC-08.3).
+      muted: "verified",
       // Needs playlist=<same id> for a single video (documented).
       loop: "documented",
       controls: "documented",
       startTime: "documented",
-      // youtube-nocookie.com is not on the player-parameters page.
-      privacyMode: "unverified",
+      // youtube-nocookie.com is not on the player-parameters page; confirmed live (BC-08.3).
+      privacyMode: "verified",
       fullscreen: "documented",
     },
     unsupportedNotes: {},
@@ -63,6 +77,7 @@ export const VIDEO_EMBED_PROVIDERS: Readonly<Record<VideoEmbedProviderId, VideoE
       "YouTube needs the page's address (the Referer) to play. A page opened as a local file may show a player error.",
       "The video's owner can turn embedding off.",
     ],
+    playback: { status: "verified" },
   },
   vimeo: {
     id: "vimeo",
@@ -86,6 +101,15 @@ export const VIDEO_EMBED_PROVIDERS: Readonly<Record<VideoEmbedProviderId, VideoE
       "The video's owner can limit which websites may embed it.",
       "Unlisted videos need their full link, including the code after the video number.",
     ],
+    // BC-08.3 live run: Vimeo's player shows "Unable to play video. Please
+    // try again in a supported browser." unless the frame is also granted
+    // the encrypted-media permission (allow="encrypted-media") — with or
+    // without the sandbox. Layoutry's approved policy grants fullscreen
+    // only, so Vimeo playback waits for a product decision (BC-08.3 report).
+    playback: {
+      status: "blocked",
+      reason: "Vimeo videos can't play yet: Vimeo's player needs a browser permission (encrypted media) that Layoutry doesn't grant to embedded videos.",
+    },
   },
   loom: {
     id: "loom",
@@ -107,6 +131,7 @@ export const VIDEO_EMBED_PROVIDERS: Readonly<Record<VideoEmbedProviderId, VideoE
       privacyMode: "Loom has no privacy-enhanced mode.",
     },
     limitations: ['The video must be shared with "Anyone with the link".'],
+    playback: { status: "unverified", note: "Playback hasn't been confirmed with a real Loom video yet." },
   },
   wistia: {
     id: "wistia",
@@ -130,6 +155,7 @@ export const VIDEO_EMBED_PROVIDERS: Readonly<Record<VideoEmbedProviderId, VideoE
       controls: "Wistia's controls are set in the video owner's Wistia account.",
     },
     limitations: ["Only Wistia's own links are accepted, not custom-domain links."],
+    playback: { status: "verified" },
   },
 };
 
@@ -166,7 +192,13 @@ export function getVideoEmbedProvider(id: VideoEmbedProviderId): VideoEmbedProvi
   return VIDEO_EMBED_PROVIDERS[id];
 }
 
-/** True when the provider has a URL setting for this capability (documented or unverified). */
+/** Why the provider's player is not loaded at all, or undefined when it may be (BC-08.3). */
+export function getVideoEmbedPlaybackBlocker(id: VideoEmbedProviderId): string | undefined {
+  const { playback } = VIDEO_EMBED_PROVIDERS[id];
+  return playback.status === "blocked" ? playback.reason : undefined;
+}
+
+/** True when the provider has a URL setting for this capability (documented, verified or unverified). */
 export function providerSupports(id: VideoEmbedProviderId, capability: VideoEmbedCapability): boolean {
   return VIDEO_EMBED_PROVIDERS[id].capabilities[capability] !== "unsupported";
 }

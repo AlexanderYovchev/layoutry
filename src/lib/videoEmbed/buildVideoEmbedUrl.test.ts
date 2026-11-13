@@ -164,7 +164,8 @@ describe("capability matrix", () => {
     expect(supported("vimeo")).toEqual(["autoplay", "fullscreen", "loop", "muted", "privacyMode", "startTime"]);
     expect(supported("loom")).toEqual(["autoplay", "fullscreen", "muted", "startTime"]);
     expect(supported("wistia")).toEqual(["autoplay", "fullscreen", "loop", "muted", "privacyMode", "startTime"]);
-    expect(VIDEO_EMBED_PROVIDERS.youtube.capabilities.muted).toBe("unverified");
-    expect(VIDEO_EMBED_PROVIDERS.youtube.capabilities.privacyMode).toBe("unverified");
+    // Confirmed against YouTube's real player in the BC-08.3 live run.
+    expect(VIDEO_EMBED_PROVIDERS.youtube.capabilities.muted).toBe("verified");
+    expect(VIDEO_EMBED_PROVIDERS.youtube.capabilities.privacyMode).toBe("verified");
   });
 });

@@ -81,15 +81,32 @@ test("insert, validate and configure a Video Embed: static placeholder, no ifram
   await inspector(page).getByRole("switch", { name: "Autoplay" }).click();
   await expect(placeholder(page)).toContainText("Muted · Autoplay");
 
-  await page.getByRole("button", { name: "Enter Preview" }).click();
-  await expect(placeholder(page)).toContainText("The player isn't available in Preview yet");
-  await page.getByRole("button", { name: "Exit Preview" }).click();
-
+  // Design: no iframe, no network request at all.
   await expect(page.locator(`${SURFACE} iframe`)).toHaveCount(0);
   expect(page.frames()).toHaveLength(1);
-  expect(await networkRequests(app), "the desktop app made no network request").toEqual([]);
+  expect(await networkRequests(app), "Design made no network request").toEqual([]);
+
+  // BC-08.3 Preview: the player is mounted with the unchanged sandbox and
+  // WITHOUT fullscreen delegation (desktop fullscreen is BC-08.4). The
+  // harness cancels its network request (the suite is offline).
+  await page.getByRole("button", { name: "Enter Preview" }).click();
+  const player = page.locator(`${SURFACE} iframe[data-video-embed-player="youtube"]`);
+  await expect(player).toHaveCount(1);
+  await expect(player).toHaveAttribute("sandbox", "allow-forms allow-popups allow-scripts allow-same-origin");
+  await expect(player).toHaveAttribute("src", `https://www.youtube-nocookie.com/embed/${YT}?autoplay=1&mute=1`);
+  await expect(player).toHaveAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+  expect(await player.getAttribute("allow")).toBeNull();
+  expect(await player.getAttribute("allowfullscreen")).toBeNull();
+  await expect.poll(() => networkRequests(app)).toEqual([`https://www.youtube-nocookie.com/embed/${YT}?autoplay=1&mute=1`]);
+
+  // Exit: the player is gone; Design is a placeholder again.
+  await page.getByRole("button", { name: "Exit Preview" }).click();
+  await expect(page.locator(`${SURFACE} iframe`)).toHaveCount(0);
+  await expect(placeholder(page)).toContainText("YouTube video");
+  await expect.poll(() => page.frames().length).toBe(1);
   // Nothing new was granted: still one window, still no permission prompt path.
   expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
+  expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isFullScreen())).toBe(false);
 });
 
 test("save to a .layoutry file (format 2) and reopen after a restart: identity and settings intact", async () => {

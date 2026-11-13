@@ -164,11 +164,18 @@ printer: a Tailwind printer maps `declarations` to utilities, React maps
   frame `<div>` around the genuine media element. The authored id and class
   go on the inner element.
 - A Video Embed (an iframe marked by `controls`, see
-  `features/editor/types/videoEmbed.ts`) is feature-gated until BC-08.3:
-  it exports as its empty layout frame with no inner iframe, and reports
-  the warning `video-embed-not-exported`. Its player URL, sandbox, `allow`
-  and referrer attributes and its hide/show lifecycle are added together
-  in BC-08.3. Generic Embeds are unchanged.
+  `features/editor/types/videoEmbed.ts`) exports its provider player
+  (BC-08.3), configured by `resolveVideoEmbedPlayerConfig`
+  (`src/lib/videoEmbed/`), the same function Preview uses: the unchanged
+  BC-02.3 sandbox, `allow="fullscreen"` for fullscreen-capable providers,
+  `referrerpolicy="strict-origin-when-cross-origin"`, `loading="lazy"`,
+  `src` = the player without autoplay, and `data-ly-video-src` = the
+  authored player. The interaction runtime (included whenever a player is
+  present) removes a player while it is hidden or not rendered and mounts
+  a fresh one when shown, from `data-ly-video-src` unless the viewer
+  prefers reduced motion. A missing or invalid source exports the empty
+  frame with `video-embed-invalid`; any player adds the one-per-page info
+  `video-embed-needs-website`. Generic Embeds are unchanged.
 - Attribute order is fixed: `id`, `class`, then the element's own
   attributes in recipe order. Boolean attributes print bare (`checked`,
   `controls`, `open`, `hidden`). Void elements have no end tag. SVG

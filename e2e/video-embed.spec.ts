@@ -9,7 +9,8 @@ import { importDocument } from "./support/parityFixtures";
  * controls, static Canvas placeholder, persistence and history. Fully
  * offline: every request to a video provider's hosts is recorded and
  * aborted, and each test asserts there was none (decision 4: no provider
- * request while designing). Playback, export and lifecycle are BC-08.3.
+ * request while designing). Preview playback, export and lifecycle are
+ * e2e/video-embed-playback.spec.ts (BC-08.3).
  */
 
 const YT = "dQw4w9WgXcQ";
@@ -154,7 +155,7 @@ test("provider switching shows only the controls the provider supports, keeping 
 test("muted-only autoplay: Autoplay alone never claims to start, Muted is never switched on for the user", async ({ page }) => {
   const id = await insertVideoEmbed(page);
   await commitUrl(page, `https://youtu.be/${YT}`);
-  await expect(inspector(page).getByText("Starts by itself only when Muted is also on.")).toBeVisible();
+  await expect(inspector(page).getByText(/^Starts by itself only when Muted is also on/)).toBeVisible();
   await inspector(page).getByRole("switch", { name: "Autoplay" }).click();
   await expect(inspector(page).getByText("Autoplay won't start until Muted is on. Layoutry only autoplays muted videos.")).toBeVisible();
   await expect(inspector(page).getByRole("switch", { name: "Muted" })).toHaveAttribute("aria-checked", "false");
@@ -228,7 +229,7 @@ test("drag and resize work on the placeholder like on any element, one Undo step
   await expect.poll(async () => Math.round((await node.boundingBox())?.x ?? 0)).toBe(Math.round(start.x));
 });
 
-test("save and reopen keep the identity and every setting; Preview still shows only the placeholder", async ({ page }) => {
+test("save and reopen keep the identity and every setting (Design stays a placeholder)", async ({ page }) => {
   await importDocument(page, { id: "page-root", tag: "page", children: [{ id: "video-empty", tag: "iframe", title: "Embedded video", controls: true, aspectRatio: { mode: "ratio", width: 16, height: 9 } }] }, "video-empty");
   await canvasNode(page, "video-empty").click({ position: { x: 10, y: 10 } });
   await commitUrl(page, `https://youtu.be/${YT}?t=90`);
@@ -249,11 +250,8 @@ test("save and reopen keep the identity and every setting; Preview still shows o
   await expect(inspector(page).getByRole("switch", { name: "Muted" })).toHaveAttribute("aria-checked", "true");
   await expect(inspector(page).getByRole("switch", { name: "Privacy mode" })).toHaveAttribute("aria-checked", "false");
   await expect(inspector(page).getByLabel("Start at", { exact: true })).toHaveValue("1:30");
-
-  await page.getByRole("button", { name: "Enter Preview" }).click();
-  await expect(placeholder(page, "video-empty")).toContainText("The player isn't available in Preview yet");
+  // Preview playback, lifecycle and export are e2e/video-embed-playback.spec.ts (BC-08.3).
   await expect(page.locator(`${SURFACE} iframe`)).toHaveCount(0);
-  await page.getByRole("button", { name: "Exit Preview" }).click();
 });
 
 test("generic Embed is unchanged: Source URL field, sandboxed iframe, never a Video Embed", async ({ page }) => {

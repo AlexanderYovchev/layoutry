@@ -1,0 +1,826 @@
+LAYOUTRY — BC-08.3: MULTI-PROVIDER VIDEO PLAYBACK, PREVIEW/EXPORT
+INTEGRATION & MEDIA LIFECYCLE
+==================================================================
+Date: 2026-11-12
+Base commit: f09ec29 (BC-08.2). Nothing was committed or pushed.
+
+Unchanged:
+- the iframe sandbox tokens;
+- the Electron permission handlers, CSP and navigation policy;
+- the project format (still 2);
+- the document schema.
+
+Only providers implemented in BC-08.2 were touched.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Video Embeds now play in Preview and on exported pages, using one shared
+player configuration (src/lib/videoEmbed/videoEmbedPlayerConfig.ts).
+
+Design still shows the static placeholder and makes no provider request.
+That is tested in 3 browsers, in Electron, and under stress.
+
+Lifecycle:
+- A player is mounted only while it is shown.
+- It is removed, and its document with it, when:
+  - Preview exits;
+  - its element or ANY ancestor is hidden by an interaction;
+  - an ancestor or the element itself has Display none / Visibility
+    hidden.
+- Showing it again creates a fresh player.
+- Exported pages do the same through the export runtime.
+
+Behaviour rules:
+- Muted-only autoplay is enforced for every provider.
+- Reduced motion suppresses autoplay in Preview and on exported pages.
+- Browser fullscreen is delegated with allow="fullscreen", to provider
+  players only. Generic Embeds and the desktop app get none.
+
+Real players were checked against live providers (an opt-in suite, run
+once in Chromium, Firefox, WebKit and Microsoft Edge):
+- YouTube: VERIFIED. Plays, muted autoplay works, mute=1 and nocookie
+  confirmed, fullscreen available; in Preview and on exported pages.
+- Wistia: VERIFIED, the same.
+- Vimeo: BLOCKED (decision needed). Its player shows "Unable to play
+  video. Please try again in a supported browser." unless the frame is
+  also given the encrypted-media permission. This happens with or
+  without Layoutry's sandbox; adding only allow="encrypted-media"
+  restores Vimeo's normal player.
+  That permission is outside the approved policy, so Vimeo players are
+  NOT loaded. Preview, export and the Inspector say why. Section 35 has
+  the decision.
+- Loom: UNVERIFIED. No public test video was available. The player is
+  loaded under the same policy, and the Inspector says playback hasn't
+  been confirmed.
+
+Bugs found and fixed while testing:
+- the Inspector lint error;
+- several test-harness issues (section 28).
+
+No product regressions.
+
+Pre-existing issue recorded, not changed: WebKit leaves EVERY
+aspect-ratio grid item (Image, Video, Embed, Video Embed) at a stale
+height after a live window resize.
+
+Validation:
+- Vitest: 5950 passed, 1 skipped.
+- Chromium full suite: 279 passed, 2 skipped (the opt-in live suite).
+- Firefox and WebKit targeted specs: 100/100.
+- Electron full suite: 82 passed, 2 skipped.
+- Typecheck, ESLint, production build and desktop build: all clean.
+
+QA recommendation: APPROVE BC-08.3, with the Vimeo decision recorded
+(section 35).
+
+
+2. IMPLEMENTED PROVIDERS
+------------------------
+- Parsing and Inspector (BC-08.2): YouTube, Vimeo, Loom, Wistia.
+- Playback (BC-08.3): YouTube and Wistia (verified); Loom (loaded,
+  unverified); Vimeo (blocked).
+- Dailymotion and Twitch: still recognized and refused with their
+  blocker messages. Not advertised.
+
+
+3. ACTUAL PLAYBACK VERIFICATION STATUS PER PROVIDER
+---------------------------------------------------
+Live run: e2e/live/video-embed-live.spec.ts with LAYOUTRY_LIVE_PROVIDERS=1.
+- Players were loaded under Layoutry's exact attributes:
+  - sandbox="allow-forms allow-popups allow-scripts allow-same-origin";
+  - allow="fullscreen";
+  - referrerpolicy="strict-origin-when-cross-origin";
+  - loading="lazy".
+- Each was observed 6 s after its <video> appeared.
+- Playwright reaches into the provider frame (frame.evaluate) to read the
+  <video> state.
+- Test videos are the providers' own public demo/documentation videos:
+  YouTube M7lc1UVf-VE (YouTube Developers), Vimeo 76979871, Wistia
+  26sk4lmiix.
+
+  Provider  Engine         Preview                   Exported page (http://127.0.0.1)
+  --------  -------------  ------------------------  --------------------------------
+  YouTube   Chromium       loaded, muted, paused at  muted, PLAYING (6.0 s)
+                           0:00 at 6 s (see note)
+            Edge (headed)  muted, PLAYING (5.6 s)    muted, PLAYING (6.1 s)
+            Firefox        muted, PLAYING (4.4 s)    muted, PLAYING (5.5 s)
+            WebKit         muted, PLAYING (2.3 s)    muted, PLAYING (4.6 s)
+  Wistia    Chromium       muted, PLAYING (11.3 s)   muted, PLAYING (18.4 s)
+            Edge           muted, PLAYING (17.7 s)   muted, PLAYING (18.2 s)
+            Firefox        muted, PLAYING (16.1 s)   muted, PLAYING (17.6 s)
+            WebKit         muted, PLAYING (12.4 s)   muted, PLAYING (16.7 s)
+  Vimeo     all            "Unable to play video. Please try again in a supported
+                           browser." (Chromium, Edge headed and headless);
+                           Firefox/WebKit: player shown, time stays 0:00
+  Loom      —              not run (no public test video)
+
+Fullscreen: document.fullscreenEnabled was true inside every live
+provider frame, in every engine.
+
+Note on YouTube in Chromium Preview: a single slow start. The same
+video autoplayed in Chromium on a plain page (11.6 s) and in Edge
+Preview (5.6 s).
+
+Vimeo investigation, in headed Edge (it has H.264), four embeddings of
+the same autoplay URL:
+
+  Embedding                                                      Result
+  -------------------------------------------------------------  -----------------
+  Vimeo's own official embed code (no sandbox; allow autoplay,    normal player UI
+    fullscreen, picture-in-picture, clipboard-write,
+    encrypted-media, web-share)
+  Layoutry's (sandbox + allow="fullscreen")                       "Unable to play"
+  Layoutry's sandbox + allow="fullscreen; encrypted-media"        normal player UI
+  No sandbox + allow="fullscreen" only                            "Unable to play"
+
+Conclusion: the sandbox is not the cause; the missing Permissions-Policy
+feature `encrypted-media` is.
+- Under automation, time stayed 0:00 even for Vimeo's official embed
+  within 12 s, so full Vimeo playback could not be confirmed here at all.
+- An earlier probe also showed Vimeo identical with autoplay
+  delegation, and fully unsandboxed.
+- Probes were deleted.
+
+
+4. SHARED PLAYER CONFIGURATION ARCHITECTURE
+-------------------------------------------
+src/lib/videoEmbed/videoEmbedPlayerConfig.ts:
+  resolveVideoEmbedPlayerConfig(input, { hostOrigin, reducedMotion, fullscreenAllowed })
+    -> { provider, src, stillSrc, autoplayRequested, title, sandbox,
+         allow, referrerPolicy, loading } | undefined
+
+It runs these steps:
+1. Re-parses the stored src with the BC-08.2 parser
+   (readVideoEmbedSource). A raw persisted URL is never trusted.
+2. Returns undefined for:
+   - an invalid or unsupported source;
+   - a deferred provider;
+   - a blocked provider (getVideoEmbedPlaybackBlocker).
+3. Rebuilds the player URL from the validated identity
+   (buildVideoEmbedPlayerUrl, BC-08.2), with:
+     autoplay = authored autoplay AND muted AND the provider supports it
+                AND NOT reduced motion
+   stillSrc is the same player without autoplay.
+4. Requires https on one of the provider's own embed hosts, with no port
+   or credentials, for both URLs.
+5. sandbox = resolveIframeSourcePolicy(src, hostOrigin): the unchanged
+   BC-02.3 policy.
+6. allow = "fullscreen" only if fullscreenAllowed and the provider is
+   fullscreen-capable.
+7. title = the authored title, else the provider's default.
+
+Preview calls it with:
+  hostOrigin = window origin
+  reducedMotion = matchMedia
+  fullscreenAllowed = !desktop app
+Export calls it with:
+  hostOrigin = EXPORTED_PAGE_ORIGIN
+  reducedMotion = false (decided per viewer by the runtime)
+  fullscreenAllowed = true
+Nothing else builds a player URL.
+
+Immutability: these are pure functions. Preview and export write nothing
+(unit-tested: same document object, same history; browser-tested: Undo
+stays unavailable, no "Unsaved changes").
+
+
+5. PREVIEW RENDERING
+--------------------
+New component: src/features/canvas/components/document/elements/VideoEmbedFrame.tsx,
+rendered by IframeElement for Video Embeds only.
+
+Design:
+- VideoEmbedPlaceholder, as in BC-08.2. The text is now "Plays in
+  Preview. No video is loaded while you design".
+
+Preview:
+- An <iframe> is rendered when shown, i.e. when:
+  - not RuntimeHiddenContext (the element or an ancestor hidden by an
+    interaction, BC-02.5.1);
+  - not isNodeAuthoredHidden (Display none / Visibility hidden on the
+    element or an ancestor);
+  - the host origin is known.
+- Attributes: data-video-embed-player, src, title, sandbox, allow,
+  referrerpolicy, loading, id, class.
+- It is keyed on src + sandbox + allow, so a change always gets a fresh
+  frame.
+- Otherwise the placeholder is shown, or the blocker text for Vimeo.
+
+Supporting hooks:
+- canvas/hooks/usePrefersReducedMotion.ts
+- canvas/hooks/useIsDesktopShell.ts (window.layoutryDesktop from the
+  preload)
+Both prerender to the strict value (reduce / desktop) until hydrated.
+
+The Design MediaInteractionShield is unchanged; it renders nothing in
+Preview.
+
+
+6. EXPORT RENDERING
+-------------------
+buildExportDocument, Video Embed branch:
+- valid and playable:
+    <div class="…frame…">
+      <iframe sandbox="allow-forms allow-popups allow-scripts allow-same-origin"
+              src="<still URL>" title="…" allow="fullscreen"
+              referrerpolicy="strict-origin-when-cross-origin" loading="lazy"
+              data-ly-video-src="<authored player URL>"></iframe>
+    </div>
+  Both URLs also pass checkExportUrl(…, "frame").
+- Vimeo (blocked): the empty frame, plus warning video-embed-blocked
+  ("Vimeo videos can't play yet: … Its box is empty in the exported
+  page.").
+- No link or an invalid link: the empty frame, plus warning
+  video-embed-invalid.
+- Any player: one info per page, video-embed-needs-website ("Video
+  players load from YouTube, Vimeo, Loom or Wistia: they need an internet
+  connection, and some play only when the page is opened from a website
+  (http or https), not as a local file.").
+- Unmuted autoplay: warning unmuted-autoplay, the same as for <video>.
+
+The runtime (exportInteractionRuntime.ts) is included whenever a player
+is present (needsInteractionRuntime(behaviors, root)). Its rules:
+- At load, a hidden or unrendered player is removed. A shown player is
+  kept if its markup URL is already the right one; otherwise it is
+  replaced by a fresh frame.
+- Hiding (setVisible) removes every player not shown, using:
+    isShown = not inside [hidden] or a closed dialog, and
+              getClientRects().length > 0
+- Showing creates a fresh clone of the original element:
+  - from data-ly-video-src (autoplay as authored) unless the viewer
+    prefers reduced motion, in which case the still src is kept.
+  - New elements, not navigations, so no history entries.
+- Without JavaScript the page shows the still player (no autoplay): the
+  strict fallback.
+
+The engine does not depend on the editor runtime.
+
+
+7. CANVAS PRIVACY
+-----------------
+- Design renders no iframe, image, script or metadata for a Video Embed.
+- Zero provider requests in Design, tested in:
+  - Chromium, Firefox and WebKit, in video-embed.spec.ts (every test) and
+    video-embed-playback.spec.ts;
+  - Electron (desktop spec: zero network requests before Preview);
+  - stress (Design 0 of 216).
+- The Export dialog makes no provider request either (it shows code
+  only).
+- The generic Embed still loads its page live in Design, as before
+  (BC-02.3, unchanged).
+
+
+8. SANDBOX AND PERMISSIONS
+--------------------------
+- Sandbox: identical to BC-02.3, from the same function.
+  - allow-same-origin only because provider hosts are cross-origin.
+  - None of the forbidden tokens appear (unit-tested over every
+    provider).
+- Permissions Policy: allow="fullscreen" only, on Video Embed players
+  only, never in the desktop app.
+  - No autoplay, encrypted-media, picture-in-picture, clipboard or other
+    delegation.
+  - Generic Embeds have no allow attribute (unit and browser tests).
+- Referrer: an explicit strict-origin-when-cross-origin, which sends the
+  page origin only (the browser default).
+- No sandbox change was needed by YouTube or Wistia (live).
+- Vimeo needs a Permissions-Policy addition (encrypted-media), not a
+  sandbox change. It was NOT made (section 35).
+
+
+9. AUTOPLAY ENFORCEMENT
+-----------------------
+The required matrix is unit-tested for every playable provider, plus
+the browser and export URLs:
+
+  Autoplay  Muted  Requested?        Provider URL
+  --------  -----  ----------------  ---------------------------------------
+  off       off    no                no autoplay param (Vimeo/Wistia: explicit off)
+  off       on     no                mute param only
+  on        off    no, never muted   no autoplay param; warning in export
+  on        on     yes, if allowed   autoplay=1 / autoPlay=true + mute
+
+- "If allowed" means the provider supports it, it is not blocked, and
+  the viewer has not asked for reduced motion.
+- No allow="autoplay" delegation. Live, muted autoplay started without it
+  for YouTube and Wistia in every engine.
+- The Inspector says: "Starts by itself only when Muted is also on, and
+  never for visitors who ask for reduced motion. Browsers and the
+  provider can still block it."
+- Muted is never switched on for the user (BC-08.2 tests still pass).
+
+
+10. PROVIDER-SPECIFIC SETTINGS
+------------------------------
+The BC-08.2 matrix is unchanged, except:
+- YouTube muted and privacyMode are now "verified": confirmed live, but
+  not on YouTube's parameter page. The Inspector drops its "not yet
+  confirmed" caveat.
+- New playback status per provider: YouTube and Wistia verified, Loom
+  unverified (with an Inspector note), Vimeo blocked (with a role=status
+  message in the Inspector).
+
+URL parameters per provider, as received by the fake players (browser
+tests):
+- YouTube: autoplay=1&mute=1&loop=1&playlist=ID, start, controls=0.
+- Wistia: doNotTrack=true, autoPlay=false|true, muted=true,
+  endVideoBehavior=loop, time.
+- Loom: autoplay=1&muted=1, t=Ns.
+
+
+11. VISIBILITY LIFECYCLE
+------------------------
+Each of these is browser-tested in 3 engines, in Preview and on the
+exported page:
+- Hidden by Toggle on an ANCESTOR: the player is removed; its frame
+  document is detached.
+- Hidden at start (initialPreviewVisibility hidden): no player and no
+  request until Show.
+- Show, then Hide: mounted, then removed.
+- Authored display:none ancestor: never mounted, never requested.
+- Shown again: a fresh player, i.e. a new request starting at its
+  configured start time. No position is kept.
+- Repeated changes: 4 rounds (browser) and 30 cycles (stress). The
+  player count and frame count always return to the expected values.
+
+Interaction integrity:
+- Duplicated or copied embeds are independent nodes. Each mounts its own
+  player (BC-08.2 duplicate/paste tests plus the stress spec's six
+  embeds).
+- A deleted interaction target is BC-04's dangling-target handling,
+  unchanged.
+- Save/reopen keeps every setting (BC-08.2 tests, still green).
+
+
+12. PREVIEW EXIT CLEANUP
+------------------------
+- Exit Preview unmounts every player. No provider frame remains, so no
+  sound can continue. Asserted in 3 engines and Electron.
+- Repeated sessions: 3 (browser) and 20 (stress). They start clean every
+  time: 6 players, 0 after exit, exactly 6 requests per session.
+- Project switch or editor unmount: editorMode resets, so the frames
+  unmount. The same mechanism is covered by the BC-02 media tests.
+- No asynchronous callbacks exist to go stale (no SDK, no message
+  listeners).
+
+
+13. HIDDEN ANCESTOR BEHAVIOR
+----------------------------
+- Preview: RuntimeHiddenContext is ancestor-aware (DocumentNodeRenderer
+  ORs it down the tree), and isNodeAuthoredHidden walks the document
+  path for Display / Visibility.
+- Export: isShown checks closest([hidden], closed dialog) and
+  getClientRects, so a display:none ancestor counts as hidden.
+- Both are unit-tested (VideoEmbedFrame and isNodeAuthoredHidden in
+  jsdom; the export runtime in jsdom with layout stubs) and
+  browser-tested.
+
+
+14. REDUCED-MOTION BEHAVIOR
+---------------------------
+- Policy: no automatic provider playback under prefers-reduced-motion:
+  reduce. Manual playback stays available: the same player, autoplay off.
+- Preview: from matchMedia.
+- Export: per viewer, in the runtime.
+- Without JavaScript: never autoplays.
+- Browser-tested in 3 engines (Preview and export) with Playwright's
+  reducedMotion emulation.
+- Native <video> is unchanged; BC-02 has no reduced-motion autoplay rule
+  for it. This is a stricter, embed-only rule, as BC-08.1 recommended.
+  The product owner may want native video to match.
+- Not claimed: that a provider's player itself respects reduced motion.
+
+
+15. BROWSER FULLSCREEN
+----------------------
+- allow="fullscreen" only. allowfullscreen is not needed (BC-08.1 probe;
+  confirmed again live).
+- Browser test, 3 engines, using the Wistia fake player:
+  - document.fullscreenEnabled is true;
+  - a click on the player's button enters fullscreen;
+  - exitFullscreen restores the identical layout relative to the page
+    root;
+  - nothing goes fullscreen automatically.
+- A generic Embed's frame reports fullscreenEnabled false.
+- Live: fullscreenEnabled was true in every real provider frame.
+- Fullscreen keyboard operation inside a provider player is the
+  provider's own and was not tested; Escape exiting fullscreen is browser
+  behavior.
+
+
+16. ELECTRON LIMITATIONS
+------------------------
+Unchanged: desktop/ is untouched (permissions, CSP, navigation, preload,
+fullscreen).
+
+Desktop Preview loads the player:
+- with the same sandbox;
+- WITHOUT allow= (useIsDesktopShell);
+- so provider fullscreen is unavailable there rather than hanging
+  (BC-08.1 F2).
+
+Electron test (e2e/desktop/video-embed.spec.ts):
+- Design makes no network request.
+- Preview mounts the YouTube player:
+  - its src is muted autoplay;
+  - its sandbox is the BC-02.3 policy;
+  - there is no allow and no allowfullscreen;
+  - the harness cancels its single request (the suite is offline).
+- Exit Preview removes it.
+- There is one window, and it is not fullscreen.
+
+Expected for BC-08.4, not verified: YouTube may show its player error,
+because the desktop app sends no Referer (BC-08.1 F3).
+
+
+17. RESPONSIVE BEHAVIOR
+-----------------------
+Browser test, 3 engines. In Flow, Flex, Grid and Free containers, at
+editor widths 1600 and 1100:
+- the Preview player's box equals the Design placeholder's box;
+- the player fills it exactly (gaps under 1.5 px);
+- the Flow box is 16:9.
+Exported page at 390 px (phone) and 1280 px:
+- every player is 16:9 and fills its frame;
+- no horizontal page overflow.
+The editor itself has a minimum window width, so phone width is tested
+on the exported page.
+
+The fullscreen return to normal size is tested (section 15).
+
+PRE-EXISTING (not BC-08, not changed): after a LIVE window resize,
+headless WebKit leaves every aspect-ratio grid item at a stale height.
+- Probe: Image, Video, Embed and Video Embed all measured 169x165
+  instead of 169x95; Chromium and Firefox give 169x95.
+- A fresh load is correct in every engine.
+- The responsive test therefore loads each width fresh. The issue is
+  recorded in section 35.
+
+
+18. EXPORT FORMAT COMPATIBILITY
+-------------------------------
+- Single HTML file: the runtime is embedded.
+- Separate files: script.js is listed, and the iframe markup is
+  identical (unit and browser tests).
+- Browser ZIP and desktop folder export package the same files. BC-07.3
+  packaging is untouched; export-image-assets specs pass in Chromium and
+  Electron.
+- No new export format.
+
+
+19. LOCAL-FILE / REFERER LIMITATIONS
+------------------------------------
+- Hosted page (loopback http): the players receive Referer = the page
+  origin (browser test, 3 engines, fake player).
+- Local dev server (the editor): Referer = http://localhost:3000/.
+- Exported page opened as file://: the player request carries NO Referer
+  (browser test, 3 engines). YouTube's terms require one; Layoutry warns
+  and does not spoof one.
+- Electron Preview: no Referer (BC-08.1). Addressed in BC-08.4.
+- Offline: provider videos need the internet. The export info and the
+  Inspector say so ("It plays from <provider>'s site, so it needs an
+  internet connection."). Nothing claims offline playback.
+
+
+20. ERROR HANDLING
+------------------
+- Empty, invalid or unsupported link: no iframe anywhere. Preview shows
+  the placeholder; export writes the empty frame and a warning.
+- Hostile stored values (evil hosts, javascript:, data:, user-info,
+  ports, Twitch, Dailymotion): no player in Preview (unit-tested) or
+  export (unit-tested).
+- Provider-side failures (blocked embedding, private or deleted video,
+  network down, Error 153): shown by the provider inside its own frame.
+  Cross-origin, Layoutry cannot detect them and does not pretend to.
+  There is no Layoutry loading state, so none can hang.
+- Vimeo: blocked up front, with an explanation everywhere.
+
+
+21. ACCESSIBILITY
+-----------------
+- Every player has a title (authored, else the provider's default).
+- In Preview a player is reachable with Tab (browser test, 3 engines).
+- Hidden players are removed, not just hidden, so there is no
+  inaccessible hidden iframe.
+- Inspector messages:
+  - autoplay and reduced motion explained;
+  - fullscreen scope stated;
+  - Vimeo blocker announced (role=status);
+  - Loom unverified note.
+- Not claimed: the accessibility of providers' internal controls.
+- Known limit (BC-08.1): while focus is inside a provider frame, Escape
+  doesn't reach the editor.
+
+
+22. PERFORMANCE AND MEMORY
+--------------------------
+e2e/video-embed-stress.spec.ts (Chromium, fake players): six Video
+Embeds, some nested in a toggled container.
+- 20 Preview sessions: median 125 ms (max 155) from Enter Preview to 6
+  mounted players; 6 players then 0 each time; exactly 120 requests.
+- 30 hide/show cycles: exactly 3 re-mounts each (90) plus 6 at entry.
+- Provider frames after exit: 0. Window listener net change: 1 (bound
+  2).
+- Heap after GC: 17.5 MB, then 18.5 (after sessions), then 18.7 MB
+  (after cycles).
+- No global SDK is loaded. The export runtime is the one existing
+  script.
+- loading="lazy" keeps off-screen players unloaded. Firefox and WebKit
+  enforce it strictly; the exported-page tests use a tall viewport for
+  that reason.
+
+
+23. DOCUMENT IMMUTABILITY
+-------------------------
+- Unit: Preview leaves the same document object and history.
+- Unit: exportHtmlCss leaves the document JSON identical.
+- Browser: after a full Preview session with interactions and exit,
+  Undo stays unavailable and there are no unsaved changes.
+- Runtime configuration (reduced motion, desktop, hidden state) is never
+  written anywhere.
+
+
+24. SAVE/REOPEN
+---------------
+- No new fields.
+- Playback derives from the stored src and fields at render time,
+  including fullscreen eligibility, reduced motion and blocking.
+- The BC-08.2 save/reopen tests (unit, browser, Electron) all pass
+  unchanged.
+- The project format is 2.
+
+
+25. SECURITY REVIEW
+-------------------
+- Valid, spoofed, unsafe, encoded and unknown sources: the parser tests
+  (BC-08.2) plus the new tests that re-validate at render and export
+  (resolveVideoEmbedPlayerConfig refusal table).
+- Unsupported query parameters never pass through; URLs are rebuilt.
+- Sandbox parity: unit (every provider, both host origins) and browser
+  (Preview and export).
+- No top-level navigation and no editor-origin access: the existing
+  embed-safety specs pass, 29 per engine × 3 plus Electron. The sandbox
+  is the same function.
+- Popups: allow-popups without escape, unchanged.
+- Fullscreen scope: provider players only (unit and browser). There is
+  no fullscreen in Electron.
+- Electron permissions are unchanged (no desktop/ diff; security.spec
+  passes).
+- No provider iframe in Design (sections 5 and 7).
+- New risk surface: allow="fullscreen" on provider players, approved
+  decision 9. It is low risk: browsers show their exit notice, and only
+  exact provider hosts get it.
+
+
+26. SOURCE FILES MODIFIED
+-------------------------
+New:
+  src/lib/videoEmbed/videoEmbedPlayerConfig.ts
+  src/features/canvas/components/document/elements/VideoEmbedFrame.tsx
+  src/features/canvas/hooks/usePrefersReducedMotion.ts
+  src/features/canvas/hooks/useIsDesktopShell.ts
+  src/features/editor/utils/isNodeAuthoredHidden.ts
+Modified:
+  src/lib/videoEmbed/videoEmbedProviders.ts
+      playback status per provider, "verified" status,
+      getVideoEmbedPlaybackBlocker; YouTube mute/nocookie verified
+  src/features/canvas/components/document/elements/IframeElement.tsx
+      renders VideoEmbedFrame
+  src/features/canvas/components/document/elements/VideoEmbedPlaceholder.tsx
+      notes, blocker text
+  src/features/canvas/utils/videoEmbedSummary.ts
+      blocker
+  src/features/export/utils/buildExportDocument.ts
+      real player markup, blocked/invalid/info diagnostics
+  src/features/export/utils/exportInteractionRuntime.ts
+      player lifecycle and reduced motion; hasVideoEmbedPlayers;
+      needsInteractionRuntime(root)
+  src/features/export/utils/exportHtmlCss.ts
+      includes the runtime for players
+  src/features/export/types/exportDiagnostic.ts
+      video-embed-invalid, video-embed-blocked, video-embed-needs-website
+      (video-embed-not-exported removed)
+  src/features/inspector/components/InspectorVideoEmbedSection.tsx
+      playback blocker/unverified notes, autoplay/reduced-motion,
+      fullscreen and internet notes
+  docs/architecture/export-engine.md
+      Video Embed export documented
+Not modified: desktop/, the schema, src/lib/iframeSandbox.ts, generic
+Embed code paths.
+
+
+27. TESTS ADDED
+---------------
+Unit:
+  src/lib/videoEmbed/videoEmbedPlayerConfig.test.ts
+      providers, sandbox and forbidden tokens, autoplay matrix, reduced
+      motion, fullscreen scope, title, refusal table, Vimeo blocked,
+      determinism
+  src/features/editor/utils/isNodeAuthoredHidden.test.ts
+  src/features/export/utils/exportInteractionRuntime.videoEmbed.test.ts
+      exported runtime in jsdom: toggle, ancestor, hidden at load,
+      display:none, reduced motion, attribute preservation
+  src/features/export/utils/exportHtmlCss.videoEmbed.test.ts
+      REWRITTEN for real markup: both modes, runtime inclusion, unmuted
+      autoplay, one info, invalid, Vimeo blocked, generic Embed
+      unchanged, immutability
+  src/features/canvas/components/document/elements/IframeElement.videoEmbed.test.tsx
+      +10 Preview tests: player attributes, unmuted, exit unmount,
+      hide/show fresh, display:none ancestor, reduced motion, desktop no
+      allow, invalid source, immutability, generic unchanged
+Updated to the new behavior (no assertion weakened):
+  - buildVideoEmbedUrl.test (YouTube verified);
+  - buildExportDocument.test (catalog: video-embed-invalid for the
+    link-less card);
+  - InspectorVideoEmbedSection.test (new note texts; Vimeo blocker;
+    Loom note);
+  - e2e/video-embed.spec.ts (the BC-08.2 "Preview shows placeholder"
+    step moved to the playback spec);
+  - e2e/desktop/video-embed.spec.ts (Preview now mounts a player with no
+    allow).
+Browser:
+  e2e/video-embed-playback.spec.ts
+      11 tests: Preview lifecycle, fullscreen, keyboard, responsive,
+      reduced motion, export standalone/separate, phone width, file://
+      Referer, exported reduced motion, Export dialog
+  e2e/video-embed-stress.spec.ts
+      Chromium only
+  e2e/live/video-embed-live.spec.ts
+      OPT-IN live providers; skipped unless LAYOUTRY_LIVE_PROVIDERS=1
+
+
+28. EXACT TEST COMMANDS AND RESULTS
+-----------------------------------
+Final code (the last product change was a lint-only JSX text fix, after
+the desktop build):
+
+  npm run typecheck                                    clean
+  npm run lint                                         clean (after the fix below)
+  npx vitest run                                       391 files, 5950 passed, 1 skipped
+  npx playwright test --project=chromium               279 passed, 2 skipped (4.9 min)
+  npx playwright test -c zz-xbrowser.config.ts e2e/video-embed-playback.spec.ts
+      e2e/video-embed.spec.ts e2e/embed-safety.spec.ts
+                                                       147 passed + 3 fullscreen re-runs passed
+  npx playwright test e2e/video-embed-stress.spec.ts   1 passed (figures in section 22)
+  npm run desktop:build                                exit 0
+  npx playwright test -c playwright.desktop.config.ts  82 passed, 2 skipped, 0 failed
+  npm run build                                        exit 0
+  LAYOUTRY_LIVE_PROVIDERS=1 … e2e/live/video-embed-live.spec.ts
+                                                       3 engines + Edge: results in section 3
+
+The 2 Chromium skips are the opt-in live tests. zz-xbrowser.config.ts
+and zz-edge.config.ts were temporary configs (the repository config plus
+Firefox/WebKit, or Edge) and were deleted.
+
+Found and fixed during the work:
+- ESLint: an unescaped apostrophe in a new Inspector note (fixed;
+  Inspector tests re-run 13/13).
+- Test-harness issues (not product bugs):
+  - lazy players below the fold in Firefox/WebKit (tall viewport, and a
+    distinct URL for the never-loaded player);
+  - Firefox's Playwright doesn't report a frame's URL under a file://
+    page (the request record is used);
+  - headless WebKit can starve the pointer "stable" wait (Exit Preview
+    by keyboard);
+  - "Project Already in Library" on re-import (a fresh context per
+    width);
+  - canvas scroll during fullscreen (geometry relative to the page
+    root);
+  - the WebKit live-resize issue (section 17).
+
+
+29. CHROMIUM RESULTS
+--------------------
+- Full suite: 279 passed, 2 skipped (live, opt-in), 0 failed.
+- Includes:
+  - video-embed (10), video-embed-playback (11), embed-safety (29);
+  - BC-07 export-image-assets;
+  - all BC-02 specs.
+- Stress: passed.
+
+
+30. FIREFOX RESULTS
+-------------------
+- video-embed-playback 11/11, video-embed 10/10, embed-safety 29/29.
+- Pre-existing non-BC-08 Firefox failures (BC-07.4 baseline,
+  export-workflow / preview-export-parity) were not re-run; nothing they
+  cover changed.
+
+
+31. WEBKIT RESULTS
+------------------
+- video-embed-playback 11/11, video-embed 10/10, embed-safety 29/29.
+- Windows WebKit's no-media limitation does not affect these, since fake
+  players use no media. The live run shows real YouTube and Wistia
+  playing in Playwright's WebKit.
+
+
+32. ELECTRON RESULTS
+--------------------
+- Full suite after desktop:build: 82 passed, 2 skipped, 0 failed.
+- Includes:
+  - video-embed (2): Design zero requests; Preview player without
+    allow; exit; save/reopen;
+  - embed-safety and security (permissions denied, no Node.js in frames,
+    navigation and popups blocked, CSP).
+- The BC-07.4 preview-media flake did not occur in this run.
+
+
+33. BUILD / TYPECHECK / LINT RESULTS
+------------------------------------
+- typecheck: clean.
+- lint: clean.
+- npm run build (web): succeeded.
+- npm run desktop:build: succeeded. It also compiles desktop/ with tsc;
+  desktop/ is unchanged.
+
+
+34. KNOWN LIMITATIONS
+---------------------
+- Vimeo does not play (blocked, pending a decision).
+- Loom playback is unverified (no public test video).
+- Providers need the internet. YouTube (and others) may refuse pages
+  opened as local files (no Referer), and the desktop app (no Referer,
+  BC-08.4).
+- Shown-again players restart (no position is kept), by design.
+- Autoplay can still be blocked by the browser or the provider. Muted
+  autoplay is requested, never guaranteed.
+- No fullscreen in the desktop app (BC-08.4).
+- Escape inside a provider frame doesn't reach the editor.
+- Provider-side errors are shown by the provider and are not detected.
+- Reduced motion suppresses Video Embed autoplay only; native <video> is
+  unchanged (product decision).
+
+
+35. OPEN DEFECTS AND DECISIONS
+------------------------------
+D1  VIMEO PLAYBACK. Decision REQUIRED.
+    Vimeo's player needs allow="encrypted-media" in addition to
+    fullscreen. Without it, it shows "Unable to play video" (proven with
+    and without the sandbox, in headed Edge).
+    Options:
+      (a) grant "fullscreen; encrypted-media" to Vimeo players only.
+          This is a Permissions-Policy feature (Encrypted Media
+          Extensions / DRM); it changes no sandbox token and no
+          navigation rule. Privacy: it lets the frame use the browser's
+          content-decryption module.
+      (b) keep Vimeo blocked (current state).
+      (c) remove Vimeo from the supported providers.
+    Implementing (a) is a one-line registry and config change plus
+    tests.
+D2  GENERIC EMBED LIFECYCLE (BC-08.1 F5, generic part). NOT changed.
+    A generic Embed (any page, including a video page) stays mounted
+    across Preview exit and when hidden: BC-02.3's tested behavior
+    ("repeated Preview sessions keep the same iframe").
+    Media inside a generic Embed can therefore keep playing after
+    Preview exits. Changing it would contradict an approved, tested
+    behavior, so it needs authorization (CLAUDE.md conflict rule).
+    Users who want lifecycle-managed video should use Video Embed.
+D3  PRE-EXISTING WebKit layout. Low; not BC-08.
+    After a live window resize, aspect-ratio grid items (all media)
+    keep a stale height in headless WebKit. A reload fixes it. Real
+    Safari was not verified.
+D4  Reduced-motion autoplay rule for native <video>/<audio>, for parity.
+    Product decision.
+D5  Loom: needs a product-owned public Loom test video to verify
+    playback.
+
+
+36. GIT WORKING-TREE STATUS
+---------------------------
+- Modified (17): the source files in section 26, plus the updated tests
+  and specs in section 27.
+- Untracked:
+  - the 5 new source files;
+  - the 4 new unit test files;
+  - e2e/video-embed-playback.spec.ts, e2e/video-embed-stress.spec.ts,
+    e2e/live/;
+  - this report.
+- Gitignored: changelogs/2026-11-12-provider-playback-preview-export-lifecycle-BC-08.3.txt
+- Deleted temporaries: zz-xbrowser.config.ts, zz-edge.config.ts, and
+  the probe specs (grid, file://, Vimeo).
+- Nothing is staged, committed or pushed.
+
+
+37. QA RECOMMENDATION
+---------------------
+APPROVE BC-08.3. Acceptance criteria:
+- 1–2: real players in Preview and export (YouTube and Wistia verified
+  live; Loom loaded, unverified).
+- 3: no-network Canvas.
+- 4: one shared configuration.
+- 5–6: muted-only autoplay, reduced motion.
+- 7–9: removal on hide, exit and ancestor.
+- 10: browser fullscreen, provider-only.
+- 11: Electron unchanged.
+- 12: 16:9.
+- 13: export formats.
+- 14: generic Embed security.
+- 15: no mutation or history.
+- 16: save/reopen.
+- 17: cross-browser and Electron evidence.
+- 18: no new critical defect.
+Vimeo does not meet criterion 1 under the approved policy and is
+reported as a blocker (D1) rather than weakening security.
+BC-08.4 has not been started.
