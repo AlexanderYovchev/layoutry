@@ -53,6 +53,7 @@ function setup() {
       fileNames: ["index.html"],
     })),
   };
+  const videoEmbeds = { register: vi.fn(), unregister: vi.fn() };
   registerDesktopIpc({
     ipcMain: {
       handle: (channel, handler) => void handlers.set(channel, handler),
@@ -62,6 +63,7 @@ function setup() {
     close,
     recovery,
     exportFiles,
+    videoEmbeds,
   });
   const trusted: DesktopIpcEvent = {
     sender: webContents,
@@ -82,6 +84,7 @@ function setup() {
     close,
     recovery,
     exportFiles,
+    videoEmbeds,
     trusted,
     call,
     webContents,
@@ -90,12 +93,25 @@ function setup() {
 }
 
 describe("desktop IPC surface", () => {
-  it("handles exactly the fourteen allowlisted channels", () => {
+  it("handles exactly the sixteen allowlisted channels", () => {
     const { handlers } = setup();
     expect([...handlers.keys()].sort()).toEqual(
       Object.values(INVOKE_CHANNELS).sort(),
     );
-    expect(handlers.size).toBe(14);
+    expect(handlers.size).toBe(16);
+  });
+
+  it("BC-08.4: routes Video Embed frame registration with the window id as the owner, from the top frame only", async () => {
+    const { call, trusted, videoEmbeds, webContents } = setup();
+    const payload = { token: "ly-video-00112233445566778899aabbccddeeff", provider: "youtube" };
+    await call(INVOKE_CHANNELS.registerVideoEmbedFrame, trusted, payload);
+    expect(videoEmbeds.register).toHaveBeenCalledWith(3, payload);
+    await call(INVOKE_CHANNELS.unregisterVideoEmbedFrame, trusted, { token: payload.token });
+    expect(videoEmbeds.unregister).toHaveBeenCalledWith(3, { token: payload.token });
+    // An authored iframe (subframe) or another origin can never register a frame.
+    for (const senderFrame of [{ url: "app://layoutry/" }, { url: "https://www.youtube-nocookie.com/embed/x" }])
+      await expect(call(INVOKE_CHANNELS.registerVideoEmbedFrame, { sender: webContents, senderFrame }, payload)).rejects.toThrow("caller not allowed");
+    expect(videoEmbeds.register).toHaveBeenCalledTimes(1);
   });
 
   it("routes export calls with the window id as the destination owner, from the top frame only", async () => {
@@ -299,10 +315,19 @@ describe("preload", () => {
         "discardRecovery",
         "chooseExportDestination",
         "writeExportFiles",
+        "registerVideoEmbedFrame",
+        "unregisterVideoEmbedFrame",
         "onCloseRequested",
         "onPendingProjectFile",
       ].sort(),
     );
+
+    // BC-08.4: only {token, provider} / {token} cross; non-strings are refused in the preload.
+    await Reflect.get(api, "registerVideoEmbedFrame")("ly-video-00112233445566778899aabbccddeeff", "vimeo");
+    expect(invoke).toHaveBeenLastCalledWith(INVOKE_CHANNELS.registerVideoEmbedFrame, { token: "ly-video-00112233445566778899aabbccddeeff", provider: "vimeo" });
+    await Reflect.get(api, "unregisterVideoEmbedFrame")("ly-video-00112233445566778899aabbccddeeff");
+    expect(invoke).toHaveBeenLastCalledWith(INVOKE_CHANNELS.unregisterVideoEmbedFrame, { token: "ly-video-00112233445566778899aabbccddeeff" });
+    expect(() => Reflect.get(api, "registerVideoEmbedFrame")({ token: "x" }, "vimeo")).toThrow(TypeError);
 
     const writeRecoverySnapshot = Reflect.get(api, "writeRecoverySnapshot");
     // Only the known fields cross the bridge; anything extra is dropped.

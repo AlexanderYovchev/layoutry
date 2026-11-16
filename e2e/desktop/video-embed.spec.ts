@@ -86,16 +86,19 @@ test("insert, validate and configure a Video Embed: static placeholder, no ifram
   expect(page.frames()).toHaveLength(1);
   expect(await networkRequests(app), "Design made no network request").toEqual([]);
 
-  // BC-08.3 Preview: the player is mounted with the unchanged sandbox and
-  // WITHOUT fullscreen delegation (desktop fullscreen is BC-08.4). The
-  // harness cancels its network request (the suite is offline).
+  // Preview: the player is mounted with the unchanged sandbox, a registered
+  // random frame name and fullscreen delegation (BC-08.4: the main process
+  // grants fullscreen only to this authorized frame, see
+  // video-embed-fullscreen.spec.ts). The harness cancels its network
+  // request (the suite is offline).
   await page.getByRole("button", { name: "Enter Preview" }).click();
   const player = page.locator(`${SURFACE} iframe[data-video-embed-player="youtube"]`);
   await expect(player).toHaveCount(1);
   await expect(player).toHaveAttribute("sandbox", "allow-forms allow-popups allow-scripts allow-same-origin");
   await expect(player).toHaveAttribute("src", `https://www.youtube-nocookie.com/embed/${YT}?autoplay=1&mute=1`);
   await expect(player).toHaveAttribute("referrerpolicy", "strict-origin-when-cross-origin");
-  expect(await player.getAttribute("allow")).toBeNull();
+  await expect(player).toHaveAttribute("allow", "fullscreen");
+  await expect(player).toHaveAttribute("name", /^ly-video-[0-9a-f]{32}$/);
   expect(await player.getAttribute("allowfullscreen")).toBeNull();
   await expect.poll(() => networkRequests(app)).toEqual([`https://www.youtube-nocookie.com/embed/${YT}?autoplay=1&mute=1`]);
 
@@ -143,12 +146,13 @@ test("save to a .layoutry file (format 2) and reopen after a restart: identity a
   await expect(layoutry.page.locator(`${SURFACE} iframe`)).toHaveCount(0);
   expect(await networkRequests(layoutry.app)).toEqual([]);
 
-  // BC-08.3.1: the desktop Preview's Vimeo player carries Vimeo's approved
-  // encrypted-media and no fullscreen; the shell's permission handling is
-  // unchanged (BC-08.4), and the offline harness cancels the request.
+  // The desktop Preview's Vimeo player carries Vimeo's approved
+  // encrypted-media (BC-08.3.1) and fullscreen (BC-08.4, granted by the main
+  // process to authorized player frames only); the offline harness cancels
+  // the request.
   await layoutry.page.getByRole("button", { name: "Enter Preview" }).click();
   const player = layoutry.page.locator(`${SURFACE} iframe[data-video-embed-player="vimeo"]`);
-  await expect(player).toHaveAttribute("allow", "encrypted-media");
+  await expect(player).toHaveAttribute("allow", "fullscreen; encrypted-media");
   await expect(player).toHaveAttribute("sandbox", "allow-forms allow-popups allow-scripts allow-same-origin");
   expect(await player.getAttribute("allowfullscreen")).toBeNull();
   await layoutry.page.getByRole("button", { name: "Exit Preview" }).click();

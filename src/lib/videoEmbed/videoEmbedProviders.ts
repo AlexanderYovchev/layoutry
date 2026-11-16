@@ -110,6 +110,7 @@ export const VIDEO_EMBED_PROVIDERS: Readonly<Record<VideoEmbedProviderId, VideoE
     limitations: [
       "The video's owner can limit which websites may embed it.",
       "Unlisted videos need their full link, including the code after the video number.",
+      "In the desktop app's Preview, Vimeo videos can't play: the app doesn't include the protected-media component Vimeo's player requires. They play in browsers and on exported pages.",
     ],
     // BC-08.3 / BC-08.3.1 live runs: without encrypted-media Vimeo's
     // player refuses to play ("Unable to play video. Please try again in a

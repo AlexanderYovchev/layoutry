@@ -1,13 +1,14 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { VideoEmbedPlaceholder } from "@/features/canvas/components/document/elements/VideoEmbedPlaceholder";
+import { useFullscreenElement } from "@/features/canvas/hooks/useFullscreenElement";
 import { useHostOrigin } from "@/features/canvas/hooks/useHostOrigin";
-import { useIsDesktopShell } from "@/features/canvas/hooks/useIsDesktopShell";
 import { usePrefersReducedMotion } from "@/features/canvas/hooks/usePrefersReducedMotion";
 import { usePreviewFrameShown } from "@/features/canvas/hooks/usePreviewFrameShown";
+import { createVideoEmbedFrameToken, getDesktopVideoEmbedFrames } from "@/features/canvas/utils/desktopVideoEmbedFrames";
 import type { EditorElementNode } from "@/features/editor/types/document";
-import { resolveVideoEmbedPlayerConfig } from "@/lib/videoEmbed/videoEmbedPlayerConfig";
+import { resolveVideoEmbedPlayerConfig, type VideoEmbedPlayerConfig } from "@/lib/videoEmbed/videoEmbedPlayerConfig";
 
 interface VideoEmbedFrameProps {
   node: EditorElementNode;
@@ -33,25 +34,96 @@ interface VideoEmbedFrameProps {
  * - No valid source, or before the host origin is known: the placeholder,
  *   never a fallback iframe.
  *
- * The iframe is keyed on its full configuration: a changed URL, sandbox or
- * permission always gets a fresh frame, since sandbox and allow apply only
- * on navigation.
+ * The player is keyed on its full configuration: a changed URL, sandbox or
+ * permission always gets a fresh frame (and, in the desktop app, a fresh
+ * authorization), since sandbox and allow apply only on navigation.
+ *
+ * Fullscreen release (BC-08.4): a player that is the fullscreen element when
+ * it should go away (hidden, ancestor hidden, Preview exit) is kept mounted
+ * for that moment, asked to leave fullscreen, and removed as soon as the
+ * document reports fullscreen ended. Removing a fullscreen iframe abruptly
+ * left Chromium's fullscreen state stale in the desktop app (the window
+ * stayed fullscreen, or the next fullscreen request never completed). While
+ * releasing, the player is inside its hidden (or Design) wrapper.
  */
 export function VideoEmbedFrame({ node, isPreview, innerStyle }: VideoEmbedFrameProps) {
   const previewShown = usePreviewFrameShown(node.id, isPreview);
   const hostOrigin = useHostOrigin();
   const reducedMotion = usePrefersReducedMotion();
-  const isDesktop = useIsDesktopShell();
 
-  const shown = previewShown && hostOrigin !== null;
-  const config = shown ? resolveVideoEmbedPlayerConfig(node, { hostOrigin, reducedMotion, fullscreenAllowed: !isDesktop }) : undefined;
+  const fullscreenElement = useFullscreenElement();
+  const playerIsFullscreen = fullscreenElement instanceof HTMLIFrameElement && fullscreenElement.hasAttribute("data-video-embed-player") && fullscreenElement.parentElement?.getAttribute("data-node-id") === node.id;
+  const releasing = !previewShown && playerIsFullscreen;
+  useEffect(() => {
+    if (releasing) void document.exitFullscreen().catch(() => {});
+  }, [releasing]);
+
+  const shown = (previewShown || releasing) && hostOrigin !== null;
+  // BC-08.4: fullscreen is delegated everywhere; in the desktop app the
+  // main process still grants it only to the authorized player frame.
+  const config = shown ? resolveVideoEmbedPlayerConfig(node, { hostOrigin, reducedMotion, fullscreenAllowed: true }) : undefined;
   if (!config) return <VideoEmbedPlaceholder node={node} isPreview={isPreview} />;
 
+  return <VideoEmbedPlayerFrame key={`${config.src}|${config.sandbox}|${config.allow ?? ""}`} config={config} node={node} innerStyle={innerStyle} />;
+}
+
+interface VideoEmbedPlayerFrameProps {
+  config: VideoEmbedPlayerConfig;
+  node: EditorElementNode;
+  innerStyle: CSSProperties;
+}
+
+/**
+ * One mounted player iframe. In the desktop app (BC-08.4) it gets a fresh
+ * random frame name and is registered with the main process BEFORE it is
+ * given its src — so its very first request is already recognisable as an
+ * authorized player — and unregistered when it unmounts, which is exactly
+ * when the player goes away. A registration that fails leaves the frame
+ * without a source (fail closed). In a browser nothing is registered and
+ * the frame has no name.
+ *
+ * Leaving fullscreen with the player (BC-08.4): if this player is the
+ * fullscreen element when it unmounts (Preview exit, hidden, ancestor
+ * hidden, project change), it leaves fullscreen first, while still in the
+ * document. Relying on the browser to notice the removal left the desktop
+ * window stuck in fullscreen intermittently.
+ */
+function VideoEmbedPlayerFrame({ config, node, innerStyle }: VideoEmbedPlayerFrameProps) {
+  const [desktop] = useState(getDesktopVideoEmbedFrames);
+  const [token] = useState(() => (desktop ? createVideoEmbedFrameToken() : undefined));
+  const [registered, setRegistered] = useState(false);
+  const provider = config.provider;
+
+  useEffect(() => {
+    if (!desktop || !token) return;
+    let active = true;
+    desktop.register(token, provider).then(
+      () => {
+        if (active) setRegistered(true);
+      },
+      () => {},
+    );
+    return () => {
+      active = false;
+      void desktop.unregister(token).catch(() => {});
+    };
+  }, [desktop, token, provider]);
+
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  useLayoutEffect(() => {
+    const frame = frameRef.current;
+    return () => {
+      if (frame && frame.ownerDocument.fullscreenElement === frame) void frame.ownerDocument.exitFullscreen().catch(() => {});
+    };
+  }, []);
+
+  const ready = !desktop || registered;
   return (
     <iframe
-      key={`${config.src}|${config.sandbox}|${config.allow ?? ""}`}
+      ref={frameRef}
       data-video-embed-player={config.provider}
-      src={config.src}
+      name={token}
+      src={ready ? config.src : undefined}
       title={config.title}
       sandbox={config.sandbox}
       allow={config.allow}

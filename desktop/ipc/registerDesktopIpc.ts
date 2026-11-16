@@ -2,6 +2,7 @@ import type { ExportFileService } from "../export/exportFileService";
 import type { ProjectFileService } from "../files/projectFileService";
 import type { CloseCoordinator } from "../main/closeCoordinator";
 import type { RecoveryService } from "../recovery/recoveryService";
+import type { VideoEmbedFrameRegistry } from "../security/videoEmbedFrames";
 import { APP_ORIGIN } from "../protocol/appOrigin";
 import { INVOKE_CHANNELS } from "./channels";
 
@@ -54,12 +55,15 @@ export interface DesktopIpcOptions {
   >;
   /** EXPORT-1.4: native saving of generated code, with its own tokens. */
   exportFiles: Pick<ExportFileService, "chooseDestination" | "write">;
+  /** BC-08.4: Video Embed player frame registrations, per window. */
+  videoEmbeds: Pick<VideoEmbedFrameRegistry, "register" | "unregister">;
 }
 
 /**
- * Registers the whole desktop IPC surface (PROJECT-1.3): fourteen fixed
+ * Registers the whole desktop IPC surface (PROJECT-1.3): sixteen fixed
  * channels (five for recovery since PROJECT-1.4, two for code export since
- * EXPORT-1.4), each validating its sender and payload. Payload errors reject
+ * EXPORT-1.4, two for Video Embed player frames since BC-08.4), each
+ * validating its sender and payload. Payload errors reject
  * the call; nothing reaches the filesystem without a valid capability.
  */
 export function registerDesktopIpc({
@@ -69,6 +73,7 @@ export function registerDesktopIpc({
   close,
   recovery,
   exportFiles,
+  videoEmbeds,
 }: DesktopIpcOptions): void {
   function handle(
     channel: string,
@@ -143,4 +148,10 @@ export function registerDesktopIpc({
   handle(INVOKE_CHANNELS.writeExportFiles, (owner, payload) =>
     exportFiles.write(owner, payload),
   );
+  handle(INVOKE_CHANNELS.registerVideoEmbedFrame, (owner, payload) => {
+    videoEmbeds.register(owner, payload);
+  });
+  handle(INVOKE_CHANNELS.unregisterVideoEmbedFrame, (owner, payload) => {
+    videoEmbeds.unregister(owner, payload);
+  });
 }

@@ -27,6 +27,8 @@ const INVOKE = {
   discardRecovery: "layoutry:recovery:discard",
   chooseExportDestination: "layoutry:export:choose-destination",
   writeExportFiles: "layoutry:export:write",
+  registerVideoEmbedFrame: "layoutry:video-embed:register-frame",
+  unregisterVideoEmbedFrame: "layoutry:video-embed:unregister-frame",
 } as const;
 
 const EVENTS = {
@@ -105,7 +107,7 @@ function subscribe(channel: string, listener: unknown): () => void {
 contextBridge.exposeInMainWorld(
   "layoutryDesktop",
   Object.freeze({
-    apiVersion: 3,
+    apiVersion: 4,
     openProjectFile: () => ipcRenderer.invoke(INVOKE.openProjectFile),
     takePendingProjectFile: () =>
       ipcRenderer.invoke(INVOKE.takePendingProjectFile),
@@ -178,6 +180,18 @@ contextBridge.exposeInMainWorld(
         token: requireString(token, "token"),
         files: copyExportFiles(files),
         overwrite: requireBoolean(overwrite, "overwrite"),
+      }),
+    // BC-08.4: names the editor's own Video Embed player frames for the
+    // main process, which verifies each frame itself before granting it a
+    // Referer or fullscreen (security/videoEmbedFrames.ts).
+    registerVideoEmbedFrame: (token: unknown, provider: unknown) =>
+      ipcRenderer.invoke(INVOKE.registerVideoEmbedFrame, {
+        token: requireString(token, "token"),
+        provider: requireString(provider, "provider"),
+      }),
+    unregisterVideoEmbedFrame: (token: unknown) =>
+      ipcRenderer.invoke(INVOKE.unregisterVideoEmbedFrame, {
+        token: requireString(token, "token"),
       }),
     onCloseRequested: (listener: unknown) =>
       subscribe(EVENTS.closeRequested, listener),

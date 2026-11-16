@@ -14,9 +14,10 @@ import { getVideoEmbedProvider, providerSupports, type VideoEmbedProviderId } fr
  *
  * Attributes, and why:
  *   sandbox         the unchanged BC-02.3 policy (resolveIframeSourcePolicy)
- *   allow           "fullscreen" when the caller allows it (browsers; not
- *                   the desktop app until BC-08.4) and the provider is
- *                   fullscreen-capable, plus the provider's own approved
+ *   allow           "fullscreen" when the caller allows it and the
+ *                   provider is fullscreen-capable (the desktop app's main
+ *                   process still grants it only to an authorized player
+ *                   frame, BC-08.4), plus the provider's own approved
  *                   permissions from the registry — only Vimeo's
  *                   "encrypted-media" (BC-08.3.1, decision A). It is
  *                   derived from the re-validated provider identity,
@@ -52,7 +53,7 @@ export interface VideoEmbedPlayerOptions {
   hostOrigin: string;
   /** prefers-reduced-motion: reduce — autoplay is never requested. */
   reducedMotion: boolean;
-  /** Whether this environment may delegate fullscreen (false in the desktop app until BC-08.4). */
+  /** Whether this environment may delegate fullscreen. */
   fullscreenAllowed: boolean;
 }
 

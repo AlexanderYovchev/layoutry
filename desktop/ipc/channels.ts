@@ -20,6 +20,9 @@ export const INVOKE_CHANNELS = {
   discardRecovery: "layoutry:recovery:discard",
   chooseExportDestination: "layoutry:export:choose-destination",
   writeExportFiles: "layoutry:export:write",
+  // BC-08.4: Video Embed player frames (see security/videoEmbedFrames.ts).
+  registerVideoEmbedFrame: "layoutry:video-embed:register-frame",
+  unregisterVideoEmbedFrame: "layoutry:video-embed:unregister-frame",
 } as const;
 
 /** Main → renderer notifications. They carry no data. */

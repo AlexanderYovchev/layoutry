@@ -193,11 +193,13 @@ test.describe("Preview", () => {
     expect(youtube.isDetached()).toBe(true);
     expect(genericInBox?.isDetached()).toBe(true);
     // Shown again: fresh frames (new requests), from their initial state.
-    const requestsBefore = served.length;
+    // Counted for the two re-shown frames only: hiding the box moves the page, so a lazy player further down may load meanwhile.
+    const reshown = () => served.filter((entry) => entry.url.startsWith("https://www.youtube-nocookie.com/") || entry.url === "https://widget.example/in-box").length;
+    const requestsBefore = reshown();
     await page.locator(`${SURFACE} [data-node-id="btn-toggle"]`).click();
     await expect(playerFor(page, "ve-yt")).toHaveCount(1);
     await expect(genericFrame(page, "generic-in-box")).toHaveAttribute("src", "https://widget.example/in-box");
-    await expect.poll(() => served.length).toBe(requestsBefore + 2);
+    await expect.poll(reshown).toBe(requestsBefore + 2);
 
     // Hidden at start, shown, hidden again.
     await page.locator(`${SURFACE} [data-node-id="btn-show"]`).click();
@@ -269,7 +271,8 @@ test.describe("Preview", () => {
     const layout = () => playerFor(page, "ve-wistia").evaluate((frame) => {
       const own = frame.getBoundingClientRect();
       const root = frame.closest("[data-node-id=\"page-root\"]")?.getBoundingClientRect() ?? own;
-      return JSON.stringify([own.left - root.left, own.top - root.top, own.width, own.height]);
+      // Rounded to 0.01 px: engines differ by sub-pixel float noise after a fullscreen round trip.
+      return JSON.stringify([own.left - root.left, own.top - root.top, own.width, own.height].map((value) => Math.round(value * 100) / 100));
     });
     const box = await layout();
     await page.frameLocator(`${SURFACE} [data-node-id="ve-wistia"] iframe`).locator("#fs").click();

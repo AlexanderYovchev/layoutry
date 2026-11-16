@@ -27,12 +27,15 @@ import {
 } from "../protocol/registerAppProtocol";
 import { hardenSession } from "../security/hardenSession";
 import { hardenWebContents } from "../security/hardenWebContents";
+import { isFullscreenRequestAuthorized, VideoEmbedFrameRegistry } from "../security/videoEmbedFrames";
+import { installVideoEmbedReferer } from "../security/videoEmbedReferer";
 import {
   createCloseCoordinator,
   type CloseCoordinator,
 } from "./closeCoordinator";
 import { createCloseGuard } from "./closeGuard";
 import { installDesktopShortcuts } from "./desktopShortcuts";
+import { installHtmlFullscreenControl, type HtmlFullscreenControl } from "./htmlFullscreenEscape";
 import { outerMinimumForContent } from "./windowSizing";
 
 /**
@@ -70,6 +73,8 @@ const devToolsEnabled = process.env.LAYOUTRY_DESKTOP_DEVTOOLS === "1";
 const exportRoot = path.join(app.getAppPath(), "out");
 
 let mainWindow: BrowserWindow | null = null;
+// BC-08.4: the main window's element-fullscreen control (Escape, removed players).
+let htmlFullscreen: HtmlFullscreenControl | null = null;
 let closeCoordinator: CloseCoordinator | null = null;
 let recoveryService: RecoveryService | null = null;
 
@@ -78,6 +83,8 @@ const PROJECT_FILE_FILTERS = [
 ];
 
 const fileCapabilities = new FileCapabilityRegistry();
+// BC-08.4: the editor's registered Video Embed player frames, per window.
+const videoEmbedFrames = new VideoEmbedFrameRegistry();
 const projectFiles = createProjectFileService({
   registry: fileCapabilities,
   defaultFolder: () => app.getPath("documents"),
@@ -211,6 +218,8 @@ function createMainWindow(): BrowserWindow {
   window.setMinimumSize(minimum.width, minimum.height);
 
   installDesktopShortcuts(window.webContents, { devToolsEnabled });
+  // BC-08.4: Escape leaves a Video Embed player's fullscreen, as in a browser.
+  htmlFullscreen = installHtmlFullscreenControl(window);
 
   const coordinator = createCloseCoordinator({
     requestPageDecision: () => {
@@ -237,6 +246,7 @@ function createMainWindow(): BrowserWindow {
     coordinator.pageLost();
     fileCapabilities.revokeOwner(ownerId);
     exportFiles.revokeOwner(ownerId);
+    videoEmbedFrames.clearOwner(ownerId);
     // Its recovery snapshots are now orphaned: offered at the next start.
     recoveryService?.endSession(ownerId);
   });
@@ -259,6 +269,13 @@ function createMainWindow(): BrowserWindow {
       if (isMainFrame && !window.isDestroyed()) window.show();
     },
   );
+  // BC-08.4: a window's Video Embed frame registrations never outlive its
+  // document: cleared when the editor reloads, its renderer is lost, or the
+  // window is destroyed.
+  window.webContents.on("did-start-navigation", (details) => {
+    if (details.isMainFrame && !details.isSameDocument) videoEmbedFrames.clearOwner(ownerId);
+  });
+  window.webContents.on("destroyed", () => videoEmbedFrames.clearOwner(ownerId));
   window.loadURL(APP_ENTRY_URL).catch((error: unknown) => {
     console.error("Layoutry failed to load its editor:", error);
   });
@@ -296,7 +313,17 @@ function startLayoutry(): void {
       // Reload, DevTools and zoom accelerators. Text editing shortcuts are
       // handled by Chromium itself and keep working.
       Menu.setApplicationMenu(null);
-      hardenSession(session.defaultSession);
+      const mainContents = () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null);
+      hardenSession(session.defaultSession, {
+        // BC-08.4: fullscreen only for an authorized Video Embed player of the main window.
+        isFullscreenAllowed: (contents, details) => {
+          const allowed = contents === mainContents() && isFullscreenRequestAuthorized(videoEmbedFrames, contents, details);
+          // Remembered so the window never stays fullscreen after that player is removed.
+          if (allowed) htmlFullscreen?.granted(contents.mainFrame.framesInSubtree.filter((frame) => frame.url === details.requestingUrl).map((frame) => frame.name));
+          return allowed;
+        },
+      });
+      installVideoEmbedReferer(session.defaultSession, videoEmbedFrames, mainContents);
       handleAppProtocol(exportRoot);
       // PROJECT-1.4: recovery snapshots in an app-owned folder of the
       // profile, never next to the user's files or in the app folder.
@@ -321,6 +348,14 @@ function startLayoutry(): void {
         },
         recovery,
         exportFiles,
+        videoEmbeds: {
+          register: (owner, payload) => videoEmbedFrames.register(owner, payload),
+          unregister: (owner, payload) => {
+            videoEmbedFrames.unregister(owner, payload);
+            const token: unknown = typeof payload === "object" && payload !== null ? Reflect.get(payload, "token") : undefined;
+            if (typeof token === "string") htmlFullscreen?.playerRemoved(token);
+          },
+        },
       });
       // Files named on Layoutry's own command line open once the editor asks.
       queueProjectFilesFrom(process.argv, process.cwd());

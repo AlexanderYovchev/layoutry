@@ -216,7 +216,7 @@ export function InspectorVideoEmbedSection({ node }: InspectorVideoEmbedSectionP
           ))}
           <Note>{`The video plays in Preview and on exported pages; the canvas shows a placeholder and loads nothing from ${provider.displayName} while you design.`}</Note>
           <Note>{`It plays from ${provider.displayName}'s site, so it needs an internet connection.`}</Note>
-          {provider.capabilities.fullscreen !== "unsupported" && <Note>{"Fullscreen works in browsers. In the desktop app's Preview it isn't available yet."}</Note>}
+          {provider.capabilities.fullscreen !== "unsupported" && <Note>{"Fullscreen works in browsers and in the desktop app's Preview."}</Note>}
         </div>
       )}
     </InspectorSection>

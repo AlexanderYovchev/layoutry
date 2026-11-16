@@ -1,0 +1,675 @@
+LAYOUTRY — BC-08.4: ELECTRON VIDEO PLAYBACK, REFERER COMPATIBILITY &
+FULLSCREEN SECURITY
+==================================================================
+Date: 2026-11-16
+Base commit: a0c17f6 (BC-08.3.1). Nothing was committed or pushed.
+Unchanged:
+- iframe sandbox tokens;
+- CSP;
+- navigation and popup guards;
+- context isolation, sandbox, nodeIntegration;
+- the project format (2) and document schema.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Every provider was reproduced live in the real Electron app before
+anything changed.
+
+Baseline (BC-08.3.1 build, real network, the app's own security):
+- YouTube: "Error 153 – Video player configuration error".
+  - Requests leave app://layoutry/ with NO Referer, because Chromium sends
+    none from a custom scheme.
+- Vimeo: player UI loads, never plays; Vimeo shows "Rights issue — We're
+  having trouble authorizing playback".
+- Wistia: plays (muted autoplay).
+- Fullscreen: unavailable (no allow= in desktop since BC-08.3).
+
+Root causes (each separated by experiment, section 4):
+- YouTube: a missing Referer. That is all; it is not a sandbox, codec or
+  permission problem.
+- Vimeo: the Widevine DRM component, which stock Electron does not ship.
+  - Vimeo's own official embed, unsandboxed and with every permission it
+    asks for, fails identically in Electron.
+  - Fixing it means adding a DRM component (e.g. a Castlabs Electron
+    build): a product decision (section 32). Not done.
+- Fullscreen: the deny-all permission handler (BC-08.1 F2).
+
+Implemented, all bound to a verified FRAME, never to a hostname:
+1. Video Embed frame authorization.
+   - The editor names each player iframe it mounts with a random
+     ly-video-<128-bit hex> token and registers {token, provider} over IPC
+     before the iframe gets its src. It unregisters on unmount.
+   - The main process authorizes a frame only if ALL hold, checked from
+     its own frame tree:
+       - the frame is a direct child of the main window's top frame;
+       - its current name is a registered token of that window;
+       - its URL is on that provider's exact https player origin.
+   - Generic Embeds are never named or registered.
+2. Referer: Referer: app://layoutry/ — Layoutry's TRUE origin, no website
+   claimed.
+   - Added only to an authorized player's own document request (a
+     subFrame navigation), only when no Referer exists.
+   - Implemented with a webRequest listener filtered to the exact player
+     origins.
+   - YouTube then plays in Electron: live, muted autoplay at 7.6 s.
+3. Fullscreen: the deny-all permission handler gains ONE exception.
+   - A "fullscreen" request is granted when every frame showing the
+     requesting URL is an authorized player of the main window.
+   - Ambiguity (a generic Embed at the same URL) is denied.
+   - Everything else stays denied, permission checks included.
+4. Fullscreen lifecycle:
+   - Escape leaves element fullscreen (Electron doesn't do this itself).
+   - A player that is fullscreen when it should go away is kept for that
+     moment, leaves fullscreen, then is removed.
+   - The main process restores the window if the fullscreen player's
+     registration ends while the window is still in element fullscreen.
+
+Electron results (live): YouTube plays; Wistia plays; Vimeo is blocked
+(DRM, documented); a generic Embed showing the same YouTube video still
+gets Error 153 and no fullscreen, so no privilege leaks to it.
+
+Deterministic Electron tests (fake players on the exact provider hosts):
+- authorized fullscreen, and Escape;
+- denial for generic Embeds, unregistered, renamed, stale and ambiguous
+  frames;
+- revocation on hide, Preview exit and project switch;
+- reduced motion.
+20/20 over 5 repeats.
+
+Validation:
+- Vitest: 6003 passed, 1 skipped.
+- Chromium full suite: 280 passed, 2 skipped (opt-in live).
+- Firefox and WebKit targeted: 102/102.
+- Electron full suite: 86 passed, 3 skipped.
+- typecheck, lint, web build and desktop build: all clean.
+
+QA recommendation: APPROVE BC-08.4. Vimeo-in-desktop remains a documented
+DRM limitation, pending a product decision.
+
+
+2. BASELINE ELECTRON BEHAVIOR (before any change)
+-------------------------------------------------
+Method: a temporary probe (deleted afterwards) ran the real desktop build.
+- The test harness's offline proxy was lifted; requests were observed,
+  never modified.
+- The shipped permission handler was kept, still answering "deny", but
+  each permission request was logged.
+- Embeds: YouTube M7lc1UVf-VE, Vimeo 76979871 and Wistia 26sk4lmiix, all
+  muted autoplay. After 8 s with no progress, the player was clicked once
+  (manual playback).
+
+  Provider  iframe  player UI  muted autoplay  manual  fullscreen  error / notes
+  --------  ------  ---------  --------------  ------  ----------  -----------------------------------
+  YouTube   yes     error      no              no      n/a         "Error 153 Video player configuration error"
+  Vimeo     yes     yes        no              no      n/a         time stays 0:00 (later: "Rights issue")
+  Wistia    yes     yes        PLAYING (39 s)  —       n/a         none
+
+- Network: every player navigation had referer=null and origin=null; the
+  initiator was app://layoutry.
+- Permission requests: none. Checks seen: background-sync,
+  notifications; all denied (unchanged).
+- Console errors in the editor: none.
+- fullscreenEnabled was false in every frame (no allow= in the desktop
+  build since BC-08.3).
+
+
+3. PROVIDER-BY-PROVIDER PLAYBACK RESULTS (after BC-08.4)
+--------------------------------------------------------
+Live, opt-in e2e/desktop/video-embed-live.spec.ts, with the shipped code
+and every security setting:
+
+  Embed                         allow                        name    result
+  ----------------------------  ---------------------------  ------  ---------------------------------------
+  YouTube Video Embed           fullscreen                   token   PLAYING, muted, 7.6 s; fullscreenEnabled
+  Wistia Video Embed            fullscreen                   token   PLAYING, muted, 15.7 s; fullscreenEnabled
+  Vimeo Video Embed             fullscreen; encrypted-media  token   player UI, no playback (DRM, section 4)
+  Generic Embed, same YouTube   (none)                       none    "Error 153"; fullscreenEnabled false
+  Loom                          —                            —       no public test video: still UNVERIFIED
+
+- Manual playback: YouTube and Wistia are covered by autoplay. Vimeo
+  doesn't play after a click either.
+- Autoplay disabled, unmuted autoplay and reduced motion: deterministic
+  Electron tests assert the URLs (section 13).
+- Real-player fullscreen: availability confirmed live
+  (fullscreenEnabled). The grant flow is tested deterministically
+  (section 8).
+
+
+4. ROOT CAUSES OF FAILURES
+--------------------------
+The categories the brief asks to separate:
+- Provider-side restriction: none hit with these videos.
+- Electron security restriction: fullscreen only (deny-all handler).
+- Network: none.
+- Media codec/DRM: Vimeo.
+  - In the Vimeo frame, H.264 and AAC are supported, and ClearKey EME
+    succeeds, so the approved encrypted-media Permissions Policy works.
+  - com.widevine.alpha is "Unsupported keySystem", and Vimeo then reports
+    "Rights issue".
+  - Control: Vimeo's own official embed code, no sandbox, its full allow
+    list, inside the same Electron, gives exactly the same result. So the
+    cause is not Layoutry's sandbox or permissions.
+  - In BC-08.3.1 the same video played in Edge, which ships Widevine.
+- Missing Referer: YouTube.
+  - Injecting Referer: app://layoutry/ only on the player's own document
+    request made it play.
+  - document.referrer stays empty, and that is fine: YouTube checks the
+    request.
+- Sandbox/Permissions Policy: none. The BC-02.3 sandbox is unchanged,
+  and all working players run under it.
+
+
+5. ORIGIN / REFERER ANALYSIS
+----------------------------
+- The renderer origin and the Preview document origin are both
+  app://layoutry. It is a registered standard, secure custom scheme
+  (ADR-0002), not file://.
+- Players are cross-origin subframes. Their navigation request has no
+  Referer, because Chromium never derives one from a non-HTTP(S) origin.
+  The explicit referrerpolicy is irrelevant here: there is nothing to
+  send.
+- YouTube requires one (RMF terms: "provide identification through the
+  HTTP Referer"; desktop clients must set it themselves). Empirically it
+  ACCEPTS app://layoutry/.
+- Chosen value: app://layoutry/, the editor's actual origin. It is not a
+  spoof: no website or domain Layoutry doesn't control is claimed. A
+  Layoutry-owned https identity domain could be used later (section 32);
+  none exists today.
+- Scope: one listener (session.webRequest.onBeforeSendHeaders),
+  registered with URL filters for the exact player origins only.
+  - It acts only for the main window, only on resourceType "subFrame",
+    only for an authorized player frame (verified in the probe:
+    details.frame is the navigating iframe and carries its name), and
+    only when no Referer exists.
+  - Every other request is untouched: editor, generic Embeds, player
+    sub-resources, media, analytics.
+  - No local path, project location or app state is sent.
+- Redirects: the provider's own redirects stay in the sandboxed frame;
+  will-frame-navigate still allows only http/https and about:blank.
+- Exported pages: unchanged. No Referer is forged in exports. Hosting on
+  https is still required for providers that need a Referer (BC-08.3,
+  file:// limitation).
+
+
+6. ORIGIN/PROTOCOL CHANGES
+--------------------------
+None. The app scheme, its privileges, CSP, the protocol handler and
+navigation rules are exactly as before. Offline editing, save and reopen
+are unaffected; the full Electron suite passed.
+
+
+7. PERMISSION ARCHITECTURE
+--------------------------
+desktop/security/hardenSession.ts: deny by default, unchanged except one
+reviewed branch.
+- Request handler: callback(false) for everything, EXCEPT
+  permission === "fullscreen", which is answered by isFullscreenAllowed
+  (main.ts):
+    contents === main window contents
+      && isFullscreenRequestAuthorized(registry, contents, details)
+- Check handler: false for everything, fullscreen included. Fullscreen
+  works through the request alone (verified).
+- Device handler: false.
+- Still denied, and unit-tested: media, mediaKeySystem (no DRM grant),
+  geolocation, notifications, clipboard-read, clipboard-sanitized-write,
+  display-capture, openExternal, pointerLock, keyboardLock, fileSystem,
+  automatic-fullscreen, unknown, and the rest of Electron's list.
+- Vimeo's iframe encrypted-media Permissions Policy does NOT produce an
+  Electron DRM grant: mediaKeySystem stays denied, and Widevine is absent
+  anyway.
+- Chromium requires a user gesture for requestFullscreen before any
+  permission is asked; that is unchanged.
+
+
+8. FULLSCREEN AUTHORIZATION DESIGN
+----------------------------------
+- Electron 44's PermissionRequest exposes only { requestingUrl,
+  isMainFrame }: no frame object. A hostname check would therefore treat
+  a generic Embed and a Video Embed showing the same page as the same.
+  That is not acceptable.
+- Instead (desktop/security/videoEmbedFrames.ts):
+  - The renderer registration is only a claim. It must name a frame the
+    main process then finds itself, via
+    webContents.mainFrame.framesInSubtree, in the right place and on the
+    right origin.
+  - isFullscreenRequestAuthorized grants only when:
+    - the request is not from the top frame;
+    - at least one frame shows requestingUrl;
+    - EVERY frame showing it passes authorizedPlayerProvider.
+  - So an ambiguous URL is denied.
+- The registry is per window (webContents id).
+  - Payloads are strict {token, provider}; the token pattern is
+    ^ly-video-[0-9a-f]{32}$.
+  - The provider must be one of youtube/vimeo/loom/wistia.
+  - Duplicate tokens are refused; there is a cap of 256 per window.
+- IPC: two new channels, layoutry:video-embed:register-frame and
+  :unregister-frame.
+  - Both use the existing isTrustedSender check: only the main window's
+    top frame on app://layoutry/.
+  - The preload has two string-checked functions,
+    registerVideoEmbedFrame and unregisterVideoEmbedFrame.
+  - The bridge apiVersion is now 4. Nothing else is exposed.
+- Renderer (canvas VideoEmbedFrame → VideoEmbedPlayerFrame):
+  - a token from crypto.getRandomValues (128 bits);
+  - name={token};
+  - the src is set only after register() resolves, so the first request
+    is already recognisable;
+  - a failed registration leaves the frame without a source (fail
+    closed);
+  - unregister on unmount.
+  - Browsers: no name, no registration (getDesktopVideoEmbedFrames
+    returns null).
+
+
+9. FRAME IDENTITY VERIFICATION
+------------------------------
+What Electron actually exposes was verified with probes (deleted):
+- A fullscreen request arrives as permission "fullscreen" with
+  requestingUrl = the frame's URL and isMainFrame=false. The frame tree
+  shows each frame's name and URL.
+- Granting enters window fullscreen; exiting restores it.
+- A frame can rename itself (window.name = …); the main process then sees
+  the new name. Authorization therefore fails closed for a renamed frame.
+- For a subframe navigation, webRequest's details.frame is the navigating
+  iframe (its name is visible, its parent is the main frame), not the
+  editor.
+- A nested frame or a frame on another origin fails the checks.
+
+
+10. AUTHORIZATION REVOCATION
+----------------------------
+Authorization ends when:
+- Preview closes, the embed is hidden, or an ancestor is hidden: the
+  iframe unmounts, so the token is unregistered.
+- The source or provider changes: the player is keyed on its
+  configuration, so it remounts with a new token, and the old one is
+  unregistered.
+- The project changes or the editor unmounts: unmount, so unregister.
+- The window reloads (main-frame cross-document navigation), its renderer
+  is lost, or it is destroyed: registry.clearOwner.
+- The frame navigates to an unapproved destination: the origin check
+  fails at use.
+- The frame renames itself: the name check fails at use.
+- Tokens are random and never reused. A removed player's token is
+  refused: a frame carrying a stale name is tested and denied.
+- No transfer: a new registration never authorizes an old frame (unit),
+  and a generic Embed cannot learn a token (frame names are not readable
+  cross-origin).
+
+
+11. GENERIC EMBED ISOLATION
+---------------------------
+- Generic Embeds have no allow attribute, no name and no registration
+  (unit and Electron tests).
+- Fullscreen: rejected immediately (Electron test).
+- Referer: none. Live, a generic Embed with the same YouTube video shows
+  Error 153.
+- The sandbox is unchanged. BC-08.3.1 lifecycle cleanup is unchanged
+  (browser specs green).
+- No top navigation, Node.js or filesystem exposure: the existing
+  embed-safety and security Electron specs pass.
+
+
+12. VIMEO ENCRYPTED-MEDIA BEHAVIOR
+----------------------------------
+- Preserved: allow="fullscreen; encrypted-media" for validated Vimeo
+  players only (browser, export, and now desktop).
+- In Electron, EME exists in the frame and ClearKey works, but Widevine
+  is absent, so playback fails ("Rights issue"), exactly as with Vimeo's
+  official embed.
+- No DRM component or proprietary codec package was added. The Inspector
+  now states the desktop limitation in Vimeo's provider notes:
+    "In the desktop app's Preview, Vimeo videos can't play: the app
+    doesn't include the protected-media component Vimeo's player
+    requires. They play in browsers and on exported pages."
+
+
+13. MUTED-ONLY AUTOPLAY
+-----------------------
+Unchanged shared configuration. Asserted in Electron (deterministic):
+- YouTube muted autoplay: src …?autoplay=1&mute=1.
+- Wistia autoplay ON but unmuted: autoPlay=false. Nothing is muted for
+  the user.
+Live: YouTube and Wistia autoplayed muted in the desktop app.
+
+
+14. REDUCED MOTION
+------------------
+Electron test, with Playwright media emulation (Electron ignores
+--force-prefers-reduced-motion): YouTube's src is …?mute=1, with no
+autoplay. Browser specs (3 engines) are still green.
+
+
+15. PREVIEW LIFECYCLE
+---------------------
+- Players are removed on Preview exit; recreated fresh with a new token.
+  Electron tests cover Vimeo, YouTube and generic Embeds.
+- No frame survives exit (frame counts).
+- No audio can continue, since the document is gone.
+- Fullscreen exit on Preview close: the window returns to normal and the
+  player is removed (Electron test).
+
+
+16. HIDDEN-STATE LIFECYCLE
+--------------------------
+- Ancestor hidden while fullscreen: the player leaves fullscreen first,
+  then is removed. The window returns to normal.
+- Shown again: a fresh player with a new name, which can enter
+  fullscreen again (Electron test).
+- Fullscreen release (canvas VideoEmbedFrame + useFullscreenElement):
+  - a player that is the fullscreen element when it should go away is
+    kept mounted for that moment;
+  - document.exitFullscreen() is called;
+  - the player unmounts when fullscreenchange reports the exit.
+  - Removing a fullscreen iframe abruptly left Chromium/Electron state
+    stale: the window stayed fullscreen, or the next request never
+    completed (diagnosed, section 31).
+- Main-process safety net: if the granted player's registration ends
+  while the window is still in element fullscreen, setFullScreen(false)
+  is called.
+
+
+17. CANVAS PRIVACY
+------------------
+- Design still renders only static placeholders.
+- Electron: zero network requests before Preview (desktop video-embed
+  spec).
+- Browser specs: no provider request in Design (3 engines).
+- The new hooks only act on player navigations, which happen only in
+  Preview.
+
+
+18. EXPORT COMPATIBILITY
+------------------------
+- Export markup is unchanged: the same shared configuration with
+  fullscreen delegated; Vimeo with encrypted-media; the BC-07 asset
+  packaging. Unit and browser export suites are green; the Electron
+  export spec passes.
+- Exported pages use no Electron API and get no forged Referer.
+
+
+19. ELECTRON SECURITY INVARIANTS
+--------------------------------
+Reverified (full Electron suite plus unit):
+- nodeIntegration false, contextIsolation true, sandbox true,
+  webviewTag false, enableSandbox: no changes.
+- Preload: the same bridge pattern; two new string-checked functions;
+  ipcRenderer is not exposed; frozen object.
+- IPC: the same sender validation. Subframes and other origins are
+  refused, including for the new channels (unit test).
+- Navigation, popups, CSP, app protocol: unchanged and green.
+- Permissions: deny-all plus scoped fullscreen only (section 7).
+- No Node.js or filesystem access for frames (security spec).
+- Docs: desktop-shell.md updated. Its stale line claiming "authored
+  iframes have no sandbox" was corrected (BC-02.3 added one).
+
+
+20. ACCESSIBILITY
+-----------------
+- Escape leaves element fullscreen in the desktop app
+  (htmlFullscreenEscape.ts, before-input-event).
+  - It is consumed, so it doesn't also exit Preview: the Electron test
+    asserts Preview is still open.
+  - Verified with a native key event (webContents.sendInputEvent).
+    Playwright's CDP key events bypass Electron's input hook.
+- The provider's own exit control works (document.exitFullscreen path,
+  tested).
+- Focus returns to the editor after exit; the editor stays visible
+  (test).
+- No focus is trapped in removed frames: they are removed.
+- Titles are unchanged.
+- Third-party controls are the providers' own and are not assessed.
+
+
+21. PERFORMANCE
+---------------
+- Registry: a Map per window, capped at 256. Entries leave on unmount,
+  and the whole window entry is cleared on reload, crash and close.
+- Electron tests: no accumulated frames over hide/show and Preview
+  cycles; one window throughout.
+- The browser stress spec (BC-08.3.1, re-run inside the Chromium full
+  suite) passed: no listener or frame leaks.
+- Preview startup in the desktop app waits for one IPC round-trip per
+  player before its src is set.
+
+
+22. SOURCE FILES MODIFIED
+-------------------------
+New:
+  desktop/security/videoEmbedFrames.ts
+      registry; frame authorization; fullscreen rule; Referer rule;
+      player origins
+  desktop/security/videoEmbedReferer.ts
+      filtered onBeforeSendHeaders installer
+  desktop/main/htmlFullscreenEscape.ts
+      Escape, plus a removed-player safety net
+  src/features/canvas/utils/desktopVideoEmbedFrames.ts
+      bridge reader, token generator
+  src/features/canvas/hooks/useFullscreenElement.ts
+Modified:
+  desktop/security/hardenSession.ts
+      the scoped fullscreen exception
+  desktop/main/main.ts
+      registry, permission and Referer wiring, clearing, fullscreen
+      control
+  desktop/ipc/channels.ts, desktop/ipc/registerDesktopIpc.ts,
+  desktop/preload/preload.ts
+      two channels; apiVersion 4
+  src/features/canvas/components/document/elements/VideoEmbedFrame.tsx
+      VideoEmbedPlayerFrame (name, register-before-src, unregister);
+      fullscreen release; fullscreen delegated in desktop
+  src/lib/videoEmbed/videoEmbedPlayerConfig.ts
+      comments
+  src/lib/videoEmbed/videoEmbedProviders.ts
+      Vimeo desktop limitation note
+  src/features/inspector/components/InspectorVideoEmbedSection.tsx
+      fullscreen note
+  docs/architecture/desktop-shell.md
+Deleted:
+  src/features/canvas/hooks/useIsDesktopShell.ts
+      BC-08.3's no-fullscreen-in-desktop switch, superseded
+
+
+23. TESTS ADDED
+---------------
+Unit:
+- desktop/security/videoEmbedFrames.test.ts (34 tests):
+  - registry validation, cap and revocation;
+  - every refusal case for authorizedPlayerProvider (generic,
+    other/renamed/stale token, wrong or look-alike origin, http, port,
+    credentials, nested, top frame);
+  - fullscreen grant, ambiguity and revocation;
+  - hardenSession with the exception: only fullscreen asks the
+    authorizer; 13 other permissions are still denied; checks and
+    devices are denied;
+  - the Referer rule: only the authorized player's document request,
+    never other resource types, generic, other windows, look-alikes or
+    an existing Referer;
+  - the filter;
+  - the pinned origins.
+- desktop/main/htmlFullscreenEscape.test.ts (3): Escape rules; the
+  removed-player safety net.
+- desktop/ipc/registerDesktopIpc.test.ts: 16 channels; the new channels'
+  routing and sender refusal; the preload surface (2 new functions,
+  argument checks).
+- IframeElement.videoEmbed.test.tsx:
+  - a browser frame has no name;
+  - desktop registration happens before src, and unregisters on unmount;
+  - new names per player; a failed registration gives no src;
+  - a generic Embed is never registered.
+  (Replaces BC-08.3's "desktop: no fullscreen" test.)
+Electron:
+- e2e/desktop/video-embed-fullscreen.spec.ts (4 tests, deterministic,
+  fake players on the exact hosts):
+  - authorized fullscreen, the provider's own exit, Escape;
+  - denial for generic, unregistered intruder, renamed and ambiguous
+    frames;
+  - revocation on hide, Preview exit and project switch, with stale
+    names refused;
+  - spoofed source; muted-only URLs; reduced motion.
+- e2e/desktop/video-embed-live.spec.ts: OPT-IN live providers, plus the
+  generic control.
+- Updated:
+  - e2e/desktop/video-embed.spec.ts: the desktop Preview now has
+    fullscreen and a name;
+  - e2e/desktop/files.spec.ts, recovery.spec.ts, e2e/packaged/files.spec.ts:
+    bridge key lists +2.
+Browser:
+- e2e/video-embed-playback.spec.ts, two robustness fixes:
+  - geometry rounded to 0.01 px (Firefox float noise);
+  - re-shown request count limited to the re-shown frames (WebKit lazy
+    loading).
+  No assertion was weakened.
+
+
+24. EXACT TEST COMMANDS / RESULTS
+---------------------------------
+  npm run typecheck; npx tsc -p desktop/tsconfig.json --noEmit   clean
+  npm run lint                                                   clean
+  npx vitest run                                                 393 files, 6003 passed, 1 skipped
+  npx playwright test --project=chromium                         280 passed, 2 skipped (opt-in live)
+  npx playwright test -c zz-xbrowser.config.ts e2e/video-embed-playback.spec.ts e2e/video-embed.spec.ts
+      e2e/embed-safety.spec.ts --project=firefox --project=webkit 102 passed
+  npm run desktop:build                                          exit 0
+  npx playwright test -c playwright.desktop.config.ts            86 passed, 3 skipped, 0 failed
+  … e2e/desktop/video-embed-fullscreen.spec.ts --repeat-each=5   20 passed
+  LAYOUTRY_LIVE_PROVIDERS=1 … e2e/desktop/video-embed-live.spec.ts   1 passed (results in section 3)
+  npm run build                                                  exit 0
+
+Failures found and fixed along the way:
+- Two earlier desktop assertions encoded BC-08.3's "no fullscreen in
+  desktop". They were updated to the approved BC-08.4 behaviour.
+- A real intermittent bug: the window stayed fullscreen, or the next
+  request never completed, after removing a fullscreen player. Fixed
+  (section 16).
+- An Electron race remains: fullscreen ended within ~50 ms of entering
+  (section 31).
+- Test-only:
+  - a click sometimes didn't reach the player button (now retried until
+    seen);
+  - Firefox sub-pixel float noise;
+  - WebKit lazy-load request count;
+  - Electron ignores --force-prefers-reduced-motion (media emulation
+    used).
+Temporary probes and zz configs were deleted.
+
+
+25. CHROMIUM RESULTS
+--------------------
+Full suite: 280 passed, 2 skipped (live), 0 failed.
+
+
+26. FIREFOX RESULTS
+-------------------
+video-embed-playback 12, video-embed 10, embed-safety 29: all passed.
+
+
+27. WEBKIT RESULTS
+------------------
+The same specs: all passed.
+
+
+28. ELECTRON RESULTS
+--------------------
+- Full: 86 passed, 3 skipped (the opt-in live spec plus the two existing
+  environment skips), 0 failed.
+- Fullscreen spec: 20/20 over 5 repeats.
+- Live: section 3.
+
+
+29. TYPECHECK / LINT / BUILD RESULTS
+------------------------------------
+- Web and desktop typecheck: clean.
+- ESLint: clean.
+- Web build: succeeded.
+- Desktop build: succeeded.
+
+
+30. REMAINING PROVIDER LIMITATIONS
+----------------------------------
+- Vimeo in the desktop app: needs Widevine (not in stock Electron). It
+  plays in browsers and exports.
+- Loom: unverified everywhere (no public test video).
+- YouTube in exported pages opened as file://: no Referer, so a player
+  error. Host on http(s).
+- Provider-side rules (owner restrictions, private videos) still apply.
+
+
+31. OPEN DEFECTS
+----------------
+E1  Electron fullscreen exit race. LOW: not reachable by a user.
+    - If element fullscreen ends within ~50 ms of entering, Electron 44
+      leaves the window but never emits leave-html-full-screen. Its
+      element-fullscreen state then stays set, and the next
+      requestFullscreen never completes.
+    - Reproduced only by a scripted hide 46 ms after entering.
+    - A person cannot hide or exit within that time: the player covers
+      the editor, and Escape is handled after the transition.
+    - Tests use a realistic 1 s pause (watchFullscreen, documented).
+    - Possible follow-up: an Electron upgrade or upstream report.
+E2  Generic YouTube Embeds in the desktop app show Error 153. That is by
+    design: no privileges for generic Embeds. Users should use Video
+    Embed.
+Carried: D3 (WebKit stale aspect-ratio after resize), D4 (native-video
+reduced-motion rule), D5 (Loom test video), PRJ-K1.
+
+
+32. OUTSTANDING PRODUCT DECISIONS
+---------------------------------
+P1  Vimeo in the desktop app: ship a Widevine-capable Electron (e.g.
+    Castlabs ECS, with licensing and signing implications), or accept
+    the documented limitation. The current state is the limitation.
+P2  Referer identity: keep app://layoutry/ (the true origin, accepted by
+    YouTube), or adopt a Layoutry-owned https identity domain when one
+    exists.
+P3  E1: accept it, or schedule an Electron upgrade check.
+
+
+33. GIT WORKING-TREE STATUS
+---------------------------
+- Modified (17):
+  - desktop: channels.ts, registerDesktopIpc.ts and its test, main.ts,
+    preload.ts, hardenSession.ts;
+  - docs/architecture/desktop-shell.md;
+  - e2e: desktop/files, desktop/recovery, desktop/video-embed,
+    packaged/files, video-embed-playback;
+  - src: IframeElement.videoEmbed.test.tsx, VideoEmbedFrame.tsx,
+    InspectorVideoEmbedSection.tsx, videoEmbedPlayerConfig.ts,
+    videoEmbedProviders.ts.
+- Deleted (1): src/features/canvas/hooks/useIsDesktopShell.ts
+- Untracked:
+  - desktop/main/htmlFullscreenEscape.ts and its test;
+  - desktop/security/videoEmbedFrames.ts and its test;
+  - desktop/security/videoEmbedReferer.ts;
+  - e2e/desktop/video-embed-fullscreen.spec.ts and
+    e2e/desktop/video-embed-live.spec.ts;
+  - src/features/canvas/hooks/useFullscreenElement.ts;
+  - src/features/canvas/utils/desktopVideoEmbedFrames.ts;
+  - this report.
+- Gitignored: changelogs/2026-11-16-electron-video-playback-referer-fullscreen-BC-08.4.txt
+- Nothing is staged, committed or pushed.
+
+
+34. QA RECOMMENDATION
+---------------------
+APPROVE BC-08.4. Acceptance criteria:
+- 1: investigated per provider (sections 2-4).
+- 2: YouTube works.
+- 3: Vimeo blocker is exact and unavoidable without DRM (P1).
+- 4: Wistia works.
+- 5: Loom stays unverified.
+- 6: Referer is the true origin, narrowly scoped.
+- 7: fullscreen only for authorized players, with frame-bound
+  authorization.
+- 8: generic Embeds get nothing new.
+- 9-10: sandbox intact, deny-by-default.
+- 11: revocation tested.
+- 12: lifecycle.
+- 13: autoplay and reduced motion.
+- 14: Canvas privacy.
+- 15: exports independent of Electron.
+- 16: no document changes.
+- 17: regressions green.
+- 18: no critical defect (E1 is low and not user-reachable).
+BC-08.5 has not been started.

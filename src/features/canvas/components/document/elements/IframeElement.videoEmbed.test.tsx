@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RuntimeHiddenContext } from "@/features/canvas/components/document/previewRuntimeContext";
 import { createVideoEmbedNode } from "@/features/editor/factories/elementFactories";
@@ -147,13 +147,64 @@ describe("VideoEmbedFrame — Preview player (BC-08.3)", () => {
     expect(container.querySelector("iframe")).toHaveAttribute("src", `https://www.youtube-nocookie.com/embed/${YT}?mute=1`);
   });
 
-  it("desktop app: no fullscreen delegation (BC-08.4), everything else identical", () => {
-    Reflect.set(window, "layoutryDesktop", {});
+  it("browser: no frame name and no registration", () => {
     preview();
     const { container } = renderEmbed(embed);
+    expect(container.querySelector("iframe")?.hasAttribute("name")).toBe(false);
+  });
+
+  it("desktop app (BC-08.4): a fresh random frame name, registered BEFORE the player gets its src, unregistered on unmount", async () => {
+    let finishRegister: () => void = () => {};
+    const registerVideoEmbedFrame = vi.fn(() => new Promise<void>((resolve) => (finishRegister = resolve)));
+    const unregisterVideoEmbedFrame = vi.fn(() => Promise.resolve());
+    Reflect.set(window, "layoutryDesktop", { registerVideoEmbedFrame, unregisterVideoEmbedFrame });
+    preview();
+    const { container, rerender } = renderEmbed({ ...embed, muted: true, autoplay: true });
     const iframe = container.querySelector("iframe");
-    expect(iframe?.hasAttribute("allow")).toBe(false);
-    expect(iframe).toHaveAttribute("sandbox", "allow-forms allow-popups allow-scripts allow-same-origin");
+    const name = iframe?.getAttribute("name") ?? "";
+    expect(name).toMatch(/^ly-video-[0-9a-f]{32}$/);
+    expect(registerVideoEmbedFrame).toHaveBeenCalledWith(name, "youtube");
+    // Not loaded until the main process has the registration.
+    expect(iframe?.hasAttribute("src")).toBe(false);
+    await act(async () => finishRegister());
+    await waitFor(() => expect(container.querySelector("iframe")).toHaveAttribute("src", `https://www.youtube-nocookie.com/embed/${YT}?autoplay=1&mute=1`));
+    expect(container.querySelector("iframe")).toHaveAttribute("allow", "fullscreen");
+    // Leaving Preview unmounts it: the registration ends with it.
+    useEditorStore.setState({ editorMode: "design" });
+    rerender(<IframeElement node={{ ...embed, muted: true, autoplay: true }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />);
+    expect(unregisterVideoEmbedFrame).toHaveBeenCalledWith(name);
+  });
+
+  it("desktop app: every new player gets a new name; a failed registration leaves the frame without a source", async () => {
+    const names: string[] = [];
+    const registerVideoEmbedFrame = vi.fn((token: string) => {
+      names.push(token);
+      return Promise.reject(new Error("refused"));
+    });
+    Reflect.set(window, "layoutryDesktop", { registerVideoEmbedFrame, unregisterVideoEmbedFrame: vi.fn(() => Promise.resolve()) });
+    preview();
+    const tree = (hidden: boolean) => (
+      <RuntimeHiddenContext.Provider value={hidden}>
+        <IframeElement node={embed} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />
+      </RuntimeHiddenContext.Provider>
+    );
+    const { container, rerender } = render(tree(false));
+    await act(async () => {});
+    expect(container.querySelector("iframe")?.hasAttribute("src")).toBe(false);
+    rerender(tree(true));
+    rerender(tree(false));
+    await act(async () => {});
+    expect(names).toHaveLength(2);
+    expect(names[0]).not.toBe(names[1]);
+  });
+
+  it("desktop app: a generic Embed is never named or registered", () => {
+    const registerVideoEmbedFrame = vi.fn(() => Promise.resolve());
+    Reflect.set(window, "layoutryDesktop", { registerVideoEmbedFrame, unregisterVideoEmbedFrame: vi.fn(() => Promise.resolve()) });
+    preview();
+    const { container } = renderEmbed({ id: "iframe-g3", tag: "iframe", src: `https://www.youtube-nocookie.com/embed/${YT}`, title: "Generic" });
+    expect(container.querySelector("iframe")?.hasAttribute("name")).toBe(false);
+    expect(registerVideoEmbedFrame).not.toHaveBeenCalled();
   });
 
   it("an invalid stored source never becomes an iframe, even in Preview", () => {

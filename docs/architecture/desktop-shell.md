@@ -212,7 +212,23 @@ the user, which is the same trust level as the user.
 - **Popups:** every `window.open` / `target=_blank` is denied. Nothing is
   handed to `shell.openExternal`.
 - **Permissions:** every request and check is denied (camera, microphone,
-  geolocation, notifications, clipboard read, devices, openExternal).
+  geolocation, notifications, clipboard read, devices, openExternal, media
+  key systems). One reviewed exception (BC-08.4): a `fullscreen` request
+  from an authorized Video Embed player frame (below).
+- **Video Embed players (BC-08.4, `desktop/security/videoEmbedFrames.ts`):**
+  the editor names each player iframe it mounts with a random
+  `ly-video-<32 hex>` token and registers `{token, provider}` over IPC
+  before giving it a source; it unregisters on unmount, and a window's
+  registrations are cleared on reload, renderer loss and close. A frame is
+  authorized only if it is a direct child of the main window's top frame,
+  its current name is a registered token of that window, and its URL is on
+  that provider's exact https player origin. Authorized frames get:
+  - fullscreen, only when every frame showing the requesting URL is
+    authorized (a generic Embed at the same URL makes it ambiguous: denied);
+  - `Referer: app://layoutry/` (the editor's true origin; Chromium sends no
+    Referer from a custom scheme and YouTube refuses to play without one)
+    on their own document request only, never on other requests.
+  Escape leaves element fullscreen (`desktop/main/htmlFullscreenEscape.ts`).
 - **CSP** (see `desktop/security/contentSecurityPolicy.ts`):
   - `script-src 'self' 'unsafe-inline'`. Next's static export needs its
     inline bootstrap scripts. Remote scripts, `eval` and `new Function`
@@ -224,8 +240,8 @@ the user, which is the same trust level as the user.
   - **Residual risk:** inline script is allowed, and authored content shares
     the editor's DOM. The Canvas never renders raw authored HTML, which is
     what keeps authored data from becoming script.
-- **Authored iframes** still have no `sandbox` attribute; changing that is
-  a separate product decision. The desktop guards above contain them.
+- **Authored iframes** carry the shared BC-02.3 `sandbox` (no top
+  navigation, no popup escape); the desktop guards above contain them too.
 
 ## Electron fuses
 
