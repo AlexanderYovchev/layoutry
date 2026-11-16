@@ -21,13 +21,17 @@
  *                  the Inspector hides the control and explains why
  *
  * Playback (BC-08.3), from the live run against each provider's real
- * player under Layoutry's unchanged sandbox and allow="fullscreen":
+ * player under Layoutry's unchanged sandbox:
  *   "verified"    plays in Preview and on exported pages
  *   "unverified"  no public test video was available to confirm it; the
  *                 player is still loaded, and the Inspector says so
- *   "blocked"     the provider's player does not work under the approved
- *                 permissions; no player is loaded anywhere, and the
- *                 Inspector, Preview and export explain why
+ *
+ * Permissions (BC-08.3.1): beyond fullscreen, a provider may list the
+ * Permissions-Policy features its player needs and that the product
+ * owner approved for it. Only Vimeo has one: encrypted-media (approved
+ * decision A). The iframe's own src origin is the allowlist (the
+ * attribute's default), and that origin is always the validated
+ * player.vimeo.com.
  */
 
 export type VideoEmbedProviderId = "youtube" | "vimeo" | "loom" | "wistia";
@@ -36,7 +40,10 @@ export type DeferredVideoProviderId = "dailymotion" | "twitch";
 export type VideoEmbedCapability = "autoplay" | "muted" | "loop" | "controls" | "startTime" | "privacyMode" | "fullscreen";
 export type VideoEmbedCapabilityStatus = "documented" | "verified" | "unverified" | "unsupported";
 
-export type VideoEmbedPlayback = { status: "verified" } | { status: "unverified"; note: string } | { status: "blocked"; reason: string };
+export type VideoEmbedPlayback = { status: "verified" } | { status: "unverified"; note: string };
+
+/** Permissions-Policy features a provider's player is granted besides fullscreen (approved per provider). */
+export type VideoEmbedPermission = "encrypted-media";
 
 export interface VideoEmbedProvider {
   id: VideoEmbedProviderId;
@@ -52,6 +59,8 @@ export interface VideoEmbedProvider {
   limitations: readonly string[];
   /** Whether its real player works under Layoutry's approved iframe policy (BC-08.3 live run). */
   playback: VideoEmbedPlayback;
+  /** Extra Permissions-Policy features its player is granted (BC-08.3.1). */
+  permissions: readonly VideoEmbedPermission[];
 }
 
 export const VIDEO_EMBED_PROVIDERS: Readonly<Record<VideoEmbedProviderId, VideoEmbedProvider>> = {
@@ -78,6 +87,7 @@ export const VIDEO_EMBED_PROVIDERS: Readonly<Record<VideoEmbedProviderId, VideoE
       "The video's owner can turn embedding off.",
     ],
     playback: { status: "verified" },
+    permissions: [],
   },
   vimeo: {
     id: "vimeo",
@@ -101,15 +111,12 @@ export const VIDEO_EMBED_PROVIDERS: Readonly<Record<VideoEmbedProviderId, VideoE
       "The video's owner can limit which websites may embed it.",
       "Unlisted videos need their full link, including the code after the video number.",
     ],
-    // BC-08.3 live run: Vimeo's player shows "Unable to play video. Please
-    // try again in a supported browser." unless the frame is also granted
-    // the encrypted-media permission (allow="encrypted-media") — with or
-    // without the sandbox. Layoutry's approved policy grants fullscreen
-    // only, so Vimeo playback waits for a product decision (BC-08.3 report).
-    playback: {
-      status: "blocked",
-      reason: "Vimeo videos can't play yet: Vimeo's player needs a browser permission (encrypted media) that Layoutry doesn't grant to embedded videos.",
-    },
+    // BC-08.3 / BC-08.3.1 live runs: without encrypted-media Vimeo's
+    // player refuses to play ("Unable to play video. Please try again in a
+    // supported browser."); with it — and nothing else changed, sandbox
+    // included — it plays exactly like Vimeo's own embed code.
+    playback: { status: "verified" },
+    permissions: ["encrypted-media"],
   },
   loom: {
     id: "loom",
@@ -132,6 +139,7 @@ export const VIDEO_EMBED_PROVIDERS: Readonly<Record<VideoEmbedProviderId, VideoE
     },
     limitations: ['The video must be shared with "Anyone with the link".'],
     playback: { status: "unverified", note: "Playback hasn't been confirmed with a real Loom video yet." },
+    permissions: [],
   },
   wistia: {
     id: "wistia",
@@ -156,6 +164,7 @@ export const VIDEO_EMBED_PROVIDERS: Readonly<Record<VideoEmbedProviderId, VideoE
     },
     limitations: ["Only Wistia's own links are accepted, not custom-domain links."],
     playback: { status: "verified" },
+    permissions: [],
   },
 };
 
@@ -190,12 +199,6 @@ export function isDeferredVideoProviderId(id: string): id is DeferredVideoProvid
 
 export function getVideoEmbedProvider(id: VideoEmbedProviderId): VideoEmbedProvider {
   return VIDEO_EMBED_PROVIDERS[id];
-}
-
-/** Why the provider's player is not loaded at all, or undefined when it may be (BC-08.3). */
-export function getVideoEmbedPlaybackBlocker(id: VideoEmbedProviderId): string | undefined {
-  const { playback } = VIDEO_EMBED_PROVIDERS[id];
-  return playback.status === "blocked" ? playback.reason : undefined;
 }
 
 /** True when the provider has a URL setting for this capability (documented, verified or unverified). */

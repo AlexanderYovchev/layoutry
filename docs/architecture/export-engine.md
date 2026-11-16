@@ -175,7 +175,11 @@ printer: a Tailwind printer maps `declarations` to utilities, React maps
   a fresh one when shown, from `data-ly-video-src` unless the viewer
   prefers reduced motion. A missing or invalid source exports the empty
   frame with `video-embed-invalid`; any player adds the one-per-page info
-  `video-embed-needs-website`. Generic Embeds are unchanged.
+  `video-embed-needs-website`. A Vimeo player also gets `encrypted-media`
+  (BC-08.3.1, approved for validated Vimeo players only). Generic Embed
+  markup is unchanged; when the runtime is present it applies the same
+  remove-while-hidden / fresh-when-shown rule to generic iframes, and never
+  touches a frame that stays shown.
 - Attribute order is fixed: `id`, `class`, then the element's own
   attributes in recipe order. Boolean attributes print bare (`checked`,
   `controls`, `open`, `hidden`). Void elements have no end tag. SVG

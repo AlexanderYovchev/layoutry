@@ -142,4 +142,16 @@ test("save to a .layoutry file (format 2) and reopen after a restart: identity a
   await expect(inspector(layoutry.page).getByRole("switch", { name: "Loop" })).toHaveAttribute("aria-checked", "true");
   await expect(layoutry.page.locator(`${SURFACE} iframe`)).toHaveCount(0);
   expect(await networkRequests(layoutry.app)).toEqual([]);
+
+  // BC-08.3.1: the desktop Preview's Vimeo player carries Vimeo's approved
+  // encrypted-media and no fullscreen; the shell's permission handling is
+  // unchanged (BC-08.4), and the offline harness cancels the request.
+  await layoutry.page.getByRole("button", { name: "Enter Preview" }).click();
+  const player = layoutry.page.locator(`${SURFACE} iframe[data-video-embed-player="vimeo"]`);
+  await expect(player).toHaveAttribute("allow", "encrypted-media");
+  await expect(player).toHaveAttribute("sandbox", "allow-forms allow-popups allow-scripts allow-same-origin");
+  expect(await player.getAttribute("allowfullscreen")).toBeNull();
+  await layoutry.page.getByRole("button", { name: "Exit Preview" }).click();
+  await expect(layoutry.page.locator(`${SURFACE} iframe`)).toHaveCount(0);
+  expect(await layoutry.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isFullScreen())).toBe(false);
 });

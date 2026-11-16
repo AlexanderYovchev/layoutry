@@ -81,11 +81,11 @@ describe("InspectorVideoEmbedSection (BC-08.2)", () => {
     expect(screen.getByRole("switch", { name: "Loop" })).toBeInTheDocument();
   });
 
-  it("Vimeo: its playback blocker is announced (BC-08.3)", () => {
+  it("Vimeo plays (BC-08.3.1): no blocker and no 'not confirmed' note", () => {
     store().setElementSrc(embedId, "https://player.vimeo.com/video/76979871?dnt=1");
     renderSection();
-    expect(screen.getByTestId("video-embed-playback-blocked")).toHaveAttribute("role", "status");
-    expect(screen.getByTestId("video-embed-playback-blocked")).toHaveTextContent(/^Vimeo videos can't play yet: Vimeo's player needs a browser permission \(encrypted media\)/);
+    expect(screen.queryByText(/can't play yet/)).toBeNull();
+    expect(screen.queryByText(/hasn't been confirmed/)).toBeNull();
   });
 
   it("Loom says its playback is not yet confirmed (BC-08.3)", () => {

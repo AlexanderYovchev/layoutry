@@ -45,8 +45,10 @@ interface Recorded {
 
 let served: Recorded[];
 let unexpected: string[];
-/** Requests to VIDEO providers (the generic Embed's widget.example loads live in Design, as it always has). */
-const providerServed = () => served.filter((entry) => !entry.url.startsWith("https://widget.example/"));
+/** A generic Embed's URL in these fixtures (generic Embeds load live in Design, as they always have). */
+const isGenericUrl = (url: string) => url.startsWith("https://widget.example/") || url.includes("generic=1");
+/** Requests made for Video Embed players. */
+const providerServed = () => served.filter((entry) => !isGenericUrl(entry.url));
 
 async function routeProviders(context: BrowserContext) {
   served = [];
@@ -68,6 +70,8 @@ async function routeProviders(context: BrowserContext) {
 
 const video = (id: string, src: string, extra: Partial<EditorElementNode> = {}): EditorElementNode => ({ id, tag: "iframe", controls: true, aspectRatio: { mode: "ratio", width: 16, height: 9 }, src, ...extra });
 
+const GENERIC_VIMEO = "https://player.vimeo.com/video/76979871?generic=1";
+
 function playbackDocument(): EditorElementNode {
   return {
     id: "page-root",
@@ -76,19 +80,29 @@ function playbackDocument(): EditorElementNode {
       { id: "btn-toggle", tag: "button", text: "Toggle box", interactions: [{ id: "i-toggle", trigger: "click", action: "toggle", targetId: "box" }] },
       { id: "btn-show", tag: "button", text: "Show late", interactions: [{ id: "i-show", trigger: "click", action: "show", targetId: "ve-late" }] },
       { id: "btn-hide", tag: "button", text: "Hide late", interactions: [{ id: "i-hide", trigger: "click", action: "hide", targetId: "ve-late" }] },
-      { id: "box", tag: "div", children: [video("ve-yt", `https://www.youtube-nocookie.com/embed/${YT}`, { title: "YouTube clip", muted: true, autoplay: true, loop: true })] },
+      {
+        id: "box",
+        tag: "div",
+        children: [
+          video("ve-yt", `https://www.youtube-nocookie.com/embed/${YT}`, { title: "YouTube clip", muted: true, autoplay: true, loop: true }),
+          { id: "inner", tag: "section", children: [{ id: "generic-in-box", tag: "iframe", src: "https://widget.example/in-box", title: "Generic in box" }] },
+        ],
+      },
       video("ve-vimeo", "https://player.vimeo.com/video/76979871?h=a1b2c3d4e5&dnt=1", { title: "Vimeo clip", controls: false }),
       video("ve-late", `https://www.loom.com/embed/${LOOM}`, { title: "Loom clip", initialPreviewVisibility: "hidden", autoplay: true, muted: true }),
       { id: "gone", tag: "div", display: { display: "none" }, children: [video("ve-gone", `https://fast.wistia.net/embed/iframe/${WISTIA}?doNotTrack=true&time=5`, { title: "Gone clip" })] },
       video("ve-wistia", `https://fast.wistia.net/embed/iframe/${WISTIA}?doNotTrack=true`, { title: "Wistia clip", autoplay: true, muted: false }),
+      video("ve-spoof", "https://player.vimeo.com.evil.example/video/76979871", { title: "Spoofed Vimeo" }),
       { id: "generic", tag: "iframe", src: "https://widget.example/frame", title: "Generic widget" },
+      { id: "generic-vimeo", tag: "iframe", src: GENERIC_VIMEO, title: "Generic Vimeo" },
     ],
   };
 }
 
 const playerFor = (page: Page, id: string) => page.locator(`${SURFACE} [data-node-id="${id}"] iframe[data-video-embed-player]`);
 const surfacePlayers = (page: Page) => page.locator(`${SURFACE} iframe[data-video-embed-player]`);
-const providerFrames = (page: Page) => page.frames().filter((frame) => /^https:\/\/(www\.youtube-nocookie\.com|player\.vimeo\.com|www\.loom\.com|fast\.wistia\.net)\//.test(frame.url()));
+const providerFrames = (page: Page) => page.frames().filter((frame) => /^https:\/\/(www\.youtube-nocookie\.com|player\.vimeo\.com|www\.loom\.com|fast\.wistia\.net)\//.test(frame.url()) && !isGenericUrl(frame.url()));
+const genericFrame = (page: Page, id: string) => page.locator(`${SURFACE} [data-node-id="${id}"] iframe`);
 
 async function frameWhere(page: Page, predicate: (url: string) => boolean): Promise<Frame> {
   await expect.poll(() => page.frames().some((frame) => predicate(frame.url())), { timeout: 15_000 }).toBe(true);
@@ -130,48 +144,60 @@ test.afterEach(() => {
 test.describe("Preview", () => {
   test("Design loads nothing; Preview mounts exactly the shown players; hide, ancestor, show and exit remove/recreate them; nothing is recorded", async ({ page, context }) => {
     await start(page, context);
-    // Design: placeholders only, no provider request at all.
-    await expect(page.locator(`${SURFACE} [data-video-embed-placeholder]`)).toHaveCount(5);
+    // Design: Video Embeds are placeholders only, no provider request at all.
+    await expect(page.locator(`${SURFACE} [data-video-embed-placeholder]`)).toHaveCount(6);
     await expect(surfacePlayers(page)).toHaveCount(0);
     expect(providerServed()).toEqual([]);
     await expectUndoAvailable(page, false);
+    // Generic Embeds are live in Design (unchanged); mark their Design frames.
+    for (const id of ["generic", "generic-in-box", "generic-vimeo"]) await genericFrame(page, id).evaluate((element) => Reflect.set(element, "__design", true));
 
     await enterPreview(page);
-    // Shown: YouTube (inside the box) and Wistia. Not: Loom (hidden at start), the one in a display:none container,
-    // and Vimeo (playback blocked under the approved permissions: its placeholder says why).
-    await expect(surfacePlayers(page)).toHaveCount(2);
-    await expect(playerFor(page, "ve-vimeo")).toHaveCount(0);
-    await expect(page.locator(`${SURFACE} [data-node-id="ve-vimeo"] [data-video-embed-placeholder]`)).toContainText("Vimeo videos can't play yet");
-    expect(served.some((entry) => entry.url.startsWith("https://player.vimeo.com/"))).toBe(false);
+    // Shown: YouTube (inside the box), Vimeo, Wistia. Not: Loom (hidden at start), the display:none one, the spoofed Vimeo.
+    await expect(surfacePlayers(page)).toHaveCount(3);
     await expect(playerFor(page, "ve-late")).toHaveCount(0);
     await expect(playerFor(page, "ve-gone")).toHaveCount(0);
-    expect(served.some((entry) => entry.url.includes("time=5") || entry.url.startsWith("https://www.loom.com/"))).toBe(false);
-    for (const id of ["ve-yt", "ve-wistia"]) {
+    await expect(playerFor(page, "ve-spoof")).toHaveCount(0);
+    await expect(page.locator(`${SURFACE} [data-node-id="ve-spoof"] [data-video-embed-placeholder]`)).toHaveAttribute("data-video-embed-placeholder", "empty");
+    expect(served.some((entry) => entry.url.includes("time=5") || entry.url.startsWith("https://www.loom.com/") || entry.url.includes("evil.example"))).toBe(false);
+    for (const id of ["ve-yt", "ve-vimeo", "ve-wistia"]) {
       await expect(playerFor(page, id)).toHaveAttribute("sandbox", SANDBOX);
-      await expect(playerFor(page, id)).toHaveAttribute("allow", "fullscreen");
       await expect(playerFor(page, id)).toHaveAttribute("referrerpolicy", "strict-origin-when-cross-origin");
     }
+    // BC-08.3.1: encrypted-media for the validated Vimeo player only.
+    await expect(playerFor(page, "ve-vimeo")).toHaveAttribute("allow", "fullscreen; encrypted-media");
+    await expect(playerFor(page, "ve-yt")).toHaveAttribute("allow", "fullscreen");
+    await expect(playerFor(page, "ve-wistia")).toHaveAttribute("allow", "fullscreen");
     await expect(playerFor(page, "ve-yt")).toHaveAttribute("title", "YouTube clip");
     // Muted-only autoplay and provider parameters, as each player received them.
     await expect(playerFor(page, "ve-yt")).toHaveAttribute("src", `https://www.youtube-nocookie.com/embed/${YT}?autoplay=1&mute=1&loop=1&playlist=${YT}`);
+    await expect(playerFor(page, "ve-vimeo")).toHaveAttribute("src", "https://player.vimeo.com/video/76979871?h=a1b2c3d4e5&dnt=1&autoplay=0");
     await expect(playerFor(page, "ve-wistia")).toHaveAttribute("src", `https://fast.wistia.net/embed/iframe/${WISTIA}?doNotTrack=true&autoPlay=false`);
     const youtube = await frameWhere(page, (url) => url.startsWith("https://www.youtube-nocookie.com/"));
     expect((await playerReport(youtube)).referrer).toBe(new URL(page.url()).origin + "/");
-    // The generic Embed is untouched: its own live frame, no new attributes.
-    const generic = page.locator(`${SURFACE} [data-node-id="generic"] iframe`);
-    await expect(generic).toHaveAttribute("sandbox", SANDBOX);
-    expect(await generic.getAttribute("allow")).toBeNull();
+    // Generic Embeds: a fresh Preview frame (BC-08.3.1), unchanged source and sandbox, never a permission — a Vimeo URL included.
+    for (const id of ["generic", "generic-in-box", "generic-vimeo"]) {
+      await expect(genericFrame(page, id)).toHaveAttribute("sandbox", SANDBOX);
+      expect(await genericFrame(page, id).getAttribute("allow"), id).toBeNull();
+      expect(await genericFrame(page, id).evaluate((element) => Reflect.get(element, "__design")), id).toBeUndefined();
+    }
+    await expect(genericFrame(page, "generic-vimeo")).toHaveAttribute("src", GENERIC_VIMEO);
 
-    // Hide the YouTube player's ANCESTOR: its player is removed and its document is gone.
+    // Hide the box (an ANCESTOR of the YouTube player and of a nested generic Embed): both frames are removed.
+    const genericInBox = page.frames().find((frame) => frame.url() === "https://widget.example/in-box");
     await page.locator(`${SURFACE} [data-node-id="btn-toggle"]`).click();
     await expect(playerFor(page, "ve-yt")).toHaveCount(0);
+    await expect(genericFrame(page, "generic-in-box")).toHaveCount(0);
+    await expect(page.locator(`${SURFACE} [data-node-id="generic-in-box"]`)).toHaveCount(1);
     await expect.poll(() => providerFrames(page).some((frame) => frame.url().includes("youtube-nocookie"))).toBe(false);
     expect(youtube.isDetached()).toBe(true);
-    // Shown again: a fresh player (a new request), from its configured start.
+    expect(genericInBox?.isDetached()).toBe(true);
+    // Shown again: fresh frames (new requests), from their initial state.
     const requestsBefore = served.length;
     await page.locator(`${SURFACE} [data-node-id="btn-toggle"]`).click();
     await expect(playerFor(page, "ve-yt")).toHaveCount(1);
-    await expect.poll(() => served.length).toBe(requestsBefore + 1);
+    await expect(genericFrame(page, "generic-in-box")).toHaveAttribute("src", "https://widget.example/in-box");
+    await expect.poll(() => served.length).toBe(requestsBefore + 2);
 
     // Hidden at start, shown, hidden again.
     await page.locator(`${SURFACE} [data-node-id="btn-show"]`).click();
@@ -179,36 +205,61 @@ test.describe("Preview", () => {
     await page.locator(`${SURFACE} [data-node-id="btn-hide"]`).click();
     await expect(playerFor(page, "ve-late")).toHaveCount(0);
 
-    // Repeated visibility changes never accumulate players.
+    // Repeated visibility changes never accumulate frames.
     for (let round = 0; round < 4; round += 1) {
       await page.locator(`${SURFACE} [data-node-id="btn-toggle"]`).click();
       await page.locator(`${SURFACE} [data-node-id="btn-toggle"]`).click();
     }
-    await expect(surfacePlayers(page)).toHaveCount(2);
-    await expect.poll(() => providerFrames(page).length).toBe(2);
+    await expect(surfacePlayers(page)).toHaveCount(3);
+    await expect.poll(() => providerFrames(page).length).toBe(3);
+    await expect(genericFrame(page, "generic-in-box")).toHaveCount(1);
 
-    // Exit Preview: every player is removed, no provider document remains (no sound can continue).
+    // Exit Preview: every Video Embed player is removed; every generic Embed gets a fresh Design frame (nothing from Preview keeps running).
+    for (const id of ["generic", "generic-in-box", "generic-vimeo"]) await genericFrame(page, id).evaluate((element) => Reflect.set(element, "__preview", true));
     await exitPreview(page);
     await expect(surfacePlayers(page)).toHaveCount(0);
     await expect.poll(() => providerFrames(page).length).toBe(0);
-    await expect(page.locator(`${SURFACE} [data-video-embed-placeholder]`)).toHaveCount(5);
+    await expect(page.locator(`${SURFACE} [data-video-embed-placeholder]`)).toHaveCount(6);
+    for (const id of ["generic", "generic-in-box", "generic-vimeo"]) {
+      await expect(genericFrame(page, id)).toHaveCount(1);
+      expect(await genericFrame(page, id).evaluate((element) => Reflect.get(element, "__preview")), id).toBeUndefined();
+    }
     // Nothing was written: no Undo step, no unsaved change.
     await expectUndoAvailable(page, false);
     await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0);
 
-    // Repeated Preview sessions start clean each time.
+    // Repeated Preview sessions start clean each time; frames never accumulate.
+    const frameCount = page.frames().length;
     for (let session = 0; session < 3; session += 1) {
       await enterPreview(page);
-      await expect(surfacePlayers(page)).toHaveCount(2);
+      await expect(surfacePlayers(page)).toHaveCount(3);
       await exitPreview(page);
       await expect(surfacePlayers(page)).toHaveCount(0);
     }
     await expect.poll(() => providerFrames(page).length).toBe(0);
+    await expect.poll(() => page.frames().length).toBe(frameCount);
+  });
+
+  test("keyboard: hiding by keyboard keeps focus on the control; the removed frame leaves the tab order; showing never steals focus", async ({ page, context }) => {
+    await start(page, context);
+    await enterPreview(page);
+    const toggle = page.locator(`${SURFACE} [data-node-id="btn-toggle"]`);
+    await toggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(playerFor(page, "ve-yt")).toHaveCount(0);
+    await expect(genericFrame(page, "generic-in-box")).toHaveCount(0);
+    await expect(toggle).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(playerFor(page, "ve-yt")).toHaveCount(1);
+    await expect(toggle).toBeFocused();
+    await exitPreview(page);
   });
 
   test("browser fullscreen: delegated to provider players only, never to a generic Embed; leaving it restores the layout", async ({ page, context }) => {
     await start(page, context);
     await enterPreview(page);
+    // loading="lazy": WebKit loads only frames near the viewport.
+    await playerFor(page, "ve-wistia").scrollIntoViewIfNeeded();
     const wistia = await frameWhere(page, (url) => url.startsWith("https://fast.wistia.net/"));
     expect((await playerReport(wistia)).fullscreenEnabled).toBe(true);
     const generic = await frameWhere(page, (url) => url.startsWith("https://widget.example/"));
@@ -333,10 +384,14 @@ test.describe("exported page", () => {
       await page.setViewportSize({ width: 900, height: 2400 });
       await page.goto(`${origin}/index.html`);
       const players = page.locator("iframe[data-ly-video-src]");
-      await expect(players).toHaveCount(2);
+      await expect(players).toHaveCount(3);
       const titles = await players.evaluateAll((frames) => frames.map((frame) => frame.getAttribute("title")));
-      // Vimeo is exported as its empty box (playback blocked).
-      expect(titles).toEqual(["YouTube clip", "Wistia clip"]);
+      expect(titles).toEqual(["YouTube clip", "Vimeo clip", "Wistia clip"]);
+      // Same permissions as Preview: encrypted-media on the Vimeo player only; none on any generic Embed.
+      await expect(page.locator('iframe[title="Vimeo clip"]')).toHaveAttribute("allow", "fullscreen; encrypted-media");
+      for (const title of ["Generic widget", "Generic in box", "Generic Vimeo"]) expect(await page.locator(`iframe[title="${title}"]`).getAttribute("allow"), title).toBeNull();
+      const staticGeneric = page.locator('iframe[title="Generic widget"]');
+      await staticGeneric.evaluate((element) => Reflect.set(element, "__static", true));
       const yt = page.locator('iframe[title="YouTube clip"]');
       // Parity with Preview (first test): identical URL, sandbox, permission, referrer policy, loading.
       await expect(yt).toHaveAttribute("src", `https://www.youtube-nocookie.com/embed/${YT}?autoplay=1&mute=1&loop=1&playlist=${YT}`);
@@ -354,9 +409,11 @@ test.describe("exported page", () => {
 
       await page.getByRole("button", { name: "Toggle box" }).click();
       await expect(yt).toHaveCount(0);
+      await expect(page.locator('iframe[title="Generic in box"]')).toHaveCount(0);
       expect(frame.isDetached()).toBe(true);
       await page.getByRole("button", { name: "Toggle box" }).click();
       await expect(yt).toHaveCount(1);
+      await expect(page.locator('iframe[title="Generic in box"]')).toHaveAttribute("src", "https://widget.example/in-box");
       await page.getByRole("button", { name: "Show late" }).click();
       await expect(page.locator('iframe[title="Loom clip"]')).toHaveAttribute("src", `https://www.loom.com/embed/${LOOM}?autoplay=1&muted=1`);
       await page.getByRole("button", { name: "Hide late" }).click();
@@ -365,8 +422,10 @@ test.describe("exported page", () => {
         await page.getByRole("button", { name: "Toggle box" }).click();
         await page.getByRole("button", { name: "Toggle box" }).click();
       }
-      await expect(players).toHaveCount(2);
-      await expect.poll(() => providerFrames(page).length).toBe(2);
+      await expect(players).toHaveCount(3);
+      await expect.poll(() => providerFrames(page).length).toBe(3);
+      // A generic frame never hidden is never touched (same element, never reloaded).
+      expect(await staticGeneric.evaluate((element) => Reflect.get(element, "__static"))).toBe(true);
     });
   }
 
@@ -376,7 +435,7 @@ test.describe("exported page", () => {
     for (const width of [390, 1280]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`${origin}/index.html`);
-      await expect(page.locator("iframe[data-ly-video-src]")).toHaveCount(2);
+      await expect(page.locator("iframe[data-ly-video-src]")).toHaveCount(3);
       const report = await page.evaluate(() => ({
         overflow: document.documentElement.scrollWidth - window.innerWidth,
         players: Array.from(document.querySelectorAll("iframe[data-ly-video-src]")).map((frame) => {
@@ -400,7 +459,7 @@ test.describe("exported page", () => {
     const directory = mkdtempSync(path.join(tmpdir(), "bc083-export-"));
     for (const file of result.files) writeFileSync(path.join(directory, file.path), file.content);
     await page.goto(pathToFileURL(path.join(directory, "index.html")).href);
-    await expect(page.locator("iframe[data-ly-video-src]")).toHaveCount(2);
+    await expect(page.locator("iframe[data-ly-video-src]")).toHaveCount(3);
     // The player request is made, with no Referer header (the evidence in every engine).
     await expect.poll(() => served.some((entry) => entry.url.startsWith("https://www.youtube-nocookie.com/"))).toBe(true);
     expect(served.find((entry) => entry.url.startsWith("https://www.youtube-nocookie.com/"))?.referer).toBeUndefined();

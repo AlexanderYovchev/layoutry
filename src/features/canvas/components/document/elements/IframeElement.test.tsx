@@ -1,5 +1,6 @@
 import { render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { RuntimeHiddenContext } from "@/features/canvas/components/document/previewRuntimeContext";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { IframeElement } from "./IframeElement";
 
@@ -142,11 +143,82 @@ describe("IframeElement embed safety (BC-02.3)", () => {
     expect(document.querySelector("iframe")).not.toBe(first);
   });
 
-  it("keeps the same iframe across Design and Preview", () => {
-    const { rerender } = render(<IframeElement node={{ id: "iframe-1", tag: "iframe", src: "https://a.example/1" }} {...props} />);
-    const first = document.querySelector("iframe");
+  it("BC-08.3.1 (approved): entering and leaving Preview each give a fresh iframe — nothing from Preview keeps running in Design", () => {
+    const node = { id: "iframe-1", tag: "iframe", src: "https://a.example/1" };
+    const { rerender } = render(<IframeElement node={node} {...props} />);
+    const design = document.querySelector("iframe");
     useEditorStore.setState({ editorMode: "preview" });
-    rerender(<IframeElement node={{ id: "iframe-1", tag: "iframe", src: "https://a.example/1" }} {...props} />);
-    expect(document.querySelector("iframe")).toBe(first);
+    rerender(<IframeElement node={node} {...props} />);
+    const preview = document.querySelector("iframe");
+    expect(preview).not.toBeNull();
+    expect(preview).not.toBe(design);
+    useEditorStore.setState({ editorMode: "design" });
+    rerender(<IframeElement node={node} {...props} />);
+    const back = document.querySelector("iframe");
+    expect(back).not.toBe(preview);
+    expect(document.querySelectorAll("iframe")).toHaveLength(1);
+    // Same source, sandbox and attributes throughout.
+    expect(back).toHaveAttribute("src", "https://a.example/1");
+    expect(back).toHaveAttribute("sandbox", "allow-forms allow-popups allow-scripts allow-same-origin");
+  });
+});
+
+describe("generic Embed Preview lifecycle (BC-08.3.1)", () => {
+  const props = { parentId: "page-root", parentLayoutMode: "flow", parentFlowDisplay: "block" } as const;
+  const node = { id: "generic-1", tag: "iframe", src: "https://maps.example/embed", title: "Map" };
+
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  const tree = (hidden: boolean) => (
+    <RuntimeHiddenContext.Provider value={hidden}>
+      <IframeElement node={node} {...props} />
+    </RuntimeHiddenContext.Provider>
+  );
+
+  it("hidden by an interaction on itself or an ancestor: the iframe is removed (the element stays); shown again: a fresh one", () => {
+    useEditorStore.setState({ editorMode: "preview" });
+    const { container, rerender } = render(tree(false));
+    const first = container.querySelector("iframe");
+    expect(first).not.toBeNull();
+    rerender(tree(true));
+    expect(container.querySelector("iframe")).toBeNull();
+    expect(container.querySelector("[data-node-id='generic-1']")).not.toBeNull();
+    rerender(tree(false));
+    const second = container.querySelector("iframe");
+    expect(second).not.toBeNull();
+    expect(second).not.toBe(first);
+    expect(second).toHaveAttribute("src", "https://maps.example/embed");
+  });
+
+  it("authored Display none on an ancestor: no iframe in Preview (Design keeps the live embed, as before)", () => {
+    useEditorStore.getState().insertElement("page-root", { id: "box", tag: "div", display: { display: "none" }, children: [node] });
+    const { container, rerender } = render(<IframeElement node={node} {...props} />);
+    expect(container.querySelector("iframe")).not.toBeNull();
+    useEditorStore.setState({ editorMode: "preview" });
+    rerender(<IframeElement node={node} {...props} />);
+    expect(container.querySelector("iframe")).toBeNull();
+  });
+
+  it("Design is unaffected by runtime hiding (it only exists in Preview)", () => {
+    const { container } = render(tree(true));
+    expect(container.querySelector("iframe")).not.toBeNull();
+  });
+
+  it("writes nothing: same document, same history", () => {
+    const before = { document: useEditorStore.getState().document, past: useEditorStore.getState().past };
+    useEditorStore.setState({ editorMode: "preview" });
+    const { rerender } = render(tree(false));
+    rerender(tree(true));
+    rerender(tree(false));
+    expect(useEditorStore.getState().document).toBe(before.document);
+    expect(useEditorStore.getState().past).toBe(before.past);
+  });
+
+  it("a generic Embed with a Vimeo URL never gets a permission", () => {
+    useEditorStore.setState({ editorMode: "preview" });
+    const { container } = render(<IframeElement node={{ ...node, src: "https://player.vimeo.com/video/76979871" }} {...props} />);
+    expect(container.querySelector("iframe")?.hasAttribute("allow")).toBe(false);
   });
 });

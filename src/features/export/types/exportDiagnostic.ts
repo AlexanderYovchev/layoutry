@@ -36,7 +36,6 @@ export type ExportDiagnosticCode =
   | "embedded-image-invalid"
   | "embedded-image-type-mismatch"
   | "video-embed-invalid"
-  | "video-embed-blocked"
   | "video-embed-needs-website";
 
 export interface ExportDiagnostic {

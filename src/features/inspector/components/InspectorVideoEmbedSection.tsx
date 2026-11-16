@@ -120,11 +120,6 @@ export function InspectorVideoEmbedSection({ node }: InspectorVideoEmbedSectionP
           {provider ? provider.displayName : "None yet"}
         </span>
       </InspectorPropertyRow>
-      {provider?.playback.status === "blocked" && (
-        <p data-testid="video-embed-playback-blocked" role="status" className="px-0.5 text-[11px] text-red-600 dark:text-red-400">
-          {provider.playback.reason}
-        </p>
-      )}
       {provider?.playback.status === "unverified" && <Note>{provider.playback.note}</Note>}
 
       {provider && source && (

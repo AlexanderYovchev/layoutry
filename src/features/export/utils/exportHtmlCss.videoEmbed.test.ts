@@ -66,11 +66,25 @@ describe("Video Embed export (BC-08.3)", () => {
     }
   });
 
-  it("Vimeo (playback blocked, BC-08.3): the empty box and a warning that says why, never an iframe", () => {
-    const { parsed, codes, result } = exported(page([video({ src: "https://player.vimeo.com/video/76979871?dnt=1" })]));
-    expect(parsed.querySelector("iframe")).toBeNull();
-    expect(codes).toContain("video-embed-blocked");
-    expect(result.diagnostics.find((diagnostic) => diagnostic.code === "video-embed-blocked")?.message).toMatch(/encrypted media/);
+  it("Vimeo (BC-08.3.1): a player with exactly fullscreen + encrypted-media and the unchanged sandbox; no other embed gets encrypted-media", () => {
+    const vimeoSrc = "https://player.vimeo.com/video/76979871?dnt=1";
+    const { parsed } = exported(
+      page([
+        video({ id: "iframe-vimeo", src: vimeoSrc }),
+        video({ id: "iframe-yt" }),
+        video({ id: "iframe-loom", src: `https://www.loom.com/embed/${"a".repeat(32)}` }),
+        video({ id: "iframe-wistia", src: "https://fast.wistia.net/embed/iframe/26sk4lmiix?doNotTrack=true" }),
+        { id: "iframe-generic-vimeo", tag: "iframe", src: vimeoSrc, title: "Generic Vimeo" },
+        video({ id: "iframe-spoof", src: "https://player.vimeo.com.evil.example/video/76979871" }),
+      ]),
+    );
+    const frames = Array.from(parsed.querySelectorAll("iframe"));
+    expect(frames.map((frame) => frame.getAttribute("allow"))).toEqual(["fullscreen; encrypted-media", "fullscreen", "fullscreen", "fullscreen", null]);
+    expect(frames.every((frame) => frame.getAttribute("sandbox") === "allow-forms allow-popups allow-scripts allow-same-origin")).toBe(true);
+    expect(frames[0].getAttribute("src")).toBe("https://player.vimeo.com/video/76979871?dnt=1&autoplay=0");
+    // The generic Embed with a Vimeo URL is the last frame: no permission at all; the spoofed one exports no frame.
+    expect(frames[4].getAttribute("title")).toBe("Generic Vimeo");
+    expect(frames).toHaveLength(5);
   });
 
   it("a generic Embed — even with a YouTube URL — exports exactly as before", () => {

@@ -24,15 +24,9 @@ interface VideoEmbedPlaceholderProps {
  * embed, or no valid link).
  */
 export function VideoEmbedPlaceholder({ node, isPreview }: VideoEmbedPlaceholderProps) {
-  const { providerName, settings, blocker } = summarizeVideoEmbed(node);
+  const { providerName, settings } = summarizeVideoEmbed(node);
   const heading = providerName ? `${providerName} video` : "Video Embed";
-  const note = !providerName
-    ? "Paste a video link in the Inspector"
-    : blocker
-      ? blocker
-      : isPreview
-        ? "Player not loaded"
-        : "Plays in Preview. No video is loaded while you design";
+  const note = !providerName ? "Paste a video link in the Inspector" : isPreview ? "Player not loaded" : "Plays in Preview. No video is loaded while you design";
   // The title is shown only when it adds something (not the provider's own default, e.g. "YouTube video").
   const title = node.title && node.title !== heading ? node.title : undefined;
   const label = [heading, title, note].filter(Boolean).join(". ");

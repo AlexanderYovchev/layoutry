@@ -1,0 +1,594 @@
+LAYOUTRY — BC-08.3.1: VIMEO ENCRYPTED-MEDIA PERMISSION & GENERIC EMBED
+LIFECYCLE CORRECTION
+==================================================================
+Date: 2026-11-13
+Base commit: bf97ad9 (BC-08.3). Nothing was committed or pushed.
+
+Unchanged:
+- sandbox tokens;
+- desktop/ (permissions, Referer, fullscreen, navigation, preload);
+- the project format (2);
+- the document schema.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Both approved decisions are implemented and verified.
+
+A. Vimeo
+- Root cause verified again before any change, in headed Microsoft Edge
+  (the one available browser that can decode Vimeo's streams). The only
+  missing piece was the Permissions-Policy feature `encrypted-media`.
+  - With it alone, and the sandbox unchanged, Vimeo plays like its
+    official embed.
+  - Without it, it never plays.
+- Validated Vimeo Video Embeds now get
+  allow="fullscreen; encrypted-media" in browsers, and
+  allow="encrypted-media" in the desktop Preview, where fullscreen stays
+  off until BC-08.4.
+- The permission comes only from the re-validated provider identity in
+  the shared configuration, so Preview and every export format are
+  identical.
+- No other provider, generic Embed, invalid or spoofed source gets it
+  (unit, browser and export tests).
+- Live, in Edge: Vimeo muted autoplay plays in Preview (11.6 s) and on the
+  exported page (12.6 s). Vimeo is now marked verified.
+- Playwright's bundled Chromium, Firefox and WebKit cannot play Vimeo with
+  Vimeo's own official embed either (codec/DRM/media limits of those
+  builds), so they cannot verify Vimeo either way.
+
+B. Generic Embed lifecycle
+- Generic Embeds now share the Video Embed lifecycle rule
+  (usePreviewFrameShown).
+- In Preview the frame exists only while the Embed and every ancestor are
+  shown. Hiding it, hiding an ancestor, or leaving Preview removes the
+  framed document.
+- Entering and leaving Preview each create a fresh frame, so nothing from
+  a Preview session keeps running in Design.
+- Exported pages apply the same rule through the export runtime. Frames
+  that stay shown are never touched.
+- Source, sandbox, markup, document and history are unchanged.
+
+Bugs found: none in the product. Test-only adjustments are in section 20.
+
+Validation:
+- Vitest: 5960 passed, 1 skipped.
+- Chromium full suite: 280 passed, 2 skipped (opt-in live).
+- Firefox and WebKit targeted: everything passed (sections 22-23).
+- Electron full suite: 82 passed, 2 skipped.
+- Stress: passed.
+- Typecheck, lint, production build and desktop build: all clean.
+
+QA recommendation: APPROVE BC-08.3.1 (CLOSE). Remaining limits are
+environment or provider rules (section 26).
+
+
+2. ROOT-CAUSE VERIFICATION
+--------------------------
+Method:
+- A temporary probe (deleted afterwards) loaded the same Vimeo URL
+  (https://player.vimeo.com/video/76979871?dnt=1&autoplay=0) from a real
+  loopback http origin, in four embeddings.
+- After 6 s the probe recorded whether the EME API exists inside the
+  frame. It then clicked the player (manual playback) and read the
+  <video>'s currentTime 8 s later.
+
+  Embedding (sandbox = BC-02.3 tokens unless stated)   Edge (headed)       Pw-Chromium   Pw-Firefox   Pw-WebKit
+  ---------------------------------------------------  ------------------  ------------  -----------  ---------
+  allow="fullscreen"            (BC-08.3 markup)        paused, 0.0 s       0.0 s         0.0 s        0.0 s
+  allow="fullscreen; encrypted-media"                   PLAYING, 2.5 s      0.0 s         0.0 s        0.0 s
+  allow="encrypted-media"                               PLAYING, 5.7 s      0.0 s         0.0 s        0.0 s
+  Vimeo official embed, NO sandbox
+    (allow="autoplay; fullscreen; picture-in-picture;
+     clipboard-write; encrypted-media; web-share")      PLAYING, 5.0 s      0.0 s         0.0 s        0.0 s
+
+Conclusions:
+- `encrypted-media` is necessary: without it Vimeo never plays in Edge.
+- It is sufficient: with it alone Vimeo plays.
+- The sandbox can stay exactly as it is: the sandboxed variant plays like
+  the unsandboxed official embed.
+- No other feature is needed: not autoplay delegation, picture-in-picture,
+  clipboard or web-share.
+- The bundled Playwright engines fail even with Vimeo's official embed.
+  That is an environment limit (no H.264/Widevine in Playwright's
+  Chromium, Windows Firefox/WebKit builds without the needed media
+  support; WebKit has no EME API at all), not Layoutry.
+  - Live, Playwright's Chromium even shows Vimeo's "Rights issue — trouble
+    authorizing playback".
+- BC-08.3's earlier observation was that, without encrypted-media, Vimeo
+  shows "Unable to play video. Please try again in a supported browser."
+- Remaining provider-side restrictions: owner domain whitelisting,
+  private videos, Rights issues. These are shown by Vimeo itself.
+
+
+3. VIMEO PERMISSION IMPLEMENTATION
+----------------------------------
+src/lib/videoEmbed/videoEmbedProviders.ts:
+- Each provider has `permissions: readonly VideoEmbedPermission[]`, where
+  VideoEmbedPermission = "encrypted-media".
+- Vimeo: ["encrypted-media"]. YouTube, Loom and Wistia: [].
+- Vimeo playback is now { status: "verified" }.
+- The "blocked" playback status and its export/Inspector/placeholder paths
+  were removed, since no provider needs them now. The diagnostic
+  "video-embed-blocked" is gone too.
+
+src/lib/videoEmbed/videoEmbedPlayerConfig.ts, allowAttribute(provider,
+fullscreenAllowed):
+  ["fullscreen" if allowed and capable] + provider.permissions, joined
+  with "; "; undefined when empty.
+
+All the brief's conditions hold:
+- the element is a Video Embed (isVideoEmbedNode, BC-08.2 identity);
+- the provider comes from the central parser (readVideoEmbedSource
+  re-parses the stored src on every render and export);
+- the destination is rebuilt on the exact embed host player.vimeo.com and
+  re-checked (https, no port, no credentials);
+- the attribute is produced only by this pipeline.
+Never from:
+- substrings;
+- an unvalidated persisted value (no document field holds permissions;
+  the schema refuses an `allow` field);
+- a generic Embed (its iframe path never sets allow);
+- user input.
+
+
+4. EXACT PERMISSIONS POLICY CHANGES
+-----------------------------------
+                         Browser Preview / every export      Desktop Preview
+  ---------------------  ----------------------------------  ---------------------
+  Vimeo Video Embed      fullscreen; encrypted-media         encrypted-media
+  YouTube/Loom/Wistia    fullscreen                          (no allow)
+  Generic Embed          (no allow)                          (no allow)
+
+The allowlist is the attribute's default, 'src': the frame's own origin,
+which is always the validated https://player.vimeo.com. An explicit
+origin list was not used: it adds nothing over 'src' and has narrower
+parser support.
+
+Not granted, anywhere: camera, microphone, geolocation, clipboard,
+payment, display-capture, autoplay, picture-in-picture, web-share, or
+any other feature.
+
+
+5. SANDBOX COMPARISON BEFORE/AFTER
+----------------------------------
+Before and after, for every Video Embed and generic Embed:
+  "allow-forms allow-popups allow-scripts allow-same-origin"
+allow-same-origin is present only for cross-origin sources, from the
+unchanged resolveIframeSourcePolicy.
+
+No token was added or removed:
+- no top-navigation tokens;
+- no allow-popups-to-escape-sandbox;
+- no modals or downloads.
+Unit-tested over every provider and both host origins; asserted in
+browser tests for every player and generic frame; asserted in Electron.
+
+
+6. PROVIDER ISOLATION EVIDENCE
+------------------------------
+Unit tests (videoEmbedPlayerConfig.test.ts):
+- encrypted-media appears for Vimeo only, across browser, export and
+  desktop options;
+- the only features ever present are fullscreen and encrypted-media;
+- nine spoofed or malformed Vimeo sources produce no player at all:
+  player.vimeo.com.evil.example, evil.example/player.vimeo.com, user-info
+  tricks, port 8443, notvimeo.com, encoded traversal, a non-numeric id,
+  http:.
+Unit (exportHtmlCss.videoEmbed.test.ts):
+- one export holds Vimeo, YouTube, Loom, Wistia, a generic Embed with a
+  Vimeo URL, and a spoofed Vimeo Video Embed;
+- allow values are exactly:
+    ["fullscreen; encrypted-media", "fullscreen", "fullscreen",
+     "fullscreen", null]
+- the spoofed one exports no frame.
+Unit (IframeElement.test.tsx): a generic Embed with a Vimeo URL has no
+allow attribute in Preview.
+Browser (3 engines, video-embed-playback.spec.ts):
+- Preview:
+  - Vimeo has "fullscreen; encrypted-media";
+  - YouTube and Wistia have "fullscreen";
+  - the generic widget, generic-in-box and generic-Vimeo frames have no
+    allow;
+  - the spoofed Vimeo is an empty placeholder with no request.
+- Exported page: the same values.
+- Empty Video Embed placeholders have no iframe at all (BC-08.2).
+
+
+7. VIMEO LIVE PLAYBACK RESULTS
+------------------------------
+Opt-in run: e2e/live/video-embed-live.spec.ts, LAYOUTRY_LIVE_PROVIDERS=1,
+public Vimeo 76979871, muted autoplay authored.
+Projects: Playwright Chromium, Firefox, WebKit, and headed Edge (a
+temporary config, deleted afterwards).
+
+  Context                     Edge (headed)               Pw-Chromium           Pw-Firefox / Pw-WebKit
+  --------------------------  --------------------------  --------------------  ---------------------------
+  Preview, muted autoplay     PLAYING, muted, 11.6 s      no (H.264)            no, even after click
+  Exported page (http)        PLAYING, muted, 12.6 s      "Rights issue"        no, even after click
+  fullscreenEnabled           true                        true                  true
+
+The same run, other providers: YouTube and Wistia played muted in
+Preview and export in every engine. Playwright's WebKit export of YouTube
+needed one click once, and played on rerun.
+
+Brief items, Vimeo:
+- Covered live (Edge): muted autoplay, Preview, export, fullscreen
+  availability.
+- Covered deterministically: autoplay disabled (autoplay=0), loop,
+  controls (unsupported, hidden), start time (#t), DNT (dnt=1),
+  Preview-exit cleanup, hidden-state cleanup. Each is checked in the URL
+  or lifecycle tests.
+- Manual playback was verified in the root-cause probe (section 2).
+- The file:// limitation is not treated as an iframe failure
+  (BC-08.3 section 19).
+
+Status: VERIFIED in a Chromium-family browser with codecs (Edge). Not
+verifiable in Playwright's own Firefox and WebKit builds (the official
+embed fails there too). Real Firefox and real Safari remain to be
+checked manually.
+
+
+8. GENERIC EMBED LIFECYCLE IMPLEMENTATION
+-----------------------------------------
+- Shared rule: src/features/canvas/hooks/usePreviewFrameShown.ts.
+  - shown = isPreview AND NOT RuntimeHiddenContext (the element or any
+    ancestor hidden by an interaction) AND NOT isNodeAuthoredHidden
+    (Display none / Visibility hidden on itself or an ancestor).
+  - A pure derivation: no effects, timers or listeners, so nothing can
+    fire late and re-create a removed frame. Idempotent by construction.
+- VideoEmbedFrame (Video Embeds) now uses the hook instead of its own copy
+  of the rule.
+- IframeElement (generic Embeds):
+  - Design: the live iframe, as BC-02.3 established, keyed
+    "<sandbox>|design".
+  - Preview: an iframe only while the hook says shown, keyed
+    "<sandbox>|preview".
+- Mode keys guarantee a fresh document on every entry and exit.
+  Source, sandbox and attributes are unchanged.
+- Project switching, deletion and editor unmount unmount the component;
+  duplicates are independent nodes.
+- Approved behaviour change: BC-02.3's test "repeated Preview sessions
+  keep the same iframe" now asserts the approved behaviour:
+  - a fresh frame on each entry and exit;
+  - the frame count never grows;
+  - the same sandbox;
+  - 11 loads for 5 sessions (1 + 2 per session);
+  - Undo still disabled.
+
+
+9. PREVIEW EXIT BEHAVIOR
+------------------------
+- Video Embeds: unmounted (BC-08.3).
+- Generic Embeds: the Preview document is destroyed and Design gets a new
+  one.
+- Browser test (3 engines): each generic frame's Preview element is
+  marked; after exit none carries the mark; there is still exactly one
+  frame per generic Embed; the frame count after 3 more sessions equals
+  the count before.
+- Electron:
+  - embed-safety's hostile-embed sessions still pass;
+  - video-embed checks Vimeo and YouTube removal and Design frames.
+
+
+10. DIRECT HIDDEN-STATE BEHAVIOR
+--------------------------------
+- Unit: a generic Embed hidden through RuntimeHiddenContext.
+  - Its iframe is removed, the element stays, and showing gives a new
+    element with the same src.
+  - The document and history are the same objects.
+  - Design ignores runtime hiding.
+- Exported (jsdom): a generic frame hidden at load has no frame until
+  Show.
+- Browser: a Video Embed hidden at load or by Hide stays unmounted until
+  Show (BC-08.3 tests, still green).
+- display:none and visibility:hidden on the element, in Preview, use the
+  same isNodeAuthoredHidden (unit-tested for both).
+
+
+11. HIDDEN ANCESTOR BEHAVIOR
+----------------------------
+- Browser (3 engines), Preview: toggling the box (div > section > generic
+  iframe, plus a YouTube player) removes both frames.
+  - Both frames' documents are detached.
+  - The generic element stays in the DOM.
+  - Showing again re-requests both (+2 requests).
+  - Repeated toggles never accumulate frames.
+- Unit: an ancestor with authored display none gives no generic iframe in
+  Preview; Design still shows it live.
+- Exported (jsdom and browser): toggling the box removes and recreates the
+  nested generic frame from its own src.
+
+
+12. EXPORTED WEBSITE BEHAVIOR
+-----------------------------
+- Markup is unchanged for generic Embeds (no new attribute).
+- The runtime (present whenever the page has interactions, an open-at-load
+  dialog or a Video Embed player) manages every <iframe>, since every
+  iframe on an exported page is a Layoutry Embed:
+  - at load, a hidden or unrendered frame is removed;
+  - a shown frame whose markup is already right is kept as-is;
+  - on every visibility change, frames no longer shown are removed, and
+    frames newly shown are recreated fresh (a generic one from its own src).
+- A frame that stays shown is never touched:
+  - jsdom: the same element after 6 toggles of another target;
+  - browser: a property marker survives the whole exported-page test.
+- Pages with no runtime (purely static) keep their frames exactly as
+  before.
+- No editor runtime dependency.
+- No polling or MutationObserver: visibility on exported pages changes
+  only through the runtime's own setVisible, and authored CSS is static.
+  An observer would add cost with no event to observe.
+
+
+13. AUTOPLAY AND REDUCED-MOTION REGRESSION
+------------------------------------------
+- The muted-only matrix is unchanged and unit-tested for all four
+  providers, now including Vimeo again.
+- Reduced motion: no autoplay in Preview or export (BC-08.3 tests still
+  green, 3 engines).
+- Nothing is muted for the user.
+- Generic Embeds: Layoutry cannot read or control a third-party page's
+  own autoplay. The lifecycle stops it when hidden or when Preview ends,
+  but while shown its content behaves as its own site decides. This is
+  stated in the report; no claim of control is made.
+
+
+14. ELECTRON SECURITY
+---------------------
+- No desktop/ change (git diff desktop/ is empty).
+- Full Electron suite: 82 passed, 2 skipped. It covers:
+  - navigation and popup blocking;
+  - permissions denied;
+  - no Node.js or bridge in frames;
+  - CSP;
+  - the hostile-embed matrix;
+  - save/reopen;
+  - export.
+- New desktop check (video-embed.spec.ts):
+  - the Vimeo player in the desktop Preview has allow="encrypted-media",
+    the BC-02.3 sandbox, and no fullscreen;
+  - on exit it is removed and the window is not fullscreen;
+  - the request is cancelled by the offline harness.
+- Expected, pending BC-08.4: the shell's permission handler denies
+  everything (EME's media-key-system access included) and sends no
+  Referer, so Vimeo (and YouTube) may still fail in the desktop Preview.
+  Exported pages opened in a browser are unaffected.
+
+
+15. ACCESSIBILITY
+-----------------
+- Titles are unchanged: the authored title, else the provider's default;
+  generic Embeds keep their own.
+- Browser test (3 engines): the box is hidden with the keyboard (Enter on
+  the toggle).
+  - Focus stays on the toggle.
+  - The removed frames are gone from the tab order.
+  - Showing them again does not move focus.
+- Hidden frames are removed, not merely hidden, so no inaccessible iframe
+  is left in the tab order.
+- The Vimeo blocker message is removed: nothing to announce now. The Loom
+  unverified note remains.
+
+
+16. PERFORMANCE
+---------------
+e2e/video-embed-stress.spec.ts, Chromium, fake pages. The fixture has 8
+Video Embeds (2 Vimeo) and 2 generic Embeds, some nested in a toggled
+container.
+- 20 Preview sessions: median 144 ms (max 196) to 8 mounted players.
+  Exactly 160 provider requests (8 per session) and 80 generic requests
+  (2 frames × entry and exit × 20).
+- 30 hide/show cycles: exactly 4 provider and 1 generic re-mount per
+  cycle.
+- After exit: provider frames 0, generic frames 2 (Design).
+- Net window listeners: 1 (bound 2).
+- Design: 0 provider requests.
+- Heap after GC: 18.6 MB, then 19.6, then 19.8 MB.
+
+
+17. DOCUMENT AND UNDO INTEGRITY
+-------------------------------
+- Permissions are derived at render time; no document field stores them.
+- The generic lifecycle is runtime-only.
+- Unit: the document and history are the same objects after
+  Preview/hide/show; exportHtmlCss leaves the document JSON identical.
+- Browser: after the full lifecycle test, Undo stays unavailable and there
+  are no unsaved changes.
+- No schema or format change.
+- The BC-08.2/08.3 save/reopen tests (unit, browser, Electron) pass.
+
+
+18. SOURCE FILES MODIFIED
+-------------------------
+New:
+  src/features/canvas/hooks/usePreviewFrameShown.ts
+      shared Preview frame lifecycle rule
+Modified:
+  src/lib/videoEmbed/videoEmbedProviders.ts
+      permissions per provider; Vimeo encrypted-media; Vimeo verified;
+      "blocked" status removed
+  src/lib/videoEmbed/videoEmbedPlayerConfig.ts
+      allowAttribute
+  src/features/canvas/components/document/elements/IframeElement.tsx
+      generic Preview lifecycle, mode-keyed frames
+  src/features/canvas/components/document/elements/VideoEmbedFrame.tsx
+      uses the shared hook
+  src/features/canvas/components/document/elements/VideoEmbedPlaceholder.tsx,
+  src/features/canvas/utils/videoEmbedSummary.ts
+      blocker removed
+  src/features/export/utils/buildExportDocument.ts,
+  src/features/export/types/exportDiagnostic.ts
+      blocker branch and code removed
+  src/features/export/utils/exportInteractionRuntime.ts
+      manages every iframe; generic recreated from its own src
+  src/features/inspector/components/InspectorVideoEmbedSection.tsx
+      blocker UI removed
+  docs/architecture/export-engine.md
+Not modified: desktop/, src/lib/iframeSandbox.ts, the schema.
+
+
+19. TESTS ADDED
+---------------
+Unit:
+- videoEmbedPlayerConfig.test.ts:
+  - Vimeo is back in the provider loop with its exact allow;
+  - permission isolation across options;
+  - the spoofed Vimeo table;
+  - Vimeo parameters and sandbox;
+  - the desktop allow for Vimeo.
+- exportHtmlCss.videoEmbed.test.ts: the Vimeo permission isolation export
+  (replacing the BC-08.3 "Vimeo blocked" test).
+- IframeElement.test.tsx:
+  - the approved fresh-frame-per-mode test, replacing "keeps the same
+    iframe across Design and Preview";
+  - a new "generic Embed Preview lifecycle" block: interaction hide and
+    show, ancestor display none, Design unaffected, immutability, a
+    Vimeo URL gets no permission.
+- exportInteractionRuntime.videoEmbed.test.ts: the exported generic
+  lifecycle (ancestor toggle, recreation from its own src, a static frame
+  untouched, hidden at load).
+- InspectorVideoEmbedSection.test.tsx: Vimeo shows no blocker and no
+  unverified note (replacing the blocker test).
+Browser:
+- video-embed-playback.spec.ts:
+  - the fixture now includes Vimeo, a generic Embed nested in the toggled
+    box, a generic Embed with a Vimeo URL, and a spoofed Vimeo Video
+    Embed;
+  - Preview permission/sandbox/lifecycle assertions for all of them;
+  - a new keyboard focus-recovery test;
+  - exported-page permission and generic lifecycle assertions.
+- embed-safety.spec.ts: the sessions test, updated to the approved
+  behaviour.
+- video-embed-stress.spec.ts: Vimeo and generic Embeds added, with
+  separate request accounting.
+- e2e/desktop/video-embed.spec.ts: the Vimeo desktop Preview allow and
+  cleanup.
+- e2e/live/video-embed-live.spec.ts: Vimeo added back, manual-play
+  fallback, allow assertions.
+Each replaced assertion is a deliberate change to an approved behaviour
+(decisions A/B). None was weakened.
+
+
+20. EXACT TEST COMMANDS AND RESULTS
+-----------------------------------
+  npm run typecheck                                       clean
+  npm run lint                                            clean
+  npx vitest run                                          391 files, 5960 passed, 1 skipped
+  npx playwright test --project=chromium                  280 passed, 2 skipped (opt-in live)
+  npx playwright test -c zz-xbrowser.config.ts e2e/video-embed-playback.spec.ts e2e/video-embed.spec.ts
+      e2e/embed-safety.spec.ts e2e/bc02-final-regression.spec.ts --project=firefox --project=webkit
+                                                          107 passed, 1 failed, 2 skipped -> fixed (below)
+  … e2e/video-embed-playback.spec.ts -g fullscreen --repeat-each=3 (3 engines)   9 passed
+  … e2e/video-embed-playback.spec.ts --project=firefox --project=webkit         24 passed
+  npx playwright test e2e/video-embed-stress.spec.ts      1 passed
+  npm run desktop:build                                   exit 0
+  npx playwright test -c playwright.desktop.config.ts     82 passed, 2 skipped, 0 failed
+  npm run build                                           exit 0
+  LAYOUTRY_LIVE_PROVIDERS=1 … e2e/live/video-embed-live.spec.ts (4 browsers)
+      7 passed; 1 timed out (WebKit export: four providers, each observed
+      twice, exceeded 120 s). Rerun: passed. Test timeout raised to 300 s.
+
+The one targeted failure: WebKit "browser fullscreen". It was a TEST
+issue. The larger fixture pushed the Wistia player below the fold, and
+WebKit does not load loading="lazy" frames there. Fix: scroll it into
+view first, then 9/9.
+
+The 2 Firefox/WebKit skips are the Chromium-only stress spec.
+
+Temporary configs (three-engine; three-engine plus headed Edge) and the
+root-cause probe spec were deleted.
+
+
+21. CHROMIUM RESULTS
+--------------------
+- Full suite: 280 passed, 2 skipped, 0 failed.
+- Includes video-embed (10), video-embed-playback (12), embed-safety (29),
+  bc02-final-regression, export specs and stress.
+
+
+22. FIREFOX RESULTS
+-------------------
+- video-embed-playback 12/12, video-embed 10/10, embed-safety 29/29,
+  bc02-final-regression: all passed.
+- Live: YouTube and Wistia play; Vimeo doesn't (environment, see section
+  7).
+
+
+23. WEBKIT RESULTS
+------------------
+- video-embed-playback 12/12 (after the scroll fix), video-embed 10/10,
+  embed-safety 29/29, bc02-final-regression: all passed.
+- Live: YouTube and Wistia play; Vimeo doesn't (no EME in Playwright's
+  WebKit).
+
+
+24. ELECTRON RESULTS
+--------------------
+82 passed, 2 skipped, 0 failed (after desktop:build). No desktop/ change.
+
+
+25. TYPECHECK / LINT / BUILD RESULTS
+------------------------------------
+- typecheck: clean.
+- lint: clean.
+- web build: succeeded.
+- desktop build: succeeded (includes the desktop tsc).
+
+
+26. REMAINING LIMITATIONS
+-------------------------
+- Vimeo is verified in Edge. Real Firefox and Safari are not verified
+  (Playwright's builds cannot play Vimeo even via its official embed).
+- Vimeo and YouTube in the desktop app: pending BC-08.4 (Referer,
+  permissions).
+- Generic Embeds reset when hidden or when Preview starts or ends, by
+  design: maps, forms and widgets lose their in-frame state.
+- Generic Embed content's own autoplay is not controllable; only its
+  lifecycle is.
+- On exported pages, generic frames are managed only when the page has the
+  runtime (interactions, open-at-load dialog, or a Video Embed). A purely
+  static page has no visibility changes to react to.
+- Provider rules (owner restrictions, Rights issues, Referer) still apply.
+
+
+27. OPEN DEFECTS
+----------------
+None new.
+Carried:
+- D3: WebKit stale aspect-ratio height after a live resize (pre-existing,
+  all media).
+- D4: whether native video should share the reduced-motion autoplay rule
+  (decision).
+- D5: Loom needs a public test video.
+- PRJ-K1 (BC-06).
+
+
+28. GIT WORKING-TREE STATUS
+---------------------------
+- Modified (20): the sources in section 18 and the tests in section 19,
+  plus docs/architecture/export-engine.md.
+- Untracked: src/features/canvas/hooks/usePreviewFrameShown.ts and this
+  report.
+- Gitignored: changelogs/2026-11-13-vimeo-permission-generic-embed-lifecycle-BC-08.3.1.txt
+- No desktop/ change.
+- Nothing is staged, committed or pushed.
+
+
+29. QA RECOMMENDATION
+---------------------
+APPROVE / CLOSE BC-08.3.1. Acceptance criteria:
+- 1: root cause verified (section 2).
+- 2-4: encrypted-media for validated Vimeo only, sandbox intact
+  (sections 3-6).
+- 5: Vimeo plays in a supported browser (Edge, live).
+- 6-10: generic Preview exit, direct hide, ancestor hide, recreation and
+  export lifecycle (sections 8-12).
+- 11: parity (Preview and export use the same pipeline and the same
+  runtime rule).
+- 12: autoplay and reduced motion intact.
+- 13: no document or history change.
+- 14: Electron unchanged.
+- 15: no new critical defect.
+- 16: tests and builds pass.
+BC-08.4 has not been started.

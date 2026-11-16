@@ -1,14 +1,12 @@
 "use client";
 
-import { useContext, type CSSProperties } from "react";
-import { RuntimeHiddenContext } from "@/features/canvas/components/document/previewRuntimeContext";
+import type { CSSProperties } from "react";
 import { VideoEmbedPlaceholder } from "@/features/canvas/components/document/elements/VideoEmbedPlaceholder";
 import { useHostOrigin } from "@/features/canvas/hooks/useHostOrigin";
 import { useIsDesktopShell } from "@/features/canvas/hooks/useIsDesktopShell";
 import { usePrefersReducedMotion } from "@/features/canvas/hooks/usePrefersReducedMotion";
-import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { usePreviewFrameShown } from "@/features/canvas/hooks/usePreviewFrameShown";
 import type { EditorElementNode } from "@/features/editor/types/document";
-import { isNodeAuthoredHidden } from "@/features/editor/utils/isNodeAuthoredHidden";
 import { resolveVideoEmbedPlayerConfig } from "@/lib/videoEmbed/videoEmbedPlayerConfig";
 
 interface VideoEmbedFrameProps {
@@ -24,9 +22,8 @@ interface VideoEmbedFrameProps {
  *   no provider iframe, image, script or request.
  * - Preview: the real provider player, configured by the shared
  *   resolveVideoEmbedPlayerConfig (the export uses the same function),
- *   mounted ONLY while the embed is shown — not hidden by an interaction
- *   on itself or any ancestor (RuntimeHiddenContext), and not hidden by
- *   authored Display none / Visibility hidden on itself or an ancestor.
+ *   mounted ONLY while the embed is shown (usePreviewFrameShown, the
+ *   lifecycle rule generic Embeds share since BC-08.3.1).
  *   Leaving Preview, hiding it, or hiding an ancestor UNMOUNTS the iframe
  *   (approved decision 8), which ends the provider's document and so its
  *   playback and sound; showing it again mounts a fresh player that starts
@@ -41,13 +38,12 @@ interface VideoEmbedFrameProps {
  * on navigation.
  */
 export function VideoEmbedFrame({ node, isPreview, innerStyle }: VideoEmbedFrameProps) {
-  const runtimeHidden = useContext(RuntimeHiddenContext);
-  const authoredHidden = useEditorStore((state) => (isPreview ? isNodeAuthoredHidden(state.document, node.id) === true : false));
+  const previewShown = usePreviewFrameShown(node.id, isPreview);
   const hostOrigin = useHostOrigin();
   const reducedMotion = usePrefersReducedMotion();
   const isDesktop = useIsDesktopShell();
 
-  const shown = isPreview && !runtimeHidden && !authoredHidden && hostOrigin !== null;
+  const shown = previewShown && hostOrigin !== null;
   const config = shown ? resolveVideoEmbedPlayerConfig(node, { hostOrigin, reducedMotion, fullscreenAllowed: !isDesktop }) : undefined;
   if (!config) return <VideoEmbedPlaceholder node={node} isPreview={isPreview} />;
 

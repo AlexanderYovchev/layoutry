@@ -240,18 +240,27 @@ test("compatibility: a well-behaved cross-origin widget keeps storage, requests 
   await expectEditorIntact(page);
 });
 
-test("repeated Preview sessions keep the same iframe and frame count, and record no history", async ({ page }) => {
+// BC-08.3.1 (approved decision B): a generic Embed now gets a FRESH frame on
+// every Preview entry and exit, so nothing a Preview session started (a video,
+// audio) keeps running. Its source, sandbox and history are unchanged, and
+// frames never accumulate. (BC-02.3 kept one frame across sessions.)
+test("repeated Preview sessions: a fresh frame on every entry and exit, the frame count never grows, no history", async ({ page }) => {
   await openEditorWithEmbed(page, embedUrl("cross-origin"));
   await waitForReport(page, "loaded=");
-  await page.locator('[data-document-surface] [data-node-id="embed"] iframe').evaluate((element) => Reflect.set(element, "__bc023Same", true));
+  const iframe = page.locator('[data-document-surface] [data-node-id="embed"] iframe');
+  await iframe.evaluate((element) => Reflect.set(element, "__bc023Same", true));
   const frames = page.frames().length;
   for (let session = 0; session < 5; session++) {
     await enterPreview(page);
+    await expect(iframe).toHaveCount(1);
     await exitPreview(page);
   }
-  expect(await page.locator('[data-document-surface] [data-node-id="embed"] iframe').evaluate((element) => Reflect.get(element, "__bc023Same"))).toBe(true);
-  expect(page.frames().length).toBe(frames);
-  expect((await reports(page)).filter((entry) => entry.startsWith("loaded=")).length).toBe(1);
+  await expect(iframe).toHaveCount(1);
+  expect(await iframe.evaluate((element) => Reflect.get(element, "__bc023Same"))).toBeUndefined();
+  await expect(iframe).toHaveAttribute("sandbox", "allow-forms allow-popups allow-scripts allow-same-origin");
+  await expect.poll(() => page.frames().length).toBe(frames);
+  // One load at start, then one per Preview entry and one per exit.
+  await expect.poll(async () => (await reports(page)).filter((entry) => entry.startsWith("loaded=")).length).toBe(11);
   await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
   await expectEditorIntact(page);
 });

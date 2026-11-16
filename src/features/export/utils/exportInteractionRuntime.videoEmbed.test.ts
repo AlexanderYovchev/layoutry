@@ -120,3 +120,51 @@ describe("exported Video Embed lifecycle (BC-08.3)", () => {
     expect(player.getAttribute("title")).toBe("Embedded video");
   });
 });
+
+describe("exported generic Embed lifecycle (BC-08.3.1)", () => {
+  const generic = (id: string, extra: Partial<EditorElementNode> = {}): EditorElementNode => ({ id, tag: "iframe", src: `https://widget.example/${id}`, title: id, ...extra });
+  const frames = (page: Document, id: string) => Array.from(page.querySelectorAll<HTMLIFrameElement>(`iframe[title="${id}"]`));
+
+  function genericDocument(): EditorElementNode {
+    return {
+      id: "page-root",
+      tag: "page",
+      children: [
+        { id: "btn-toggle", tag: "button", text: "Toggle", interactions: [{ id: "i-1", trigger: "click", action: "toggle", targetId: "box" }] },
+        { id: "btn-show-late", tag: "button", text: "Show", interactions: [{ id: "i-2", trigger: "click", action: "show", targetId: "late" }] },
+        { id: "box", tag: "div", children: [{ id: "inner", tag: "section", children: [generic("in-box")] }] },
+        generic("late", { initialPreviewVisibility: "hidden" }),
+        generic("static"),
+      ],
+    };
+  }
+
+  it("hidden ancestor removes the frame; shown again recreates it from its own src; a static frame is never touched", () => {
+    const view = load(genericDocument());
+    const staticFrame = frames(view.page, "static")[0];
+    const [first] = frames(view.page, "in-box");
+    expect(first.getAttribute("src")).toBe("https://widget.example/in-box");
+    view.click("Toggle");
+    expect(frames(view.page, "in-box")).toHaveLength(0);
+    expect(first.isConnected).toBe(false);
+    view.click("Toggle");
+    const [second] = frames(view.page, "in-box");
+    expect(second).not.toBe(first);
+    expect(second.getAttribute("src")).toBe("https://widget.example/in-box");
+    expect(second.getAttribute("sandbox")).toBe("allow-forms allow-popups allow-scripts allow-same-origin");
+    expect(second.hasAttribute("allow")).toBe(false);
+    for (let round = 0; round < 5; round += 1) {
+      view.click("Toggle");
+      view.click("Toggle");
+    }
+    expect(frames(view.page, "in-box")).toHaveLength(1);
+    expect(frames(view.page, "static")[0]).toBe(staticFrame);
+  });
+
+  it("hidden at load: no frame until shown", () => {
+    const view = load(genericDocument());
+    expect(frames(view.page, "late")).toHaveLength(0);
+    view.click("Show");
+    expect(frames(view.page, "late")).toHaveLength(1);
+  });
+});

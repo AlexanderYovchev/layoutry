@@ -38,16 +38,20 @@ import type { ExportElement } from "@/features/export/types/exportIr";
  *   for muted media, BC-02.2.1). Anything else stays paused until the
  *   user plays it. Preview gets the same result by unmounting hidden
  *   content.
- * - Video Embed players (BC-08.3): iframe[data-ly-video-src]. A provider
- *   player cannot be paused from outside, so it is REMOVED whenever it is
+ * - Embedded frames — Video Embed players (BC-08.3) and, since BC-08.3.1,
+ *   every generic Embed iframe too (every <iframe> on an exported page is
+ *   a Layoutry Embed). Framed content cannot be paused from outside, so a
+ *   frame is REMOVED whenever it is
  *   not shown — hidden by an interaction on it or an ancestor, inside a
  *   closed dialog, or not rendered at all (authored display: none) — and
  *   a fresh one is created from the original element when it is shown
- *   again, starting from its configured state (Preview does the same by
- *   unmounting). The markup's src has no autoplay; a shown player is
- *   loaded from data-ly-video-src (authored muted autoplay included)
- *   unless the viewer prefers reduced motion, in which case the
- *   no-autoplay src is kept. Removing an iframe ends its document, so no
+ *   again, starting from its initial state (Preview does the same by
+ *   unmounting). A frame that is shown at load and never hidden is left
+ *   alone — never removed or reloaded. For a Video Embed the markup's src
+ *   has no autoplay; a shown player is loaded from data-ly-video-src
+ *   (authored muted autoplay included) unless the viewer prefers reduced
+ *   motion, in which case the no-autoplay src is kept. A generic Embed is
+ *   recreated from its own src. Removing an iframe ends its document, so no
  *   sound continues. New frames are new elements, never navigations of an
  *   existing one, so no history entries are added.
  * One delegated listener per event type; no per-element click handlers.
@@ -78,9 +82,14 @@ export const EXPORT_INTERACTION_RUNTIME = `(function () {
   function isShown(element) {
     return !isHidden(element) && element.getClientRects().length > 0;
   }
+  function wantedSrc(frame) {
+    var authored = frame.getAttribute("data-ly-video-src");
+    return !reducedMotion && authored ? authored : frame.getAttribute("src");
+  }
   function freshPlayer(player) {
     var frame = player.original.cloneNode(false);
-    if (!reducedMotion) frame.setAttribute("src", player.original.getAttribute("data-ly-video-src") || "");
+    var src = wantedSrc(player.original);
+    if (src !== null) frame.setAttribute("src", src);
     return frame;
   }
   function syncPlayers() {
@@ -166,11 +175,10 @@ export const EXPORT_INTERACTION_RUNTIME = `(function () {
   // A hidden player is removed at once. A shown one is kept when its
   // markup already loads the right URL (no autoplay requested, or reduced
   // motion); otherwise it is replaced by a fresh frame with autoplay.
-  each("iframe[data-ly-video-src]", function (frame) {
+  each("iframe", function (frame) {
     if (!frame.parentNode) return;
     var player = { original: frame.cloneNode(false), slot: frame.parentNode, frame: frame };
-    var wanted = reducedMotion ? frame.getAttribute("src") : frame.getAttribute("data-ly-video-src");
-    if (!isShown(player.slot) || frame.getAttribute("src") !== wanted) {
+    if (!isShown(player.slot) || frame.getAttribute("src") !== wantedSrc(frame)) {
       frame.remove();
       player.frame = null;
     }

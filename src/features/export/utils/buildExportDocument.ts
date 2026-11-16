@@ -37,9 +37,7 @@ import { hasSvgScene, resolveSvgScene, type SvgVectorObject } from "@/features/e
 import { getEffectiveAutoplay, getMediaControls } from "@/features/editor/types/video";
 import { isVideoEmbedNode } from "@/features/editor/types/videoEmbed";
 import { EXPORTED_PAGE_ORIGIN, resolveIframeSourcePolicy } from "@/lib/iframeSandbox";
-import { readVideoEmbedSource } from "@/lib/videoEmbed/buildVideoEmbedUrl";
 import { resolveVideoEmbedPlayerConfig } from "@/lib/videoEmbed/videoEmbedPlayerConfig";
-import { getVideoEmbedPlaybackBlocker } from "@/lib/videoEmbed/videoEmbedProviders";
 import { formatSvgPoints, pathCommandsToD } from "@/features/editor/utils/svgObjectGeometry";
 import { SVG_CIRCLE_GEOMETRY, SVG_RECTANGLE_GEOMETRY, SVG_STAR_POINTS, SVG_TRIANGLE_POINTS } from "@/features/editor/utils/svgPrimitiveGeometry";
 // Deep import by necessity: the project feature's index.ts also re-exports
@@ -495,12 +493,6 @@ function buildElement(state: BuildState, node: EditorElementNode, styleKey: stri
     const recipe = resolveVideoOrIframeElementStyle(node, context);
     const config = resolveVideoEmbedPlayerConfig(node, { hostOrigin: EXPORTED_PAGE_ORIGIN, reducedMotion: false, fullscreenAllowed: true });
     const frameChecked = config ? checkExportUrl(config.src, "frame").ok && checkExportUrl(config.stillSrc, "frame").ok : false;
-    const source = readVideoEmbedSource(node.src);
-    const blocker = source ? getVideoEmbedPlaybackBlocker(source.provider) : undefined;
-    if (blocker) {
-      report(state, "warning", "video-embed-blocked", `${blocker} Its box is empty in the exported page.`, node.id, "src");
-      return buildMediaFrame(state, node, styleKey, recipe, undefined);
-    }
     if (!config || !frameChecked) {
       report(
         state,

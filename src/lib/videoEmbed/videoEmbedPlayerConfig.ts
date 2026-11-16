@@ -1,6 +1,6 @@
 import { resolveIframeSourcePolicy } from "@/lib/iframeSandbox";
 import { buildVideoEmbedPlayerUrl, readVideoEmbedSource } from "@/lib/videoEmbed/buildVideoEmbedUrl";
-import { getVideoEmbedPlaybackBlocker, getVideoEmbedProvider, providerSupports, type VideoEmbedProviderId } from "@/lib/videoEmbed/videoEmbedProviders";
+import { getVideoEmbedProvider, providerSupports, type VideoEmbedProviderId } from "@/lib/videoEmbed/videoEmbedProviders";
 
 /**
  * The one player configuration for a Video Embed (BC-08.3), used by the
@@ -10,16 +10,18 @@ import { getVideoEmbedPlaybackBlocker, getVideoEmbedProvider, providerSupports, 
  * same parser that accepted it (readVideoEmbedSource), the player URL is
  * rebuilt from the validated identity, and the result must be https on
  * one of the provider's own embed hosts. Anything else gives no player at
- * all (undefined), never a fallback iframe. So does a provider whose
- * player is blocked under the approved permissions (Vimeo, BC-08.3: it
- * needs encrypted-media); getVideoEmbedPlaybackBlocker says why.
+ * all (undefined), never a fallback iframe.
  *
  * Attributes, and why:
  *   sandbox         the unchanged BC-02.3 policy (resolveIframeSourcePolicy)
- *   allow           "fullscreen" only — and only when the caller allows it
- *                   (browsers; not the desktop app until BC-08.4) and the
- *                   provider is fullscreen-capable. No autoplay, camera,
- *                   clipboard or other delegation.
+ *   allow           "fullscreen" when the caller allows it (browsers; not
+ *                   the desktop app until BC-08.4) and the provider is
+ *                   fullscreen-capable, plus the provider's own approved
+ *                   permissions from the registry — only Vimeo's
+ *                   "encrypted-media" (BC-08.3.1, decision A). It is
+ *                   derived from the re-validated provider identity,
+ *                   never from the document. No autoplay, camera,
+ *                   microphone, clipboard, payment or other delegation.
  *   referrerpolicy  strict-origin-when-cross-origin: the browser default,
  *                   stated explicitly so a page-wide no-referrer cannot
  *                   break providers that need the page's origin (YouTube's
@@ -77,11 +79,16 @@ function isOnProviderEmbedHost(url: string, provider: VideoEmbedProviderId): boo
   }
 }
 
+/** The allow attribute: fullscreen where permitted, then the provider's approved permissions; undefined when empty. */
+function allowAttribute(provider: VideoEmbedProviderId, fullscreenAllowed: boolean): string | undefined {
+  const features = [...(fullscreenAllowed && providerSupports(provider, "fullscreen") ? ["fullscreen"] : []), ...getVideoEmbedProvider(provider).permissions];
+  return features.length > 0 ? features.join("; ") : undefined;
+}
+
 export function resolveVideoEmbedPlayerConfig(input: VideoEmbedPlayerInput, options: VideoEmbedPlayerOptions): VideoEmbedPlayerConfig | undefined {
   const source = readVideoEmbedSource(input.src);
   if (!source) return undefined;
   const { provider } = source;
-  if (getVideoEmbedPlaybackBlocker(provider) !== undefined) return undefined;
   const autoplayRequested = input.autoplay === true && input.muted === true && providerSupports(provider, "autoplay") && providerSupports(provider, "muted") && !options.reducedMotion;
   const playback = { muted: input.muted, loop: input.loop, controls: input.controls };
   const src = buildVideoEmbedPlayerUrl(source, { ...playback, autoplay: autoplayRequested });
@@ -97,7 +104,7 @@ export function resolveVideoEmbedPlayerConfig(input: VideoEmbedPlayerInput, opti
     autoplayRequested,
     title,
     sandbox: policy.sandbox,
-    allow: options.fullscreenAllowed && providerSupports(provider, "fullscreen") ? "fullscreen" : undefined,
+    allow: allowAttribute(provider, options.fullscreenAllowed),
     referrerPolicy: VIDEO_EMBED_REFERRER_POLICY,
     loading: VIDEO_EMBED_LOADING,
   };

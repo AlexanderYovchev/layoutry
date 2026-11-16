@@ -2,6 +2,7 @@
 
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useHostOrigin } from "@/features/canvas/hooks/useHostOrigin";
+import { usePreviewFrameShown } from "@/features/canvas/hooks/usePreviewFrameShown";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { MediaInteractionShield } from "@/features/canvas/components/document/elements/MediaInteractionShield";
 import { VideoEmbedFrame } from "@/features/canvas/components/document/elements/VideoEmbedFrame";
@@ -51,7 +52,16 @@ import type { DocumentElementProps } from "@/features/canvas/types/documentRende
  * isVideoEmbedNode) renders VideoEmbedFrame inside the same wrapper: a
  * static placeholder in Design (no provider contact at all) and the real
  * provider player in Preview only while it is shown, unmounted on hide and
- * on Preview exit. The generic iframe path above is unchanged.
+ * on Preview exit.
+ *
+ * Generic Embed lifecycle (BC-08.3.1, approved): the same rule
+ * (usePreviewFrameShown). In Preview the iframe exists only while the
+ * Embed and every ancestor are shown; hiding it, hiding an ancestor or
+ * leaving Preview removes the framed document, so a video or audio inside
+ * stops. The frame is also keyed on the mode, so entering and leaving
+ * Preview each start a fresh document: nothing from a Preview session
+ * keeps running in Design. Design still renders the live embed, as BC-02.3
+ * established. Source policy and sandbox are unchanged.
  */
 export function IframeElement({ node, parentId, parentLayoutMode, parentFlowDisplay }: DocumentElementProps) {
   const dropRef = useNodeDropRegistration(node);
@@ -60,6 +70,8 @@ export function IframeElement({ node, parentId, parentLayoutMode, parentFlowDisp
   const recipe = resolveVideoOrIframeElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
   const hostOrigin = useHostOrigin();
   const isVideoEmbed = isVideoEmbedNode(node);
+  const previewShown = usePreviewFrameShown(node.id, isPreview);
+  const showGenericFrame = !isPreview || previewShown;
   const policy = resolveIframeSourcePolicy(hostOrigin === null ? undefined : node.src, hostOrigin ?? "");
 
   return (
@@ -72,9 +84,9 @@ export function IframeElement({ node, parentId, parentLayoutMode, parentFlowDisp
     >
       {isVideoEmbed ? (
         <VideoEmbedFrame node={node} isPreview={isPreview} innerStyle={recipe.innerStyle} />
-      ) : (
+      ) : showGenericFrame ? (
         <iframe
-          key={policy.sandbox}
+          key={`${policy.sandbox}|${isPreview ? "preview" : "design"}`}
           sandbox={policy.sandbox}
           src={policy.src}
           title={node.title}
@@ -82,7 +94,7 @@ export function IframeElement({ node, parentId, parentLayoutMode, parentFlowDisp
           className={node.className}
           style={recipe.innerStyle}
         />
-      )}
+      ) : null}
       <MediaInteractionShield />
     </div>
   );
