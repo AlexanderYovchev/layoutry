@@ -79,8 +79,15 @@ export const EXPORT_INTERACTION_RUNTIME = `(function () {
   }
   var reducedMotion = Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   var players = [];
+  // Shown = not inside a hidden target or closed dialog, rendered at all
+  // (no display: none on it or an ancestor), and not visibility: hidden /
+  // collapse (computed, so an ancestor's authored Visibility counts, and a
+  // descendant's own "visible" overrides it) — Preview's rule
+  // (isNodeAuthoredHidden), BC-08.5.
   function isShown(element) {
-    return !isHidden(element) && element.getClientRects().length > 0;
+    if (isHidden(element) || element.getClientRects().length === 0) return false;
+    var visibility = window.getComputedStyle(element).visibility;
+    return visibility !== "hidden" && visibility !== "collapse";
   }
   function wantedSrc(frame) {
     var authored = frame.getAttribute("data-ly-video-src");

@@ -171,7 +171,8 @@ printer: a Tailwind printer maps `declarations` to utilities, React maps
   `referrerpolicy="strict-origin-when-cross-origin"`, `loading="lazy"`,
   `src` = the player without autoplay, and `data-ly-video-src` = the
   authored player. The interaction runtime (included whenever a player is
-  present) removes a player while it is hidden or not rendered and mounts
+  present) removes a player while it is hidden, not rendered, or computed
+  `visibility: hidden`/`collapse` (Preview's rule, BC-08.5) and mounts
   a fresh one when shown, from `data-ly-video-src` unless the viewer
   prefers reduced motion. A missing or invalid source exports the empty
   frame with `video-embed-invalid`; any player adds the one-per-page info

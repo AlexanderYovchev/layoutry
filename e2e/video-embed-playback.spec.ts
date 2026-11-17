@@ -313,7 +313,8 @@ test.describe("Preview", () => {
     // Each width is a fresh load: headless WebKit leaves EVERY aspect-ratio grid item (Image, Video, Embed and
     // Video Embed alike) at a stale height after a live window resize — a pre-existing engine behavior, see the BC-08.3 report.
     // A fresh browser context per width (its own project library, so the import never meets "already in library").
-    for (const width of [1600, 1100]) {
+    // BC-08.5: the brief's editor widths (the editor needs >= 900 px; 320-768 are covered on the exported page).
+    for (const width of [1440, 1024]) {
       const context = await browser.newContext({ viewport: { width, height: 1400 } });
       await routeProviders(context);
       const page = await context.newPage();
@@ -432,10 +433,10 @@ test.describe("exported page", () => {
     });
   }
 
-  test("phone width (390px) and desktop width: players fill their 16:9 boxes, nothing overflows the page", async ({ page, context }) => {
+  test("320, 375, 768, 1024 and 1440 px: players fill their 16:9 boxes, nothing overflows the page", async ({ page, context }) => {
     await routeProviders(context);
     publish("standalone");
-    for (const width of [390, 1280]) {
+    for (const width of [320, 375, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`${origin}/index.html`);
       await expect(page.locator("iframe[data-ly-video-src]")).toHaveCount(3);

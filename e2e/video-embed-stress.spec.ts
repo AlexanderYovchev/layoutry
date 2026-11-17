@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { EditorElementNode } from "../src/features/editor/types/document";
 import { gotoApp } from "./support/gotoApp";
 import { importDocument } from "./support/parityFixtures";
@@ -7,8 +9,9 @@ import { importDocument } from "./support/parityFixtures";
  * BC-08.3 / BC-08.3.1 — embedded-frame lifecycle under repetition
  * (Chromium: heap figures need the DevTools protocol). Eight Video Embeds
  * (two Vimeo with encrypted-media) and two generic Embeds, some nested
- * inside a toggled container; 20 Preview round trips and 30 show/hide
- * cycles, against local fake pages on the exact provider hosts and on a
+ * inside a toggled container; 25 Preview round trips (BC-08.5; 20 before)
+ * and 30 show/hide cycles (60 transitions), then 10 website ZIP exports
+ * (BC-08.5: byte-identical, no provider request, no leaked download URL), against local fake pages on the exact provider hosts and on a
  * generic widget host. Asserted: live player and frame counts return to their expected
  * values every time, requests grow only by the players actually mounted,
  * window listeners do not accumulate, nothing is requested in Design.
@@ -19,6 +22,8 @@ test.skip(({ browserName }) => browserName !== "chromium", "heap figures and for
 
 const YT = "dQw4w9WgXcQ";
 const SURFACE = "[data-document-surface]";
+// An uploaded image makes the Separate-files export a website ZIP (BC-07.3).
+const PNG = `data:image/png;base64,${readFileSync(path.join(process.cwd(), "test", "fixtures", "images", "upload-40x30.png")).toString("base64")}`;
 const FAKE_PLAYER = "<!doctype html><title>fake player</title><p>player</p>";
 
 const video = (id: string, src: string): EditorElementNode => ({ id, tag: "iframe", controls: true, muted: true, autoplay: true, aspectRatio: { mode: "ratio", width: 16, height: 9 }, src });
@@ -43,6 +48,7 @@ function stressDocument(): EditorElementNode {
       video("s-5", `https://www.loom.com/embed/${"a".repeat(32)}?t=5s`),
       video("s-6", "https://fast.wistia.net/embed/iframe/26sk4lmiix?doNotTrack=true&time=6"),
       video("v-2", "https://player.vimeo.com/video/76979872?dnt=1"),
+      { id: "img-upload", tag: "img", src: PNG, displayName: "Uploaded" },
       { id: "g-2", tag: "iframe", src: "https://widget.example/g-2", title: "g-2" },
     ],
   };
@@ -60,8 +66,8 @@ const players = (page: Page) => page.locator(`${SURFACE} iframe[data-video-embed
 const providerFrames = (page: Page) => page.frames().filter((frame) => /^https:\/\/(www\.youtube-nocookie\.com|player\.vimeo\.com|www\.loom\.com|fast\.wistia\.net)\//.test(frame.url())).length;
 const genericFrames = (page: Page) => page.frames().filter((frame) => frame.url().startsWith("https://widget.example/")).length;
 
-test("20 Preview sessions and 30 show/hide cycles leave no stale players, frames or listeners", async ({ page, context }) => {
-  test.setTimeout(300_000);
+test("25 Preview sessions, 30 show/hide cycles and 10 exports leave no stale players, frames, listeners or URLs", async ({ page, context }) => {
+  test.setTimeout(600_000);
   const requests: string[] = [];
   const genericRequests: string[] = [];
   await context.route(
@@ -97,7 +103,8 @@ test("20 Preview sessions and 30 show/hide cycles leave no stale players, frames
   const listenersStart = await listeners();
 
   const startTimes: number[] = [];
-  for (let session = 0; session < 20; session += 1) {
+  const SESSIONS = 25;
+  for (let session = 0; session < SESSIONS; session += 1) {
     const started = Date.now();
     await page.getByRole("button", { name: "Enter Preview" }).click();
     await expect(players(page)).toHaveCount(8);
@@ -109,9 +116,9 @@ test("20 Preview sessions and 30 show/hide cycles leave no stale players, frames
   await expect.poll(() => providerFrames(page)).toBe(0);
   await expect.poll(() => genericFrames(page)).toBe(2);
   const afterSessions = requests.length;
-  expect(afterSessions, "each session mounts exactly eight players").toBe(160);
+  expect(afterSessions, "each session mounts exactly eight players").toBe(SESSIONS * 8);
   // Each generic Embed: a fresh Preview frame on entry and a fresh Design frame on exit.
-  await expect.poll(() => genericRequests.length - genericAtStart).toBe(20 * 2 * 2);
+  await expect.poll(() => genericRequests.length - genericAtStart).toBe(SESSIONS * 2 * 2);
   const genericAfterSessions = genericRequests.length;
   const heapAfterSessions = await heapMb(page);
 
@@ -136,10 +143,46 @@ test("20 Preview sessions and 30 show/hide cycles leave no stale players, frames
 
   const listenerDelta = (await listeners()) - listenersStart;
   expect(Math.abs(listenerDelta), "window listeners added and not removed").toBeLessThanOrEqual(2);
+  const heapAfterCycles = await heapMb(page);
+
+  // BC-08.5: repeated exports of the same page (Design mode, players absent).
+  await page.evaluate(() => {
+    const urls = { created: 0, revoked: 0 };
+    Reflect.set(window, "__bc085urls", urls);
+    const create = URL.createObjectURL.bind(URL);
+    const revoke = URL.revokeObjectURL.bind(URL);
+    URL.createObjectURL = (object: Blob | MediaSource) => { urls.created += 1; return create(object); };
+    URL.revokeObjectURL = (url: string) => { urls.revoked += 1; revoke(url); };
+  });
+  const requestsBeforeExport = requests.length;
+  await page.getByRole("button", { name: "Export Code" }).click();
+  const dialog = page.getByRole("dialog", { name: "Export Code" });
+  await expect(dialog.getByTestId("export-code")).toBeVisible();
+  await dialog.getByLabel("Separate files").check();
+  const zips: Buffer[] = [];
+  const exportTimes: number[] = [];
+  for (let cycle = 0; cycle < 10; cycle += 1) {
+    const started = Date.now();
+    const downloaded = page.waitForEvent("download");
+    await dialog.getByRole("button", { name: "Download website (.zip)" }).click();
+    zips.push(readFileSync((await (await downloaded).path())!));
+    exportTimes.push(Date.now() - started);
+  }
+  expect(new Set(zips.map((zip) => zip.toString("base64"))).size, "every export is byte-identical").toBe(1);
+  expect(requests.length, "exporting loads no provider player").toBe(requestsBeforeExport);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  // Download URLs are revoked 10 s after each click.
+  await page.waitForTimeout(10_500);
+  const urls = await page.evaluate(() => Reflect.get(window, "__bc085urls") as { created: number; revoked: number });
+  expect(urls.created - urls.revoked, "download URLs created and not revoked").toBe(0);
+  await expect(players(page)).toHaveCount(0);
+  await expect.poll(() => genericFrames(page)).toBe(2);
   const heapEnd = await heapMb(page);
+  const exportMedian = [...exportTimes].sort((a, b) => a - b)[5];
   const median = [...startTimes].sort((a, b) => a - b)[Math.floor(startTimes.length / 2)];
   process.stdout.write(
-    `\n[BC-08.3.1 stress] 20 Preview sessions x 8 players + 2 generic: median entry-to-8-players ${median} ms (max ${Math.max(...startTimes)} ms); ` +
-      `provider requests ${requests.length} (Design 0), generic requests ${genericRequests.length}; frames now: provider ${providerFrames(page)}, generic ${genericFrames(page)}; net window listeners ${listenerDelta}; heap ${heapStart.toFixed(1)} -> ${heapAfterSessions.toFixed(1)} (after sessions) -> ${heapEnd.toFixed(1)} MB (after 30 cycles, GC)\n`,
+    `\n[BC-08.5 stress] ${SESSIONS} Preview sessions x 8 players + 2 generic: median entry-to-8-players ${median} ms (max ${Math.max(...startTimes)} ms); ` +
+      `provider requests ${requests.length} (Design 0), generic requests ${genericRequests.length}; frames now: provider ${providerFrames(page)}, generic ${genericFrames(page)}; net window listeners ${listenerDelta}; heap ${heapStart.toFixed(1)} -> ${heapAfterSessions.toFixed(1)} (after sessions) -> ${heapAfterCycles.toFixed(1)} MB (after 30 cycles) -> ${heapEnd.toFixed(1)} MB (after 10 exports, GC); 10 ZIP exports: ${zips[0].length} bytes each, identical, median ${exportMedian} ms (max ${Math.max(...exportTimes)} ms), object URLs ${urls.created} created / ${urls.revoked} revoked\n`,
   );
 });

@@ -191,3 +191,70 @@ describe("exportHtmlCss image packaging (BC-07.3)", () => {
     expect(result.assetFiles).toEqual([]);
   });
 });
+
+/**
+ * BC-08.5 — BC-07 image packaging regression with Video Embeds: every
+ * uploaded raster format, a Video Embed, a generic Embed and Show/Hide
+ * interactions in one page. The players and interactions must not change how
+ * images are packaged, and packaging must not touch the player markup.
+ */
+describe("image packaging next to Video Embeds and generic Embeds (BC-08.5)", () => {
+  const WEBP = dataUrl("image/webp", fixture("upload-24x16.webp"));
+  const YOUTUBE = "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ";
+  const document = deepFreeze<EditorElementNode>({
+    id: "page-root",
+    tag: "page",
+    children: [
+      { id: "img-png", tag: "img", src: PNG, displayName: "PNG" },
+      { id: "img-jpeg", tag: "img", src: JPEG, displayName: "JPEG" },
+      { id: "img-gif", tag: "img", src: GIF, displayName: "GIF" },
+      { id: "img-webp", tag: "img", src: WEBP, displayName: "WebP" },
+      { id: "toggle-video", tag: "button", text: "Video", interactions: [{ id: "i-v", trigger: "click", action: "toggle", targetId: "video-box" }] },
+      { id: "toggle-generic", tag: "button", text: "Widget", interactions: [{ id: "i-g", trigger: "click", action: "hide", targetId: "generic" }] },
+      { id: "video-box", tag: "div", background: { image: WEBP }, children: [{ id: "video", tag: "iframe", controls: true, muted: true, autoplay: true, src: YOUTUBE, title: "Launch video" }] },
+      { id: "generic", tag: "iframe", src: "https://widget.example/embed", title: "Widget" },
+    ],
+  });
+  const before = JSON.stringify(document);
+  const separate = exportHtmlCss(document, { mode: "separate", title: "Mixed media" });
+  const html = htmlOf(separate);
+
+  it("all four uploaded formats become asset files with their real bytes", () => {
+    expect(separate.ok).toBe(true);
+    expect(separate.assetFiles.map((file) => [file.path, file.mediaType, file.references])).toEqual([
+      ["assets/image-001.png", "image/png", 1],
+      ["assets/image-002.jpg", "image/jpeg", 1],
+      ["assets/image-003.gif", "image/gif", 1],
+      ["assets/image-004.webp", "image/webp", 2], // an <img> and the video box's background
+    ]);
+    expect(Buffer.from(separate.assetFiles[3].bytes).equals(fixture("upload-24x16.webp"))).toBe(true);
+    expect(html).not.toMatch(/data:image\/(png|jpeg|gif|webp)/);
+    expect(cssOf(separate)).toContain(`url("assets/image-004.webp")`);
+  });
+
+  it("the players keep their markup: the Video Embed's player attributes and the generic Embed's sandbox", () => {
+    const player = html.match(/<iframe[^>]*data-ly-video-src[^>]*>/)?.[0] ?? "";
+    expect(player).toContain(`sandbox="allow-forms allow-popups allow-scripts allow-same-origin"`);
+    expect(player).toContain(`allow="fullscreen"`);
+    expect(player).toContain(`title="Launch video"`);
+    expect(player).toContain("youtube-nocookie.com/embed/dQw4w9WgXcQ");
+    expect(player).not.toContain("assets/");
+    expect(html).toMatch(/<iframe[^>]*sandbox="allow-forms allow-popups allow-scripts allow-same-origin"[^>]*src="https:\/\/widget\.example\/embed"[^>]*title="Widget"/);
+  });
+
+  it("ships the interaction runtime, is deterministic, and never changes the document", () => {
+    expect(separate.files.map((file) => file.path)).toEqual(["index.html", "styles.css", "script.js"]);
+    const again = exportHtmlCss(document, { mode: "separate", title: "Mixed media" });
+    expect(again.files).toEqual(separate.files);
+    expect(again.assetFiles).toEqual(separate.assetFiles);
+    expect(JSON.stringify(document)).toBe(before);
+  });
+
+  it("the single HTML file embeds every image and the same players", () => {
+    const standalone = exportHtmlCss(document, { mode: "standalone", title: "Mixed media" });
+    expect(standalone.assetFiles).toEqual([]);
+    expect(htmlOf(standalone)).toContain(`src="${WEBP}"`);
+    expect(htmlOf(standalone)).toMatch(/<iframe[^>]*data-ly-video-src/);
+    expect(htmlOf(standalone)).toContain("https://widget.example/embed");
+  });
+});

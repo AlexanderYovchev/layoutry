@@ -88,10 +88,10 @@ describe("InspectorVideoEmbedSection (BC-08.2)", () => {
     expect(screen.queryByText(/hasn't been confirmed/)).toBeNull();
   });
 
-  it("Loom says its playback is not yet confirmed (BC-08.3)", () => {
+  it("Loom (verified live in BC-08.5): no 'not confirmed' note", () => {
     store().setElementSrc(embedId, `https://www.loom.com/embed/${"a".repeat(32)}`);
     renderSection();
-    expect(screen.getByText("Playback hasn't been confirmed with a real Loom video yet.")).toBeInTheDocument();
+    expect(screen.queryByText(/hasn't been confirmed/)).toBeNull();
   });
 
   it("Loom hides Loop, Controls and Privacy mode and says why", () => {

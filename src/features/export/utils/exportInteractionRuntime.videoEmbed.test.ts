@@ -101,6 +101,17 @@ describe("exported Video Embed lifecycle (BC-08.3)", () => {
     expect(view.page.querySelector('[data-ly-video-src]')?.closest("[hidden]")).toBeNull();
   });
 
+  it("BC-08.5: authored visibility: hidden (on an ancestor) means no player, like Preview; a descendant's own visible overrides it", () => {
+    const view = load(
+      documentWith([
+        { id: "invisible", tag: "div", display: { visibility: "hidden" }, children: [video("iframe-invisible", { title: "Inherits hidden" })] },
+        { id: "invisible-but", tag: "div", display: { visibility: "hidden" }, children: [video("iframe-visible-again", { title: "Own visible", display: { visibility: "visible" } })] },
+      ]),
+    );
+    // The box's player and the one whose own Visibility is "visible" remain; the inherited-hidden one is removed.
+    expect(view.players().map((frame) => frame.getAttribute("title"))).toEqual(["Embedded video", "Own visible"]);
+  });
+
   it("reduced motion: the player is kept without autoplay, and stays so after hide/show", () => {
     const view = load(documentWith([]), true);
     expect(view.players().map((player) => player.getAttribute("src"))).toEqual([STILL]);

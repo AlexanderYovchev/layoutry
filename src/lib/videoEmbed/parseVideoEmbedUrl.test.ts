@@ -220,4 +220,25 @@ describe("parseVideoEmbedUrl — security (every pasted link is untrusted)", () 
   it("an IDNA-normalized spelling of the real host is the real host (the output is rebuilt anyway)", () => {
     expect(reference(`https://ＷＷＷ.YouTube.com/watch?v=${YT}`)).toEqual({ provider: "youtube", videoId: YT });
   });
+
+  it("BC-08.5: redirect and wrapper links are never followed or unwrapped", () => {
+    expect(failure(`https://www.youtube.com/redirect?q=https%3A%2F%2Fevil.example%2F&v=${YT}`)).toEqual({ reason: "unsupported-path", provider: "youtube" });
+    expect(failure(`https://www.youtube.com/attribution_link?u=%2Fwatch%3Fv%3D${YT}`)).toEqual({ reason: "unsupported-path", provider: "youtube" });
+    expect(failure(`https://www.google.com/url?q=https://youtu.be/${YT}`)).toEqual({ reason: "unknown-host" });
+    expect(failure(`https://vimeo.com/76979871/../../evil`).reason).toBe("unsupported-path");
+    // A real watch link whose v= is itself a URL is not a video id.
+    expect(failure(`https://www.youtube.com/watch?v=https://evil.example/`)).toEqual({ reason: "invalid-id", provider: "youtube" });
+  });
+
+  it("BC-08.5: excessively long input is refused quickly, never echoed into a source", () => {
+    const started = performance.now();
+    for (const input of [`https://www.youtube.com/watch?v=${"a".repeat(200_000)}`, `https://${"a".repeat(70_000)}.youtube.com/watch?v=${YT}`, `https://youtu.be/${YT}?t=${"9".repeat(100_000)}`, "x".repeat(500_000)]) {
+      const result = parseVideoEmbedUrl(input);
+      if (result.ok) {
+        // Only the over-long, useless start time may be dropped; the id is still the real one.
+        expect(result.reference).toEqual({ provider: "youtube", videoId: YT });
+      }
+    }
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
 });

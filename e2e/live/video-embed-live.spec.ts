@@ -12,7 +12,8 @@ import { importDocument } from "../support/parityFixtures";
  *   LAYOUTRY_LIVE_PROVIDERS=1 npx playwright test e2e/live/video-embed-live.spec.ts
  *
  * Public videos published by the providers themselves (their API/demo or
- * documentation examples). Loom has no known public test video: pending.
+ * documentation examples). Loom (BC-08.5): Loom's own public announcement
+ * video, "Atlassian + Loom - A big milestone".
  * Vimeo (BC-08.3.1) runs with its approved allow="fullscreen;
  * encrypted-media". Playwright's own Chromium has no H.264, and its
  * Windows Firefox/WebKit builds cannot decode Vimeo's streams either (Vimeo's
@@ -31,6 +32,7 @@ const CASES = [
   { id: "live-yt", provider: "youtube", host: "www.youtube-nocookie.com", src: "https://www.youtube-nocookie.com/embed/M7lc1UVf-VE" },
   { id: "live-wistia", provider: "wistia", host: "fast.wistia.net", src: "https://fast.wistia.net/embed/iframe/26sk4lmiix?doNotTrack=true" },
   { id: "live-vimeo", provider: "vimeo", host: "player.vimeo.com", src: "https://player.vimeo.com/video/76979871?dnt=1" },
+  { id: "live-loom", provider: "loom", host: "www.loom.com", src: "https://www.loom.com/embed/e8a4ed2c6a104e31bc643f7c8ffe7fcc" },
 ] as const;
 
 function liveDocument(): EditorElementNode {
@@ -109,4 +111,22 @@ test.describe("exported page from a local web server", () => {
       process.stdout.write(`\n[BC-08.3 live ${browserName} export ${entry.provider}] ${JSON.stringify(result)}\n`);
     }
   });
+});
+
+test("exported page opened as a local file (file://): what each provider does without a Referer", async ({ page, browserName }, testInfo) => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  const { pathToFileURL } = await import("node:url");
+  const result = exportHtmlCss(liveDocument(), { mode: "standalone", title: "Live file export" });
+  const directory = mkdtempSync(path.join(tmpdir(), "bc085-file-"));
+  writeFileSync(path.join(directory, "index.html"), result.files[0].content);
+  await page.setViewportSize({ width: 900, height: 2400 });
+  await page.goto(pathToFileURL(path.join(directory, "index.html")).href);
+  for (const entry of CASES) {
+    const selector = `iframe[src*="${entry.host}"]`;
+    await page.locator(selector).scrollIntoViewIfNeeded().catch(() => undefined);
+    const outcome = await observeWithManualPlay(page, selector, await providerFrame(page, entry.host));
+    process.stdout.write(`\n[BC-08.5 live ${testInfo.project.name ?? browserName} file ${entry.provider}] ${JSON.stringify(outcome)}\n`);
+  }
 });

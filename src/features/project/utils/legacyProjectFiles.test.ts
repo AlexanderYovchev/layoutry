@@ -4,6 +4,9 @@ import { describe, expect, it } from "vitest";
 import { loadProjectFromFile } from "@/features/project/utils/loadProjectFromFile";
 import { parseProjectFile } from "@/features/project/utils/parseProjectFile";
 import { serializeProject } from "@/features/project/utils/serializeProject";
+import type { EditorElementNode } from "@/features/editor/types/document";
+import { isVideoEmbedNode } from "@/features/editor/types/videoEmbed";
+import { exportHtmlCss } from "@/features/export/utils/exportHtmlCss";
 
 /**
  * PROJECT-1.5 legacy compatibility: `.layoutry` files frozen from earlier
@@ -103,5 +106,72 @@ describe("project files from earlier checkpoints", () => {
     ]);
     const result = await loadProjectFromFile(withBom);
     expect(result).toEqual(parseProjectFile(bytes.toString("utf8")));
+  });
+});
+
+/**
+ * BC-08.5: Video Embed (BC-08.2) added no field and no format version. An
+ * Embed in an older file stays a generic Embed — even one already showing a
+ * YouTube player link — and is never turned into a Video Embed by opening,
+ * migrating, saving or exporting it.
+ */
+describe("Embeds in format 1 files stay generic Embeds (BC-08.5)", () => {
+  const iframes = (node: EditorElementNode): EditorElementNode[] => [
+    ...(node.tag === "iframe" ? [node] : []),
+    ...(node.children ?? []).flatMap(iframes),
+  ];
+
+  it("the PROJECT-1.1 file's Embed opens unchanged and is not a Video Embed", () => {
+    const result = parseProjectFile(
+      fixture("project-1.1-every-element.layoutry").toString("utf8"),
+    );
+    if (!result.ok) throw new Error(result.error.message);
+    expect(iframes(result.project.document)).toEqual([
+      { id: "iframe-a6d7e769", tag: "iframe", title: "Embedded content" },
+    ]);
+    expect(iframes(result.project.document).some(isVideoEmbedNode)).toBe(false);
+  });
+
+  it("a format 1 Embed with a provider player link keeps its exact src, gains no player settings, and exports as a generic Embed", () => {
+    const raw: unknown = JSON.parse(
+      fixture("project-1.1-every-element.layoutry").toString("utf8"),
+    );
+    if (typeof raw !== "object" || raw === null)
+      throw new Error("fixture is not an object");
+    const document: unknown = Reflect.get(raw, "document");
+    if (typeof document !== "object" || document === null)
+      throw new Error("fixture has no document");
+    const legacy = {
+      id: "legacy-youtube",
+      tag: "iframe",
+      src: "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1",
+      title: "Old embed",
+    };
+    const children: unknown = Reflect.get(document, "children");
+    if (!Array.isArray(children))
+      throw new Error("fixture page has no children");
+    Reflect.set(document, "children", [...children, legacy]);
+    const result = parseProjectFile(JSON.stringify(raw));
+    if (!result.ok) throw new Error(result.error.message);
+    const opened = iframes(result.project.document).find(
+      (node) => node.id === "legacy-youtube",
+    );
+    expect(opened).toEqual(legacy);
+    expect(opened && isVideoEmbedNode(opened)).toBe(false);
+    const saved = parseProjectFile(serializeProject(result.project));
+    if (!saved.ok) throw new Error(saved.error.message);
+    expect(
+      iframes(saved.project.document).find(
+        (node) => node.id === "legacy-youtube",
+      ),
+    ).toEqual(legacy);
+    const html = exportHtmlCss(result.project.document, { mode: "standalone" })
+      .files[0].content;
+    const frame = html.match(/<iframe[^>]*Old embed[^>]*>/)?.[0] ?? "";
+    expect(frame).toContain(
+      `src="https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1"`,
+    );
+    expect(frame).not.toContain("data-ly-video-src");
+    expect(frame).not.toContain("allow=");
   });
 });

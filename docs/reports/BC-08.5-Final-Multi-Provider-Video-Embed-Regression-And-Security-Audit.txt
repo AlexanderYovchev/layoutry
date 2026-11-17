@@ -1,0 +1,758 @@
+BC-08.5 — FINAL MULTI-PROVIDER VIDEO EMBED REGRESSION, SECURITY AUDIT AND
+MILESTONE CLOSURE REVIEW
+==================================================================
+Date: 2026-11-16
+Baseline: 99c64e6 (BC-08.4 committed). Everything below is uncommitted.
+Status: awaiting ChatGPT QA. BC-08 is NOT closed by this report; section
+40 is a recommendation only.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+BC-08 (Video Embed: YouTube, Vimeo, Loom, Wistia) was re-tested end to
+end: Inspector, Canvas, Preview, exported pages, the desktop app,
+persistence, undo/redo, legacy files, responsive layout, accessibility,
+performance and security.
+
+One real defect was found and fixed (D-A, Medium):
+- On EXPORTED pages, a player or generic Embed under an authored
+  Visibility: hidden (on itself or inherited from an ancestor) stayed
+  loaded. A muted autoplay player could play invisibly; a generic Embed
+  could play sound nobody could see or stop.
+- Preview already removed it (isNodeAuthoredHidden), so the two
+  disagreed.
+- Fix: the export runtime's "shown" test now also requires the computed
+  visibility to be neither hidden nor collapse. A descendant's own
+  Visibility: visible still wins, exactly as in Preview.
+- Regression test added. Nine runtime lines changed; nothing else in the
+  product changed behavior.
+
+One status change, from new evidence:
+- Loom playback: "unverified" -> "verified". Loom's own public video
+  played (muted autoplay) live in Chromium, Firefox, Edge and the desktop
+  app, in Preview and on exported pages. The Inspector's "hasn't been
+  confirmed" note for Loom is gone. This closes carried item D5.
+
+No other defects were found. Specifically re-verified:
+- The parser refuses redirect/wrapper links and huge input fast (new
+  tests).
+- The sandbox, allow and Referer policies are unchanged.
+- Electron authorization survives 89 Preview sessions (277
+  registrations, over the 256 cap: proof that nothing leaks), 11
+  fullscreen grants and 6 project switches, with no listener, frame or
+  window growth.
+- The browser stress run: 25 Preview sessions, 60 show/hide
+  transitions and 10 byte-identical ZIP exports; nothing accumulates.
+
+Remaining limitations are environmental or by design and unchanged:
+- Vimeo in the desktop app: no Widevine (approved: not integrated).
+- YouTube from a file:// page: Error 153, no Referer. Documented in the
+  Inspector and the export dialog's note.
+- Playwright's own engines can't decode some providers' streams;
+  Edge (a real Chrome-family browser) is the reference.
+- E1 (Electron fullscreen race under ~50 ms): carried, Low.
+
+Validation: - Vitest: 6011 passed, 1 skipped. On the first run, one pre-existing
+  load-timeout flake unrelated to BC-08 (section 33). A full re-run was
+  clean.
+- Chromium full suite: 280 passed, 3 skipped (opt-in live).
+- Firefox + WebKit targeted: 111/112. The one failure was a WebKit
+  timeout under parallel load; the test passed 3/3 alone (section 36).
+- Electron full suite: 87 passed, 3 skipped. Security specs: 35/35 over
+  5 repeats.
+- typecheck, desktop typecheck, lint, web build and desktop build:
+  clean.
+
+Recommendation: CLOSE BC-08 after QA review (section 40).
+
+
+2. SCOPE
+--------
+In scope (per the BC-08.5 brief):
+- final regression of everything BC-08.1 to BC-08.4 delivered;
+- a security audit of the parser, iframe policy, export runtime and the
+  desktop shell's video-specific privileges;
+- stress, performance, responsive, accessibility, persistence and legacy
+  checks;
+- fixing Critical/High BC-08 defects (none found) and the one Medium
+  found, with a regression test.
+
+Out of scope (stop condition, respected):
+- no commit or push; no BC-09 work;
+- no change to approved decisions; no Widevine; the app://layoutry/
+  Referer is unchanged;
+- no broader Electron permissions; no sandbox change;
+- no project format v3; no new providers.
+
+
+3. DECISIONS VERIFIED
+---------------------
+Each approved decision was checked against the code and the tests:
+- A Video Embed is the existing Embed (tag "iframe") with `controls`
+  set. No new node type, no schema change, project format 2: verified
+  (legacy test, section 24).
+- Providers: YouTube, Vimeo, Loom, Wistia. Dailymotion and Twitch are
+  deferred with exact blocker messages: unchanged (parser tests).
+- Sandbox: the BC-02.3 set "allow-forms allow-popups allow-scripts
+  allow-same-origin" for every player and generic Embed: unchanged
+  (unit, browser and desktop assertions).
+- allow: "fullscreen" for players; plus "encrypted-media" for validated
+  Vimeo players only (BC-08.3.1, decision A). Generic Embeds get no
+  allow attribute: verified again (export markup test, section 20).
+- Muted-only autoplay, never under reduced motion: verified.
+- Remove-on-hide lifecycle for players and generic Embeds in Preview and
+  on exported pages: verified; export now matches Preview for
+  Visibility: hidden (D-A).
+- Canvas (Design) shows a static placeholder and requests nothing from
+  any provider: verified (stress: 0 provider requests in Design).
+- Desktop: frame-token authorization, Referer app://layoutry/ on an
+  authorized player's own document request only, fullscreen only for
+  authorized players: verified (deterministic suite + stress + live).
+- Vimeo in the desktop app is blocked by Widevine and documented in the
+  Inspector: unchanged (approved).
+
+
+4. PROVIDER-BY-ENVIRONMENT MATRIX
+---------------------------------
+VERIFIED = played live (muted autoplay, or one click where noted).
+CONFIGURATION VERIFIED = markup/policy proven by deterministic tests,
+  live playback not possible in this environment.
+BLOCKED = cannot play here; cause named.
+NOT TESTED = could not be run here; reason named.
+
+                      YouTube     Vimeo        Loom         Wistia
+Chromium (Playwright) VERIFIED    BLOCKED(a)   VERIFIED     VERIFIED
+Firefox (Playwright)  VERIFIED    BLOCKED(a)   VERIFIED     VERIFIED
+WebKit (Playwright)   VERIFIED    BLOCKED(a)   BLOCKED(b)   VERIFIED
+Edge (headed)         VERIFIED    VERIFIED     VERIFIED     VERIFIED
+Electron Preview      VERIFIED    BLOCKED(c)   VERIFIED     VERIFIED
+Hosted HTTPS export   NOT TESTED(d) for all four; CONFIGURATION VERIFIED
+Local-server export   VERIFIED    VERIFIED(e)  VERIFIED     VERIFIED
+  (http://127.0.0.1)
+file:// export        BLOCKED(f)  VERIFIED(e)  VERIFIED(g)  VERIFIED(g)
+  (Edge / Chromium)
+file:// export        NOT TESTED(h) for all four
+  (Firefox)
+
+(a) Playwright's Chromium build has no H.264, and its Windows Firefox and
+    WebKit builds cannot decode Vimeo's streams. Vimeo's OWN embed code
+    fails the same way there, so this is the test browser, not Layoutry.
+    Edge plays it (7.4 s Preview, 14.7 s export).
+(b) Playwright's Windows WebKit: the Loom player loads, its video stays
+    at t ~ 0.1 s and never progresses. Its media stack is known to be
+    weak on Windows (YouTube and Wistia use other paths and play).
+(c) Electron ships no Widevine DRM component; Vimeo's own unsandboxed
+    embed fails identically. Approved limitation, shown in the
+    Inspector.
+(d) No HTTPS host was available to this run. The local http server is
+    the closest reproducible stand-in: a real http(s) origin with a
+    Referer. Markup, policy and runtime are origin-independent and
+    covered by the deterministic export tests.
+(e) Edge only, for the reason in (a).
+(f) YouTube requires a Referer; a file:// page sends none, so YouTube
+    answers Error 153. This is YouTube's rule; the Inspector's YouTube
+    limitation and the export's `video-embed-needs-website` note say so.
+(g) Edge and Playwright Chromium.
+(h) Playwright's Firefox driver doesn't expose frames of a file:// page,
+    so the player's state can't be observed.
+
+Live timings to first progress (muted autoplay): YouTube ~7 s, Wistia
+~8-15 s, Loom ~30 s in Chromium (46 s in Electron, a slow first CDN
+fetch), Vimeo (Edge) 7.4 s.
+
+
+5. LOOM STATUS
+--------------
+- BC-08.3 left Loom "unverified": no public Loom test video was known.
+- BC-08.5 used Loom's own public announcement video ("Atlassian + Loom -
+  A big milestone", loom.com/embed/e8a4ed2c6a104e31bc643f7c8ffe7fcc),
+  published by Loom itself.
+- Result: plays (muted autoplay) in Chromium, Firefox, Edge and the
+  desktop app; in Preview, from the local server and from file://.
+- Registry: playback { status: "verified" }, with the evidence in a
+  comment (src/lib/videoEmbed/videoEmbedProviders.ts).
+- Inspector: the "hasn't been confirmed" note no longer shows for Loom
+  (test updated). The "unverified" playback type remains for future
+  providers; no provider uses it today.
+- Loom's own rules are unchanged: no loop, no hidden controls, no
+  privacy mode (the Inspector says why), and the video must be shared
+  with "Anyone with the link".
+- Carried item D5 (Loom test video) is closed.
+
+
+6. VIMEO ELECTRON DRM
+---------------------
+- Unchanged and approved: the desktop app does not include Widevine.
+- Re-verified live: the Vimeo player loads in the desktop Preview but
+  cannot play; Vimeo reports an authorization problem. The same video
+  plays in Edge in Preview and on exported pages.
+- The Inspector's Vimeo limitation says so in plain words.
+- No permission, sandbox or Referer change was made for Vimeo.
+
+
+7. YOUTUBE REFERER
+------------------
+- Desktop: an authorized YouTube player's own document request carries
+  Referer: app://layoutry/ (BC-08.4). Plays live (7.3 s).
+- Control: a generic Embed showing the same YouTube URL gets no Referer
+  and shows Error 153, and gets no fullscreen. No privilege leaks.
+- Browser Preview and local-server export: the browser sends its own
+  origin under referrerpolicy=strict-origin-when-cross-origin. Plays.
+- file:// export: no Referer, Error 153 (section 4 f). Documented.
+- The Referer identity was not changed.
+
+
+8. INSPECTOR
+------------
+Re-verified (unit + Chromium/Firefox/WebKit browser specs):
+- Video URL field: provider detection, canonical link, tracking
+  parameters stripped (si=...).
+- Invalid link: announced error (role=alert), aria-invalid, the draft
+  stays, the stored source and history do not change.
+- Per-provider controls: YouTube all six; Vimeo hides Controls with the
+  owner-plan reason; Loom hides Loop, Controls and Privacy mode with
+  reasons; Wistia hides Controls with the account reason.
+- Muted-only autoplay is explained; Muted is never switched on for the
+  user.
+- Start at: valid times are one Undo step in the source; invalid times
+  are refused with an alert.
+- Privacy mode off moves YouTube to its standard host.
+- Routing: a Video Embed gets the Video section; a generic Embed keeps
+  the Embed section.
+- Loom: no "not confirmed" note (BC-08.5 change).
+
+
+9. CANVAS PRIVACY
+-----------------
+- Design shows a static placeholder (provider name, title, link
+  summary) and loads nothing from any provider: 0 provider requests in
+  Design across the whole stress run.
+- Generic Embeds stay live in Design, as before BC-08 (unchanged
+  decision).
+- No thumbnail is fetched.
+
+
+10. PREVIEW PLAYBACK
+--------------------
+- Each player mounts on entering Preview and is removed on exit; each
+  session gets fresh frames (stress: exactly 8 provider requests per
+  session, 25 sessions).
+- Generic Embeds get a fresh Preview frame on entry and a fresh Design
+  frame on exit (separate keys).
+- Live playback per section 4.
+
+
+11. EXPORT PLAYBACK
+-------------------
+- The exported player is configured by the same function as Preview
+  (resolveVideoEmbedPlayerConfig): same sandbox, allow, referrerpolicy,
+  loading=lazy.
+- src = the player without autoplay; data-ly-video-src = the authored
+  player. The runtime mounts the authored player when shown, the still
+  one under reduced motion.
+- Live: plays from the local server in every engine that can decode the
+  provider (section 4).
+
+
+12. AUTOPLAY / REDUCED MOTION
+-----------------------------
+- Autoplay is requested only when Autoplay AND Muted are on and the
+  provider supports it, and never when the viewer asks for reduced
+  motion. Unit-tested per provider; browser-tested (emulateMedia) in
+  Preview and on exported pages; desktop-tested (emulateMedia, because
+  Electron ignores --force-prefers-reduced-motion).
+- Muted is never switched on implicitly.
+
+
+13. VISIBILITY LIFECYCLE
+------------------------
+A player exists only while it is shown. "Shown" now means the same thing
+in Preview and on exported pages:
+- not inside a hidden interaction target or a closed dialog;
+- rendered (no display: none on it or an ancestor);
+- NEW on export (D-A): computed visibility is neither hidden nor
+  collapse. An ancestor's Visibility: hidden counts; a descendant's own
+  Visibility: visible overrides it, as in Preview.
+When hidden, the frame is removed; when shown again, a fresh frame is
+created. A frame that stays shown is never touched.
+
+
+14. GENERIC CLEANUP
+-------------------
+- Generic Embeds follow the same remove-while-hidden / fresh-when-shown
+  rule in Preview and (when the runtime is present) on exported pages.
+- Stress: one re-mounted generic frame per show cycle, exactly; generic
+  frame count returns to 2 every time.
+- Generic Embed markup on export is unchanged (sandbox, src, title; no
+  allow, no name).
+
+
+15. SANDBOX
+-----------
+- Every player and generic Embed: "allow-forms allow-popups
+  allow-scripts allow-same-origin" — the BC-02.3 set, never widened, never
+  per provider. Asserted in unit tests, all three browser engines, the
+  live specs and the desktop specs.
+- No allow-top-navigation, no allow-popups-to-escape-sandbox, no
+  allow-modals.
+
+
+16. VIMEO ENCRYPTED-MEDIA ISOLATION
+-----------------------------------
+- encrypted-media is added only when the re-parsed source is a
+  validated player.vimeo.com URL. Spoofed hosts
+  (player.vimeo.com.evil.example) get no player at all.
+- YouTube, Loom, Wistia and generic Embeds: "fullscreen" only / none.
+- The allowlist is the iframe's own src origin (the attribute default),
+  always the validated Vimeo player.
+- Re-asserted in the export markup tests and the live specs.
+
+
+17. ELECTRON FULLSCREEN AUTHORIZATION
+-------------------------------------
+Deterministic desktop suite (fake players on the exact provider hosts,
+the app's real permission handler and frame tree):
+- granted: registered players; Escape and the player's own exit restore
+  the window, Preview stays open;
+- refused: generic Embeds; a hostile frame with a well-formed but
+  unregistered name; a player that renamed itself; a stale (removed)
+  name; a name from before a project switch; a URL also shown by a
+  generic Embed (ambiguous);
+- NEW stress (section 26): 11 grants across 89 sessions, alternating the
+  player's own exit and Escape; the generic Embed is still refused at
+  the end.
+Permission checks stay denied for everything; no other permission was
+added.
+
+
+18. REVOCATION
+--------------
+Authorization ends with the player:
+- hide (the frame is removed; window leaves fullscreen);
+- Preview exit (frames removed, window restored, nothing playing);
+- project switch (players removed; old names refused);
+- window reload/crash/close (whole window entry cleared).
+Stress proof: registrations are capped at 256 per window and a failed
+registration leaves the player without a src (fail closed). After 277
+registrations every player still loaded, so every unmount unregistered.
+
+
+19. RESPONSIVE
+--------------
+- Exported page at 320, 375, 768, 1024 and 1440 px: every player fills
+  its 16:9 box and nothing overflows the page (Chromium, Firefox,
+  WebKit).
+- Editor Preview at 1440 and 1024 px. The editor itself needs at least
+  900 px of viewport, so 320-768 are checked on the exported page, which
+  is what visitors see.
+- Carried D3 (WebKit's stale aspect-ratio after a live resize) is
+  unchanged and pre-existing.
+
+
+20. EXPORT FORMATS
+------------------
+- Single HTML file: players, generic Embeds and images all inline.
+- Separate files: index.html, styles.css, script.js (runtime) and
+  assets/ for uploaded images; downloaded as a website ZIP when there
+  are assets, otherwise as individual files.
+- New unit test (section 21) checks players and generic Embeds keep
+  their exact markup in both modes.
+- 10 repeated ZIP exports from the app: byte-identical (5,238 bytes),
+  median 85 ms.
+
+
+21. IMAGE ASSET REGRESSION (BC-07)
+----------------------------------
+New unit test, "image packaging next to Video Embeds and generic Embeds
+(BC-08.5)", one page with:
+- uploaded PNG, JPEG, GIF and WebP images (the frozen BC-07 fixtures);
+- a WebP also used as a background on the player's container;
+- a Video Embed (muted autoplay), a generic Embed;
+- a Toggle and a Hide interaction.
+Asserted:
+- four asset files with the fixtures' exact bytes, typed and counted
+  (the WebP twice);
+- no data: image left in HTML or CSS; the background references the
+  asset;
+- the player keeps sandbox, allow, title and its provider URL and gets
+  no asset path; the generic Embed keeps its sandbox, src and title;
+- script.js is shipped; output is deterministic; the frozen document is
+  never changed;
+- the single HTML file embeds every image and the same players.
+In the app: the stress page includes an uploaded PNG, so its 10 exports
+are real website ZIPs with an assets folder.
+The full BC-07 suites (browser and desktop: upload, ZIP, Electron folder
+export) are green in the full runs (sections 34-37).
+
+
+22. SAVE / REOPEN
+-----------------
+- A Video Embed saves and reopens with the same src (identity, privacy
+  host, start) and flags (muted, autoplay, loop, controls) — BC-08.2/3
+  persistence specs, green in the full runs.
+- Desktop save/reopen through the real file dialog path: green in the
+  Electron suite.
+
+
+23. UNDO / REDO
+---------------
+- Pasting a link, each toggle and each Start at change is exactly one
+  Undo step; an invalid link or time adds none (unit tests).
+- Undo/redo in Preview-affecting fields re-mounts the player only when
+  its configuration changes (keyed by src|sandbox|allow).
+
+
+24. LEGACY MIGRATION
+--------------------
+New tests ("Embeds in format 1 files stay generic Embeds (BC-08.5)"):
+- the frozen PROJECT-1.1 file's Embed opens unchanged and is not a Video
+  Embed;
+- a format 1 Embed already showing a YouTube player link keeps its exact
+  src, gains no player settings, survives save/reopen unchanged, and
+  exports as a generic Embed (no data-ly-video-src, no allow).
+Existing protections, green: the 1 -> 2 migration chain, frozen
+fixtures, the legacy first-save prompt (BC-05.4).
+No format version was added.
+
+
+25. ACCESSIBILITY
+-----------------
+- Every player has a title (the author's, or the provider's default
+  "YouTube video" etc.); generic Embeds keep their title.
+- Inspector: labelled fields, switches with names and aria-checked,
+  errors announced with role=alert and aria-invalid.
+- Desktop: Escape leaves fullscreen without leaving Preview; the editor
+  is restored and usable.
+- Hidden players are removed, so no hidden frame can hold focus.
+- Reduced motion respected (section 12).
+- Provider controls inside the players are the providers' own and are
+  not assessed.
+
+
+26. PERFORMANCE MEASUREMENTS
+----------------------------
+Browser (Chromium, e2e/video-embed-stress.spec.ts): 8 Video Embeds (2
+Vimeo) + 2 generic Embeds + an uploaded image; fake players on the exact
+hosts.
+- 25 Preview sessions: median entry-to-8-players 153 ms (max 184 ms).
+- Provider requests: 328 = 25 x 8 + 8 (cycle entry) + 30 x 4 — exactly
+  the players mounted. 0 in Design. Generic requests: 136, exactly as
+  predicted.
+- 30 show/hide cycles (60 transitions): 4 players and 1 generic frame
+  removed and re-created each time; counts return every time.
+- Frames at the end: provider 0, generic 2 (Design).
+- Net window listeners: 1 (bound <= 2).
+- Heap (forced GC): 18.7 -> 19.8 MB after sessions -> 20.0 MB after
+  cycles -> 19.5 MB after exports. No growth trend.
+- 10 ZIP exports: byte-identical (5,238 bytes), median 85 ms (max 272
+  ms, the first); 10 object URLs created, 10 revoked; 0 provider
+  requests during export.
+Desktop (Electron, e2e/desktop/video-embed-fullscreen.spec.ts):
+- 89 Preview sessions, 277 registrations (cap 256), 11 fullscreen
+  grants (median request-to-fullscreen 119 ms, max 269 ms), 6 project
+  switches, 20 hide/show transitions.
+- Median entry-to-3-loaded-players 125 ms (max 142 ms), including the
+  IPC registration round trip.
+- Frames 2 -> 2; webContents listeners 4 -> 4; window fullscreen
+  listeners 0 -> 0; one window throughout.
+- Main-process heap 6.5 -> 7.8 MB (no GC forced; not a trend measure).
+Parser: 200k-500k-character inputs are refused in well under 1 s
+(unit test).
+Cleanup time: frame removal is synchronous with the hide/exit; the
+polls above settle on the first check.
+
+
+27. SECURITY FINDINGS
+---------------------
+Audited, with the result:
+- URL parsing (src/lib/videoEmbed/): only https on exact hosts; IDs by
+  strict per-provider patterns; no redirect or wrapper following (NEW
+  tests: youtube /redirect and /attribution_link, google.com/url,
+  path traversal "../..", a URL smuggled in v=); huge input refused fast
+  (NEW test). No finding.
+- Stored src is re-parsed at render and export time; nothing trusts the
+  stored string. No finding.
+- Iframe policy: fixed sandbox; per-provider allow from the registry
+  only; strict-origin-when-cross-origin referrer policy. No finding.
+- Export runtime: builds frames from data-ly-video-src only on
+  elements it emitted; generic Embeds are re-created with their own
+  attributes. D-A (visibility) was a privacy/consent issue, fixed.
+- Desktop: frame identity bound to the real frame tree (direct child,
+  registered name, exact origin); Referer only on that frame's own
+  document request; one fullscreen exception; checks stay denied; IPC
+  sender validation; registry cap. No finding; stress confirms no
+  leak.
+- CSP frame-src http: https: unchanged (authored iframes, pre-BC-08).
+- Electron hardening invariants (contextIsolation, sandbox,
+  nodeIntegration off, no webview): unchanged, green.
+No Critical or High finding.
+
+
+28. DEFECTS FIXED
+-----------------
+D-A  MEDIUM. Exported pages kept players and generic Embeds loaded under
+     an authored Visibility: hidden (own or inherited).
+     - Impact: invisible muted autoplay, or audio from a generic Embed
+       that cannot be seen or stopped; Preview disagreed.
+     - Fix: src/features/export/utils/exportInteractionRuntime.ts,
+       isShown(): also false when the computed visibility is hidden or
+       collapse.
+     - Test: exportInteractionRuntime.videoEmbed.test.ts, "BC-08.5:
+       authored visibility: hidden (on an ancestor) means no player,
+       like Preview; a descendant's own visible overrides it".
+     - Docs: docs/architecture/export-engine.md updated.
+Test-only corrections made during BC-08.5 (not product defects):
+- the stress export loop first looked for "Download website (.zip)" on
+  a page without images (that page offers individual files); the page
+  now includes an uploaded image, which is also the BC-07 combination;
+- the Electron project switch hit the "Project Already in Library"
+  dialog; the test now chooses Import as Copy.
+
+
+29. LIMITATIONS
+---------------
+- Vimeo cannot play in the desktop app (no Widevine; approved).
+- YouTube shows Error 153 on an exported page opened as a local file
+  (no Referer); documented in the Inspector and export note.
+- Generic YouTube Embeds in the desktop app show Error 153 (no
+  privileges for generic Embeds, by design; use Video Embed).
+- Provider rules: owners can disable or restrict embedding; Vimeo
+  hiding controls needs the owner's paid plan; Loom can't loop; Wistia
+  custom domains are not accepted.
+- Dailymotion and Twitch remain deferred.
+- Test-environment limits (not product): Playwright Chromium has no
+  H.264; Playwright Windows Firefox/WebKit can't decode Vimeo; WebKit
+  can't progress Loom; Firefox's driver can't see file:// frames.
+
+
+30. OPEN DEFECTS (SEVERITY)
+---------------------------
+E1  LOW (carried). Electron fullscreen exit race: if element fullscreen
+    ends within ~50 ms of entering, Electron 44 never emits
+    leave-html-full-screen. Not reachable by a person (the player covers
+    the editor). Tests pause 1 s (watchFullscreen).
+D3  LOW (carried, pre-existing). WebKit keeps a stale aspect-ratio box
+    after a live window resize.
+D4  LOW (carried, pre-existing, not BC-08). Native <video> reduced-motion
+    rule.
+PRJ-K1 (carried, not BC-08): Ctrl+S is dead while an authored Dialog is
+    open.
+D5 (Loom test video) is CLOSED (section 5).
+No open Critical, High or Medium BC-08 defect.
+
+
+31. SOURCE FILES
+----------------
+Product:
+- src/features/export/utils/exportInteractionRuntime.ts (D-A fix)
+- src/lib/videoEmbed/videoEmbedProviders.ts (Loom playback verified)
+Docs:
+- docs/architecture/export-engine.md (visibility rule)
+Unchanged (re-verified): the parser, URL builders, player config,
+Canvas/Preview components and hooks, Inspector components, desktop
+security, main, IPC and preload.
+
+
+32. TESTS ADDED / CHANGED
+-------------------------
+Unit (Vitest):
+- exportInteractionRuntime.videoEmbed.test.ts: D-A regression.
+- parseVideoEmbedUrl.test.ts: redirect/wrapper links never followed;
+  excessively long input refused quickly.
+- exportHtmlCss.packaging.test.ts: 4 tests, image packaging next to
+  Video and generic Embeds (BC-07 regression).
+- legacyProjectFiles.test.ts: 2 tests, format 1 Embeds stay generic.
+- InspectorVideoEmbedSection.test.tsx: Loom has no "not confirmed" note.
+Browser (Playwright):
+- video-embed-stress.spec.ts: 25 sessions (was 20), an uploaded image,
+  10 repeated ZIP exports (identical, no provider request, URLs
+  revoked).
+- video-embed-playback.spec.ts: exported page at 320/375/768/1024/1440;
+  editor at 1440/1024.
+- live/video-embed-live.spec.ts (opt-in): Loom case; file:// export
+  test.
+Desktop (Playwright Electron):
+- video-embed-fullscreen.spec.ts: the 89-session stress test.
+- desktop/video-embed-live.spec.ts (opt-in): Loom case.
+
+
+33. COMMANDS / RESULTS
+----------------------
+npm run typecheck                                   clean
+npx tsc -p desktop/tsconfig.json --noEmit           clean
+npm run lint                                        clean
+npx vitest run (first run)    6011 passed, 1 failed, 1 skipped
+                              (393 files)
+  - The failure: EditorApp.test.tsx, "clicking each semantic sectioning
+    catalog card..." (Checkpoint 1.8). It timed out under full-suite
+    load; its own comment documents that risk. Not BC-08.
+  - Alone: 14/14 passed. A second full run had no failure.
+npx vitest run <each new/changed test file>         all passed
+npx playwright test --project=chromium              280 passed, 3 skipped
+Firefox + WebKit, via a temporary three-engine config:
+  npx playwright test -c <temp config> --project=firefox
+    --project=webkit video-embed-playback video-embed embed-safety
+    export-image-assets                 111 passed, 1 failed (WebKit
+                                        timeout, see 36)
+  The failing test alone, WebKit, --workers=1 --repeat-each=3
+                                                    3 passed
+npx playwright test e2e/video-embed-stress.spec.ts --project=chromium
+                                                    1 passed (39.8 s)
+npm run desktop:build                               clean
+npx playwright test -c playwright.desktop.config.ts 87 passed, 3 skipped
+npx playwright test -c playwright.desktop.config.ts
+    video-embed-fullscreen video-embed --repeat-each=5
+                                                    35 passed
+npm run build                                       clean
+Opt-in live runs (LAYOUTRY_LIVE_PROVIDERS=1), recorded, not gates:
+  - e2e/live/video-embed-live.spec.ts in Chromium, Firefox, WebKit and
+    headed Edge (temporary config);
+  - e2e/desktop/video-embed-live.spec.ts in Electron.
+  Results are in section 4.
+The two temporary configs (zz-xbrowser.config.ts, zz-live.config.ts)
+were deleted after use.
+
+
+34. CHROMIUM RESULTS
+--------------------
+- Full suite: 280 passed, 3 skipped. The 3 skipped are the opt-in live
+  tests: the live Preview test, the live local-server export test and
+  the file:// test.
+- The run includes:
+  - the BC-08.5 stress run;
+  - the responsive widths;
+  - embed-safety (the sandbox attack and its control);
+  - all BC-07 image specs.
+- Live: YouTube, Wistia and Loom play. Vimeo is blocked by H.264
+  (section 4 a).
+
+
+35. FIREFOX RESULTS
+-------------------
+- Targeted run (video-embed-playback, video-embed, embed-safety,
+  export-image-assets): all passed.
+- Live: YouTube, Wistia and Loom play in Preview and on the export.
+  Vimeo is blocked (codec, environment). file:// can't be observed
+  (driver limit).
+
+
+36. WEBKIT RESULTS
+------------------
+- Targeted run: all passed except one test, "Preview > Design loads
+  nothing; Preview mounts exactly the shown players; hide, ancestor,
+  show and exit remove/recreate them".
+  - Near its end, it hit the 30 s test timeout waiting for "Enter
+    Preview" to become stable.
+  - Alone it takes about 24 s. It passed 3/3 with --workers=1
+    --repeat-each=3.
+  - Cause: WebKit is starved of frames under parallel load, already
+    known from BC-04. BC-08.5 did not change this test. D-A changes
+    only the export runtime, not Preview.
+  - Not a product defect. The test was not weakened: no timeout was
+    raised.
+- Live: YouTube and Wistia play. Loom and Vimeo are blocked
+  (environment, section 4 a/b).
+- Carried D3 (stale aspect-ratio after a live resize) is unchanged.
+
+
+37. ELECTRON RESULTS
+--------------------
+- The desktop app was rebuilt with the BC-08.5 changes.
+- Full Electron suite: 87 passed, 3 skipped (opt-in live or
+  platform-specific).
+- Security specs (video-embed-fullscreen, including the new stress test,
+  and video-embed), repeated 5 times: 35/35.
+- Live playback times: YouTube 7.3 s, Wistia 15.5 s, Loom 46.1 s.
+  Vimeo is blocked (no Widevine).
+- Generic YouTube Embed (the control): Error 153 and no fullscreen.
+
+
+38. TYPECHECK / LINT / BUILD
+----------------------------
+- npm run typecheck: clean. Desktop tsc: clean. npm run lint: clean.
+- npm run build (Next.js): clean. npm run desktop:build: clean.
+- Prettier: 11 of the 12 changed code files were already not
+  Prettier-clean at 99c64e6, and lint does not enforce Prettier.
+  legacyProjectFiles.test.ts was clean and still is. No unrelated
+  reformatting was done.
+
+
+39. GIT STATUS
+--------------
+Branch main, HEAD 99c64e6. Uncommitted:
+ M docs/architecture/export-engine.md
+ M e2e/desktop/video-embed-fullscreen.spec.ts
+ M e2e/desktop/video-embed-live.spec.ts
+ M e2e/live/video-embed-live.spec.ts
+ M e2e/video-embed-playback.spec.ts
+ M e2e/video-embed-stress.spec.ts
+ M src/features/export/utils/exportHtmlCss.packaging.test.ts
+ M src/features/export/utils/exportInteractionRuntime.ts
+ M src/features/export/utils/exportInteractionRuntime.videoEmbed.test.ts
+ M src/features/inspector/components/InspectorVideoEmbedSection.test.tsx
+ M src/features/project/utils/legacyProjectFiles.test.ts
+ M src/lib/videoEmbed/parseVideoEmbedUrl.test.ts
+ M src/lib/videoEmbed/videoEmbedProviders.ts
+?? docs/reports/BC-08.5-Final-Multi-Provider-Video-Embed-Regression-And-Security-Audit.txt
+- The changelog lives in changelogs/, which is gitignored.
+- Nothing is staged. No secrets.
+- The temporary configs are deleted.
+
+
+40. CLOSURE RECOMMENDATION
+--------------------------
+Recommendation to QA: CLOSE BC-08.
+- Every approved decision holds (section 3).
+- No Critical or High defect exists; the one Medium found (D-A) is
+  fixed with a regression test.
+- Every provider plays wherever its stream can be decoded and its rules
+  are met; every non-playing cell in section 4 has a named,
+  non-Layoutry cause, and the user-facing ones are explained in the
+  Inspector or the export note.
+- Open items are Low or not BC-08 (section 30); product decisions P1
+  (Vimeo desktop DRM), P2 (Referer identity) and P3 (E1) stay with the
+  product owner.
+Closure is ChatGPT QA's decision; this report does not close BC-08.
+
+
+FINAL CHECKLIST
+---------------
+1. Provider URL parsing and rejection ......................... PASS
+ 2. Inspector per-provider controls and messages ............... PASS
+ 3. Canvas privacy (no provider request in Design) ............. PASS
+ 4. Preview playback, browsers ................................. PASS
+      Vimeo is BLOCKED in Playwright's own engines (codec); it plays in
+      Edge.
+ 5. Preview playback, desktop .................................. PASS
+      YouTube, Wistia and Loom play. Vimeo is BLOCKED: no Widevine
+      (approved limitation).
+ 6. Exported page playback (local server) ...................... PASS
+ 7. Exported page playback (hosted HTTPS) ...................... NOT TESTED
+      No HTTPS host was available. The configuration is verified and
+      does not depend on the origin (section 4 d).
+ 8. Exported page from file:// ................................. PASS
+      Vimeo, Loom and Wistia play. YouTube is BLOCKED (Error 153, no
+      Referer), as the app tells the user. Firefox NOT TESTED (driver
+      limit).
+ 9. Loom status ................................................ PASS (now verified)
+10. Muted-only autoplay / reduced motion ....................... PASS
+11. Visibility lifecycle (Preview = export) .................... PASS (after the D-A fix)
+12. Generic Embed cleanup ...................................... PASS
+13. Sandbox unchanged .......................................... PASS
+14. Vimeo encrypted-media isolation ............................ PASS
+15. Electron fullscreen authorization .......................... PASS
+16. Authorization revocation ................................... PASS
+17. Responsive 320/375/768/1024/1440 ........................... PASS
+      320, 375 and 768 are tested on the exported page; the editor
+      needs at least 900 px.
+18. Export formats (single file / separate / ZIP) .............. PASS
+19. BC-07 image asset regression ............................... PASS
+20. Save / reopen .............................................. PASS
+21. Undo / redo ................................................ PASS
+22. Legacy format 1 migration .................................. PASS
+23. Accessibility .............................................. PASS
+24. Stress / performance (browser and desktop) ................. PASS
+25. Validation suite (unit, 3 engines, Electron, builds) ....... PASS
+      Two timeouts under load, in tests BC-08.5 did not change (Vitest
+      Checkpoint 1.8, WebKit Preview). Both pass when run alone
+      (sections 33 and 36).

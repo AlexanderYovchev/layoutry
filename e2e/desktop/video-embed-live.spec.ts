@@ -55,6 +55,7 @@ test("real providers in the desktop Preview: YouTube (Referer), Wistia, Vimeo (D
       ve("live-yt", "https://www.youtube-nocookie.com/embed/M7lc1UVf-VE"),
       ve("live-wistia", "https://fast.wistia.net/embed/iframe/26sk4lmiix?doNotTrack=true"),
       ve("live-vimeo", "https://player.vimeo.com/video/76979871?dnt=1"),
+      ve("live-loom", "https://www.loom.com/embed/e8a4ed2c6a104e31bc643f7c8ffe7fcc"),
       { id: "live-generic", tag: "iframe", src: "https://www.youtube-nocookie.com/embed/M7lc1UVf-VE?autoplay=1&mute=1&generic=1", title: "Generic YouTube", dimensions: sized },
     ],
   };
@@ -63,7 +64,7 @@ test("real providers in the desktop Preview: YouTube (Referer), Wistia, Vimeo (D
   await expect(page.locator(`${SURFACE} [data-node-id="live-generic"]`)).toBeAttached({ timeout: 30_000 });
   await page.getByRole("button", { name: "Enter Preview" }).click();
 
-  for (const [id, match] of [["live-yt", (url: string) => url.includes("youtube-nocookie") && !url.includes("generic=1")], ["live-wistia", (url: string) => url.includes("fast.wistia.net")], ["live-vimeo", (url: string) => url.includes("player.vimeo.com")], ["live-generic", (url: string) => url.includes("generic=1")]] as const) {
+  for (const [id, match] of [["live-yt", (url: string) => url.includes("youtube-nocookie") && !url.includes("generic=1")], ["live-wistia", (url: string) => url.includes("fast.wistia.net")], ["live-vimeo", (url: string) => url.includes("player.vimeo.com")], ["live-loom", (url: string) => url.includes("www.loom.com")], ["live-generic", (url: string) => url.includes("generic=1")]] as const) {
     const iframe = page.locator(`${SURFACE} [data-node-id="${id}"] iframe`);
     await iframe.scrollIntoViewIfNeeded();
     await expect.poll(() => page.frames().some((frame) => match(frame.url())), { timeout: 30_000 }).toBe(true).catch(() => undefined);

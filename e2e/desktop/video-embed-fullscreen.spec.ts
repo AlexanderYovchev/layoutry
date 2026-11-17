@@ -292,3 +292,133 @@ test("reduced motion in the desktop app: no player autoplays", async () => {
   await enterPreview(page);
   await expect(player(page, "ve-yt")).toHaveAttribute("src", `https://www.youtube-nocookie.com/embed/${YT}?mute=1`);
 });
+
+/**
+ * BC-08.5 — repetition in the real window. Registrations are capped at 256
+ * per window and a player whose registration fails gets no src (fail
+ * closed), so 89 Preview sessions (277 registrations) prove unregistration
+ * keeps up: if any leaked, the last sessions' players would load nothing.
+ * Fullscreen alternates between the player's own exit and Escape; project
+ * switches happen in Preview and in Design.
+ */
+test("stress: 89 Preview sessions, 10 fullscreen cycles, project switches: grants still work, nothing accumulates", async () => {
+  test.setTimeout(600_000);
+  const { app, page } = await start();
+  const mainListeners = () =>
+    app.evaluate(({ BrowserWindow, ipcMain }) => {
+      const contents = BrowserWindow.getAllWindows()[0]?.webContents;
+      const window = BrowserWindow.getAllWindows()[0];
+      return {
+        contents: ["enter-html-full-screen", "leave-html-full-screen", "before-input-event", "did-frame-navigate", "destroyed"].reduce((sum, name) => sum + (contents?.listenerCount(name) ?? 0), 0),
+        window: ["enter-full-screen", "leave-full-screen"].reduce((sum, name) => sum + (window?.listenerCount(name) ?? 0), 0),
+        ipc: ipcMain.eventNames().length,
+        heapMb: Math.round((process.memoryUsage().heapUsed / 1048576) * 10) / 10,
+      };
+    });
+  const players = page.locator(`${SURFACE} iframe[data-video-embed-player]`);
+  const providerFrames = () => page.frames().filter((frame) => /^https:\/\/(www\.youtube-nocookie\.com|player\.vimeo\.com|fast\.wistia\.net)\//.test(frame.url())).length;
+  const designFrames = page.frames().length;
+  const listenersStart = await mainListeners();
+  let sessions = 0;
+
+  const fullscreenTimes: number[] = [];
+  for (let cycle = 0; cycle < 10; cycle += 1) {
+    await enterPreview(page);
+    sessions += 1;
+    await expect(players).toHaveCount(3);
+    const youtube = await frameFor(page, "https://www.youtube-nocookie.com/");
+    const started = Date.now();
+    await requestFullscreen(page, "ve-yt");
+    await expect.poll(() => fsState(youtube), { timeout: 10_000 }).toBe("entered");
+    await expect.poll(() => windowFullScreen(app)).toBe(true);
+    fullscreenTimes.push(Date.now() - started);
+    await watchFullscreen(page);
+    if (cycle % 2 === 0) {
+      await youtube.evaluate(() => document.exitFullscreen());
+    } else {
+      await app.evaluate(({ BrowserWindow }) => {
+        const contents = BrowserWindow.getAllWindows()[0]?.webContents;
+        contents?.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+        contents?.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+      });
+    }
+    await expect.poll(() => windowFullScreen(app)).toBe(false);
+    // Hide and show the player's container: one more unregister + register.
+    await page.locator(`${SURFACE} [data-node-id="btn-toggle"]`).click();
+    await expect(players).toHaveCount(2);
+    await page.locator(`${SURFACE} [data-node-id="btn-toggle"]`).click();
+    await expect(players).toHaveCount(3);
+    await page.getByRole("button", { name: "Exit Preview" }).click();
+    await expect(players).toHaveCount(0);
+    await expect.poll(() => page.frames().length).toBe(designFrames);
+  }
+
+  // Project switches: away and back, from Preview and from Design.
+  const other: EditorElementNode = { id: "page-root", tag: "page", children: [{ id: "other", tag: "p", text: "Another project" }] };
+  /** Opens a project file; a file already in the library is opened as a copy (the app asks). */
+  const switchTo = async (document: EditorElementNode, waitFor: string, name: string) => {
+    const file = serializeProject({ metadata: { id: name === "Another project" ? "00000000-0000-4000-8000-000000000842" : "00000000-0000-4000-8000-000000000841", name, createdAt: "2026-11-16T00:00:00.000Z", updatedAt: "2026-11-16T00:00:00.000Z" }, document });
+    await page.getByTestId("project-import-input").setInputFiles({ name: "switch.layoutry", mimeType: "application/json", buffer: Buffer.from(file) });
+    const asCopy = page.getByRole("dialog", { name: "Project Already in Library" }).getByRole("button", { name: "Import as Copy" });
+    const target = page.locator(`${SURFACE} [data-node-id="${waitFor}"]`);
+    await expect(target.or(asCopy).first()).toBeVisible({ timeout: 30_000 });
+    if (await asCopy.isVisible()) await asCopy.click();
+    await expect(target).toBeAttached({ timeout: 30_000 });
+  };
+  for (let round = 0; round < 3; round += 1) {
+    await enterPreview(page);
+    sessions += 1;
+    await expect(players).toHaveCount(3);
+    await switchTo(other, "other", "Another project");
+    await expect(players).toHaveCount(0);
+    await expect.poll(() => providerFrames()).toBe(0);
+    if (await page.getByRole("button", { name: "Exit Preview" }).count()) await page.getByRole("button", { name: "Exit Preview" }).click();
+    await switchTo(fixture(), "generic", "BC-08.4 fullscreen");
+    await expect.poll(() => page.frames().length).toBe(designFrames);
+  }
+
+  const sessionTimes: number[] = [];
+  for (let session = 0; session < 75; session += 1) {
+    const started = Date.now();
+    await enterPreview(page);
+    sessions += 1;
+    await expect(players).toHaveCount(3);
+    for (const id of ["ve-yt", "ve-vimeo", "ve-wistia"]) await expect(player(page, id)).toHaveAttribute("src", /^https:\/\//);
+    sessionTimes.push(Date.now() - started);
+    await page.getByRole("button", { name: "Exit Preview" }).click();
+    await expect(players).toHaveCount(0);
+  }
+  await expect.poll(() => page.frames().length).toBe(designFrames);
+
+  // After 274 registrations (277 with this session): the players still register, load and get fullscreen.
+  await enterPreview(page);
+  sessions += 1;
+  for (const id of ["ve-yt", "ve-vimeo", "ve-wistia"]) await expect(player(page, id)).toHaveAttribute("src", /^https:\/\//);
+  const youtube = await frameFor(page, "https://www.youtube-nocookie.com/");
+  await requestFullscreen(page, "ve-yt");
+  await expect.poll(() => fsState(youtube), { timeout: 10_000 }).toBe("entered");
+  await expect.poll(() => windowFullScreen(app)).toBe(true);
+  await watchFullscreen(page);
+  await youtube.evaluate(() => document.exitFullscreen());
+  await expect.poll(() => windowFullScreen(app)).toBe(false);
+  // The generic Embed is still refused.
+  const generic = await frameFor(page, "https://widget.example/");
+  await requestFullscreen(page, "generic");
+  await expect.poll(() => fsState(generic)).toMatch(/^rejected:/);
+  await page.getByRole("button", { name: "Exit Preview" }).click();
+  await expect(players).toHaveCount(0);
+  await expect.poll(() => providerFrames()).toBe(0);
+  await expect.poll(() => page.frames().length).toBe(designFrames);
+
+  const listenersEnd = await mainListeners();
+  expect(listenersEnd.contents, "webContents listeners").toBe(listenersStart.contents);
+  expect(listenersEnd.window, "window fullscreen listeners").toBe(listenersStart.window);
+  expect(listenersEnd.ipc, "IPC channels").toBe(listenersStart.ipc);
+  expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
+  const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
+  process.stdout.write(
+    `\n[BC-08.5 electron stress] ${sessions} Preview sessions (${10 * 4 + 3 * 3 + 75 * 3 + 3} registrations, cap 256), 11 fullscreen grants (median request-to-window ${median(fullscreenTimes)} ms, max ${Math.max(...fullscreenTimes)} ms), 6 project switches; ` +
+      `median entry-to-3-loaded-players ${median(sessionTimes)} ms (max ${Math.max(...sessionTimes)} ms); frames ${designFrames} -> ${page.frames().length}; ` +
+      `main listeners ${JSON.stringify(listenersStart)} -> ${JSON.stringify(listenersEnd)}\n`,
+  );
+});

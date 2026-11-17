@@ -139,7 +139,11 @@ export const VIDEO_EMBED_PROVIDERS: Readonly<Record<VideoEmbedProviderId, VideoE
       privacyMode: "Loom has no privacy-enhanced mode.",
     },
     limitations: ['The video must be shared with "Anyone with the link".'],
-    playback: { status: "unverified", note: "Playback hasn't been confirmed with a real Loom video yet." },
+    // BC-08.5 live run with Loom's own public video ("Atlassian + Loom - A big
+    // milestone", loom.com/embed/e8a4ed2c6a104e31bc643f7c8ffe7fcc): muted
+    // autoplay plays in Chromium, Firefox, Edge and the desktop app, in
+    // Preview and on exported pages.
+    playback: { status: "verified" },
     permissions: [],
   },
   wistia: {
