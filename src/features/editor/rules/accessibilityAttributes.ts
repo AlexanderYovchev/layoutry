@@ -1,4 +1,8 @@
 import type { EditorElementNode } from "@/features/editor/types/document";
+import {
+  getPaginationRole,
+  isPaginationCurrentPage,
+} from "@/features/editor/types/pagination";
 
 /**
  * Where each generic accessibility field (types/accessibility.ts) may be
@@ -80,9 +84,19 @@ export function isNavigableLink(node: EditorElementNode): boolean {
  * its trigger ARIA and outside-click dismissal, and the export's trigger
  * list (so the exported runtime never sees a disabled trigger). Design
  * mode doesn't run interactions, so selection and editing are unaffected.
+ *
+ * BC-09.3 (approved): inside a marked Pagination (`parent`), the current
+ * page and the ellipsis don't activate either. Scoped to that Pagination
+ * semantics: `aria-current` elsewhere (a Navbar's active item) still runs
+ * its interactions.
  */
-export function canActivateInteractions(node: EditorElementNode): boolean {
-  return node.disabled !== true;
+export function canActivateInteractions(
+  node: EditorElementNode,
+  parent: EditorElementNode | undefined,
+): boolean {
+  if (node.disabled === true) return false;
+  if (isPaginationCurrentPage(node, parent)) return false;
+  return getPaginationRole(node, parent) !== "ellipsis";
 }
 
 export interface AccessibilityRenderOptions {

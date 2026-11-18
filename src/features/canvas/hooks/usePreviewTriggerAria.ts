@@ -6,7 +6,7 @@ import { InteractionTargetsContext } from "@/features/canvas/components/document
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { getInteractions } from "@/features/editor/types/interactions";
-import { findNodeById } from "@/features/editor/utils/findNodeById";
+import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
 import { EXPANDABLE_CONTROL_TAGS, resolveTriggerAccessibility } from "@/features/editor/utils/triggerAccessibility";
 
 export interface PreviewTriggerAria {
@@ -32,8 +32,15 @@ export interface PreviewTriggerAria {
  * state changes.
  */
 export function usePreviewTriggerAria(node: EditorElementNode): PreviewTriggerAria {
-  // A disabled control controls nothing (BC-09.2.1), as on the exported page.
-  const applies = EXPANDABLE_CONTROL_TAGS.has(node.tag) && canActivateInteractions(node) && getInteractions(node).length > 0;
+  // A control that can't activate (disabled, or a Pagination current page)
+  // controls nothing (BC-09.2.1, BC-09.3), as on the exported page.
+  const hasBindings = EXPANDABLE_CONTROL_TAGS.has(node.tag) && getInteractions(node).length > 0;
+  const activatable = useEditorStore((state) => {
+    if (!hasBindings) return false;
+    const parentId = findParentId(state.document, node.id);
+    return canActivateInteractions(node, parentId ? findNodeById(state.document, parentId) : undefined);
+  });
+  const applies = hasBindings && activatable;
   const targets = useContext(InteractionTargetsContext);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
   const expanded = useEditorStore((state) => {

@@ -29,6 +29,7 @@
 import { createPrimaryButtonNode } from "@/features/editor/factories/buttonCompositions";
 import { generateNodeId } from "@/features/editor/utils/generateNodeId";
 import { DEFAULT_LINK_HREF } from "@/features/editor/types/link";
+import { PAGINATION_NAV_LABEL, PAGINATION_ROLE_LABELS } from "@/features/editor/types/pagination";
 import type { BackgroundSettings } from "@/features/editor/types/background";
 import type { BorderRadiusSettings } from "@/features/editor/types/borderRadius";
 import type { BorderSettings } from "@/features/editor/types/border";
@@ -183,8 +184,10 @@ export function createBreadcrumbsNode(): EditorElementNode {
  *   never by colour alone.
  * - Wrap is on so many pages never push a narrow page sideways (BC-09.1
  *   G9); a short Pagination still sits on one centred row.
- * - First/Last and an ellipsis are not part of the default (they are
- *   added by BC-09.3's management).
+ * - First/Last and an ellipsis are not part of the default; the Inspector's
+ *   Pagination section adds them (BC-09.3, commands/paginationCommands.ts).
+ * - BC-09.3: each control carries its role as an assigned label in
+ *   displayName ("Previous page", "Next page", ...); pages carry none.
  */
 const PAGINATION_FLEX: FlexContainerSettings = {
   direction: "row",
@@ -211,22 +214,38 @@ function paginationBorder(color: string): BorderSettings {
   const side = { width: { value: 1, unit: "px" as const }, style: "solid" as const, color };
   return { top: side, right: side, bottom: side, left: side };
 }
-const PAGE_LINK_TYPOGRAPHY: TypographySettings = { color: "#3f3f46" };
-const CURRENT_PAGE_TYPOGRAPHY: TypographySettings = { color: "#ffffff" };
-const CURRENT_PAGE_BACKGROUND: BackgroundSettings = { color: "#18181b" };
+/** Text colours of the starter design, shared with paginationCommands (BC-09.3), which swaps them on state changes. */
+export const PAGINATION_COLORS = {
+  pageText: "#3f3f46",
+  currentText: "#ffffff",
+  currentBackground: "#18181b",
+  stepText: "#3f3f46",
+  stepBorder: "#d4d4d8",
+  disabledText: "#a1a1aa",
+  disabledBorder: "#e4e4e7",
+  ellipsisText: "#71717a",
+} as const;
+
+const PAGE_LINK_TYPOGRAPHY: TypographySettings = { color: PAGINATION_COLORS.pageText };
+const CURRENT_PAGE_TYPOGRAPHY: TypographySettings = { color: PAGINATION_COLORS.currentText };
+const CURRENT_PAGE_BACKGROUND: BackgroundSettings = { color: PAGINATION_COLORS.currentBackground };
 /** Previous/Next keep the look the old Buttons had: small medium text, no underline, a light border. */
 const STEP_LINK_TYPOGRAPHY: TypographySettings = {
-  color: "#3f3f46",
+  color: PAGINATION_COLORS.stepText,
   fontSize: { value: 14, unit: "px" },
   fontWeight: 500,
   lineHeight: { value: 20, unit: "px" },
   textDecorationLine: "none",
 };
 /** A disabled step: muted text and border, and a not-allowed cursor, besides its disabled semantics. */
-const DISABLED_STEP_TYPOGRAPHY: TypographySettings = { ...STEP_LINK_TYPOGRAPHY, color: "#a1a1aa" };
+const DISABLED_STEP_TYPOGRAPHY: TypographySettings = { ...STEP_LINK_TYPOGRAPHY, color: PAGINATION_COLORS.disabledText };
 
-/** A numbered page Link. Its href is the page's own destination (e.g. `?page=2`); "#" until the author sets one. */
-function pageLink(text: string, current: boolean): EditorElementNode {
+/**
+ * A numbered page Link. Its href is the page's own destination (e.g.
+ * `?page=2`); "#" until the author sets one. A page has no displayName:
+ * only controls carry a role label (types/pagination.ts).
+ */
+export function createPaginationPageLink(text: string, current = false): EditorElementNode {
   return {
     id: generateNodeId("a"),
     tag: "a",
@@ -240,19 +259,43 @@ function pageLink(text: string, current: boolean): EditorElementNode {
   };
 }
 
-/** Previous or Next: a real Link to the neighbouring page, or a disabled one at a boundary. */
-function stepLink(text: string, disabled: boolean): EditorElementNode {
+/** The visible text each step control starts with. */
+export const PAGINATION_STEP_TEXT: Readonly<Record<"first" | "previous" | "next" | "last", string>> = {
+  first: "First",
+  previous: "Previous",
+  next: "Next",
+  last: "Last",
+};
+
+/**
+ * First, Previous, Next or Last: a real Link to its page, or a disabled one
+ * at a boundary. Its role is its assigned label (displayName, BC-09.3).
+ */
+export function createPaginationStepLink(role: "first" | "previous" | "next" | "last", disabled: boolean): EditorElementNode {
   return {
     id: generateNodeId("a"),
     tag: "a",
-    text,
+    displayName: PAGINATION_ROLE_LABELS[role],
+    text: PAGINATION_STEP_TEXT[role],
     href: DEFAULT_LINK_HREF,
     typography: disabled ? DISABLED_STEP_TYPOGRAPHY : STEP_LINK_TYPOGRAPHY,
     background: { color: "transparent" },
-    border: paginationBorder(disabled ? "#e4e4e7" : "#d4d4d8"),
+    border: paginationBorder(disabled ? PAGINATION_COLORS.disabledBorder : PAGINATION_COLORS.stepBorder),
     borderRadius: PAGINATION_CONTROL_RADIUS,
     spacing: PAGINATION_CONTROL_SPACING,
     ...(disabled ? { disabled: true as const, display: { cursor: "not-allowed" as const } } : {}),
+  };
+}
+
+/** The optional "…" separator (BC-09.3): a Paragraph, like Breadcrumbs' "/", with no href and no role of a control. */
+export function createPaginationEllipsis(): EditorElementNode {
+  return {
+    id: generateNodeId("p"),
+    tag: "p",
+    displayName: PAGINATION_ROLE_LABELS.ellipsis,
+    text: "…",
+    typography: { color: PAGINATION_COLORS.ellipsisText },
+    spacing: { margin: { top: 0, right: 0, bottom: 0, left: 0 }, padding: { top: 6, right: 4, bottom: 6, left: 4 } },
   };
 }
 
@@ -262,15 +305,16 @@ export function createPaginationNode(): EditorElementNode {
     id: generateNodeId("nav"),
     tag: "nav",
     component: "pagination",
+    displayName: PAGINATION_NAV_LABEL,
     ariaLabel: PAGINATION_ACCESSIBLE_NAME,
     flowLayout: { display: "flex", flex: PAGINATION_FLEX },
     spacing: {},
     children: [
-      stepLink("Previous", true),
-      pageLink("1", true),
-      pageLink("2", false),
-      pageLink("3", false),
-      stepLink("Next", false),
+      createPaginationStepLink("previous", true),
+      createPaginationPageLink("1", true),
+      createPaginationPageLink("2"),
+      createPaginationPageLink("3"),
+      createPaginationStepLink("next", false),
     ],
   };
 }

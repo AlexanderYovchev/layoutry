@@ -44,6 +44,8 @@ import { InspectorVectorObjectSection } from "@/features/inspector/components/In
 import { InspectorVideoSection } from "@/features/inspector/components/InspectorVideoSection";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { isNavigationLinkContainer } from "@/features/editor/commands/navigationLinkCommands";
+import { isPaginationNode } from "@/features/editor/types/pagination";
+import { InspectorPaginationSection } from "@/features/inspector/components/InspectorPaginationSection";
 import { getElementCapabilities } from "@/features/editor/rules/elementCapabilities";
 import { canContainChildren } from "@/features/editor/rules/insertionRules";
 import { canOwnStyleLock, getStyleProtection } from "@/features/editor/rules/styleProtection";
@@ -172,6 +174,7 @@ export function InspectorNodeSummary({
       {getElementCapabilities(node.tag).supportsHeadingLevel && <InspectorHeadingLevelSection node={node} />}
       {(node.tag === "ul" || node.tag === "ol") && <InspectorListSection node={node} />}
       {isNavigationLinkContainer(node) && <InspectorNavigationLinksSection node={node} />}
+      {isPaginationNode(node) && <InspectorPaginationSection node={node} />}
       {node.tag === "table" && <InspectorTableSection node={node} />}
       {(node.tag === "table" || node.tag === "tr") && <InspectorTableSelectionSection node={node} />}
       {node.tag === "option" && <InspectorOptionSection node={node} parentId={parentId} />}

@@ -302,6 +302,8 @@ editor schema. Either failure refuses the export with no files. After that:
   `disabled-trigger`). So the exported runtime never sees it: no
   `data-ly-on-click`, `aria-controls` or `aria-expanded`, whatever
   activates it (mouse, Enter, a script's `click()`).
+  BC-09.3 extends the rule to a marked Pagination's current page and its
+  ellipsis (never to `aria-current` elsewhere, e.g. a Navbar's active link).
 
 ## Diagnostics
 

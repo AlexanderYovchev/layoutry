@@ -18,6 +18,7 @@ import type { ExportDiagnostic } from "@/features/export/types/exportDiagnostic"
 export function buildExportBehaviors(document: EditorElementNode, diagnostics: ExportDiagnostic[]): ExportBehaviors {
   const nodes = documentPreOrder(document);
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const parentById = new Map(nodes.flatMap((node) => (node.children ?? []).map((child) => [child.id, node] as const)));
   const targets: ExportBehaviorTarget[] = resolveInteractionTargets(document);
   const tokenByNodeId = new Map(targets.map((target) => [target.nodeId, target.token]));
   const targetByToken = new Map(targets.map((target) => [target.token, target]));
@@ -32,11 +33,13 @@ export function buildExportBehaviors(document: EditorElementNode, diagnostics: E
       diagnostics.push({ code: "unsupported-trigger", severity: "warning", nodeId: node.id, message: `Click interactions on <${node.tag}> never run in Preview, so they were not exported.` });
       continue;
     }
-    if (!canActivateInteractions(node)) {
-      // BC-09.2.1: a disabled control never runs its interactions, in Preview
-      // or here, so it is not exported as a trigger at all: the runtime
-      // never sees it (no data-ly-on-click), whatever activates it.
-      diagnostics.push({ code: "disabled-trigger", severity: "info", nodeId: node.id, message: `This <${node.tag}> is disabled, so its click interactions don't run and were not exported.` });
+    if (!canActivateInteractions(node, parentById.get(node.id))) {
+      // BC-09.2.1 / BC-09.3: a disabled control, or a Pagination current page
+      // or ellipsis, never runs its interactions, in Preview or here, so it
+      // is not exported as a trigger at all: the runtime never sees it (no
+      // data-ly-on-click), whatever activates it.
+      const why = node.disabled === true ? "is disabled" : "is the current page or the ellipsis of a Pagination";
+      diagnostics.push({ code: "disabled-trigger", severity: "info", nodeId: node.id, message: `This <${node.tag}> ${why}, so its click interactions don't run and were not exported.` });
       continue;
     }
     if (!isKeyboardOperableTrigger(node.tag)) {

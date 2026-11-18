@@ -1,0 +1,490 @@
+BC-09.3 — PAGINATION INSPECTOR MANAGEMENT AND CUSTOMIZATION
+===========================================================
+Date: 2026-11-18
+Baseline: f426d5b (BC-09.2.1 committed).
+Status: implemented, uncommitted, waiting for ChatGPT QA. BC-09.4 not started.
+Testing: change-focused (section 20). No full suite was run.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+- A dedicated "Pagination" section in the Inspector, shown only for a
+  MARKED Pagination. It manages:
+  - pages: label, destination, current page, add (to 12), remove (to 1);
+  - controls: Previous, Next, First, Last and an ellipsis.
+- Every action is one Undo step.
+- Previous/Next/First/Last take their destinations from the pages and
+  are disabled at their boundaries automatically.
+- Approved decision implemented: the current page (and the ellipsis)
+  never run authored interactions, in Preview or Export. This extends the
+  BC-09.2.1 shared rule; it is scoped to marked Paginations only.
+- One normalization pass keeps every marked Pagination at exactly one
+  current page, with in-sync boundaries. It runs inside each management
+  action and after the generic edits (Delete, cut/paste, copy/paste,
+  duplicate, move, insert, href edit), in the same Undo step.
+- The BC-09.2 cut/paste limitation is fixed: a cut current page pasted
+  back into its Pagination stays current.
+- No project format change. The current page's destination stays in its
+  stored href, which simply isn't rendered. Control roles use the
+  existing displayName field ("a component's assigned label").
+- Legacy Paginations, Navbars and Breadcrumbs are untouched.
+- Tests: targeted Vitest 164 files / 3160 passed; Chromium 27/27;
+  typecheck, lint and build clean. No product defect is open.
+
+
+2. FILES MODIFIED
+-----------------
+New (product):
+  src/features/editor/commands/paginationCommands.ts   commands + normalization
+  src/features/inspector/components/InspectorPaginationSection.tsx
+  src/features/inspector/utils/paginationCopy.ts
+Modified (product):
+  src/features/editor/types/pagination.ts         roles, parts, nav label, current-page test
+  src/features/editor/rules/accessibilityAttributes.ts  canActivateInteractions(node, parent)
+  src/features/editor/factories/navigationCompositions.ts  role labels, shared page/step/ellipsis builders
+  src/features/editor/stores/useEditorStore.ts    6 actions; invariants after generic edits
+  src/features/canvas/hooks/usePreviewTriggerAria.ts   parent-aware rule
+  src/features/editor/utils/dismissibleTargets.ts      parent-aware rule
+  src/features/export/utils/buildExportBehaviors.ts    parent-aware rule + message
+  src/features/export/index.ts                    exposes checkExportUrl (public API)
+  src/features/inspector/components/InspectorNodeSummary.tsx  mounts the section
+Docs: docs/architecture/export-engine.md (one sentence).
+Tests: section 21.
+
+
+3. PAGINATION INSPECTOR DESIGN
+------------------------------
+Shown only when the selected node is a marked Pagination
+(isPaginationNode). It is not shown for:
+- a legacy Pagination, a Navbar, Breadcrumbs, a plain nav;
+- a page inside the Pagination (that page gets its own Link and CSS
+  sections, as before).
+Layout, using the existing Inspector primitives and styles
+(InspectorSection, InspectorBooleanToggle, the BC-06 button styles):
+- a summary line, aria-live: "4 pages, page 3 is current";
+- a "Pages" list, one card per page:
+  - "Page N" (selects the page on the Canvas);
+  - a "Current page" badge, or a "Set as current" button;
+  - Remove;
+  - Label and Destination fields;
+  - an error or note line;
+- "Add page";
+- "Controls": switches for Previous, Next, First, Last and Ellipsis (…),
+  with a note on the automatic destinations.
+No internal ids are shown. Pages are named by position ("page 2"); the
+label is the editable text.
+Accessibility of the section:
+- real buttons and inputs with names ("Set page 3 as the current page",
+  "Remove page 2", "Page 2 destination", "Show First");
+- switches are role="switch";
+- Add and Remove at their limits stay focusable with aria-disabled and
+  a described reason;
+- errors use role="alert";
+- after Remove, focus moves to the next row's Remove (or Add page).
+Sync:
+- fields use the draft/commit pattern with last-seen-value resync, so
+  Undo/Redo and other selections never leave stale values (tested);
+- Enter commits once, Escape reverts, an untouched blur commits nothing.
+
+
+4. PAGE MANAGEMENT
+------------------
+Add page (refused at 12, with a note):
+- placement: after the last page, or before the ellipsis when there is
+  one (1 2 3 … 10 becomes 1 2 3 4 … 10);
+- label: the previous page's number + 1, else the new count;
+- href "#";
+- a fresh id;
+- styled like the nearest ORDINARY page (BC-06's createNavigationLink
+  field copy), else the starter page look. It never copies the current
+  or disabled look, interactions, aria state or role label.
+Remove (refused at 1):
+- removes exactly that page;
+- later pages whose label is still their default number are renumbered
+  (before the ellipsis only); custom labels and every destination stay;
+- the remaining ids are unchanged;
+- if it was the current page, the page before it becomes current and
+  takes the current look;
+- boundaries update.
+All of it is one store write: commitStructuralEdit, with interaction
+cleanup and a selection fallback.
+
+
+5. CURRENT-PAGE MANAGEMENT
+--------------------------
+"Set as current" is one edit:
+- aria-current moves to the chosen page;
+- the state look swaps between the two pages: background, border,
+  shadow, text colour and cursor. An author's custom current-page
+  styling follows the current page, and the old page gets the look the
+  new one had. Other styling (size, font size, spacing) stays on each
+  page (tested).
+- Boundaries resync.
+Recoverable destination:
+- no schema change. The current page keeps its href STORED; the
+  renderers simply don't write it (isNavigableLink, BC-09.2).
+- When another page becomes current, the old one renders its href again
+  (tested).
+- The Inspector shows and edits the current page's destination, with a
+  note explaining this.
+Exactly one current page is guaranteed by normalizePagination (section
+14). No format change was needed, so there is no blocker to report.
+
+
+6. CURRENT-PAGE INTERACTION SUPPRESSION
+---------------------------------------
+- canActivateInteractions(node, parent) is false for:
+  - a disabled node (BC-09.2.1);
+  - a marked Pagination's current page (an unlabelled link with
+    aria-current="page");
+  - its ellipsis.
+- The same four consumers as BC-09.2.1 now pass the parent:
+  - the Preview executor (findParentId);
+  - the Preview trigger ARIA (a store selector);
+  - outside-click dismissal (recursive parent);
+  - the export trigger list (a parent map).
+  So the current page doesn't run interactions on click, Enter or a
+  script click(), advertises no aria-controls or aria-expanded, and is
+  not exported as a trigger. An info diagnostic explains why.
+- Scoped: an aria-current="page" link outside a Pagination (a Navbar's
+  active item) still runs its interactions in Preview and Export
+  (tested).
+- Design: the current page is still selected, edited, dragged and
+  duplicated (tested).
+
+
+7. URL AND LABEL EDITING
+------------------------
+Destinations:
+- accepted only when isValidLinkHref (the Link field's rule) AND the
+  export URL policy (checkExportUrl("link"), now on export's public API)
+  both accept it. So http(s), mailto, tel, relative paths and #anchors
+  pass; javascript:, data:, vbscript: and file: are refused (tested).
+- A refused value shows an alert and the field returns to the stored
+  value. Nothing is silently converted.
+- The command re-checks isValidLinkHref (defence in depth).
+- Editing never navigates. Values survive save/reopen, Undo/Redo and
+  copy/duplicate (tested).
+- Editing a page's href in its OWN Link section also resyncs the
+  boundaries (setElementHref runs the invariants).
+Labels:
+- any non-blank text, trimmed; a blank label is refused and the old one
+  kept.
+- Labels are text, escaped by React and the export printer (tested with
+  "<b>").
+- They are preserved through current-page changes and add/remove of
+  other pages; only default numeric labels are renumbered.
+
+
+8. PREVIOUS / NEXT
+------------------
+- Shown by default; switches show or hide them.
+- Hiding REMOVES the node, so no hidden link and no misleading
+  accessible target is left. Showing re-inserts it in its fixed place,
+  styled like the opposite control.
+- Destination: the neighbouring page's href. Disabled on the first or
+  last page, or when that page's destination is missing or invalid; no
+  URL is invented.
+- Only the starter design's exact colours and cursor swap when the
+  disabled state flips; custom styling is kept.
+- A disabled control keeps its stored href, which isn't rendered.
+- Interactions: never run while disabled (BC-09.2.1).
+
+
+9. FIRST / LAST
+---------------
+- Hidden by default. When shown: First is the first child, Last the last
+  child.
+- They link to the first or last page's destination, and are disabled
+  when that page is current.
+- Ordinary links: individually stylable, and they wrap with the rest.
+- Showing a control that is already present is a no-op, so there are
+  never duplicates.
+
+
+10. ELLIPSIS
+------------
+- A Paragraph "…" with the label "Ellipsis":
+  - no href and no role of a control;
+  - not focusable, and no runtime;
+  - authored interactions on it never run (section 6).
+- Position: just before the last page (1 2 3 … 10). New pages go
+  before it.
+- Display rule:
+  - it needs at least 2 pages (the switch is disabled with a note
+    otherwise);
+  - it is removed automatically when only 1 page is left;
+  - when the labels on both sides are consecutive numbers (3 … 4), the
+    Inspector warns that it suggests pages that don't exist and tells
+    the author to rename the last page or turn it off.
+  No dynamic windowing.
+
+
+11. STYLING INHERITANCE
+-----------------------
+- New page: COPIED_STYLE_FIELDS (BC-06) from an ordinary page, without
+  hidden state.
+- New control: the same, from the opposite control. If that control was
+  disabled, its state is carried too, so the sync swaps its muted look
+  back.
+- Current page: the state look swaps (section 5).
+- Boundaries: only the starter colours and cursor swap.
+- Every child remains fully editable with the CSS Inspector.
+
+
+12. UNDO / REDO
+---------------
+- Each of the 6 actions is one store write: one history entry, or none
+  when it's a no-op (tested for all ten example actions).
+- Generic edits that trigger normalization stay one entry.
+- Undo restores the document object exactly; Redo is deep-equal.
+
+
+13. INTERACTION-REFERENCE INTEGRITY
+-----------------------------------
+- Remove page and hide-control go through commitStructuralEdit, which
+  runs removeInteractionsForRemovedNodes in the same write (the BC-06
+  policy).
+- Normalization's own removal (an ellipsis left with 1 page) is cleaned
+  the same way.
+- Unrelated bindings stay; nothing is retargeted; Undo restores the
+  bindings. The document stays saveable (tested).
+
+
+14. COPY/PASTE AND DUPLICATION
+------------------------------
+Invariant: every managed Pagination has exactly one current page.
+normalizePaginationsAfterEdit runs after these generic store actions,
+only on Paginations whose object changed:
+- delete, cut, paste, duplicate, move, insert and setElementHref.
+- The current page is deleted or cut: the page before it becomes
+  current, with the current look.
+- A cut current page pasted back into its own Pagination: it stays
+  current (preferred), and the stand-in page reverts to an ordinary page
+  (FIXES the BC-09.2 limitation).
+- A current page copied or pasted into another Pagination: an ordinary
+  page there, in state AND look. That Pagination's current page is kept.
+- A duplicated current page: an ordinary page, in look as well as state.
+- A whole Pagination duplicated or pasted: its own single current page,
+  all fresh ids (18 unique ids for 3 Paginations).
+All of these are tested in useEditorStore.paginationManagement.test.ts.
+
+
+15. CANVAS AND STRUCTURE PANEL
+------------------------------
+No Canvas infrastructure changed. Verified in Chromium:
+- inserted from Components, with the nav selected;
+- the section is visible;
+- Structure panel rows: "Pagination", "First page", "Previous page",
+  "Last page" (the assigned labels);
+- selecting the current page on the Canvas shows its own Link section,
+  not the Pagination section;
+- Undo/Redo update Canvas markup and the Inspector together.
+
+
+16. PREVIEW / EXPORT BEHAVIOR
+-----------------------------
+Measured on a managed Pagination: 12 pages, First/Last/ellipsis, page 6
+current, labels up to "40", real destinations.
+Preview (Chromium):
+- the current page and the ellipsis run nothing (click and script click);
+- page 5's interaction runs;
+- no navigation, and no Undo entry.
+Exported page:
+- First → /blog/page/1;
+- Previous → page 5's destination;
+- 6 has aria-current and no href;
+- "…" is a <p>;
+- Next → /blog/page/7;
+- Last → /blog/page/12;
+- clicks on the current page and the ellipsis run nothing;
+- Enter on link 5 runs its interaction;
+- the ellipsis is not a link.
+No Pagination JavaScript is added. The shared export serializer was
+tested in standalone mode; the separate-files mode uses the same
+builder (unit tests).
+
+
+17. ACCESSIBILITY
+-----------------
+- <nav aria-label="Pagination">.
+- Exactly one aria-current="page" (asserted on the Canvas and the
+  export).
+- Disabled links: role="link" aria-disabled="true", no href.
+- Meaningful labels, native link keyboard behaviour, a non-interactive
+  ellipsis, and the current page doesn't activate.
+- The Inspector is keyboard-operable (the Chromium test drives Add,
+  Set current and the switches with Enter and Space) and accessibly
+  named.
+- Not claimed: full WCAG conformance. There was no screen-reader run and
+  no axe audit in this checkpoint. "…" is read aloud: there is no
+  aria-hidden field.
+
+
+18. RESPONSIVE BEHAVIOR
+-----------------------
+- The managed Pagination (12 pages + 4 controls + ellipsis) on the
+  export at 320, 375 and 1440 px: no sideways scroll, nothing escapes
+  the nav.
+- On the Canvas, with the sheet pinned at 375 px: nothing escapes.
+- The layout engine is unchanged (Wrap from BC-09.2).
+
+
+19. LEGACY COMPATIBILITY
+------------------------
+- Unmarked Paginations get no Pagination section and are never
+  normalized, and their generic Navigation links section is unchanged
+  (tests).
+- Generic edits on them change nothing extra.
+- No migration code changed, so migration tests were not expanded. The
+  legacy fixture suite was run anyway (in project/utils) and passes.
+- BC-09.2 Paginations (marked, no role labels):
+  - read positionally (first and last link = Previous and Next) only
+    when the nav also lacks its own "Pagination" label;
+  - the first management action or normalizing edit writes the labels,
+    with no visual or export change, and no format change.
+  - A real bug was found and fixed during this work: without the
+    nav-label guard, a new Pagination with BOTH Previous and Next hidden
+    would have been misread positionally (test added).
+
+
+20. TEST-IMPACT MAP
+-------------------
+Modified module → behaviour at risk → tests:
+paginationCommands (new) → every management rule and invariant
+  → paginationCommands.test.ts (22, new)
+types/pagination, factory → roles, fallback, factory shape
+  → paginationCommands.test.ts, navigationCompositions.test.ts,
+    elementFactories/knownElementTags (factories folder), project/utils
+    round-trip and legacy fixtures
+useEditorStore (6 actions + invariants in delete/cut/paste/duplicate/
+move/insert/setElementHref) → Undo atomicity, clipboard invariants,
+interaction cleanup, unrelated navs
+  → useEditorStore.paginationManagement.test.ts (12, new) + the whole
+    src/features/editor/stores folder (every store test, including
+    clipboard, interactions, navigation links, structural removal)
+accessibilityAttributes.canActivateInteractions + its 4 consumers
+→ current page/ellipsis suppression, scope
+  → disabledInteractionSafety.test.tsx (+4), exportDisabledTriggers
+    .test.ts (+1), CanvasInteractionBoundary, dismissibleTargets,
+    triggerAccessibility, the export folder, the canvas document folder
+Inspector section + NodeSummary → visibility, controls, sync, keyboard
+  → InspectorPaginationSection.test.tsx (14, new), Navigation links
+    section tests, InspectorContent, InspectorLinkSection
+export/index → public API only → typecheck + build
+Browser: pagination-management.spec (3, new); consumers:
+  pagination-foundation, pagination-disabled-interactions,
+  export-interactions, navigation-links.
+Not run, deliberately:
+- full suites;
+- Firefox/WebKit: no engine-specific behaviour changed (href-less links
+  and native semantics were covered in BC-09.2);
+- Electron: no desktop code or desktop-specific behaviour;
+- migration expansions and BC-08 media.
+
+
+21. EXACT FOCUSED TEST COMMANDS / RESULTS
+-----------------------------------------
+A. npx vitest run src/features/editor/stores src/features/editor/commands
+   src/features/editor/factories src/features/editor/rules
+   src/features/editor/utils/dismissibleTargets.test.ts
+   src/features/editor/utils/triggerAccessibility.test.ts
+   src/features/editor/types
+   src/features/inspector/components/InspectorPaginationSection.test.tsx
+   src/features/inspector/components/InspectorNavigationLinksSection.test.tsx
+   src/features/inspector/components/InspectorNavigationLinksSection.eligibility.test.tsx
+   src/features/inspector/components/InspectorContent.test.tsx
+   src/features/inspector/components/InspectorLinkSection.test.tsx
+   src/features/canvas/components/CanvasInteractionBoundary.test.tsx
+   src/features/canvas/components/disabledInteractionSafety.test.tsx
+   src/features/canvas/components/document src/features/export
+   src/features/project/utils src/components/layout/CreationToolbar.test.tsx
+   - first run: 1 failed, 3159 passed. The failing test was an
+     intentional update: the BC-09.2 eligibility test asserted "no
+     Remove buttons at all" for a marked Pagination, and the new section
+     has "Remove page N". It now asserts no generic link rows, plus the
+     Pages list.
+   - final: 164 files, 3160 passed, 0 failed, 0 skipped.
+B. New files during development:
+   - paginationCommands 22/22, after fixing the fallback bug (1 failure
+     first);
+   - store management 12/12;
+   - Inspector 14/14, after two test-harness fixes: act() around
+     store-driven Undo, and a 30 s timeout for the 12-page test (about
+     20 full Inspector renders in jsdom);
+   - suppression 19/19 (both files).
+   After Prettier, the 5 files were rerun: 67/67.
+C. npx playwright test e2e/pagination-management.spec.ts --project=chromium
+   - development runs: spec mistakes (a shadowed `document`, a link with
+     a real URL navigating the test page, wrong Structure-row selectors),
+     all fixed in the spec;
+   - final: 3/3.
+D. npx playwright test e2e/pagination-management.spec.ts
+   e2e/pagination-foundation.spec.ts e2e/pagination-disabled-interactions.spec.ts
+   e2e/export-interactions.spec.ts e2e/navigation-links.spec.ts --project=chromium
+   → 27 passed, 0 failed, 0 skipped.
+E. npm run typecheck → clean. npx eslint (all changed/new .ts/.tsx) →
+   clean. Prettier: the two files that were clean at HEAD were
+   re-formatted. npm run build → compiled successfully.
+
+
+22. OPEN DEFECTS AND LIMITATIONS
+--------------------------------
+No open product defect.
+Limitations:
+- Roles rely on displayName. No UI renames links or paragraphs today; a
+  future rename feature must not rename Pagination controls.
+- A duplicated control (Ctrl+D on Previous) is a second "Previous page".
+  Management syncs only the first; the copy is left as authored.
+- Previous/Next/First/Last destinations are managed. A manual edit in a
+  control's own Link section is replaced at the next sync.
+- Hiding a control deletes it. Showing it again restores the default
+  text and copies the opposite control's look, not the hidden one's.
+- A cut current page pasted into a DIFFERENT Pagination becomes ordinary
+  there (by the approved rule).
+- "…" is read aloud by screen readers (no aria-hidden field).
+- No hover or focus styling (cross-cutting).
+- A 12-page Inspector list is long (no collapsing).
+- Not run here: Firefox/WebKit, Electron, axe or a screen reader
+  (section 20).
+
+
+23. GIT WORKING-TREE STATUS
+---------------------------
+Branch main, HEAD f426d5b. Nothing staged or committed.
+ M docs/architecture/export-engine.md
+ M src/features/canvas/components/disabledInteractionSafety.test.tsx
+ M src/features/canvas/hooks/usePreviewTriggerAria.ts
+ M src/features/editor/factories/navigationCompositions.ts
+ M src/features/editor/rules/accessibilityAttributes.ts
+ M src/features/editor/stores/useEditorStore.ts
+ M src/features/editor/types/pagination.ts
+ M src/features/editor/utils/dismissibleTargets.ts
+ M src/features/export/index.ts
+ M src/features/export/utils/buildExportBehaviors.ts
+ M src/features/export/utils/exportDisabledTriggers.test.ts
+ M src/features/inspector/components/InspectorNavigationLinksSection.eligibility.test.tsx
+ M src/features/inspector/components/InspectorNodeSummary.tsx
+?? docs/reports/BC-09.3-Pagination-Inspector-Management-And-Customization.txt
+?? e2e/pagination-management.spec.ts
+?? src/features/editor/commands/paginationCommands.ts
+?? src/features/editor/commands/paginationCommands.test.ts
+?? src/features/editor/stores/useEditorStore.paginationManagement.test.ts
+?? src/features/inspector/components/InspectorPaginationSection.tsx
+?? src/features/inspector/components/InspectorPaginationSection.test.tsx
+?? src/features/inspector/utils/paginationCopy.ts
+The changelog is gitignored.
+
+
+24. QA RECOMMENDATION
+---------------------
+APPROVE BC-09.3. It delivers the full approved management contract with
+atomic Undo, interaction integrity and the current-page interaction rule,
+with no format change and no change to legacy Paginations.
+Please confirm (all reversible):
+1. Control roles stored in displayName (no format 4).
+2. Hide removes the control rather than hiding it.
+3. Boundary destinations are managed (they overwrite manual edits).
+4. The ellipsis rule: 2+ pages, before the last page, a warning on
+   consecutive labels, removed automatically at 1 page.
+Then BC-09.4 (Preview/Export regression) can start.

@@ -76,7 +76,10 @@ describe("Navigation links section eligibility (BC-06.3)", () => {
     const pagination = createPaginationNode();
     show([pagination], [pagination.id]);
     expect(sectionHeader()).toBeNull();
-    expect(screen.queryByRole("button", { name: /^Remove / })).toBeNull();
+    // No generic link rows (BC-09.3: the Pagination section manages it instead).
+    expect(screen.queryByRole("list", { name: NAVIGATION_LINKS_COPY.title })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Remove (Previous|Next|1|2|3)$/ })).toBeNull();
+    expect(screen.getByRole("list", { name: "Pages" })).toBeInTheDocument();
   });
 
   it("an unmarked nav that reads exactly like the new Pagination is still an ordinary nav", () => {

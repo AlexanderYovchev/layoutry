@@ -51,9 +51,9 @@ export function findDismissibleRelationships(
 ): DismissibleRelationship[] {
   const relationships: DismissibleRelationship[] = [];
 
-  function visit(node: EditorElementNode) {
-    // A disabled trigger can't open anything, so it owns no relationship (BC-09.2.1).
-    const bindings = canActivateInteractions(node) ? getInteractions(node) : [];
+  function visit(node: EditorElementNode, parent: EditorElementNode | undefined) {
+    // A trigger that can't activate can't open anything, so it owns no relationship (BC-09.2.1, BC-09.3).
+    const bindings = canActivateInteractions(node, parent) ? getInteractions(node) : [];
     for (const binding of bindings) {
       if (binding.trigger !== "click" || binding.action !== "toggle") continue;
       if (runtimeVisibility[binding.targetId] !== true) continue;
@@ -64,9 +64,9 @@ export function findDismissibleRelationships(
 
       relationships.push({ triggerId: node.id, targetId: binding.targetId, bindingId: binding.id });
     }
-    node.children?.forEach(visit);
+    node.children?.forEach((child) => visit(child, node));
   }
 
-  visit(document);
+  visit(document, undefined);
   return relationships;
 }

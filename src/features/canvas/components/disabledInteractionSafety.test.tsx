@@ -74,11 +74,11 @@ describe("disabled controls never run interactions (BC-09.2.1)", () => {
   });
 
   it("the rule reads only the document field", () => {
-    expect(canActivateInteractions({ id: "a", tag: "a", disabled: true })).toBe(false);
-    expect(canActivateInteractions({ id: "a", tag: "a" })).toBe(true);
+    expect(canActivateInteractions({ id: "a", tag: "a", disabled: true }, undefined)).toBe(false);
+    expect(canActivateInteractions({ id: "a", tag: "a" }, undefined)).toBe(true);
     // A muted, not-allowed look is not "disabled".
-    expect(canActivateInteractions({ id: "a", tag: "a", typography: { color: "#a1a1aa" }, display: { cursor: "not-allowed" } })).toBe(true);
-    expect(canActivateInteractions({ id: "b", tag: "button", disabled: true })).toBe(false);
+    expect(canActivateInteractions({ id: "a", tag: "a", typography: { color: "#a1a1aa" }, display: { cursor: "not-allowed" } }, undefined)).toBe(true);
+    expect(canActivateInteractions({ id: "b", tag: "button", disabled: true }, undefined)).toBe(false);
   });
 
   it("Preview: clicking a disabled Previous does nothing; the enabled Next with the same binding toggles its panel", () => {
@@ -154,6 +154,75 @@ describe("disabled controls never run interactions (BC-09.2.1)", () => {
     expect(store().selection.primaryId).toBe("prev-1");
     fireEvent.click(screen.getByRole("button", { name: "Off" }));
     expect(store().selection.primaryId).toBe("button-off");
+    expect(store().runtimeVisibility).toEqual({});
+  });
+});
+
+/**
+ * BC-09.3 (approved): a Pagination's current page and its ellipsis never
+ * run authored interactions either. Scoped to marked Paginations: an
+ * aria-current link elsewhere still does.
+ */
+describe("Pagination current page and ellipsis never run interactions (BC-09.3)", () => {
+  beforeEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  function currentPageDocument(): EditorElementNode {
+    const pagination = createPaginationNode();
+    const [, current, page2] = pagination.children!;
+    current.id = "page-current";
+    current.interactions = toggle("i-current", "panel-a");
+    page2.id = "page-2";
+    page2.interactions = toggle("i-page2", "panel-b");
+    pagination.children!.splice(3, 0, { id: "dots", tag: "p", text: "…", displayName: "Ellipsis", interactions: toggle("i-dots", "panel-a") });
+    const hidden = (id: string): EditorElementNode => ({ id, tag: "p", text: id, initialPreviewVisibility: "hidden" });
+    const navbar: EditorElementNode = { id: "navbar", tag: "nav", children: [{ id: "nav-active", tag: "a", text: "Home", href: "/", ariaCurrent: "page", interactions: toggle("i-nav", "panel-c") }] };
+    return { id: "page-root", tag: "page", children: [pagination, navbar, hidden("panel-a"), hidden("panel-b"), hidden("panel-c")] };
+  }
+
+  it("the rule needs the Pagination parent: alone, an aria-current link can activate", () => {
+    const document = currentPageDocument();
+    const pagination = document.children![0];
+    const current = pagination.children![1];
+    expect(canActivateInteractions(current, pagination)).toBe(false);
+    expect(canActivateInteractions(current, undefined)).toBe(true);
+    expect(canActivateInteractions(pagination.children![2], pagination)).toBe(true);
+  });
+
+  it("Preview: clicking the current page or the ellipsis runs nothing; an ordinary page and a Navbar's aria-current link still do", () => {
+    renderPreview(currentPageDocument());
+    fireEvent.click(element("page-current"));
+    fireEvent.click(element("dots"));
+    element("page-current").click();
+    expect(visibility()["panel-a"]).toBe(false);
+    fireEvent.click(element("page-2"));
+    expect(visibility()["panel-b"]).toBe(true);
+    fireEvent.click(element("nav-active"));
+    expect(visibility()["panel-c"]).toBe(true);
+  });
+
+  it("Preview: the current page advertises no trigger state; the ordinary page does", () => {
+    renderPreview(currentPageDocument());
+    expect(element("page-current")).not.toHaveAttribute("aria-controls");
+    expect(element("page-current")).not.toHaveAttribute("aria-expanded");
+    expect(element("page-current")).not.toHaveAttribute("href");
+    expect(element("page-2")).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("Design: the current page is still selected by a click", () => {
+    const document = currentPageDocument();
+    useEditorStore.setState({ document });
+    render(
+      <main aria-label="Workspace">
+        <CanvasInteractionBoundary document={document} />
+      </main>,
+    );
+    fireEvent.click(element("page-current"));
+    expect(store().selection.primaryId).toBe("page-current");
     expect(store().runtimeVisibility).toEqual({});
   });
 });

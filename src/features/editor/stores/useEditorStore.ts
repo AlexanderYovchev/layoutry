@@ -1,6 +1,15 @@
 import { create } from "zustand";
 import { canActivateInteractions } from "@/features/editor/rules/accessibilityAttributes";
-import { withoutCopiedCurrentState } from "@/features/editor/types/pagination";
+import { withoutCopiedCurrentState, type PaginationControlRole } from "@/features/editor/types/pagination";
+import {
+  addPaginationPage as addPaginationPageCommand,
+  normalizePaginationsAfterEdit,
+  removePaginationPage as removePaginationPageCommand,
+  setPaginationControlVisible as setPaginationControlVisibleCommand,
+  setPaginationCurrentPage as setPaginationCurrentPageCommand,
+  setPaginationPageHref as setPaginationPageHrefCommand,
+  setPaginationPageLabel as setPaginationPageLabelCommand,
+} from "@/features/editor/commands/paginationCommands";
 import {
   insertNode,
   moveNode,
@@ -524,6 +533,15 @@ interface EditorState {
   removeNavigationLink: (navId: string, linkId: string) => void;
   /** Swaps this link with its neighbouring link (non-link children keep their slots). One history entry; no-op at either end (BC-06.2). */
   moveNavigationLink: (navId: string, linkId: string, direction: NavigationLinkMoveDirection) => void;
+  /** Pagination management (BC-09.3, paginationCommands.ts). Each is one history entry, a no-op on anything but a marked Pagination, and keeps exactly one current page. */
+  addPaginationPage: (navId: string) => void;
+  /** Removes exactly this page (refused at one page) and every interaction that targeted it. */
+  removePaginationPage: (navId: string, pageId: string) => void;
+  setPaginationCurrentPage: (navId: string, pageId: string) => void;
+  setPaginationPageLabel: (navId: string, pageId: string, label: string) => void;
+  setPaginationPageHref: (navId: string, pageId: string, href: string) => void;
+  /** Shows (inserts) or hides (removes) First, Previous, Next, Last or the ellipsis. */
+  setPaginationControlVisible: (navId: string, role: PaginationControlRole, visible: boolean) => void;
   /** One-shot table Caption toggle (Checkpoint 1.15.6.12.2) — creates/removes the entire `<caption>` in one step, always as the table's first child. A new Table has no Caption by default; this is the only way one is created. */
   setTableCaptionEnabled: (tableId: string, enabled: boolean) => void;
 
@@ -787,6 +805,23 @@ function commitStructuralEdit(state: EditorState, edited: EditorElementNode, fal
   };
 }
 
+/**
+ * BC-09.3: after a generic structural edit (insert, move, delete, cut,
+ * paste, duplicate, a link's href), every marked Pagination the edit
+ * touched is brought back to its invariants (one current page, boundary
+ * controls in sync) in the SAME write, so Undo restores both together.
+ * If that removed a node (an ellipsis left with one page), interactions
+ * targeting it are removed too.
+ */
+function withPaginationInvariants(
+  before: EditorElementNode,
+  after: EditorElementNode,
+  options?: { preferredCurrentId?: string; ordinaryLookIds?: ReadonlySet<string> },
+): EditorElementNode {
+  const normalized = normalizePaginationsAfterEdit(before, after, options);
+  return normalized === after ? after : removeInteractionsForRemovedNodes(after, normalized);
+}
+
 function isMergingHistory(state: Pick<EditorState, "transactionSnapshot" | "historyMergeSnapshot">): boolean {
   return state.transactionSnapshot !== null && state.transactionSnapshot === state.historyMergeSnapshot;
 }
@@ -984,7 +1019,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   // (insertNode could never reject anything before Checkpoint 1.6).
   insertElement: (parentId, node, position) =>
     set((state) => {
-      const document = insertNode(state.document, parentId, node, position);
+      const document = withPaginationInvariants(state.document, insertNode(state.document, parentId, node, position));
       if (document === state.document) return {};
       return { ...pushHistory(state), document, selection: selectionFromSingle(node.id) };
     }),
@@ -996,7 +1031,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   // spurious no-diff history entry either.
   moveElement: (nodeId, targetId, zone) =>
     set((state) => {
-      const document = moveNode(state.document, nodeId, targetId, zone);
+      const document = withPaginationInvariants(state.document, moveNode(state.document, nodeId, targetId, zone));
       if (document === state.document) return {};
       return { ...pushHistory(state), document, selection: selectionFromSingle(nodeId) };
     }),
@@ -1109,8 +1144,9 @@ export const useEditorStore = create<EditorState>()((set) => ({
   executeInteractionsForNode: (nodeId, trigger) =>
     set((state) => {
       const node = findNodeById(state.document, nodeId);
-      // A disabled control never runs its interactions (BC-09.2.1).
-      if (!node || !canActivateInteractions(node)) return {};
+      // A disabled control, and a Pagination current page or ellipsis, never run their interactions (BC-09.2.1, BC-09.3).
+      const parentId = node ? findParentId(state.document, nodeId) : null;
+      if (!node || !canActivateInteractions(node, parentId ? findNodeById(state.document, parentId) : undefined)) return {};
       const bindings = getInteractions(node).filter((binding) => binding.trigger === trigger);
       if (bindings.length === 0) return {};
 
@@ -1353,7 +1389,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setElementHref: (nodeId, href) =>
     set((state) => ({
       ...pushHistory(state),
-      document: setElementHrefCommand(state.document, nodeId, href),
+      document: withPaginationInvariants(state.document, setElementHrefCommand(state.document, nodeId, href)),
     })),
 
   setElementTag: (nodeId, tag) =>
@@ -1446,6 +1482,26 @@ export const useEditorStore = create<EditorState>()((set) => ({
       if (document === state.document) return {};
       return { ...pushHistory(state), document };
     }),
+
+  addPaginationPage: (navId) =>
+    set((state) =>
+      commitStructuralEdit(state, addPaginationPageCommand(state.document, navId, (page) => resolveFreeDestinationPlacement(state.document, navId, page)), navId),
+    ),
+
+  removePaginationPage: (navId, pageId) =>
+    set((state) => commitStructuralEdit(state, removePaginationPageCommand(state.document, navId, pageId), navId)),
+
+  setPaginationCurrentPage: (navId, pageId) =>
+    set((state) => commitStructuralEdit(state, setPaginationCurrentPageCommand(state.document, navId, pageId), navId)),
+
+  setPaginationPageLabel: (navId, pageId, label) =>
+    set((state) => commitStructuralEdit(state, setPaginationPageLabelCommand(state.document, navId, pageId, label), navId)),
+
+  setPaginationPageHref: (navId, pageId, href) =>
+    set((state) => commitStructuralEdit(state, setPaginationPageHrefCommand(state.document, navId, pageId, href), navId)),
+
+  setPaginationControlVisible: (navId, role, visible) =>
+    set((state) => commitStructuralEdit(state, setPaginationControlVisibleCommand(state.document, navId, role, visible), navId)),
 
   setElementProgressValue: (nodeId, value) =>
     set((state) => {
@@ -1791,7 +1847,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
       const sourceParentId = findParentId(state.document, node.id);
       const deletedIds = collectNodeIds(node);
       const afterRemoval = removeNode(state.document, node.id);
-      const document = removeInteractionsTargeting(afterRemoval, deletedIds);
+      const document = withPaginationInvariants(state.document, removeInteractionsTargeting(afterRemoval, deletedIds));
       return {
         ...pushHistory(state),
         document,
@@ -1809,14 +1865,24 @@ export const useEditorStore = create<EditorState>()((set) => ({
         state.selection.primaryId ?? null,
         state.clipboard?.sourceParentId,
       );
+      // BC-09.3: a cut current page pasted back into the Pagination it was
+      // cut from is moved, so it stays the current page; any other paste of
+      // a current page is an ordinary page (state and look).
+      const wasCurrentPage = sourceNode.ariaCurrent === "page";
+      const movesCurrentPage = wasCurrentPage && state.clipboard?.operation === "cut" && destinationParentId === state.clipboard.sourceParentId;
+      const fresh = cloneNodeWithFreshIds(sourceNode);
       const clone = resolveFreeDestinationPlacement(
         state.document,
         destinationParentId,
-        withoutCopiedCurrentState(cloneNodeWithFreshIds(sourceNode)),
+        movesCurrentPage ? fresh : withoutCopiedCurrentState(fresh),
       );
       // A pasted trigger may still point at a target deleted since the
       // copy; that binding is removed, as deleting the target would have.
-      const document = removeInteractionsWithMissingTargets(insertNode(state.document, destinationParentId, clone));
+      const document = withPaginationInvariants(
+        state.document,
+        removeInteractionsWithMissingTargets(insertNode(state.document, destinationParentId, clone)),
+        movesCurrentPage ? { preferredCurrentId: clone.id } : wasCurrentPage ? { ordinaryLookIds: new Set([clone.id]) } : undefined,
+      );
       if (subtreeHasEmbeddedData(clone) && !documentFitsSaveLimit(document)) return nextEditorNoticeState(state, COPY_TOO_LARGE_NOTICE);
       return {
         ...pushHistory(state),
@@ -1832,10 +1898,11 @@ export const useEditorStore = create<EditorState>()((set) => ({
       const parentId = findParentId(state.document, node.id);
       if (!parentId) return {};
       const clone = resolveFreeDestinationPlacement(state.document, parentId, withoutCopiedCurrentState(cloneNodeWithFreshIds(node)));
-      const document = insertNode(state.document, parentId, clone, {
-        referenceId: node.id,
-        placement: "after",
-      });
+      const document = withPaginationInvariants(
+        state.document,
+        insertNode(state.document, parentId, clone, { referenceId: node.id, placement: "after" }),
+        node.ariaCurrent === "page" ? { ordinaryLookIds: new Set([clone.id]) } : undefined,
+      );
       if (subtreeHasEmbeddedData(clone) && !documentFitsSaveLimit(document)) return nextEditorNoticeState(state, COPY_TOO_LARGE_NOTICE);
       return { ...pushHistory(state), document, selection: selectionFromSingle(clone.id) };
     }),
@@ -1857,7 +1924,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
       const deletedIds = collectDeletedIds(state.document, roots);
       const afterRemoval = removeNodesByIds(state.document, new Set(roots));
       if (afterRemoval === state.document) return {};
-      const document = removeInteractionsTargeting(afterRemoval, deletedIds);
+      const document = withPaginationInvariants(state.document, removeInteractionsTargeting(afterRemoval, deletedIds));
       return {
         ...pushHistory(state),
         document,

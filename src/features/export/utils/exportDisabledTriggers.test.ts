@@ -77,3 +77,24 @@ describe("Export — disabled triggers (BC-09.2.1)", () => {
     expect(tag(html, "Off")).not.toMatch(/data-ly-on-click=/);
   });
 });
+
+describe("Export — Pagination current page and ellipsis are never triggers (BC-09.3)", () => {
+  it("drops the current page's and the ellipsis's triggers, keeps an ordinary page's and a Navbar's aria-current link's", () => {
+    const pagination = createPaginationNode();
+    const [, current, page2] = pagination.children!;
+    current.interactions = toggle("i-1", "panel");
+    page2.interactions = toggle("i-2", "panel");
+    pagination.children!.splice(3, 0, { id: "dots", tag: "p", text: "…", displayName: "Ellipsis", interactions: toggle("i-3", "panel") });
+    const { html, result } = exported([
+      pagination,
+      { id: "navbar", tag: "nav", children: [{ id: "nav-active", tag: "a", text: "Home", href: "/", ariaCurrent: "page", interactions: toggle("i-4", "panel") }] },
+      { id: "panel", tag: "p", text: "Panel", initialPreviewVisibility: "hidden" },
+    ]);
+    const currentTag = html.match(/<a[^>]*aria-current="page"[^>]*>1<\/a>/)?.[0] ?? "";
+    expect(currentTag).not.toMatch(/data-ly-on-click|aria-controls|aria-expanded|href=/);
+    expect(html.match(/<p[^>]*>…<\/p>/)?.[0]).not.toMatch(/data-ly-on-click/);
+    expect(tag(html, "2")).toMatch(/data-ly-on-click=/);
+    expect(tag(html, "Home")).toMatch(/data-ly-on-click=/);
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.code === "disabled-trigger").map((diagnostic) => diagnostic.nodeId)).toEqual([current.id, "dots"]);
+  });
+});

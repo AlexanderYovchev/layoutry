@@ -10,6 +10,8 @@ export type {
   ExportBehaviorTrigger,
 } from "@/features/export/types/exportBehavior";
 export { buildExportDocument, type BuildExportDocumentResult } from "@/features/export/utils/buildExportDocument";
+// BC-09.3: the Inspector refuses a Pagination destination the export would refuse.
+export { checkExportUrl, type ExportUrlCheck, type ExportUrlContext } from "@/features/export/utils/exportUrlPolicy";
 export type {
   ExportFile,
   HtmlCssExportMode,
