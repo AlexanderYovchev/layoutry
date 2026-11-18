@@ -22,7 +22,9 @@ export const PAGINATION_COPY = {
   currentDestinationNote: "The current page isn't a link on the page, but keeps this destination for when another page is current.",
   controlsTitle: "Controls",
   controlsNote:
-    "First, Previous, Next and Last link to the first, neighbouring and last pages' destinations automatically, and are disabled where they would lead nowhere.",
+    "Navigation destinations update automatically when the current page or page URLs change. First, Previous, Next and Last are disabled where they would lead nowhere.",
+  hideNote:
+    "Hiding a navigation control removes it. Showing it again restores its default label, styled like the other navigation controls.",
   ellipsisNeedsPages: "The ellipsis needs at least 2 pages.",
   ellipsisConsecutive:
     "The pages on both sides of “…” are numbered one after the other, so it suggests pages that don't exist. Rename the last page (e.g. to 10) or turn the ellipsis off.",
@@ -41,3 +43,22 @@ export function formatPaginationSummary(pageCount: number, currentPosition: numb
   const count = pageCount === 1 ? "1 page" : `${pageCount} pages`;
   return currentPosition > 0 ? `${count}, page ${currentPosition} is current` : count;
 }
+
+/**
+ * What the Inspector says about a selected child of a marked Pagination
+ * (BC-09.4): why it never activates, or that its destination is managed.
+ * Informative only: nothing is removed or locked.
+ */
+export const PAGINATION_CHILD_COPY = {
+  title: "In this Pagination",
+  disabled:
+    "This navigation control is disabled: it doesn't navigate, and its interactions don't run in Preview or on exported pages. It becomes active automatically when the current page changes.",
+  currentPage:
+    "This is the current page. It is intentionally not a link and doesn't run interactions in Preview or on exported pages. Its destination is kept for when another page is current.",
+  ellipsis:
+    "This “…” is a decorative separator. Screen readers skip it, and it doesn't run interactions.",
+  managedDestination:
+    "This control's destination is set automatically from the pages. Change a page's destination in the Pagination section instead.",
+  interactionsInactive:
+    "These interactions won't run: this element is disabled, the current page, or a decorative separator in its Pagination.",
+} as const;

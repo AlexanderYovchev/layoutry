@@ -2,7 +2,9 @@
 
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState, type Ref } from "react";
+import { canActivateInteractions } from "@/features/editor/rules/accessibilityAttributes";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
 import { getElementDisplayName } from "@/features/editor/utils/elementDisplayName";
 import { isKeyboardOperableTrigger } from "@/features/editor/utils/triggerAccessibility";
 import { getInteractions, type InteractionAction, type InteractionBinding } from "@/features/editor/types/interactions";
@@ -13,6 +15,7 @@ import type { EditorElementNode } from "@/features/editor/types/document";
 import { cn } from "@/lib/utils";
 import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
 import { INTERACTION_COPY } from "@/features/inspector/utils/interactionGuidanceCopy";
+import { PAGINATION_CHILD_COPY } from "@/features/inspector/utils/paginationCopy";
 
 interface InspectorInteractionsSectionProps {
   node: EditorElementNode;
@@ -403,6 +406,11 @@ export function InspectorInteractionsSection({ node }: InspectorInteractionsSect
 
   const hasRows = bindings.length > 0 || activeDraft !== null;
   const showKeyboardNote = hasRows && !isKeyboardOperableTrigger(node.tag);
+  // BC-09.4: say so when these interactions never run (a disabled control, or a Pagination's current page or ellipsis). Nothing is removed.
+  const inactive = useEditorStore((state) => {
+    const parentId = findParentId(state.document, node.id);
+    return !canActivateInteractions(node, parentId ? findNodeById(state.document, parentId) : undefined);
+  });
   const addButton = activeDraft ? null : (
     <button ref={addButtonRef} type="button" onClick={handleAdd} className={cn(DASHED_BUTTON_CLASS_NAME, hasRows ? "h-7" : "h-8")}>
       <Plus aria-hidden="true" className="size-3.5" />
@@ -442,6 +450,7 @@ export function InspectorInteractionsSection({ node }: InspectorInteractionsSect
             />
           )}
           {showKeyboardNote && <p className={NOTE_CLASS_NAME}>{INTERACTION_COPY.keyboardNote}</p>}
+          {inactive && <p className={NOTE_CLASS_NAME}>{PAGINATION_CHILD_COPY.interactionsInactive}</p>}
           {addButton}
         </div>
       ) : (

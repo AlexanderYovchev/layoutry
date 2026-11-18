@@ -331,6 +331,7 @@ export function InspectorPaginationSection({ node }: InspectorPaginationSectionP
             );
           })}
           <p className={NOTE_CLASS_NAME}>{PAGINATION_COPY.controlsNote}</p>
+          <p className={NOTE_CLASS_NAME}>{PAGINATION_COPY.hideNote}</p>
           {!canShowEllipsis && controls.ellipsis === undefined && <p className={NOTE_CLASS_NAME}>{PAGINATION_COPY.ellipsisNeedsPages}</p>}
           {ellipsisIsMisleading(node, controls.ellipsis) && (
             <p id={ellipsisNoteId} className={NOTE_CLASS_NAME}>

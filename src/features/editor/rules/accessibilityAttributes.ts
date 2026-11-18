@@ -94,9 +94,38 @@ export function canActivateInteractions(
   node: EditorElementNode,
   parent: EditorElementNode | undefined,
 ): boolean {
-  if (node.disabled === true) return false;
-  if (isPaginationCurrentPage(node, parent)) return false;
-  return getPaginationRole(node, parent) !== "ellipsis";
+  return getInactiveReason(node, parent) === undefined;
+}
+
+/** Why a node never activates (the Inspector explains it, BC-09.4), or undefined when it does. */
+export type InactiveReason = "disabled" | "current-page" | "ellipsis";
+
+export function getInactiveReason(
+  node: EditorElementNode,
+  parent: EditorElementNode | undefined,
+): InactiveReason | undefined {
+  if (node.disabled === true) return "disabled";
+  if (isPaginationCurrentPage(node, parent)) return "current-page";
+  if (getPaginationRole(node, parent) === "ellipsis") return "ellipsis";
+  return undefined;
+}
+
+/**
+ * Attributes DERIVED from a node's place in a component, not stored
+ * (BC-09.4, like the Dialog's derived accessible name): a marked
+ * Pagination's ellipsis is a purely visual separator, so it gets
+ * aria-hidden="true" and screen readers don't announce "…". It is a
+ * non-focusable paragraph, so hiding it hides nothing operable. No
+ * document field and no format change; legacy Paginations and
+ * Breadcrumbs separators (no marker) are untouched.
+ */
+export function resolveDerivedAccessibilityAttributes(
+  node: EditorElementNode,
+  parent: EditorElementNode | undefined,
+): readonly (readonly [string, string])[] {
+  return getPaginationRole(node, parent) === "ellipsis"
+    ? [["aria-hidden", "true"]]
+    : [];
 }
 
 export interface AccessibilityRenderOptions {

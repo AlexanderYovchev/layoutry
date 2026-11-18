@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { createPaginationNode } from "@/features/editor/factories/navigationCompositions";
+import { createBreadcrumbsNode, createPaginationNode } from "@/features/editor/factories/navigationCompositions";
+import {
+  addPaginationPage,
+  setPaginationControlVisible,
+  setPaginationCurrentPage,
+  setPaginationPageHref,
+  setPaginationPageLabel,
+} from "@/features/editor/commands/paginationCommands";
+import { getPaginationParts } from "@/features/editor/types/pagination";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { exportHtmlCss } from "@/features/export/utils/exportHtmlCss";
 
@@ -81,5 +89,47 @@ describe("Export — accessibility fields (BC-09.2)", () => {
   it("adds nothing to an element without the new fields", () => {
     const { html } = exported([{ id: "nav-1", tag: "nav", children: [{ id: "a-1", tag: "a", text: "Home", href: "/" }, { id: "b-1", tag: "button", text: "Go" }] }]);
     expect(html).not.toMatch(/aria-label|aria-current|aria-disabled|role=|disabled/);
+  });
+});
+
+/** BC-09.4 — a managed Pagination: derived ellipsis semantics and one serializer for every mode. */
+describe("Export — managed Pagination (BC-09.4)", () => {
+  function managed(): EditorElementNode {
+    const nav = createPaginationNode();
+    let root: EditorElementNode = { id: "page-root", tag: "page", children: [nav] };
+    for (let count = 3; count < 6; count++) root = addPaginationPage(root, nav.id);
+    root = setPaginationControlVisible(root, nav.id, "first", true);
+    root = setPaginationControlVisible(root, nav.id, "last", true);
+    root = setPaginationControlVisible(root, nav.id, "ellipsis", true);
+    const pages = getPaginationParts(root.children![0]).pages;
+    root = setPaginationPageLabel(root, nav.id, pages[5].id, "20");
+    pages.forEach((page, index) => {
+      root = setPaginationPageHref(root, nav.id, page.id, `/p/${index + 1}`);
+    });
+    return setPaginationCurrentPage(root, nav.id, pages[2].id);
+  }
+
+  it("the ellipsis is aria-hidden; nothing else in the nav is hidden", () => {
+    const { html } = exported(managed().children!);
+    expect(html.match(/<p[^>]*>…<\/p>/)?.[0]).toMatch(/aria-hidden="true"/);
+    expect(html.match(/aria-hidden=/g)).toHaveLength(1);
+  });
+
+  it("Breadcrumbs separators and an unmarked nav's '…' paragraph are not hidden", () => {
+    const unmarked = { ...createPaginationNode(), component: undefined };
+    const { html } = exported([createBreadcrumbsNode(), { ...unmarked, children: [...unmarked.children!, { id: "p-dots", tag: "p", text: "…", displayName: "Ellipsis" }] }]);
+    expect(html).not.toContain("aria-hidden");
+  });
+
+  it("writes the same nav markup in standalone and separate files, with no script", () => {
+    const document = managed();
+    const nav = (html: string) => html.match(/<nav[\s\S]*<\/nav>/)?.[0];
+    const separate = exportHtmlCss(document, { mode: "separate" });
+    const standalone = exportHtmlCss(document, { mode: "standalone" });
+    const separateHtml = separate.files.find((file) => file.path === "index.html")!.content;
+    expect(nav(separateHtml)).toBeDefined();
+    expect(nav(standalone.files[0].content)).toBe(nav(separateHtml));
+    expect(separate.files.map((file) => file.path)).not.toContain("script.js");
+    expect(standalone.files[0].content).not.toContain("<script");
   });
 });

@@ -46,6 +46,7 @@ import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { isNavigationLinkContainer } from "@/features/editor/commands/navigationLinkCommands";
 import { isPaginationNode } from "@/features/editor/types/pagination";
 import { InspectorPaginationSection } from "@/features/inspector/components/InspectorPaginationSection";
+import { InspectorPaginationChildNote } from "@/features/inspector/components/InspectorPaginationChildNote";
 import { getElementCapabilities } from "@/features/editor/rules/elementCapabilities";
 import { canContainChildren } from "@/features/editor/rules/insertionRules";
 import { canOwnStyleLock, getStyleProtection } from "@/features/editor/rules/styleProtection";
@@ -170,6 +171,7 @@ export function InspectorNodeSummary({
       {hasVectorObjectSelection && (
         <InspectorVectorObjectSection svgNode={node} objectIds={selectedSvgObjectIds} protection={protection} />
       )}
+      <InspectorPaginationChildNote node={node} parentId={parentId} />
       {getElementCapabilities(node.tag).supportsHref && <InspectorLinkSection node={node} />}
       {getElementCapabilities(node.tag).supportsHeadingLevel && <InspectorHeadingLevelSection node={node} />}
       {(node.tag === "ul" || node.tag === "ol") && <InspectorListSection node={node} />}

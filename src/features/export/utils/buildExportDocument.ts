@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { isNavigableLink, resolveAccessibilityAttributes } from "@/features/editor/rules/accessibilityAttributes";
+import { isNavigableLink, resolveAccessibilityAttributes, resolveDerivedAccessibilityAttributes } from "@/features/editor/rules/accessibilityAttributes";
 import {
   DOCUMENT_DEFAULT_STYLE_IDS,
   resolveAudioElementStyle,
@@ -338,7 +338,10 @@ function buildChildren(state: BuildState, node: EditorElementNode): ExportNode[]
     if (node.tag !== "page" && !canParentAcceptChild(node.tag, child.tag)) {
       report(state, "warning", "invalid-nesting", `A <${child.tag}> inside a <${node.tag}> is not a structure the editor creates; it was exported as authored.`, child.id);
     }
-    children.push(buildNode(state, child, placement));
+    const element = buildNode(state, child, placement);
+    // BC-09.4: attributes derived from the parent component (a Pagination ellipsis is aria-hidden), as in Preview.
+    for (const [name, value] of resolveDerivedAccessibilityAttributes(child, node)) element.attributes.push({ name, value });
+    children.push(element);
   }
   return children;
 }

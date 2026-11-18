@@ -1,0 +1,386 @@
+BC-09.4 — PAGINATION PREVIEW, EXPORT AND ACCESSIBILITY VERIFICATION
+====================================================================
+Date: 2026-11-18
+Baseline: 0fca3a4 (BC-09.3 committed).
+Status: done, uncommitted, waiting for ChatGPT QA. BC-09.5 not started.
+Testing: change-focused. Existing evidence was mapped first (section
+15), and only the gaps and the changed code were tested.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Verification found no new product defect. The current page, disabled
+controls, enabled navigation, Preview isolation and export behaviour
+match the approved contract. Each point is backed by existing tests
+(listed in section 15) or by new tests where coverage was missing.
+
+Refinements made:
+1. Ellipsis accessibility: a marked Pagination's "…" is now
+   aria-hidden="true" in Design, Preview and Export.
+   - The attribute is DERIVED from its place in the Pagination, the same
+     approach as the Dialog's derived accessible name. There is no new
+     field and no format change, and v3 is untouched.
+   - Verified in the Chromium, Firefox and WebKit accessibility trees.
+2. Inspector explanations:
+   - the Pagination section now says that destinations update
+     automatically, and that hiding a control removes it;
+   - selecting a child of a Pagination shows a short "In this
+     Pagination" note (disabled control, current page, ellipsis, or
+     managed destination);
+   - the Interactions section says when interactions won't run.
+   Nothing is blocked or removed.
+3. A small refactor: canActivateInteractions now delegates to
+   getInactiveReason. Behaviour is identical; the Inspector reuses the
+   reason.
+
+Tests:
+- Targeted Vitest: 65 files, 822 passed.
+- New browser spec: Chromium 3/3, Firefox and WebKit 6/6.
+- The BC-09.3 responsive test, rerun: 1/1.
+- Typecheck and lint: clean.
+
+
+2. FILES INVESTIGATED
+---------------------
+- types/pagination.ts, rules/accessibilityAttributes.ts,
+  commands/paginationCommands.ts, factories/navigationCompositions.ts
+- useEditorStore.ts (executor, invariants), CanvasInteractionBoundary,
+  usePreviewTriggerAria, dismissibleTargets
+- LinkElement, ButtonElement, ParagraphElement, ContainerElement
+- buildExportDocument.ts (identity, buildChildren), buildExportBehaviors.ts,
+  exportInteractionRuntime.ts, exportUrlPolicy.ts
+- InspectorPaginationSection, InspectorInteractionsSection,
+  InspectorNodeSummary, paginationCopy
+- the BC-09.2, 09.2.1 and 09.3 test files and specs, as evidence
+
+
+3. FILES MODIFIED
+-----------------
+Product:
+  src/features/editor/rules/accessibilityAttributes.ts
+    getInactiveReason; resolveDerivedAccessibilityAttributes
+  src/features/canvas/components/document/elements/ParagraphElement.tsx
+    ellipsis aria-hidden
+  src/features/export/utils/buildExportDocument.ts
+    derived attributes in buildChildren
+  src/features/inspector/components/InspectorPaginationChildNote.tsx (new)
+  src/features/inspector/components/InspectorNodeSummary.tsx
+    mounts the note
+  src/features/inspector/components/InspectorInteractionsSection.tsx
+    "won't run" note
+  src/features/inspector/components/InspectorPaginationSection.tsx
+    hide note
+  src/features/inspector/utils/paginationCopy.ts
+    new and updated copy
+Tests:
+  e2e/pagination-accessibility.spec.ts (new, 3)
+  src/features/inspector/components/InspectorPaginationChildNote.test.tsx (new, 9)
+  src/features/canvas/components/document/elements/accessibilityAttributes.test.tsx (+3)
+  src/features/export/utils/exportAccessibilityAttributes.test.ts (+3)
+
+
+4. PREVIEW VERIFICATION
+-----------------------
+Existing evidence (BC-09.2.1/09.3, still valid; the code paths are
+unchanged apart from the delegate refactor, whose consumers were
+rerun):
+- The current page and disabled controls run nothing on a click, a
+  script click() or a dispatched Enter. Ordinary pages and Navbar
+  aria-current links still run:
+  - disabledInteractionSafety.test.tsx;
+  - pagination-disabled-interactions.spec;
+  - pagination-management.spec (Preview).
+- No document mutation, no Undo entry:
+  - the same tests (document identity, past/future lengths);
+  - the Chromium "Undo still disabled after Preview" checks.
+- Design selection and editing still work (unit and Chromium tests).
+New:
+- Preview renders the same semantic attributes as the export for a
+  managed Pagination (tag, text, href, role, aria-current,
+  aria-disabled, aria-hidden), on Chromium, Firefox and WebKit.
+- The ellipsis is aria-hidden in Preview and Design.
+- Inspector state: the Inspector derives from the document, which
+  Preview never mutates. Nothing Inspector-specific is stored.
+
+
+5. EXPORT VERIFICATION
+----------------------
+Markup of a managed Pagination (8 pages, First/Last, ellipsis, page 4
+current):
+- <nav aria-label="Pagination">;
+- First, Previous, 1, 2, 3, 5, 6, 7, 20, Next and Last are <a href>;
+- 4 is <a aria-current="page"> with no href;
+- "…" is <p aria-hidden="true">;
+- no <script> and no script.js.
+- Standalone and separate files: the same <nav> markup (one serializer;
+  unit test). Browser ZIP and the Electron folder package those same
+  files; packaging code is unchanged, so it was not retested.
+- Valid nesting: phrasing elements in <nav>, as in BC-09.2.
+- Disabled is checked by behaviour, not by aria-disabled alone:
+  - no href, so nothing to follow;
+  - not a trigger, so the runtime ignores it (BC-09.2.1 and BC-09.3
+    tests);
+  - with JavaScript off, clicking it doesn't navigate (BC-09.2 spec).
+
+
+6. CURRENT-PAGE INTERACTION BEHAVIOR
+------------------------------------
+Unchanged and verified:
+- visual highlight (the state look) plus aria-current="page";
+- no href;
+- not a Tab stop (Tab-order test: "4" is skipped);
+- not an export trigger;
+- no Preview activation;
+- selectable and editable in Design.
+New: the Inspector now explains, on selection, that it is intentionally
+not activatable and keeps its destination. Its interactions are kept,
+and the Interactions section notes that they won't run.
+
+
+7. DISABLED-CONTROL BEHAVIOR
+----------------------------
+- Previous and First are disabled on the first page; Next and Last on
+  the last page.
+  - Evidence: paginationCommands.test ("first(off)", "last(off)"
+    layouts).
+  - New: the browser accessibility tree shows "First"/"Previous" as
+    disabled links and "Next"/"Last" as enabled ones on page 1, in all
+    three engines.
+- Semantics: role="link" plus aria-disabled="true", no href.
+- One shared rule (canActivateInteractions → getInactiveReason). No
+  second system.
+- Editable in Design. The new note explains the state without locking
+  anything (unit test: the Link field stays enabled).
+
+
+8. ENABLED NAVIGATION
+---------------------
+- Pages use their authored destinations.
+- Previous and Next point at the adjacent pages, First and Last at the
+  ends (BC-09.3 command, store and Chromium tests; new: the a11y spec's
+  managed document).
+- A missing or invalid adjacent destination disables the control
+  (paginationCommands.test).
+- Unsafe URLs are refused at the Inspector (isValidLinkHref plus the
+  export policy), at the schema, and again at export.
+- Enabled links keep native behaviour (Tab, Enter). Their authored
+  interactions still run (BC-09.3 page 5 tests).
+- No content switching.
+
+
+9. ELLIPSIS ACCESSIBILITY
+-------------------------
+Investigation:
+- the BC-09.3 markup was <p>…</p>, which screen readers announce
+  ("horizontal ellipsis" / "dot dot dot");
+- it is a non-focusable paragraph with no role.
+Options:
+A. A stored aria-hidden field: format 4 (strict schema) — refused, not
+   needed.
+B. A derived attribute from the component context (chosen): the
+   Pagination already identifies its ellipsis (role label + marked
+   parent), exactly like the Dialog's derived aria-label.
+   - resolveDerivedAccessibilityAttributes(node, parent) is the single
+     source.
+   - The export applies it in buildChildren; the Canvas applies it in
+     ParagraphElement (parent looked up only for a paragraph labelled
+     "Ellipsis").
+   - No schema change.
+- aria-hidden is appropriate: the element is decorative and contains
+  nothing focusable or operable.
+- Scope: only a marked Pagination's ellipsis. Breadcrumbs "/"
+  separators and an unmarked nav's "…" are unchanged (unit test), so
+  legacy output is byte-identical (the frozen legacy export test was
+  rerun and passes).
+- Verified: the export's accessibility tree contains no "…" in
+  Chromium, Firefox and WebKit, while it stays visible.
+
+
+10. INSPECTOR EXPLANATIONS
+--------------------------
+Pagination section, Controls group:
+- "Navigation destinations update automatically when the current page or
+  page URLs change. First, Previous, Next and Last are disabled where
+  they would lead nowhere."
+- "Hiding a navigation control removes it. Showing it again restores its
+  default label, styled like the other navigation controls."
+  (Accurate to the BC-09.3 behaviour: the label resets and the look
+  comes from the opposite control.)
+"In this Pagination" note on a selected child (InspectorPaginationChildNote):
+- disabled control: doesn't navigate, interactions don't run in Preview
+  or Export, becomes active when the current page changes;
+- current page: intentionally not a link and not activatable;
+  destination kept;
+- ellipsis: decorative, skipped by screen readers, no interactions;
+- enabled Previous/Next/First/Last: the destination is set automatically.
+- Nothing for ordinary pages or for non-Pagination links.
+Interactions section: when the element can't activate and has
+interactions, "These interactions won't run: …". Nothing is removed and
+editing stays possible.
+All of it uses the existing 11px help-text style and InspectorSection.
+No redesign.
+
+
+11. KEYBOARD BEHAVIOR
+---------------------
+- Tab order on the export: First, Previous, 1, 2, 3, 5, 6, 7, 20, Next,
+  Last. The current page and the ellipsis are skipped.
+  - Chromium and Firefox: verified.
+  - WebKit: skipped (Playwright's Windows WebKit doesn't Tab to links;
+    known since BC-06.2). Not counted as passed.
+- Enter on enabled links: BC-09.3 specs. No activation on disabled or
+  current: BC-09.2.1/09.3 specs.
+- The Inspector's keyboard operation was verified in BC-09.3 (Add, Set
+  current, switches). The new notes are static text, nothing to operate.
+- Focus ring: the browser default (base stylesheet outline: auto). No
+  focus-style editor (a future milestone).
+
+
+12. RESPONSIVE VERIFICATION
+---------------------------
+- BC-09.3's responsive test (12 pages + First/Last + ellipsis, export at
+  320/375/1440 px, Canvas at 375 px) was rerun once against the changed
+  export builder: passed.
+- aria-hidden doesn't affect layout. No other widths were rerun.
+
+
+13. LEGACY COMPATIBILITY
+------------------------
+- The derived attribute requires a marked parent and the ellipsis role
+  label.
+- Legacy Paginations, Breadcrumbs and plain navs get nothing:
+  - unit test;
+  - legacyProjectFiles.test.ts: the c6a0448 export is still
+    byte-identical.
+- No serializer, schema or migration change, so migration tests were
+  not rerun.
+
+
+14. SECURITY FINDINGS
+---------------------
+- No new path:
+  - URL validation, escaping and Preview isolation are unchanged;
+  - the only new attribute is a fixed aria-hidden="true", never
+    user-controlled;
+  - the Inspector notes are static copy.
+- Interaction safety: unchanged single rule (refactored delegate,
+  consumers rerun). No duplicate handlers: the export never registers
+  the current page, the ellipsis or disabled controls as triggers. The
+  runtime script is unchanged.
+
+
+15. TEST-IMPACT MAP
+-------------------
+Changed module → direct consumers → tests run:
+rules/accessibilityAttributes (getInactiveReason, derived attributes)
+  → Preview executor, trigger ARIA, dismissal, export behaviours,
+    Inspector notes
+  → disabledInteractionSafety, dismissibleTargets, triggerAccessibility,
+    export folder, InspectorPaginationChildNote
+ParagraphElement → Canvas document folder (all element and renderer
+  tests) + accessibilityAttributes.test.tsx (+3)
+buildExportDocument.buildChildren → export folder +
+  exportAccessibilityAttributes (+3) + legacyProjectFiles (byte-identical
+  legacy export)
+Inspector (note, Interactions note, Pagination copy) →
+  InspectorPaginationChildNote (9 new), InspectorInteractionsSection,
+  InspectorPaginationSection, InspectorContent, InspectorLinkSection
+Browser-sensitive semantics (accessibility tree, aria-hidden, Tab) →
+  pagination-accessibility.spec on Chromium, Firefox and WebKit
+Layout after the export change → the BC-09.3 responsive test only
+Existing evidence reused (not rerun; code unchanged):
+- paginationCommands/store management tests (management integrity);
+- pagination-disabled-interactions, pagination-foundation and
+  pagination-management except the responsive test;
+- export-interactions, navigation-links;
+- migration suites; BC-08 media.
+Not run: full suites, Electron (no desktop code), the production build
+(no schema or bundle integration change; plain TypeScript in existing
+modules, covered by typecheck).
+
+
+16. EXACT TARGETED TEST COMMANDS
+--------------------------------
+A. npx vitest run src/features/inspector/components/InspectorPaginationChildNote.test.tsx
+   src/features/canvas/components/document/elements/accessibilityAttributes.test.tsx
+B. npx vitest run src/features/export/utils/exportAccessibilityAttributes.test.ts
+C. npx vitest run src/features/canvas/components/disabledInteractionSafety.test.tsx
+   src/features/editor/utils/dismissibleTargets.test.ts
+   src/features/editor/utils/triggerAccessibility.test.ts
+   src/features/canvas/components/document src/features/export
+   src/features/project/utils/legacyProjectFiles.test.ts
+   src/features/inspector/components/InspectorInteractionsSection.test.tsx
+   src/features/inspector/components/InspectorPaginationSection.test.tsx
+   src/features/inspector/components/InspectorPaginationChildNote.test.tsx
+   src/features/inspector/components/InspectorContent.test.tsx
+   src/features/inspector/components/InspectorLinkSection.test.tsx
+   (run twice: before and after the Prettier reformat)
+D. npx playwright test e2e/pagination-accessibility.spec.ts --project=chromium
+E. npx playwright test -c <temporary Firefox+WebKit config, deleted>
+   e2e/pagination-accessibility.spec.ts
+F. npx playwright test e2e/pagination-management.spec.ts -g "responsive" --project=chromium
+G. npm run typecheck; npx eslint <changed/new .ts/.tsx>; prettier on files
+   clean at HEAD (one re-formatted: accessibilityAttributes.ts)
+
+
+17. TEST RESULTS
+----------------
+A. 27 passed, 0 failed, 0 skipped
+B. 12 passed, 0 failed, 0 skipped
+C. 65 files, 822 passed, 0 failed, 0 skipped (both runs)
+D. 3 passed, 0 failed
+E. 6 passed, 0 failed. Inside one test, WebKit's Tab-order block is
+   skipped by the documented exception and not counted.
+F. 1 passed
+G. Typecheck clean; ESLint clean; Prettier re-formatted 1 file.
+No test failed in this checkpoint.
+
+
+18. OPEN DEFECTS
+----------------
+None.
+
+
+19. KNOWN LIMITATIONS
+---------------------
+- Not a full WCAG claim: no axe audit, no screen-reader run (the
+  accessibility tree was checked through Playwright in three engines).
+- The Tab-order check is not run on WebKit (test-tool quirk).
+- No hover or focus style editing (a future milestone).
+- Carried over from BC-09.3, now explained in the UI:
+  - boundary destinations are managed;
+  - hide removes a control;
+  - a duplicated control (Ctrl+D on Previous) isn't managed;
+  - roles depend on displayName staying non-renamable for Pagination
+    controls.
+- The production build was not run (section 15).
+
+
+20. GIT WORKING-TREE STATUS
+---------------------------
+Branch main, HEAD 0fca3a4. Nothing staged or committed.
+ M src/features/canvas/components/document/elements/ParagraphElement.tsx
+ M src/features/canvas/components/document/elements/accessibilityAttributes.test.tsx
+ M src/features/editor/rules/accessibilityAttributes.ts
+ M src/features/export/utils/buildExportDocument.ts
+ M src/features/export/utils/exportAccessibilityAttributes.test.ts
+ M src/features/inspector/components/InspectorInteractionsSection.tsx
+ M src/features/inspector/components/InspectorNodeSummary.tsx
+ M src/features/inspector/components/InspectorPaginationSection.tsx
+ M src/features/inspector/utils/paginationCopy.ts
+?? docs/reports/BC-09.4-Pagination-Preview-Export-And-Accessibility-Verification.txt
+?? e2e/pagination-accessibility.spec.ts
+?? src/features/inspector/components/InspectorPaginationChildNote.tsx
+?? src/features/inspector/components/InspectorPaginationChildNote.test.tsx
+The changelog is gitignored. The temporary cross-browser config was
+deleted.
+
+
+21. QA RECOMMENDATION
+---------------------
+APPROVE BC-09.4.
+- The Pagination contract is verified in Preview and Export.
+- The ellipsis is now hidden from assistive technology without a format
+  change.
+- The Inspector explains the automatic and non-activatable behaviours.
+- No defects are open. BC-09.5 (final milestone QA) can follow.

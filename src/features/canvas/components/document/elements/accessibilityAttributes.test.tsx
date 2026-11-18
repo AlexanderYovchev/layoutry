@@ -5,6 +5,7 @@ import type { EditorElementNode } from "@/features/editor/types/document";
 import { ButtonElement } from "./ButtonElement";
 import { ContainerElement } from "./ContainerElement";
 import { LinkElement } from "./LinkElement";
+import { ParagraphElement } from "./ParagraphElement";
 
 /**
  * BC-09.2 — the Canvas (Design and Preview) renders the generic format 3
@@ -119,5 +120,31 @@ describe("accessibility fields on the Canvas (BC-09.2)", () => {
     const div = container.querySelector("div");
     expect(div).not.toHaveAttribute("aria-label");
     expect(div).not.toHaveAttribute("aria-disabled");
+  });
+});
+
+/** BC-09.4 — the ellipsis of a marked Pagination is decorative on the Canvas too (Design and Preview), like the export. */
+describe("Pagination ellipsis on the Canvas (BC-09.4)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  const dots: EditorElementNode = { id: "dots", tag: "p", text: "…", displayName: "Ellipsis" };
+  function renderDots(parent: EditorElementNode) {
+    useEditorStore.setState({ document: { id: "page-root", tag: "page", children: [{ ...parent, children: [...(parent.children ?? []), dots] }] } });
+    return render(<ParagraphElement node={dots} parentId={parent.id} parentLayoutMode="flow" parentFlowDisplay="flex" />);
+  }
+
+  for (const preview of [false, true]) {
+    it(`${preview ? "Preview" : "Design"}: aria-hidden inside a marked Pagination`, () => {
+      setPreview(preview);
+      const { container } = renderDots({ id: "nav-p", tag: "nav", component: "pagination" });
+      expect(container.querySelector("p")).toHaveAttribute("aria-hidden", "true");
+    });
+  }
+
+  it("not inside an unmarked nav, and not for an ordinary paragraph", () => {
+    const { container } = renderDots({ id: "nav-plain", tag: "nav" });
+    expect(container.querySelector("p")).not.toHaveAttribute("aria-hidden");
   });
 });
