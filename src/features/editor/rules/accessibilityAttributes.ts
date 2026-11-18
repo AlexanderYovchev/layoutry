@@ -71,6 +71,20 @@ export function isNavigableLink(node: EditorElementNode): boolean {
   return node.disabled !== true && node.ariaCurrent !== "page";
 }
 
+/**
+ * Whether the node's authored click interactions may run (BC-09.2.1). A
+ * node marked `disabled` in the document never activates them, by click,
+ * keyboard or a dispatched click. Decided from the document field only,
+ * never from styling, and never inherited: a disabled link doesn't disable
+ * its siblings or its parent. The single rule behind Preview's executor,
+ * its trigger ARIA and outside-click dismissal, and the export's trigger
+ * list (so the exported runtime never sees a disabled trigger). Design
+ * mode doesn't run interactions, so selection and editing are unaffected.
+ */
+export function canActivateInteractions(node: EditorElementNode): boolean {
+  return node.disabled !== true;
+}
+
 export interface AccessibilityRenderOptions {
   /**
    * Whether a disabled button gets the native `disabled` attribute. True

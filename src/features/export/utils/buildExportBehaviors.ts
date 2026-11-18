@@ -1,4 +1,5 @@
 import { isSelectableElement } from "@/features/editor/rules/elementCapabilities";
+import { canActivateInteractions } from "@/features/editor/rules/accessibilityAttributes";
 import { getInteractions } from "@/features/editor/types/interactions";
 import { documentPreOrder, resolveInteractionTargets } from "@/features/editor/utils/interactionTargets";
 import type { EditorElementNode } from "@/features/editor/types/document";
@@ -29,6 +30,13 @@ export function buildExportBehaviors(document: EditorElementNode, diagnostics: E
     if (!isSelectableElement(node.tag)) {
       // Preview never resolves a click to the page root or legacy body.
       diagnostics.push({ code: "unsupported-trigger", severity: "warning", nodeId: node.id, message: `Click interactions on <${node.tag}> never run in Preview, so they were not exported.` });
+      continue;
+    }
+    if (!canActivateInteractions(node)) {
+      // BC-09.2.1: a disabled control never runs its interactions, in Preview
+      // or here, so it is not exported as a trigger at all: the runtime
+      // never sees it (no data-ly-on-click), whatever activates it.
+      diagnostics.push({ code: "disabled-trigger", severity: "info", nodeId: node.id, message: `This <${node.tag}> is disabled, so its click interactions don't run and were not exported.` });
       continue;
     }
     if (!isKeyboardOperableTrigger(node.tag)) {

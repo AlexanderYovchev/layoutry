@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { canActivateInteractions } from "@/features/editor/rules/accessibilityAttributes";
 import { withoutCopiedCurrentState } from "@/features/editor/types/pagination";
 import {
   insertNode,
@@ -1108,7 +1109,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
   executeInteractionsForNode: (nodeId, trigger) =>
     set((state) => {
       const node = findNodeById(state.document, nodeId);
-      if (!node) return {};
+      // A disabled control never runs its interactions (BC-09.2.1).
+      if (!node || !canActivateInteractions(node)) return {};
       const bindings = getInteractions(node).filter((binding) => binding.trigger === trigger);
       if (bindings.length === 0) return {};
 

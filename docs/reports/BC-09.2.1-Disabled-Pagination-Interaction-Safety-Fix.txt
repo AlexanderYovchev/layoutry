@@ -1,0 +1,312 @@
+BC-09.2.1 — DISABLED PAGINATION INTERACTION SAFETY FIX
+=======================================================
+Date: 2026-11-18
+Baseline: 34dd95a (BC-09.2 committed).
+Status: fixed, uncommitted, waiting for ChatGPT QA. BC-09.3 not started.
+Testing: change-focused only (section 14).
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Fixed: a link or button marked `disabled` could still run its authored
+click interactions (show/hide/toggle) in Preview and on the exported
+page. Only navigation had been blocked.
+
+The fix is one shared rule, canActivateInteractions(node): false when
+the document marks the node `disabled: true`. It is applied in the four
+places that decide whether a click runs, or is advertised as running,
+an interaction:
+1. the Preview executor (useEditorStore.executeInteractionsForNode);
+2. the Preview trigger ARIA (usePreviewTriggerAria);
+3. the Preview outside-click dismissal (findDismissibleRelationships);
+4. the export trigger list (buildExportBehaviors).
+For point 4, a disabled control is left out of the trigger list, so the
+unchanged export runtime never sees it, and it gets an info diagnostic.
+
+Effects:
+- Enabled controls, the current page, Design-mode editing, the document
+  format and migration are unchanged.
+- No Pagination-specific JavaScript was added.
+- The export runtime script itself is unchanged.
+
+
+2. ORIGINAL DEFECT REPRODUCTION
+-------------------------------
+- Setup: the new Pagination's disabled Previous with a click → toggle
+  interaction on a hidden Paragraph.
+- In Preview, a click on Previous showed the Paragraph.
+- On the exported page:
+  - Previous carried data-ly-on-click, aria-controls and aria-expanded;
+  - a click, or a script's element.click(), toggled the Paragraph.
+Proven in this checkpoint:
+- I wrote the new focused tests first.
+- I neutralised the rule (canActivateInteractions → always true).
+- Result: 12 of the 14 new unit tests FAILED, reproducing the defect in
+  Preview (click, element.click(), dispatched click, disabled button, the
+  executor called directly, ARIA, dismissal) and in Export (trigger
+  attributes, diagnostics, script presence).
+- The 2 that still passed are invariants that held before as well:
+  Preview never changes the document or history, and Design selection
+  works.
+- After restoring the rule: 14/14 pass.
+
+
+3. ROOT CAUSE
+-------------
+- BC-09.2 implemented "disabled" as rendering only: no href,
+  role="link" and aria-disabled="true" for links, and native `disabled`
+  for buttons in Preview and Export.
+- The interaction system is a separate layer, and it never consulted the
+  field:
+  - Preview: CanvasInteractionBoundary's delegated window click handler
+    resolves the nearest node and calls executeInteractionsForNode,
+    which ran every click binding. An <a> without href still receives
+    click events. (A natively disabled button doesn't fire clicks in
+    Preview, but the executor didn't check either.)
+  - Export: buildExportBehaviors turned every node with bindings into a
+    trigger (data-ly-on-click). The runtime's delegated window click
+    handler then ran it. The runtime reacts only to click events, so a
+    mouse click, Enter (on a focusable control) and element.click() all
+    reach it.
+- So the defect was a missing disabled-state check at the point where
+  interactions are derived. It was not event delegation, target
+  resolution or a Preview/Export difference: both layers shared the same
+  omission.
+
+
+4. FILES MODIFIED
+-----------------
+Product:
+  src/features/editor/rules/accessibilityAttributes.ts  + canActivateInteractions
+  src/features/editor/stores/useEditorStore.ts          executor guard
+  src/features/canvas/hooks/usePreviewTriggerAria.ts    no trigger ARIA when disabled
+  src/features/editor/utils/dismissibleTargets.ts       no relationship owned by a disabled trigger
+  src/features/export/utils/buildExportBehaviors.ts     disabled node is not a trigger
+  src/features/export/types/exportDiagnostic.ts         + "disabled-trigger" code
+Docs:
+  docs/architecture/export-engine.md                    one paragraph
+Tests (new):
+  src/features/canvas/components/disabledInteractionSafety.test.tsx   9
+  src/features/export/utils/exportDisabledTriggers.test.ts            5
+  e2e/pagination-disabled-interactions.spec.ts                        2
+
+
+5. IMPLEMENTATION DETAILS
+-------------------------
+canActivateInteractions(node) = node.disabled !== true. It lives next to
+isNavigableLink in the accessibility rules, the one module that owns the
+meaning of `disabled`.
+- Preview executor: returns no change for a disabled node. Every Preview
+  activation goes through this one action, so no caller can bypass it.
+- usePreviewTriggerAria: `applies` is false for a disabled node, so there
+  is no aria-controls, aria-expanded or aria-haspopup, as in the export.
+- findDismissibleRelationships: a disabled node's bindings are ignored.
+  It can never open its target, so it must not count as that target's
+  "inside" region. This is the same model as export, where it isn't a
+  trigger.
+- buildExportBehaviors: a disabled node with bindings is skipped, before
+  the keyboard-operability warning, and reported as
+  { code: "disabled-trigger", severity: "info" }. So:
+  - no data-ly-on-click on it;
+  - if it was the only trigger, no script.js at all.
+  If it sits inside an enabled trigger, it is still marked data-ly-node
+  as before. The runtime's nearest-node rule then makes a click on it
+  run nothing, which matches Preview, where the nearest node (the
+  disabled link) runs nothing.
+No new document field, no schema or format change, no runtime script
+change.
+
+
+6. DISABLED-STATE CONTRACT
+--------------------------
+For a node with `disabled: true` in the document:
+- Rendering: link → aria-disabled="true", role="link", no href; button
+  → native disabled (Preview/Export), aria-disabled (Design). Unchanged
+  from BC-09.2.
+- Activation: no authored interaction runs, in Preview or Export, by any
+  path.
+- Decided only from the document field. Never from styling: a muted,
+  not-allowed look on an enabled link doesn't disable it (unit test).
+  Never inherited: an enabled sibling keeps its trigger (export test),
+  and an ancestor's own interaction is not disabled by a disabled child.
+- Design: fully editable (section 10).
+
+
+7. PREVIEW BEHAVIOR
+-------------------
+Verified in jsdom and in real Chromium:
+- Disabled Previous (page 1) and disabled Next (a last-page fixture: page
+  3 current, Previous enabled): mouse click, element.click() and a
+  dispatched click run nothing. A disabled button is refused too.
+- Enabled Next on page 1 and enabled Previous on the last page, with the
+  same kind of binding: they work by mouse and by Enter.
+- The current page doesn't navigate. The URL never changes.
+- No aria-controls or aria-expanded on disabled triggers; enabled ones
+  keep them.
+- Note (expected, not a defect): opening one panel and then activating
+  another control closes the first. That is the established outside-click
+  dismissal, identical in Preview and Export.
+
+
+8. EXPORT BEHAVIOR
+------------------
+Verified on the exported HTML (unit tests + real Chromium, JavaScript on):
+- Disabled links have no data-ly-on-click, no href, no aria-controls
+  and no aria-expanded. Mouse, element.click() and dispatched Enter run
+  nothing.
+- Enabled links have data-ly-on-click and aria-expanded, and work by
+  mouse and Enter.
+- A disabled button exports natively disabled with no trigger
+  attributes.
+- A page whose only triggers are disabled exports no script.js.
+- Diagnostics: one info "disabled-trigger" per disabled control with
+  bindings, so authors learn why the interaction is absent.
+- The existing export-interactions spec (runtime, keyboard, safety): 5/5.
+
+
+9. KEYBOARD BEHAVIOR
+--------------------
+- Enter on a focused link or button fires a click. The Preview boundary
+  and the export runtime act only on clicks; no Layoutry handler listens
+  for Enter or Space to run interactions. The click-level guard
+  therefore covers keyboard activation.
+- Disabled links have no href, so they can't be focused (tested:
+  focus() doesn't take). A dispatched keydown Enter on them runs nothing
+  (tested).
+- Enabled links activate with Enter (tested, Preview and Export).
+- Space: Layoutry doesn't handle Space for links; native buttons are
+  disabled. Nothing to change.
+- Focus policy unchanged. No traps were added.
+
+
+10. DESIGN-MODE BEHAVIOR
+------------------------
+- Design never runs interactions: the boundary selects instead. The
+  guard only affects the executor, ARIA and dismissal, which are
+  Preview-only, and the export.
+- Tested: clicking a disabled link or a disabled button in Design
+  selects it (jsdom), and the Inspector shows the link's Link section
+  (Chromium).
+- Drag, copy/paste, duplicate, delete and Undo use unchanged
+  ordinary-node paths.
+- No pointer-events suppression was added.
+
+
+11. SECURITY IMPLICATIONS
+-------------------------
+- URL validation: untouched.
+- No new event handler or attribute. The export removes attributes
+  (data-ly-on-click, aria-*) from disabled controls; it adds nothing.
+- The runtime script is unchanged, so there is no new script surface.
+- Format 3 and migration: untouched. Legacy Paginations have no
+  `disabled` field, so they are unaffected.
+
+
+12. DOCUMENT / UNDO INTEGRITY
+-----------------------------
+- The executor only ever writes runtimeVisibility (ephemeral). For a
+  disabled node it writes nothing.
+- Tested in jsdom: after clicking every control in Preview, the document
+  object is identical and the past/future lengths are unchanged.
+- Tested in Chromium: Undo is disabled before Preview and still disabled
+  after leaving it, and the disabled Next keeps aria-disabled.
+
+
+13. FOCUSED TESTS EXECUTED
+--------------------------
+Selection (change-focused):
+- New tests target the defect and every brief item (section 14).
+- Direct tests of each modified module:
+  - executor: useEditorStore.interactions, useEditorStore.previewVisibility;
+  - dismissal: dismissibleTargets;
+  - trigger ARIA: triggerAccessibility, Canvas element tests;
+  - export behaviours: buildExportBehaviors and the export folder;
+  - CanvasInteractionBoundary.
+- The BC-09.2 Pagination store test and Chromium spec, because the fix
+  touches the same Pagination.
+- export-interactions (Chromium), the existing end-to-end consumer of
+  buildExportBehaviors and the export runtime.
+Not run, deliberately:
+- Full suites.
+- Firefox/WebKit: the change is engine-independent JS logic. The
+  browser-specific parts, href-less links and native disabled, did not
+  change, and were covered in BC-09.2.
+- Electron: Preview and export logic are shared code with no Electron
+  difference, and no desktop code changed.
+- Migration, Inspector and BC-08 media tests.
+- Production build: the change is ordinary TypeScript in already-built
+  modules, not build integration. Typecheck covers it.
+
+
+14. EXACT TEST COMMANDS AND RESULTS
+-----------------------------------
+A. npx vitest run src/features/canvas/components/disabledInteractionSafety.test.tsx
+   src/features/export/utils/exportDisabledTriggers.test.ts
+   - with the rule neutralised: 12 failed, 2 passed (reproduction);
+   - restored: 14 passed, 0 failed, 0 skipped.
+B. npx vitest run src/features/canvas/components/disabledInteractionSafety.test.tsx
+   src/features/export/utils/exportDisabledTriggers.test.ts
+   src/features/editor/stores/useEditorStore.interactions.test.ts
+   src/features/editor/stores/useEditorStore.previewVisibility.test.ts
+   src/features/editor/utils/dismissibleTargets.test.ts
+   src/features/editor/utils/triggerAccessibility.test.ts
+   src/features/canvas/components/CanvasInteractionBoundary.test.tsx
+   src/features/canvas/components/document/elements
+   src/features/editor/stores/useEditorStore.pagination.test.ts
+   src/features/export
+   → 60 files: 725 passed, 0 failed, 0 skipped.
+C. npx playwright test e2e/pagination-disabled-interactions.spec.ts
+   e2e/pagination-foundation.spec.ts --project=chromium
+   - first run of the new spec: 2 failed. My expectation ignored the
+     established outside-click dismissal (section 7). I corrected the
+     expectation, not the product.
+   - then: 9 passed, 0 failed, 0 skipped.
+D. npx playwright test e2e/export-interactions.spec.ts --project=chromium
+   → 5 passed, 0 failed, 0 skipped.
+E. npm run typecheck → clean.
+   npx eslint (the 6 changed product files + 3 new test files) → clean.
+   prettier → exportDiagnostic.ts was clean at HEAD and is still clean.
+   The other 4 changed files were not Prettier-clean at HEAD; I left
+   them as they were.
+
+
+15. KNOWN LIMITATIONS
+---------------------
+- A disabled control's interactions still exist in the document and the
+  Inspector, which shows no "disabled: won't run" note. The Pagination
+  Inspector (BC-09.3) should explain this. Export already reports it
+  (info diagnostic).
+- The current page (aria-current="page", not disabled) still runs any
+  interaction an author gives it. The brief covers disabled controls
+  only, and no factory adds one; worth deciding in BC-09.3/BC-09.4.
+- Unchanged from BC-09.2: cut+paste drops the current state; no
+  Inspector UI for the new fields.
+
+
+16. GIT WORKING-TREE STATUS
+---------------------------
+Branch main, HEAD 34dd95a. Nothing staged or committed.
+ M docs/architecture/export-engine.md
+ M src/features/canvas/hooks/usePreviewTriggerAria.ts
+ M src/features/editor/rules/accessibilityAttributes.ts
+ M src/features/editor/stores/useEditorStore.ts
+ M src/features/editor/utils/dismissibleTargets.ts
+ M src/features/export/types/exportDiagnostic.ts
+ M src/features/export/utils/buildExportBehaviors.ts
+?? e2e/pagination-disabled-interactions.spec.ts
+?? src/features/canvas/components/disabledInteractionSafety.test.tsx
+?? src/features/export/utils/exportDisabledTriggers.test.ts
+?? docs/reports/BC-09.2.1-Disabled-Pagination-Interaction-Safety-Fix.txt
+The changelog is gitignored.
+
+
+17. QA RECOMMENDATION
+---------------------
+APPROVE BC-09.2.1, then close BC-09.2.
+- The defect is reproduced and fixed by one shared rule at the four
+  decision points.
+- Preview and Export agree.
+- Enabled controls, Design editing, document and history integrity, and
+  the format are unchanged.
+One decision for the owner (optional): should the current page also
+refuse authored interactions (section 15)?

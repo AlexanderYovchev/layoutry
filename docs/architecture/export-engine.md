@@ -294,6 +294,14 @@ editor schema. Either failure refuses the export with no files. After that:
   button the native `disabled`. Values are escaped by the printer like
   any attribute. None of this needs a script: a Pagination exports as
   plain HTML.
+- **Disabled controls are never triggers (BC-09.2.1).** A node with
+  `disabled` runs no click interaction anywhere. The one rule,
+  `canActivateInteractions`, is read by Preview's executor, its trigger
+  ARIA and its outside-click dismissal, and by `buildExportBehaviors`,
+  which leaves such a node out of the trigger list (an info diagnostic,
+  `disabled-trigger`). So the exported runtime never sees it: no
+  `data-ly-on-click`, `aria-controls` or `aria-expanded`, whatever
+  activates it (mouse, Enter, a script's `click()`).
 
 ## Diagnostics
 

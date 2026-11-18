@@ -1,6 +1,7 @@
 "use client";
 
 import { useContext } from "react";
+import { canActivateInteractions } from "@/features/editor/rules/accessibilityAttributes";
 import { InteractionTargetsContext } from "@/features/canvas/components/document/previewRuntimeContext";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
@@ -31,7 +32,8 @@ export interface PreviewTriggerAria {
  * state changes.
  */
 export function usePreviewTriggerAria(node: EditorElementNode): PreviewTriggerAria {
-  const applies = EXPANDABLE_CONTROL_TAGS.has(node.tag) && getInteractions(node).length > 0;
+  // A disabled control controls nothing (BC-09.2.1), as on the exported page.
+  const applies = EXPANDABLE_CONTROL_TAGS.has(node.tag) && canActivateInteractions(node) && getInteractions(node).length > 0;
   const targets = useContext(InteractionTargetsContext);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
   const expanded = useEditorStore((state) => {

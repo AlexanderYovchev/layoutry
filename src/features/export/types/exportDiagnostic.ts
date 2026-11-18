@@ -31,6 +31,7 @@ export type ExportDiagnosticCode =
   | "ignored-children"
   | "unsupported-trigger"
   | "non-operable-trigger"
+  | "disabled-trigger"
   | "control-characters-removed"
   | "unmuted-autoplay"
   | "embedded-image-invalid"

@@ -1,4 +1,5 @@
 import { findNodeById } from "@/features/editor/utils/findNodeById";
+import { canActivateInteractions } from "@/features/editor/rules/accessibilityAttributes";
 import { getInteractions } from "@/features/editor/types/interactions";
 import { getInitialPreviewVisibility } from "@/features/editor/types/previewVisibility";
 import type { EditorElementNode } from "@/features/editor/types/document";
@@ -51,7 +52,9 @@ export function findDismissibleRelationships(
   const relationships: DismissibleRelationship[] = [];
 
   function visit(node: EditorElementNode) {
-    for (const binding of getInteractions(node)) {
+    // A disabled trigger can't open anything, so it owns no relationship (BC-09.2.1).
+    const bindings = canActivateInteractions(node) ? getInteractions(node) : [];
+    for (const binding of bindings) {
       if (binding.trigger !== "click" || binding.action !== "toggle") continue;
       if (runtimeVisibility[binding.targetId] !== true) continue;
 
