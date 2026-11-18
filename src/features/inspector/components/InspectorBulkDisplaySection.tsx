@@ -3,7 +3,9 @@
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { InspectorSegmentedRow } from "@/features/inspector/components/InspectorSegmentedRow";
-import { resolveSharedValue } from "@/features/inspector/types/sharedValue";
+import { InspectorSharedValueNote } from "@/features/inspector/components/InspectorSharedValueNote";
+import { useRenderedStyles } from "@/features/inspector/hooks/useRenderedStyles";
+import { effectiveRowState, effectiveValueOf, resolveSharedEffective } from "@/features/inspector/utils/effectiveCss";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { getDisplaySettings, isValidDisplayValue, isValidVisibilityValue, type DisplayValue, type VisibilityValue } from "@/features/editor/types/display";
 import type { EditorElementNode } from "@/features/editor/types/document";
@@ -21,21 +23,35 @@ const VISIBILITY_OPTIONS = ["Visible", "Hidden"];
 const VISIBILITY_LABEL_TO_VALUE: Record<string, VisibilityValue> = { Visible: "visible", Hidden: "hidden" };
 const VISIBILITY_VALUE_TO_LABEL: Record<VisibilityValue, string> = { visible: "Visible", hidden: "Hidden" };
 
+const DISPLAY_MEASURED = ["display", "visibility"] as const;
+const DISPLAY = { cssProperties: ["display"], kind: "keyword" } as const;
+const VISIBILITY = { cssProperties: ["visibility"], kind: "keyword" } as const;
+
 /** The multi-selection Display surface (Checkpoint 1.15.2) — Display + Visibility, both single-choice segmented controls. */
 export function InspectorBulkDisplaySection({ nodes }: InspectorBulkDisplaySectionProps) {
   const setElementsDisplayField = useEditorStore((state) => state.setElementsDisplayField);
   const ids = nodes.map((node) => node.id);
 
-  const display = resolveSharedValue(nodes, (node) => getDisplaySettings(node).display);
-  const visibility = resolveSharedValue(nodes, (node) => getDisplaySettings(node).visibility);
+  // BC-10.3: effective values. A Button is inline-flex and a Link inline-block by default, and
+  // visibility is inherited, so the typed values alone can't say whether they agree.
+  const measured = useRenderedStyles(ids, DISPLAY_MEASURED);
+  const settings = nodes.map((node) => getDisplaySettings(node));
+  const display = resolveSharedEffective(
+    nodes.map((node, index) => effectiveValueOf(node.id, DISPLAY, measured, () => (settings[index].display === undefined ? undefined : [settings[index].display]))),
+    (normalized) => (isValidDisplayValue(normalized) ? normalized : undefined),
+  );
+  const visibility = resolveSharedEffective(
+    nodes.map((node, index) => effectiveValueOf(node.id, VISIBILITY, measured, () => (settings[index].visibility === undefined ? undefined : [settings[index].visibility]))),
+    (normalized) => (isValidVisibilityValue(normalized) ? normalized : undefined),
+  );
 
   return (
     <InspectorSection label="Display">
-      <InspectorPropertyRow label="Display" state={display.kind === "mixed" ? "mixed" : display.value ? "set" : "unset"}>
+      <InspectorPropertyRow label="Display" state={effectiveRowState(display, settings.some((value) => value.display !== undefined))}>
         <InspectorSegmentedRow
           label="Display"
           options={DISPLAY_OPTIONS}
-          activeOption={display.kind === "same" && display.value ? DISPLAY_VALUE_TO_LABEL[display.value] : NO_ACTIVE_OPTION}
+          activeOption={display.kind === "same" ? DISPLAY_VALUE_TO_LABEL[display.value] : NO_ACTIVE_OPTION}
           onSelect={(option) => {
             const value = DISPLAY_LABEL_TO_VALUE[option];
             if (!isValidDisplayValue(value)) return;
@@ -44,11 +60,13 @@ export function InspectorBulkDisplaySection({ nodes }: InspectorBulkDisplaySecti
         />
       </InspectorPropertyRow>
 
-      <InspectorPropertyRow label="Visibility" state={visibility.kind === "mixed" ? "mixed" : visibility.value ? "set" : "unset"}>
+      <InspectorSharedValueNote shared={display} />
+
+      <InspectorPropertyRow label="Visibility" state={effectiveRowState(visibility, settings.some((value) => value.visibility !== undefined))}>
         <InspectorSegmentedRow
           label="Visibility"
           options={VISIBILITY_OPTIONS}
-          activeOption={visibility.kind === "same" && visibility.value ? VISIBILITY_VALUE_TO_LABEL[visibility.value] : NO_ACTIVE_OPTION}
+          activeOption={visibility.kind === "same" ? VISIBILITY_VALUE_TO_LABEL[visibility.value] : NO_ACTIVE_OPTION}
           onSelect={(option) => {
             const value = VISIBILITY_LABEL_TO_VALUE[option];
             if (!isValidVisibilityValue(value)) return;
@@ -56,6 +74,7 @@ export function InspectorBulkDisplaySection({ nodes }: InspectorBulkDisplaySecti
           }}
         />
       </InspectorPropertyRow>
+      <InspectorSharedValueNote shared={visibility} />
     </InspectorSection>
   );
 }

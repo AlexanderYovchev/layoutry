@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type KeyboardEvent } from "react";
-import type { SharedValue } from "@/features/inspector/types/sharedValue";
+import { sharedExplanation, sharedPlaceholder, type SharedValue } from "@/features/inspector/types/sharedValue";
 import { cn } from "@/lib/utils";
 
 interface InspectorBulkTextFieldProps {
@@ -75,7 +75,8 @@ export function InspectorBulkTextField({ ariaLabel, shared, onCommit, placeholde
       type="text"
       aria-invalid={error ? true : undefined}
       value={draft}
-      placeholder={shared.kind === "mixed" ? "Mixed" : placeholder}
+      placeholder={sharedPlaceholder(shared, placeholder)}
+      title={sharedExplanation(shared)}
       onChange={(event) => {
         setDraft(event.target.value);
         setTouched(true);
@@ -85,7 +86,7 @@ export function InspectorBulkTextField({ ariaLabel, shared, onCommit, placeholde
       className={cn(
         "h-6 w-full min-w-0 rounded-md border bg-zinc-50 px-2 text-xs text-zinc-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 dark:bg-zinc-900 dark:text-zinc-300",
         error ? "border-red-400 dark:border-red-600" : "border-zinc-200 dark:border-zinc-800",
-        shared.kind === "mixed" && "placeholder:text-zinc-400 placeholder:italic dark:placeholder:text-zinc-500",
+        shared.kind !== "same" && "placeholder:text-zinc-400 placeholder:italic dark:placeholder:text-zinc-500",
       )}
     />
   );

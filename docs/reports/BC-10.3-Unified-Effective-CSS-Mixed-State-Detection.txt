@@ -1,0 +1,419 @@
+BC-10.3 — UNIFIED EFFECTIVE CSS VALUES AND MIXED-STATE DETECTION
+================================================================
+Date: 2026-11-18
+Baseline: 63607af (BC-10.2 committed).
+Status: implemented, uncommitted, waiting for ChatGPT QA. BC-10.4 not
+started.
+Testing: change-focused (section 17).
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+The multi-selection Inspector now compares EFFECTIVE values for every
+existing bulk field whose value can differ by tag default, inheritance
+or unit, as BC-05.4 already did for Spacing:
+- Typography: size, weight, colour;
+- Background colour;
+- Border: width, style, colour, now on all four sides;
+- Border radius: all four corners, with units;
+- Display / Visibility.
+
+New states:
+- Mixed when effective values differ;
+- Unknown when an element can't be read (never a default, 0 or "");
+- a shared value the field can't display (e.g. a 50% radius in a px
+  field) is shown as its CSS text, not misread.
+
+Defects reproduced at HEAD and fixed:
+- an unset h1 (32px) and p (16px) showed font size "16" (BC-10.1 F1);
+- a Button and a Link showed an empty background field, though one is
+  dark and one transparent;
+- Border compared only the top side; Radius compared only the top-left
+  number and ignored its unit (50% read the same as 50px).
+
+Unchanged:
+- editing (all-or-nothing, one Undo step);
+- Spacing (BC-05.4);
+- single selection;
+- the sections whose values have no tag default and aren't inherited
+  (section 11).
+No Preview, Export, schema or format change.
+
+Tests:
+- targeted Vitest: 91 Inspector files, 1242 passed (31 new tests);
+- Chromium: 5 new tests, plus 3 BC-10.2 and 1 BC-05.4 consumer tests,
+  all passing;
+- typecheck and lint clean.
+- 120-element selection: resolved in 227-372 ms.
+
+
+2. REPRODUCED DEFECTS
+---------------------
+Reproduced in real Chromium by restoring the three HEAD section files
+temporarily and running the new spec (then restoring the fix):
+D1 (F1):
+- an unset h1 (renders 32px, bold) and an unset p (16px, regular): bulk
+  Font size showed a value with no "Mixed" hint;
+- spec: "expected placeholder Mixed, received ''".
+D2:
+- an unset Button (renders a dark background) and a Link (transparent):
+  bulk Background colour showed an empty field with the "#000000" hint,
+  as if they agreed;
+- spec: "expected Mixed, received #000000".
+D3 (found by source review, then covered by tests):
+- Border compared each element's top side only;
+- Radius compared only topLeft's number, ignoring its unit and the
+  other corners.
+- So a 50% and a 50px radius read the same, and an element with
+  unequal sides read as uniform.
+Non-typography property investigated: background-color (D2), border
+radius (D3).
+
+
+3. ROOT-CAUSE ANALYSIS
+----------------------
+- Checkpoint 1.15.2 deliberately compared AUTHORED values
+  (resolveSharedValue over getTypographySettings(node).x, ...) and
+  substituted a fallback for "all unset" (withSharedFallback(…, 16)).
+- That is correct only when unset means the same thing for every
+  element. In Layoutry it doesn't:
+  - every text tag has its own default presentation (style recipes:
+    h1 32px bold; p 16px; button dark background, rounded-md,
+    inline-flex; link inline-block, blue);
+  - inheritance and relative units also apply.
+- BC-05.4 fixed this for Spacing only (useRenderedPaddings + "authored
+  else rendered"). The other sections kept the authored rule, and Border
+  and Radius additionally sampled one side or corner.
+
+
+4. SOURCE FILES CHANGED
+-----------------------
+New:
+  src/features/inspector/utils/effectiveCss.ts
+    normalization, the per-element effective value, aggregation,
+    formatting
+  src/features/inspector/hooks/useRenderedStyles.ts
+    generalised BC-05.4 measurement
+  src/features/inspector/components/InspectorSharedValueNote.tsx
+    help line for segmented rows
+Modified:
+  src/features/inspector/types/sharedValue.ts
+    + "unresolved", "same-other"; AuthoredSharedValue for the authored
+    resolver; sharedPlaceholder/sharedExplanation
+  src/features/inspector/components/InspectorBulkNumberField.tsx,
+    InspectorBulkTextField.tsx
+    Mixed/Unknown/shared-label hint + title
+  src/features/inspector/components/InspectorBulkTypographySection.tsx,
+    InspectorBulkBackgroundSection.tsx, InspectorBulkBorderSection.tsx,
+    InspectorBulkBorderRadiusSection.tsx, InspectorBulkDisplaySection.tsx
+Tests (new):
+  src/features/inspector/utils/effectiveCss.test.ts (21)
+  src/features/inspector/components/InspectorBulkEffectiveValues.test.tsx (10)
+  e2e/multi-selection-effective-values.spec.ts (5)
+
+
+5. EFFECTIVE-VALUE RESOLUTION ARCHITECTURE
+------------------------------------------
+Pipeline (one per bulk section):
+1. useRenderedStyles(ids, cssProperties):
+   - one layout effect per document or selection change;
+   - one getComputedStyle per selected element (the browser computes
+     the batch once), reading only the listed properties;
+   - elements are found by [data-document-surface] [data-node-id];
+   - a missing element is simply absent;
+   - the previous object is kept when nothing changed (no re-render).
+2. effectiveValueOf(id, property, measured, authoredAbsolute): per
+   element:
+   - the measured value, normalized;
+   - else the authored value only if it is absolute (px, a context-free
+     colour, a keyword, a weight number);
+   - else undefined (unknown).
+   - Several CSS properties (sides or corners) fold to one value, or a
+     "sides:" token when they differ.
+3. resolveSharedEffective(values, toField) → SharedValue:
+   - two different known values → mixed (even with unknowns);
+   - any unknown → unresolved;
+   - else same(field value) or same-other(label).
+4. Fields:
+   - "same" shows the value (the author's own text when every element
+     authored it identically, e.g. "#f00");
+   - otherwise the hint shows Mixed / Unknown / the CSS label, with an
+     explanatory title.
+   - Segmented rows get InspectorSharedValueNote under them.
+   - The row state dot: "mixed" by effective values, else "set"/"unset"
+     by authored data (the BC-05.4 convention).
+Measured values come from the Canvas, which renders with the same style
+recipes Preview and Export use. There is no second CSS engine and no
+hand-written defaults table.
+Distinctions:
+- authored declaration vs effective value: kept apart (the shown value
+  is effective; the row state and everything written are authored);
+- inherited and default: both are what getComputedStyle returns;
+- initial/inherit/unset/revert: Layoutry's fields can't author them
+  (validators), except colours that are context keywords, which count
+  as non-absolute (absoluteAuthoredColor).
+
+
+6. PROPERTY NORMALIZATION RULES
+-------------------------------
+- Length (font-size, border width, radius): "16px"/"16.00px" → "16px"
+  (2 decimals). Only px is normalized; other units are compared exactly.
+  Browsers return px for resolved lengths, so 2em and 32px that render
+  32px agree (tested in Chromium); 50% radius stays "50%" and differs
+  from 50px (tested). 1em is never assumed to be 16px.
+- Colour: #rgb, #rgba, #rrggbb, #rrggbbaa, rgb()/rgba() (comma and
+  space syntax, % channels) and transparent → "rgba(r, g, b, a)".
+  Named, hsl, oklch and color-mix are compared as text. The browser
+  already serialises them as rgb() when computed, except oklch.
+- Number (font weight): numeric canonical form ("700.0" → "700").
+- Keyword (display, visibility, border style): trimmed and lowercase.
+- Border (context rule): a side whose effective width is 0 renders
+  nothing, so its style and colour count as "none". Two borderless
+  elements agree even though the base stylesheet gives them different
+  0-width styles. This is the only non-trivial equivalence, and it is
+  exact in CSS.
+- Composite values: compared per component (sides/corners), never by
+  string surgery.
+
+
+7. UNIFORM / MIXED / UNRESOLVED HANDLING
+----------------------------------------
+- Uniform: the value; the field is editable.
+- Mixed: an empty field with an italic "Mixed" hint; no option is active
+  in segmented rows.
+- Unresolved: an empty field with an italic "Unknown" hint and a title
+  ("Some selected elements couldn't be read, so it's unknown whether
+  they share this value."); segmented rows show that sentence as a
+  note.
+- Same but not displayable: the CSS text as the hint ("50%", "Varies by
+  side"); segmented rows say "Every selected element uses flex." (etc.).
+- Nothing is applied until the user types or chooses (fields commit
+  only when touched; focus/blur commits nothing: tested).
+- A valid edit applies to every element, one Undo step.
+- After an edit, the fields show the new effective state, measured
+  again.
+- Unsupported property: unchanged; the section is hidden by the
+  capability intersection.
+
+
+8. INHERITANCE AND CASCADE HANDLING
+-----------------------------------
+Measured from the real cascade (Chromium tests):
+- Tag defaults: h1 vs p font size → Mixed; Button vs Link background →
+  Mixed; Button vs Link radius → Mixed.
+- Equivalent authored forms: "rgb(255, 0, 0)" vs "#f00" → one value
+  "#ff0000".
+- Relative units: 2em and 32px → one value, 32.
+- Inheritance finding (honest): Layoutry text elements always carry a
+  default colour, and containers don't render authored typography. So
+  a "red" section does NOT make its paragraph red; the effective
+  comparison reports Mixed, which is the truth (tested). Font size
+  likewise: a container's authored size isn't rendered, so 2em always
+  resolves against the inherited base.
+- Inline styles: Layoutry's authored CSS is inline on the Canvas, so
+  it is measured.
+- Class/external stylesheets: only Layoutry's own recipes exist; there
+  is no arbitrary stylesheet support (not invented).
+
+
+9. OFF-SCREEN AND HIDDEN-ELEMENT HANDLING
+-----------------------------------------
+- getComputedStyle doesn't need a visible box.
+- An element far below the fold (after a 3000px spacer) and two
+  display:none elements were read correctly (Chromium test: "16"
+  shared). The hidden ones were selected through the Structure panel.
+- Elements in collapsed Structure rows or different containers are
+  still rendered on the Canvas, so they are measured.
+- An element that isn't rendered (no DOM node) is unknown, unless its
+  authored value is absolute. It is never assumed to have a default
+  (unit test: "Unknown").
+- In Preview, runtime-hidden elements are display:none via a rule; the
+  Inspector is a Design tool.
+
+
+10. EXISTING INSPECTOR SECTIONS COVERED
+---------------------------------------
+Now effective:
+- Typography (size, weight, colour);
+- Background (colour);
+- Border (width, style, colour; all sides);
+- Border radius (all corners);
+- Display (display, visibility).
+Already effective: Spacing (BC-05.4, unchanged).
+Kept on the authored comparison, with the reason (no tag-dependent
+default and not inherited in Layoutry, so for the eligible tags unset
+means the CSS initial value everywhere and authored equality IS
+effective equality):
+- Filters (opacity, blur, ...);
+- Transform; Transition;
+- Position (position, offsets, z-index);
+- Media fit (object-fit/position: Layoutry's own uniform default);
+- Shape; SVG fill/stroke (SVG attributes, authored).
+Size (width/height, aspect ratio): kept authored on purpose. A
+measured box is a USED size, with different semantics from the authored
+dimension the field edits (brief section 14).
+
+
+11. SECTIONS DEFERRED TO BC-10.4
+--------------------------------
+- New multi-selection controls (Box shadow, Gradient, Layout, Flex/Grid
+  child, the remaining Typography fields, per-side Border/Spacing): each
+  must use resolveSharedEffective when added.
+- Complete Reset coverage.
+- Re-check Filters/Transform/Transition/Position effective comparison
+  if BC-10.4 adds tags with their own defaults for them.
+- Complex values (shadow lists, gradients): compare by structure
+  (component-wise), never by string. To be designed with the controls.
+
+
+12. PERFORMANCE AND CACHE INVALIDATION
+--------------------------------------
+- One effect per section per document or selection change; a
+  getComputedStyle per element; only the listed properties are read.
+- No observers, no per-keystroke measurement (the fields commit on
+  Enter/blur; the document changes only then).
+- The cache is keyed by the selection ids and the properties, and
+  refreshed on every document change (edits, Undo, Redo, transactions),
+  so no stale values (Chromium: Undo brings Mixed back, Redo the value).
+- Unchanged measurements keep the same object (no re-render).
+- Measured: a 120-paragraph selection resolved in 227 and 372 ms (two
+  runs: Structure Shift-range → the field shows "16"), including React
+  rendering.
+
+
+13. EDITING TRANSACTION INTEGRITY
+---------------------------------
+- No mutation code changed: the setElements* actions and
+  guardedBulkStyleMutation (all-or-nothing, protection, one
+  pushHistory).
+- Fields commit only a touched, valid value. Invalid values are refused
+  before the store, by the section validators as before.
+- Tested: typing 24 into a Mixed font size sets both elements, as one
+  Undo step; focus and blur alone write nothing.
+- Measurement never writes.
+
+
+14. RESET AND UNDO/REDO
+-----------------------
+- Reset code is unchanged. Bulk sections with Reset (Transform,
+  Transition, partly Shape/Media fit) are authored and untouched;
+  BC-05.4 Spacing Reset is unchanged (its Chromium test passes).
+- Undo/Redo: the document changes, so the sections measure again
+  (Chromium: Mixed → 24 → Undo Mixed → Redo 24).
+
+
+15. PREVIEW/EXPORT ISOLATION
+----------------------------
+- Only Inspector display code changed. No store, document, renderer,
+  Preview, export or schema file was touched.
+- Nothing measured or "Mixed" is written or serialised.
+
+
+16. PROJECT COMPATIBILITY
+-------------------------
+Format 3 is unchanged; no migration; nothing persisted.
+
+
+17. FOCUSED TEST-IMPACT MAP
+---------------------------
+effectiveCss (new, pure) → effectiveCss.test.ts
+useRenderedStyles (new) → InspectorBulkEffectiveValues.test.tsx (stand-in
+  Canvas), Chromium spec (real CSS)
+sharedValue (type + helpers) and the bulk field components → every
+  bulk section test, the multi-node summary tests, the slider/number/
+  text field tests: the whole src/features/inspector folder (91 files)
+5 rewritten sections → InspectorBulkEffectiveValues (new), the existing
+  InspectorBulk*Section tests, Chromium spec
+Consumers in the browser:
+- e2e/bc05-final-regression "BC-05.4 multi-selection effective spacing"
+  (shared bulk number field);
+- e2e/multi-selection-structure-delete (BC-10.2 selection).
+Not run:
+- full suites;
+- Firefox/WebKit (not verified here: engines can serialise computed
+  colours differently; the normalizer handles rgb/rgba syntax variants,
+  but no cross-engine run was made);
+- Electron (no desktop path);
+- build (no integration boundary changed);
+- Pagination, media, migration, export and clipboard suites.
+
+
+18. EXACT TEST COMMANDS AND RESULTS
+-----------------------------------
+A. npx vitest run src/features/inspector/utils/effectiveCss.test.ts
+   - first: 1 failed (my test listed "#ff00" as invalid; it is valid
+     4-digit #rgba hex). Corrected to "#ff000".
+   - then 21 passed.
+B. npx vitest run src/features/inspector/components/InspectorBulkEffectiveValues.test.tsx
+   - first: 2 failed. jsdom doesn't expand the border-radius shorthand
+     (reads "0"); the stand-in Canvas now writes corner longhands.
+   - then 10 passed (also after removing an `as` cast in the helper).
+C. npx playwright test e2e/multi-selection-effective-values.spec.ts --project=chromium
+   - development runs: fixture assumptions corrected to what Layoutry
+     really renders:
+     - a red section's paragraph keeps its own colour;
+     - a container's font size isn't rendered;
+     - the second import needed its own project id;
+     - hidden rows are selected by their display name.
+   - final: 5 passed.
+D. Reproduction: the same spec, -g "unset h1|tag defaults", with the
+   three HEAD section files restored → 2 failed (D1, D2), as expected.
+   The fix was restored afterwards (diff confirmed).
+E. npx vitest run src/features/inspector → 91 files, 1242 passed, 0
+   failed.
+F. npx playwright test e2e/bc05-final-regression.spec.ts -g "multi-selection
+   effective spacing" --project=chromium → 1 passed.
+   npx playwright test e2e/multi-selection-structure-delete.spec.ts
+   --project=chromium → 3 passed.
+G. npm run typecheck → clean. npx eslint (changed/new files) → clean.
+   Prettier: no file that was clean at HEAD became unformatted.
+
+
+19. KNOWN LIMITATIONS
+---------------------
+- Cross-engine computed-value formats were not verified (Chromium only).
+- An element with no rendered node and an unset or relative value reads
+  "Unknown". In the app every element is rendered; this is mainly a
+  safety state.
+- oklch and color-mix colours are compared exactly as computed: equal
+  colours written in different spaces may read Mixed (conservative,
+  never a false "same").
+- Elliptical radii ("10px 20px") are compared exactly per corner and
+  shown as their CSS text.
+- Segmented rows show unknown or non-option values as a note line, not
+  in the control.
+- The sections kept on authored comparison (section 10) are correct for
+  today's tags. BC-10.4 must re-check them when it adds controls.
+
+
+20. GIT WORKING-TREE STATUS
+---------------------------
+Branch main, HEAD 63607af. Nothing staged or committed.
+ M src/features/inspector/components/InspectorBulkBackgroundSection.tsx
+ M src/features/inspector/components/InspectorBulkBorderRadiusSection.tsx
+ M src/features/inspector/components/InspectorBulkBorderSection.tsx
+ M src/features/inspector/components/InspectorBulkDisplaySection.tsx
+ M src/features/inspector/components/InspectorBulkNumberField.tsx
+ M src/features/inspector/components/InspectorBulkTextField.tsx
+ M src/features/inspector/components/InspectorBulkTypographySection.tsx
+ M src/features/inspector/types/sharedValue.ts
+?? docs/reports/BC-10.3-Unified-Effective-CSS-Mixed-State-Detection.txt
+?? e2e/multi-selection-effective-values.spec.ts
+?? src/features/inspector/components/InspectorBulkEffectiveValues.test.tsx
+?? src/features/inspector/components/InspectorSharedValueNote.tsx
+?? src/features/inspector/hooks/useRenderedStyles.ts
+?? src/features/inspector/utils/effectiveCss.test.ts
+?? src/features/inspector/utils/effectiveCss.ts
+The changelog is gitignored.
+
+
+21. QA RECOMMENDATION
+---------------------
+APPROVE BC-10.3.
+- Every existing bulk field whose value can differ by default,
+  inheritance or unit now shows a truthful effective value, Mixed, or
+  Unknown.
+- The reproduced defects are fixed.
+- Editing, Undo, single selection, Spacing, Preview, Export and the
+  format are unchanged.
+BC-10.4 (control expansion and Reset) can build on resolveSharedEffective.

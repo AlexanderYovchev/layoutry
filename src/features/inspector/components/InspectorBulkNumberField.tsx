@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type KeyboardEvent } from "react";
-import type { SharedValue } from "@/features/inspector/types/sharedValue";
+import { sharedExplanation, sharedPlaceholder, type SharedValue } from "@/features/inspector/types/sharedValue";
 import { cn } from "@/lib/utils";
 import { inspectorFieldClassName } from "@/features/inspector/components/inspectorFieldClassName";
 
@@ -90,7 +90,8 @@ export function InspectorBulkNumberField({ ariaLabel, shared, onCommit, min, max
       aria-label={ariaLabel}
       type="number"
       value={draft}
-      placeholder={shared.kind === "mixed" ? "Mixed" : undefined}
+      placeholder={sharedPlaceholder(shared)}
+      title={sharedExplanation(shared)}
       disabled={disabled}
       onChange={(event) => {
         setDraft(event.target.value);
@@ -101,7 +102,7 @@ export function InspectorBulkNumberField({ ariaLabel, shared, onCommit, min, max
       className={cn(
         inspectorFieldClassName,
         "min-w-14 px-2 text-right",
-        shared.kind === "mixed" && "placeholder:text-zinc-400 placeholder:italic dark:placeholder:text-zinc-500",
+        shared.kind !== "same" && "placeholder:text-zinc-400 placeholder:italic dark:placeholder:text-zinc-500",
       )}
     />
   );
