@@ -252,6 +252,26 @@ export function normalizePagination(nav: EditorElementNode, options: NormalizePa
   return { ...nav, displayName: PAGINATION_NAV_LABEL, children };
 }
 
+/**
+ * `target` with the role labels `source` implies (getPaginationParts,
+ * including the BC-09.2 positional fallback) written onto the children
+ * with the same ids, and the nav's own "Pagination" label. Same object
+ * when nothing was missing. BC-09.5 fix: without this, a BC-09.2
+ * Pagination whose Previous was removed would have its first page
+ * misread as Previous.
+ */
+export function labelPaginationRoles(source: EditorElementNode, target: EditorElementNode): EditorElementNode {
+  const { roleById } = getPaginationParts(source);
+  let changed = target.displayName !== PAGINATION_NAV_LABEL;
+  const children = (target.children ?? []).map((child) => {
+    const role = roleById.get(child.id);
+    if (role === undefined || child.displayName === PAGINATION_ROLE_LABELS[role]) return child;
+    changed = true;
+    return { ...child, displayName: PAGINATION_ROLE_LABELS[role] };
+  });
+  return changed ? { ...target, displayName: PAGINATION_NAV_LABEL, children } : target;
+}
+
 function findById(root: EditorElementNode, id: string): EditorElementNode | undefined {
   if (root.id === id) return root;
   for (const child of root.children ?? []) {
@@ -283,7 +303,11 @@ export function normalizePaginationsAfterEdit(
     if (!isPaginationNode(withChildren)) return withChildren;
     const previous = findById(before, node.id);
     if (previous === node) return withChildren;
-    return normalizePagination(withChildren, { ...options, before: previous });
+    // BC-09.5: roles come from the Pagination BEFORE the edit, so a BC-09.2
+    // Pagination (no labels yet) is never re-read positionally after its
+    // structure changed (e.g. its Previous was deleted).
+    const labelled = previous && isPaginationNode(previous) ? labelPaginationRoles(previous, withChildren) : withChildren;
+    return normalizePagination(labelled, { ...options, before: previous });
   }
   return visit(after);
 }
@@ -299,9 +323,13 @@ function updatePagination(
 ): EditorElementNode {
   if (root.id === navId) {
     if (!isPaginationNode(root)) return root;
-    const edited = edit(root, getPaginationParts(root));
-    if (edited === root) return root;
-    return normalizePagination(edited, { ...options, before: root });
+    // BC-09.5: label the roles first (a no-op for a labelled Pagination), so
+    // the edit and the normalization after it never use the positional
+    // fallback on a changed structure.
+    const labelled = labelPaginationRoles(root, root);
+    const edited = edit(labelled, getPaginationParts(labelled));
+    if (edited === labelled) return root;
+    return normalizePagination(edited, { ...options, before: labelled });
   }
   if (!root.children) return root;
   let changed = false;

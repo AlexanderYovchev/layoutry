@@ -1,0 +1,440 @@
+BC-09.5 — PAGINATION FINAL FOCUSED QA AND MILESTONE AUDIT
+=========================================================
+Date: 2026-11-18
+Baseline: eb286ee (BC-09.4 committed). The working tree was clean at the
+start of this checkpoint.
+Status: audit done, two defects fixed, uncommitted, waiting for ChatGPT
+QA. BC-09 is NOT marked closed. BC-10 not started.
+Testing: change-focused. A coverage matrix decided what to run
+(section 3). The edge cases were probed first with a throwaway test
+(deleted).
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+The audit found TWO High defects. Both were reproduced, fixed with
+regression tests, and proven by switching each fix off.
+
+H1 — a drag-move replaced another Pagination's current page.
+- Dragging Pagination A's current page into Pagination B made it B's
+  current page and demoted B's own current page.
+- This broke the approved rule "copying a current page into another
+  Pagination must not replace that Pagination's existing current page".
+  Copy/paste was protected (BC-09.3); drag-move (moveElement) was not.
+- Fix: a current page that leaves its parent stops being current, the
+  same as a pasted copy. It takes the destination's ordinary look, and
+  its old Pagination promotes a new current page, in the same Undo step.
+
+H2 — a BC-09.2 Pagination could be structurally misread.
+- A Pagination saved by BC-09.2 (no role labels) was read positionally
+  (first and last link = Previous and Next). After its Previous was
+  hidden in the Inspector or deleted on the Canvas, the fallback ran
+  again on the CHANGED structure: page 1 became a disabled "Previous"
+  and page 2 the current page. That corrupts a real project.
+- Fix: role labels are always taken from the Pagination BEFORE an edit
+  (labelPaginationRoles). The fallback is therefore only ever applied
+  to the structure it was designed for.
+- Tested on the frozen BC-09.2 fixture, loaded exactly as a real open.
+
+Everything else holds:
+- the component identity;
+- the one-current-page invariant (now including drag-move);
+- current-page and disabled safety in Preview and Export;
+- Preview/Export parity;
+- no Pagination JavaScript;
+- format 3 safety;
+- legacy preservation;
+- responsive wrapping.
+
+Recommendation: CLOSE BC-09 after QA confirms these two fixes (section
+21).
+
+
+2. CHECKPOINT HISTORY
+---------------------
+BC-09.1 (report): investigation. Pagination already existed; found gaps
+  G1-G9 and decision X1 (format 3).
+BC-09.2 (34dd95a):
+  - project format 3: ariaLabel/ariaCurrent/disabled/component;
+  - the 2→3 migration refuses forged files;
+  - first-save protection for format 1 and 2 files;
+  - the new marked, accessible Pagination.
+BC-09.2.1 (f426d5b): disabled controls never run interactions (one
+  shared rule, Preview and export).
+BC-09.3 (0fca3a4):
+  - the Pagination Inspector;
+  - one-current-page normalization;
+  - the current page is inactive;
+  - roles stored in displayName; cut/paste fixed.
+BC-09.4 (eb286ee):
+  - aria-hidden ellipsis (derived);
+  - Inspector explanations;
+  - accessibility-tree checks in 3 engines.
+BC-09.5 (this): final audit; H1 and H2 fixed.
+
+
+3. REQUIREMENTS COVERAGE MATRIX
+-------------------------------
+Columns: requirement | source | existing evidence | new testing? |
+result | remaining risk
+
+1 Static URL navigation | factory, LinkElement, buildExportDocument |
+  09.2 export tests; 09.3/09.4 Chromium export specs | no | PASS | none
+2 Component identity | types/pagination (marker + nav/role labels) |
+  09.2 factory/store tests; 09.3 roles tests | yes: H2 found | PASS
+  after fix | roles depend on displayName staying non-renamable
+3 Accessible landmark | factory ariaLabel, resolveAccessibilityAttributes
+  | 09.2 canvas/export tests; 09.4 a11y tree (3 engines) | no | PASS |
+  none
+4 Project format v3 | projectFile, schema, migrations | 09.2:
+  projectFormatV3 (43), legacy fixtures, migration tests | no (code
+  unchanged) | PASS | none
+5 Protected legacy migration | desktop main-process rule (generic) |
+  09.2 Electron legacy-format-save 8/8 ×2, desktop workflow tests | no
+  (code unchanged) | PASS | none
+6 Three pages default | factory | 09.2/09.3 factory tests | no | PASS |
+  none
+7 Min 1 / max 12 | paginationCommands | 09.3 commands + Inspector tests |
+  no | PASS | none
+8 Dedicated Inspector | InspectorPaginationSection | 09.3 (14) + 09.4
+  (9) | no | PASS | none
+9 Label editing | setPaginationPageLabel, CommitField | 09.3 | no | PASS
+  | Canvas inline editing can blank a label (pre-existing, generic;
+  section 19)
+10 URL editing | setPaginationPageHref + isValidLinkHref + checkExportUrl
+  | 09.3 Inspector unsafe-URL tests; 09.3 Chromium | no | PASS | none
+11 Exactly one current page | normalizePagination(+AfterEdit), store
+  generic actions | 09.3 store tests (delete/cut/paste/duplicate/copy)
+  | yes: edge probes; H1 (drag-move) found | PASS after fix | none
+  known
+12 Current page non-navigable | isNavigableLink | 09.2/09.3/09.4 | no |
+  PASS | none
+13 Current page inactive | canActivateInteractions/getInactiveReason |
+  09.3/09.4 unit + Chromium | yes: after Undo/Redo + save/reopen
+  (lifecycle test) | PASS | none
+14 Disabled inactive | same rule | 09.2.1 (reproduced/fixed), 09.4 | no
+  | PASS | none
+15 Previous/Next default | factory | 09.2/09.3 | no | PASS | none
+16 Optional First/Last | setPaginationControlVisible | 09.3 | no | PASS |
+  none
+17 Ellipsis decorative | derived aria-hidden, rule | 09.4 (3 engines) |
+  no | PASS | read as nothing; visible only
+18 Responsive wrapping | factory Flex Wrap | 09.2 (5 widths), 09.3
+  (12 pages + controls 320/375/1440 + Canvas 375), 09.4 rerun | no |
+  PASS | none
+19 Child selection + CSS | ordinary nodes | 09.2/09.3/09.4 Chromium | no
+  | PASS | none
+20 Atomic Undo/Redo | commitStructuralEdit, withPaginationInvariants |
+  09.3 (all ten actions) | yes: drag-move and lifecycle Undo/Redo | PASS
+  | none
+21 Interaction-reference cleanup | removeInteractionsForRemovedNodes |
+  09.3 (remove page, hide control) | no | PASS | none
+22 Preview/Export parity | shared rules + renderers | 09.4 semantics
+  parity (3 engines), 09.3 both-sides specs | no | PASS | none
+23 No Pagination JS | export behaviours | 09.2/09.3/09.4 (no script.js)
+  | no | PASS | none
+24 Legacy preservation | marker-gated code only | 09.2 frozen byte-exact
+  export; 09.4 rerun | no (no export change) | PASS | none
+
+
+4. IMPLEMENTATION AUDIT
+-----------------------
+Source reviewed:
+- types/pagination.ts, paginationCommands.ts, rules/accessibilityAttributes.ts;
+- the factory;
+- the useEditorStore actions and generic paths;
+- the Canvas Link/Button/Paragraph/Container elements;
+- buildExportDocument and buildExportBehaviors;
+- the Inspector components.
+Identity:
+- the marker is set only by the factory;
+- legacy navs, Navbars and Breadcrumbs carry none (BC-09.2/09.3 tests);
+- it survives save/reopen, duplicate and copy/paste (09.2/09.3 store
+  tests).
+Hidden Previous/Next do not misclassify pages:
+- a new Pagination: proven in 09.3 (the nav-label guard);
+- a BC-09.2 Pagination: was broken (H2), fixed now.
+Structure panel: "Pagination", "First page", "Previous page", ... (09.3
+Chromium).
+
+
+5. INSPECTOR MANAGEMENT AUDIT
+-----------------------------
+Add, remove, limits, set current, labels, URLs, and every show/hide:
+covered by 09.3 (commands 22, store 12, Inspector 14, Chromium 3) and
+unchanged since, except updatePagination (H2 fix). After the fix:
+- the commands, store and Inspector suites were rerun, and pass;
+- the management Chromium spec was rerun, and passes.
+The Inspector reads the document directly (getPaginationParts), so it
+always reflects the actual state. The 09.3 Undo-sync test covers stale
+fields.
+
+
+6. CURRENT-PAGE INVARIANT AUDIT
+-------------------------------
+Probed and covered:
+- remove current → page before is current (09.3);
+- remove first while page 2 is current → page 2 (renumbered "1") stays
+  current (probe);
+- remove last current → previous page (09.3 commands test);
+- cut current → neighbour promoted; paste back → original current again
+  (09.3);
+- paste or copy into another Pagination → ordinary there; its current is
+  kept (09.3);
+- duplicate current → an ordinary copy (09.3);
+- drag-move into another Pagination → was BROKEN (H1); fixed, with a
+  test;
+- reorder inside its own Pagination → stays current (new test);
+- Undo/Redo after a current-page change → restores the state, styling
+  and boundaries (new lifecycle test);
+- save/reopen after a change → identical; the current page keeps its
+  stored destination (new lifecycle test).
+Styling and aria-current stay synchronized: the state look moves with
+aria-current (09.3 tests; 09.5 checks the look on H1).
+The stored destination is preserved while current and renders again
+when ordinary (09.3 commands test; 09.5 lifecycle: the reopened current
+page keeps "/p/4").
+
+
+7. DOCUMENT AND UNDO/REDO INTEGRITY
+-----------------------------------
+- Stable retained ids and unique new ids (09.3).
+- Valid parent/child: ordinary nodes, schema and integrity on every save
+  (the serializer self-check in 09.3/09.5 tests).
+- No dangling references (09.3).
+- Atomic history: the H1 fix stays one entry (tested).
+- Preview mutates neither the document (identity asserted in 09.2.1,
+  09.3 and the 09.5 lifecycle) nor history (09.2.1/09.4 Chromium "Undo
+  stays disabled").
+- No change to shared infrastructure beyond moveElement's Pagination
+  case. Its consumers were rerun (the store suite, useMoveElement).
+
+
+8. PREVIEW/EXPORT PARITY
+------------------------
+- Holds. 09.4 compared the semantic attributes of a managed Pagination
+  in Preview and in the export: identical in Chromium, Firefox and
+  WebKit.
+- The current page, disabled controls and the ellipsis are inactive in
+  both (09.2.1/09.3/09.4).
+- Enabled pages, Previous/Next and First/Last link to the right
+  destinations (09.3/09.4).
+- No script for Pagination (09.2-09.4).
+- The 09.5 fixes don't touch rendering or export, so this was not
+  retested.
+
+
+9. ACCESSIBILITY FINDINGS
+-------------------------
+Confirmed (evidence 09.2/09.4):
+- <nav aria-label="Pagination">;
+- exactly one aria-current="page";
+- disabled links: role="link" aria-disabled="true", no href;
+- named links; the current page is not a link;
+- the ellipsis is aria-hidden and never a link;
+- no aria-controls/aria-expanded on inactive controls;
+- valid nesting.
+Unverified:
+- the WebKit Tab order (Playwright's Windows WebKit doesn't Tab to
+  links: a testing limitation, NOT verified);
+- real screen-reader output;
+- an axe/WCAG audit.
+Deferred: hover/focus CSS editing. No WCAG conformance is claimed.
+
+
+10. SECURITY REVIEW
+-------------------
+- No new URL policy, attribute or script in 09.5.
+- Established: unsafe schemes are refused at the Inspector (Link rule +
+  export policy), the schema and the export.
+- Invalid input keeps the previous value.
+- Current and disabled links never render an href. The stored href is
+  still validated, and a javascript: href refuses the export (09.2).
+- Labels and URLs are escaped by React and the export printer (09.2
+  tests).
+- The H1 fix only removes aria-current from a moved node: it cannot
+  create an active destination.
+- No Critical issue.
+
+
+11. PROJECT FORMAT V3 SAFETY
+----------------------------
+- Migration, validation, future-version refusal and Save As protection
+  are unchanged since BC-09.2 (no edits to those files).
+- BC-09.2 evidence stands: 43 format-3 tests, legacy fixtures,
+  migration-bypass refusal, and Electron first-save protection for
+  format 1 and 2 files.
+- Browser import/export: unchanged (documented in project-format.md).
+- The H2 fix only adds displayName labels (an existing field) on first
+  management. Files stay format 3 and load in the BC-09.2 build.
+
+
+12. LEGACY COMPATIBILITY
+------------------------
+- Unmarked Paginations: every 09.3/09.4/09.5 code path is gated on the
+  marker.
+- The c6a0448 byte-for-byte export (09.2) was re-proven after the last
+  export change (09.4).
+- 09.5 changed no export or legacy path.
+- Generic edits leave them alone (09.3 test).
+- BC-09.2 (marked, unlabelled) Paginations:
+  - previously at risk (H2), now safe;
+  - they are labelled on first management or edit, with no visual or
+    export change.
+
+
+13. RESPONSIVE BEHAVIOR
+-----------------------
+Evidence:
+- 09.2: the default and 12 pages at 320-1440 px;
+- 09.3: 12 pages + First/Last + ellipsis at 320/375/1440 on the export,
+  and the Canvas at 375;
+- 09.4: rerun after the export change.
+No horizontal overflow. 09.5 changed no layout, so this was not rerun.
+
+
+14. ELECTRON ASSESSMENT
+-----------------------
+- BC-09 changed no desktop code. The first-save protection compares
+  versions in the main process (unchanged since BC-05.4, proven for v1/v2
+  → v3 in BC-09.2: 13/13 Electron, legacy-format-save 8/8 twice).
+- Preview and export are the shared renderer and engine.
+- Security hardening is untouched.
+- The 09.3-09.5 changes are renderer-side and platform-neutral.
+- Decision: no Electron run (no uncovered desktop-specific risk).
+
+
+15. EXACT NEW TESTS EXECUTED
+----------------------------
+Edge probe (throwaway, deleted): 5 scenarios. It found H1 and H2.
+New regression tests in src/features/editor/stores/useEditorStore.paginationManagement.test.ts:
+- dragging a current page into another Pagination never replaces its
+  current page (H1);
+- reordering the current page inside its own Pagination keeps it
+  current;
+- a BC-09.2 Pagination (the frozen fixture, loaded) is never misread
+  after a control is hidden (H2);
+- the same through a generic Delete of its unlabelled Previous (H2);
+- lifecycle: manage, Undo/Redo, Preview suppression, save/reopen.
+Fix-sensitivity proof: with each fix switched off, the H1 test failed
+(1 failure), and then the two H2 tests failed (2 failures). With the
+fixes restored, all pass.
+
+Commands and results:
+A. npx vitest run src/features/editor/stores/useEditorStore.paginationManagement.test.ts
+   - first run: 1 failed (test mistake: Preview seeds a hidden target
+     as false, not undefined; the assertion was corrected);
+   - then 16/16; after rewriting the H2 test to use the real fixture,
+     17/17.
+B. Neutralised-fix runs of A: 1 failed / 16, then 2 failed / 17.
+   Restored; the files were confirmed identical (grep).
+C. npx vitest run src/features/editor/stores
+   src/features/editor/commands/paginationCommands.test.ts
+   src/features/editor/commands/documentCommands.test.ts
+   src/features/inspector/components/InspectorPaginationSection.test.tsx
+   src/features/inspector/components/InspectorPaginationChildNote.test.tsx
+   src/features/canvas/hooks
+   → 41 files, 802 passed, 0 failed, 0 skipped.
+D. npx vitest run src/features/editor/hooks/useMoveElement.test.ts → 4
+   passed.
+E. npx playwright test e2e/pagination-management.spec.ts --project=chromium
+   → 3 passed (the user-facing Inspector path after the updatePagination
+   change).
+F. npm run typecheck → clean. npx eslint (3 changed files) → clean.
+   Prettier: all 3 were not Prettier-clean at HEAD; left as is.
+
+
+16. REUSED PRIOR TEST EVIDENCE
+------------------------------
+- BC-09.2:
+  - format 3 / migration / validation (projectFormatV3 43, legacy
+    fixtures);
+  - Electron 13/13 (legacy-format-save 8/8 twice);
+  - Chromium 7/7, Firefox/WebKit 14/14 (foundation);
+  - export a11y.
+- BC-09.2.1: disabled suppression, unit 14 (reproduced) + Chromium 2.
+- BC-09.3:
+  - commands 22, store 12, Inspector 14;
+  - suppression 19;
+  - Chromium 27 (management, foundation, disabled, export-interactions,
+    navigation-links);
+  - responsive.
+- BC-09.4:
+  - accessibility tree / Tab / parity, Chromium 3 + Firefox/WebKit 6;
+  - export/canvas ellipsis 12 + 27;
+  - consumers 822.
+Valid because 09.5 changed only paginationCommands.updatePagination
+(plus the new labelPaginationRoles) and the store's moveElement, and
+those consumers were rerun (section 15).
+
+
+17. TESTS INTENTIONALLY SKIPPED
+-------------------------------
+- Full Vitest, Chromium, Firefox/WebKit and Electron suites: policy;
+  no broad risk.
+- Migration suites: no migration code changed.
+- Export, export-interactions and parity specs: no rendering or export
+  change in 09.5.
+- Responsive: no layout change.
+- Firefox/WebKit: the fixes are engine-independent store logic.
+- Electron: section 14.
+- Production build: no schema, bundle or integration change (pure
+  TypeScript in existing modules; typecheck clean). The 09.3 build
+  stands.
+- BC-08 media: unrelated.
+
+
+18. DEFECT SEVERITY TABLE
+-------------------------
+ID  Sev   Description                                         Status
+H1  High  A drag-move of the current page into another        FIXED
+          Pagination replaced its current page                (test, proven)
+H2  High  A BC-09.2 Pagination was misread positionally       FIXED
+          after a control was hidden or deleted (page 1       (test, proven)
+          became "Previous")
+L1  Low   A current page dragged or pasted OUTSIDE any        Open, cosmetic
+          Pagination keeps its dark look (it is no longer
+          current, has no aria-current, and renders as a
+          normal link)
+L2  Low*  Canvas inline editing can blank any link's text,    Open, pre-
+          including a page label; the Pagination Inspector    existing,
+          refuses blanks (*accessible-name impact, but        generic
+          generic and pre-existing, not a BC-09 regression)
+No Critical defect. No open High or Medium defect.
+
+
+19. KNOWN LIMITATIONS
+---------------------
+- L1 and L2 above.
+- Roles depend on displayName (no rename UI exists; a future one must
+  exclude Pagination controls).
+- A duplicated control (Ctrl+D on Previous) is not managed.
+- Boundary destinations are managed (explained in the Inspector).
+- Hide removes a control; showing it restores the default label
+  (explained in the Inspector).
+- Unverified: WebKit Tab order (a test-tool limitation), screen readers,
+  axe/WCAG.
+- Deferred: hover/focus CSS editing.
+
+
+20. GIT STATUS AND COMMIT HISTORY
+---------------------------------
+Branch main, HEAD eb286ee. Nothing staged or committed.
+ M src/features/editor/commands/paginationCommands.ts   (H2: labelPaginationRoles)
+ M src/features/editor/stores/useEditorStore.ts        (H1: moveElement)
+ M src/features/editor/stores/useEditorStore.paginationManagement.test.ts (+5 tests)
+?? docs/reports/BC-09.5-Pagination-Final-Focused-QA-And-Milestone-Audit.txt
+BC-09 commits: 34dd95a (09.2), f426d5b (09.2.1), 0fca3a4 (09.3),
+eb286ee (09.4). The 09.1 report was committed with 09.2.
+The changelog is gitignored.
+
+
+21. RECOMMENDATION
+------------------
+CLOSE BC-09 once ChatGPT QA approves the two BC-09.5 fixes (H1, H2).
+- Every requirement in the coverage matrix passes.
+- The two High defects found by this audit are fixed and covered by
+  regression tests that are proven to fail without the fixes.
+- No Critical, High or Medium defect remains open. L1 and L2 are
+  cosmetic or pre-existing and don't block closure.
+I have not marked the milestone closed.

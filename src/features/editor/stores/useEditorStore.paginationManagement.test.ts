@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createElementNode } from "@/features/editor/factories/elementFactories";
 import type { EditorElementNode } from "@/features/editor/types/document";
@@ -200,3 +202,116 @@ describe("Pagination management in the store (BC-09.3)", () => {
     expect(nav(legacy.id).displayName).toBe(before.displayName);
   });
 });
+
+/** BC-09.5 — defects found by the final audit, and one full lifecycle. */
+describe("Pagination final audit (BC-09.5)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  it("dragging a current page into another Pagination never replaces that Pagination's current page", () => {
+    const first = insert();
+    const second = insert();
+    store().setPaginationCurrentPage(second, parts(second).pages[2].id);
+    const moved = parts(first).pages[0];
+    const history = store().past.length;
+    store().moveElement(moved.id, parts(second).pages[0].id, "before");
+    expect(currents(second)).toEqual(["3"]);
+    const arrived = findNodeById(store().document, moved.id)!;
+    expect(arrived.ariaCurrent).toBeUndefined();
+    expect(arrived.background).toBeUndefined();
+    // Its old Pagination got a new current page, in the same Undo step.
+    expect(currents(first)).toEqual(["2"]);
+    expect(store().past.length).toBe(history + 1);
+    store().undo();
+    expect(currents(first)).toEqual(["1"]);
+    expect(currents(second)).toEqual(["3"]);
+  });
+
+  it("reordering the current page inside its own Pagination keeps it current", () => {
+    const id = insert();
+    const current = parts(id).pages[0];
+    store().moveElement(current.id, parts(id).pages[2].id, "after");
+    expect(layout(id)).toEqual(["previous", "2", "3", "1*", "next(off)"]);
+  });
+
+  // The frozen BC-09.2 file (format 3, written before role labels existed),
+  // opened as a real load does: no normalization happens on load.
+  function openBc092Fixture(): string {
+    const text = readFileSync(path.join(process.cwd(), "test", "fixtures", "persistence", "project-3-pagination.layoutry"), "utf8");
+    const opened = parseProjectFile(text);
+    if (!opened.ok) throw new Error(opened.error.message);
+    store().replaceDocument(opened.project.document);
+    const pagination = opened.project.document.children![1];
+    expect(pagination.displayName).toBeUndefined();
+    return pagination.id;
+  }
+
+  it("a BC-09.2 Pagination (no role labels) is never misread after a control is hidden", () => {
+    const id = openBc092Fixture();
+    expect(layout(id)).toEqual(["previous(off)", "1*", "2", "3", "next"]);
+    store().setPaginationControlVisible(id, "previous", false);
+    expect(layout(id)).toEqual(["1*", "2", "3", "next"]);
+    store().setPaginationControlVisible(id, "next", false);
+    expect(layout(id)).toEqual(["1*", "2", "3"]);
+  });
+
+  it("the same through a generic Delete of its unlabelled Previous", () => {
+    const id = openBc092Fixture();
+    store().selectOnly(nav(id).children![0].id);
+    store().deleteSelection();
+    expect(layout(id)).toEqual(["1*", "2", "3", "next"]);
+    expect(nav(id).displayName).toBe("Pagination");
+  });
+
+  it("lifecycle: manage, Undo/Redo, Preview suppression, save/reopen — one current page and correct destinations throughout", () => {
+    const id = insert();
+    store().addPaginationPage(id);
+    for (const role of ["first", "last", "ellipsis"] as const) store().setPaginationControlVisible(id, role, true);
+    parts(id).pages.forEach((page, index) => store().setPaginationPageHref(id, page.id, `/p/${index + 1}`));
+    store().setPaginationCurrentPage(id, parts(id).pages[1].id);
+    store().insertElement("page-root", { id: "panel", tag: "p", text: "Panel", initialPreviewVisibility: "hidden" });
+    // Every page toggles the panel.
+    const pageIds = parts(id).pages.map((page) => page.id);
+    for (const pageId of pageIds) {
+      const page = findNodeById(store().document, pageId)!;
+      useEditorStore.setState({ document: replaceNode(store().document, { ...page, interactions: [{ id: `i-${pageId}`, trigger: "click", action: "toggle", targetId: "panel" }] }) });
+    }
+    // Undo the current-page change, then redo it.
+    store().setPaginationCurrentPage(id, parts(id).pages[3].id);
+    store().undo();
+    expect(currents(id)).toEqual(["2"]);
+    store().redo();
+    expect(currents(id)).toEqual(["4"]);
+    expect(parts(id).controls.previous?.href).toBe("/p/3");
+    expect(parts(id).controls.next?.disabled).toBe(true);
+    expect(parts(id).controls.last?.disabled).toBe(true);
+    expect(parts(id).controls.first?.href).toBe("/p/1");
+
+    // Preview: the current page (after Redo) runs nothing; page 2, current before, does.
+    store().enterPreview();
+    const document = store().document;
+    const hiddenAtStart = store().runtimeVisibility.panel;
+    store().executeInteractionsForNode(parts(id).pages[3].id, "click");
+    expect(store().runtimeVisibility.panel).toBe(hiddenAtStart);
+    expect(hiddenAtStart).toBe(false);
+    store().executeInteractionsForNode(parts(id).pages[1].id, "click");
+    expect(store().runtimeVisibility.panel).toBe(true);
+    expect(store().document).toBe(document);
+    store().exitPreview();
+
+    // Save and reopen: identical, still one current page with its stored destination.
+    const text = serializeProject({ metadata: createProjectMetadata({ id: "p", now: new Date(0) }), document: store().document });
+    const reopened = parseProjectFile(text);
+    if (!reopened.ok) throw new Error(reopened.error.message);
+    const reopenedNav = findNodeById(reopened.project.document, id)!;
+    expect(reopenedNav).toEqual(nav(id));
+    const reopenedPages = getPaginationParts(reopenedNav).pages;
+    expect(reopenedPages.filter((page) => page.ariaCurrent === "page").map((page) => page.href)).toEqual(["/p/4"]);
+  });
+});
+
+function replaceNode(root: EditorElementNode, node: EditorElementNode): EditorElementNode {
+  if (root.id === node.id) return node;
+  return root.children ? { ...root, children: root.children.map((child) => replaceNode(child, node)) } : root;
+}

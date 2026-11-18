@@ -822,6 +822,19 @@ function withPaginationInvariants(
   return normalized === after ? after : removeInteractionsForRemovedNodes(after, normalized);
 }
 
+/** The document with `nodeId` no longer marked aria-current (BC-09.5, a current page moved out of its Pagination). */
+function setElementAriaCurrentRemoved(root: EditorElementNode, nodeId: string): EditorElementNode {
+  if (root.id === nodeId) return withoutCopiedCurrentState(root);
+  if (!root.children) return root;
+  let changed = false;
+  const children = root.children.map((child) => {
+    const next = setElementAriaCurrentRemoved(child, nodeId);
+    if (next !== child) changed = true;
+    return next;
+  });
+  return changed ? { ...root, children } : root;
+}
+
 function isMergingHistory(state: Pick<EditorState, "transactionSnapshot" | "historyMergeSnapshot">): boolean {
   return state.transactionSnapshot !== null && state.transactionSnapshot === state.historyMergeSnapshot;
 }
@@ -1031,8 +1044,16 @@ export const useEditorStore = create<EditorState>()((set) => ({
   // spurious no-diff history entry either.
   moveElement: (nodeId, targetId, zone) =>
     set((state) => {
-      const document = withPaginationInvariants(state.document, moveNode(state.document, nodeId, targetId, zone));
-      if (document === state.document) return {};
+      const moved = moveNode(state.document, nodeId, targetId, zone);
+      if (moved === state.document) return {};
+      // BC-09.5: a current page dragged out of its Pagination is no longer
+      // its current page (exactly like a pasted copy), so it can never
+      // replace another Pagination's current page; it takes that
+      // Pagination's ordinary look. Its old Pagination promotes a new one.
+      const leftItsParent = findNodeById(state.document, nodeId)?.ariaCurrent === "page" && findParentId(state.document, nodeId) !== findParentId(moved, nodeId);
+      const document = leftItsParent
+        ? withPaginationInvariants(state.document, setElementAriaCurrentRemoved(moved, nodeId), { ordinaryLookIds: new Set([nodeId]) })
+        : withPaginationInvariants(state.document, moved);
       return { ...pushHistory(state), document, selection: selectionFromSingle(nodeId) };
     }),
 
