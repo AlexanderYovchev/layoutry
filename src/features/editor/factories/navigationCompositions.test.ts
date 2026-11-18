@@ -6,7 +6,13 @@ import {
   createNavbarWithCtaNode,
   createPaginationNode,
   createSidebarNavigationNode,
+  PAGINATION_ACCESSIBLE_NAME,
 } from "./navigationCompositions";
+import { isNavigableLink } from "@/features/editor/rules/accessibilityAttributes";
+import type { EditorElementNode } from "@/features/editor/types/document";
+import { getCurrentPageLinks, isPaginationNode } from "@/features/editor/types/pagination";
+import { parseProjectFile } from "@/features/project/utils/parseProjectFile";
+import { serializeProject } from "@/features/project/utils/serializeProject";
 
 /**
  * Checkpoint 1.15.6.3 — Components -> Navigation. Every factory here must
@@ -141,24 +147,68 @@ describe("Breadcrumbs (Checkpoint 1.15.6.3, Part D)", () => {
   });
 });
 
-describe("Pagination (Checkpoint 1.15.6.3, Part E)", () => {
-  it("is nav > Button('Previous'), Link('1'), Link('2'), Link('3'), Button('Next')", () => {
+describe("Pagination (Checkpoint 1.15.6.3; new insertions rebuilt in BC-09.2)", () => {
+  it("is a marked, labelled nav > Link('Previous'), Link('1'), Link('2'), Link('3'), Link('Next')", () => {
     const node = createPaginationNode();
     expect(node.tag).toBe("nav");
-    const tags = node.children?.map((c) => c.tag) ?? [];
-    expect(tags).toEqual(["button", "a", "a", "a", "button"]);
+    expect(node.component).toBe("pagination");
+    expect(isPaginationNode(node)).toBe(true);
+    expect(node.ariaLabel).toBe(PAGINATION_ACCESSIBLE_NAME);
+    expect(node.children?.map((c) => c.tag)).toEqual(["a", "a", "a", "a", "a"]);
     expect(node.children?.map((c) => c.text)).toEqual(["Previous", "1", "2", "3", "Next"]);
+    // Only the root carries the marker.
+    expect(node.children?.some((c) => c.component !== undefined)).toBe(false);
   });
 
-  it("represents the active page via ordinary authored background/typography, never a stored activePage/currentPage field", () => {
+  it("marks exactly one current page, page 1, by aria-current and a dark background (never colour alone)", () => {
+    const node = createPaginationNode();
+    const current = getCurrentPageLinks(node);
+    expect(current.map((c) => c.text)).toEqual(["1"]);
+    expect(current[0].ariaCurrent).toBe("page");
+    expect(current[0].background?.color).toBe("#18181b");
+    expect(isNavigableLink(current[0])).toBe(false);
+    for (const page of node.children!.slice(2, 4)) {
+      expect(page.ariaCurrent).toBeUndefined();
+      expect(page.background).toBeUndefined();
+      expect(isNavigableLink(page)).toBe(true);
+    }
+  });
+
+  it("disables Previous (page 1 is current) and leaves Next enabled; both stay visible", () => {
+    const [previous, , , , next] = createPaginationNode().children!;
+    expect(previous.disabled).toBe(true);
+    expect(isNavigableLink(previous)).toBe(false);
+    expect(previous.display?.display).toBeUndefined();
+    expect(previous.typography?.color).toBe("#a1a1aa");
+    expect(next.disabled).toBeUndefined();
+    expect(isNavigableLink(next)).toBe(true);
+    // The authored href stays stored on every control.
+    expect(createPaginationNode().children!.every((c) => c.href === "#")).toBe(true);
+  });
+
+  it("wraps by default, centred, so many pages never push a narrow page sideways", () => {
+    const flex = createPaginationNode().flowLayout?.flex;
+    expect(flex?.wrap).toBe("wrap");
+    expect(flex?.direction).toBe("row");
+    expect(flex?.justifyContent).toBe("center");
+  });
+
+  it("keeps no page state anywhere: no activePage/currentPage field on the nav", () => {
     const node = createPaginationNode() as unknown as Record<string, unknown>;
     expect(node.activePage).toBeUndefined();
     expect(node.currentPage).toBeUndefined();
     expect(node.paginationState).toBeUndefined();
+  });
 
-    const [, page1, page2] = createPaginationNode().children ?? [];
-    expect(page1.background?.color).toBeDefined();
-    expect(page2.background).toBeUndefined();
+  it("produces a document every editor rule accepts (schema and integrity)", () => {
+    const document: EditorElementNode = { id: "page-root", tag: "page", children: [createPaginationNode()] };
+    const result = parseProjectFile(
+      serializeProject({
+        metadata: { id: "p", name: "P", createdAt: "2026-11-17T00:00:00.000Z", updatedAt: "2026-11-17T00:00:00.000Z" },
+        document,
+      }),
+    );
+    expect(result.ok).toBe(true);
   });
 
   it("every node gets its own fresh id, and two separate compositions never share one", () => {
@@ -166,6 +216,14 @@ describe("Pagination (Checkpoint 1.15.6.3, Part E)", () => {
     expect(new Set(idsA).size).toBe(idsA.length);
     const idsB = collectIds(createPaginationNode());
     expect(idsA.some((id) => idsB.includes(id))).toBe(false);
+  });
+
+  it("Navbars and Breadcrumbs are never marked as Pagination", () => {
+    for (const build of [createBasicNavbarNode, createNavbarWithCtaNode, createCenteredNavbarNode, createBreadcrumbsNode, createSidebarNavigationNode]) {
+      const node = build();
+      expect(node.component).toBeUndefined();
+      expect(isPaginationNode(node)).toBe(false);
+    }
   });
 });
 

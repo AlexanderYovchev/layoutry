@@ -129,7 +129,7 @@ describe("embedded images through persistence and export (BC-07.2)", () => {
     expect(Buffer.from(GIF_DATA_URL.split(",")[1], "base64").equals(fixture("images", "upload-20x10-animated.gif"))).toBe(true);
   });
 
-  it("a format 1 (PROJECT-1.1) file takes an uploaded image and alt text and saves as format 2", () => {
+  it("a format 1 (PROJECT-1.1) file takes an uploaded image and alt text and saves as the current format (3)", () => {
     const opened = parseProjectFile(fixture("persistence", "project-1.1-every-element.layoutry").toString("utf8"));
     if (!opened.ok) throw new Error(opened.error.message);
     store().replaceDocument(opened.project.document);
@@ -138,7 +138,7 @@ describe("embedded images through persistence and export (BC-07.2)", () => {
     store().setElementSrc(image.id, PNG_DATA_URL);
     store().setElementAltText(image.id, "Legacy image");
     const text = serializeProject({ metadata: opened.project.metadata, document: store().document });
-    expect(JSON.parse(text).formatVersion).toBe(2);
+    expect(JSON.parse(text).formatVersion).toBe(3);
     const reopened = parseProjectFile(text);
     expect(reopened.ok && findNodeById(reopened.project.document, image.id)).toMatchObject({ src: PNG_DATA_URL, displayName: "Legacy image" });
   });

@@ -66,9 +66,51 @@ function migrateSpacingZerosToUnset(
   return { ...file, formatVersion: 2 };
 }
 
+/** The element fields format 3 added (BC-09.2). No format 1 or 2 file can contain them. */
+export const FORMAT_3_ELEMENT_FIELDS = [
+  "ariaLabel",
+  "ariaCurrent",
+  "disabled",
+  "component",
+] as const;
+
+/**
+ * Format 2 → 3 (BC-09.2): accessibility fields and component markers.
+ *
+ * Format 3 only ADDS optional element fields, so every format 2 document
+ * is already a valid format 3 document with the same meaning: nothing is
+ * rewritten, no id changes, and existing Paginations are NOT turned into
+ * the new component (they have no marker and keep their buttons).
+ *
+ * The one check: an older file must not already contain a format 3
+ * field. A format 2 build could never have written one, so such a file is
+ * hand-edited or forged, and accepting it would let a file claim an old
+ * version to skip the first-save upgrade prompt while carrying new data.
+ * It throws, which fails the load with `migration-failed` and leaves the
+ * file untouched. Iterative, like the 1 → 2 step.
+ */
+function migrateToAccessibilityFields(
+  file: Record<string, unknown>,
+): Record<string, unknown> {
+  const pending: unknown[] = [file.document];
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (!isPlainObject(node)) continue;
+    for (const field of FORMAT_3_ELEMENT_FIELDS) {
+      if (Object.hasOwn(node, field))
+        throw new Error(
+          `the file claims an older format but contains "${field}", which only format 3 has`,
+        );
+    }
+    if (Array.isArray(node.children)) pending.push(...node.children);
+  }
+  return { ...file, formatVersion: 3 };
+}
+
 /** Every migration this build knows, oldest first. */
 export const PROJECT_FORMAT_MIGRATIONS: readonly FormatMigration[] = [
   { from: 1, migrate: migrateSpacingZerosToUnset },
+  { from: 2, migrate: migrateToAccessibilityFields },
 ];
 
 /** The oldest format this build still opens. */

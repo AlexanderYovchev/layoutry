@@ -284,6 +284,16 @@ editor schema. Either failure refuses the export with no files. After that:
   `on*` handlers, a strict name syntax, and `data-*`/`aria-*` allowed.
   Authored ids with whitespace are dropped. Duplicate ids are kept with a
   warning. SVG paint must be `none` or a valid color.
+- **Authored accessibility fields (BC-09.2, format 3).** `ariaLabel`,
+  `ariaCurrent` and `disabled` are exported by the same
+  `resolveAccessibilityAttributes` (`editor/rules/accessibilityAttributes.ts`)
+  that the Preview uses, so both write the same attributes. A link that is
+  disabled or the current page (`aria-current="page"`) is exported with
+  no `href` at all, so it can't navigate even without JavaScript; a
+  disabled link also gets `role="link" aria-disabled="true"`, a disabled
+  button the native `disabled`. Values are escaped by the printer like
+  any attribute. None of this needs a script: a Pagination exports as
+  plain HTML.
 
 ## Diagnostics
 

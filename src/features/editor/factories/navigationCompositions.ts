@@ -4,8 +4,9 @@
  * established for Buttons: every factory here returns an ordinary tree of
  * existing primitives (nav/a/button/p) with concrete starter style FIELDS
  * authored directly — no `navigationVariant` flag, no proprietary
- * `navbarComponent`/`breadcrumbComponent`/`paginationComponent` tag, no new
- * EditorElementNode field of any kind. `nav` is already a genuine,
+ * `navbarComponent`/`breadcrumbComponent`/`paginationComponent` tag. The one
+ * exception (BC-09.2, format 3) is Pagination's `component` marker and
+ * generic accessibility fields; see createPaginationNode. `nav` is already a genuine,
  * unconstrained container (see insertionRules.ts's CONTAINER_TAGS — it is
  * NOT in ALLOWED_CHILD_TAGS, so it accepts any non-constrained child, which
  * `a`/`button`/`p` all are), so every composition below needed zero new
@@ -161,14 +162,41 @@ export function createBreadcrumbsNode(): EditorElementNode {
   };
 }
 
+/**
+ * Pagination (Checkpoint 1.15.6.3; rebuilt for NEW insertions in BC-09.2,
+ * project format 3). Static, URL-based navigation: every control is an
+ * ordinary, editable Link, and nothing switches content or keeps a page
+ * state. Projects made before BC-09.2 keep their own Pagination exactly
+ * as it was (a nav with Previous/Next Buttons and no marker): nothing
+ * converts it.
+ *
+ *   nav  component "pagination", aria-label "Pagination", Flex row, Wrap
+ *     a "Previous"  disabled (page 1 has no previous page)
+ *     a "1"         aria-current="page", the dark current-page style
+ *     a "2", a "3"  ordinary page links
+ *     a "Next"
+ *
+ * - The current page and the disabled Previous render without their href
+ *   (rules/accessibilityAttributes.ts), so neither navigates, with no
+ *   JavaScript. Their authored href ("#") stays stored.
+ * - The current page is shown by aria-current and by a dark background,
+ *   never by colour alone.
+ * - Wrap is on so many pages never push a narrow page sideways (BC-09.1
+ *   G9); a short Pagination still sits on one centred row.
+ * - First/Last and an ellipsis are not part of the default (they are
+ *   added by BC-09.3's management).
+ */
 const PAGINATION_FLEX: FlexContainerSettings = {
   direction: "row",
-  wrap: "nowrap",
+  wrap: "wrap",
   justifyContent: "center",
   alignItems: "center",
   rowGap: 8,
   columnGap: 8,
 };
+
+/** The nav's accessible name, so it is told apart from a page's other navs. */
+export const PAGINATION_ACCESSIBLE_NAME = "Pagination";
 
 const PAGINATION_CONTROL_RADIUS: BorderRadiusSettings = {
   topLeft: { value: 6, unit: "px" },
@@ -179,72 +207,70 @@ const PAGINATION_CONTROL_RADIUS: BorderRadiusSettings = {
 const PAGINATION_CONTROL_SPACING: ElementSpacing = {
   padding: { top: 6, right: 12, bottom: 6, left: 12 },
 };
-const PAGINATION_BORDER: BorderSettings = {
-  top: { width: { value: 1, unit: "px" }, style: "solid", color: "#d4d4d8" },
-  right: { width: { value: 1, unit: "px" }, style: "solid", color: "#d4d4d8" },
-  bottom: { width: { value: 1, unit: "px" }, style: "solid", color: "#d4d4d8" },
-  left: { width: { value: 1, unit: "px" }, style: "solid", color: "#d4d4d8" },
-};
+function paginationBorder(color: string): BorderSettings {
+  const side = { width: { value: 1, unit: "px" as const }, style: "solid" as const, color };
+  return { top: side, right: side, bottom: side, left: side };
+}
 const PAGE_LINK_TYPOGRAPHY: TypographySettings = { color: "#3f3f46" };
-const ACTIVE_PAGE_TYPOGRAPHY: TypographySettings = { color: "#ffffff" };
-const ACTIVE_PAGE_BACKGROUND: BackgroundSettings = { color: "#18181b" };
+const CURRENT_PAGE_TYPOGRAPHY: TypographySettings = { color: "#ffffff" };
+const CURRENT_PAGE_BACKGROUND: BackgroundSettings = { color: "#18181b" };
+/** Previous/Next keep the look the old Buttons had: small medium text, no underline, a light border. */
+const STEP_LINK_TYPOGRAPHY: TypographySettings = {
+  color: "#3f3f46",
+  fontSize: { value: 14, unit: "px" },
+  fontWeight: 500,
+  lineHeight: { value: 20, unit: "px" },
+  textDecorationLine: "none",
+};
+/** A disabled step: muted text and border, and a not-allowed cursor, besides its disabled semantics. */
+const DISABLED_STEP_TYPOGRAPHY: TypographySettings = { ...STEP_LINK_TYPOGRAPHY, color: "#a1a1aa" };
 
-/**
- * A numbered page Link (Checkpoint 1.15.6.3, section 20-22). Uses Link, not
- * Button (section 78): a real paginated resource plausibly gives each page
- * its own destination (e.g. `?page=2`), which is exactly what `href`
- * represents — a genuine navigation destination, unlike Previous/Next
- * below. The active page is represented purely through authored background/
- * typography fields on that one node — no `activePage`/`currentPage` state
- * anywhere (section 22's explicit prohibition).
- */
-function pageLink(text: string, active: boolean): EditorElementNode {
+/** A numbered page Link. Its href is the page's own destination (e.g. `?page=2`); "#" until the author sets one. */
+function pageLink(text: string, current: boolean): EditorElementNode {
   return {
     id: generateNodeId("a"),
     tag: "a",
     text,
     href: DEFAULT_LINK_HREF,
-    typography: active ? ACTIVE_PAGE_TYPOGRAPHY : PAGE_LINK_TYPOGRAPHY,
-    background: active ? ACTIVE_PAGE_BACKGROUND : undefined,
+    typography: current ? CURRENT_PAGE_TYPOGRAPHY : PAGE_LINK_TYPOGRAPHY,
+    background: current ? CURRENT_PAGE_BACKGROUND : undefined,
     borderRadius: PAGINATION_CONTROL_RADIUS,
     spacing: PAGINATION_CONTROL_SPACING,
+    ...(current ? { ariaCurrent: "page" as const, display: { cursor: "default" as const } } : {}),
   };
 }
 
-/**
- * Previous/Next (Checkpoint 1.15.6.3, section 78): a Button, not a Link —
- * neither has a real navigation destination of its own in this visual-only,
- * runtime-deferred scope (section 21: no current-page state, no click
- * handlers, no routing); a Button is the semantically honest choice for "an
- * action that would change what's shown," which is what Previous/Next
- * actually represent even though nothing here wires up that behavior yet.
- */
-function paginationControlButton(text: string): EditorElementNode {
+/** Previous or Next: a real Link to the neighbouring page, or a disabled one at a boundary. */
+function stepLink(text: string, disabled: boolean): EditorElementNode {
   return {
-    id: generateNodeId("button"),
-    tag: "button",
+    id: generateNodeId("a"),
+    tag: "a",
     text,
+    href: DEFAULT_LINK_HREF,
+    typography: disabled ? DISABLED_STEP_TYPOGRAPHY : STEP_LINK_TYPOGRAPHY,
     background: { color: "transparent" },
-    typography: PAGE_LINK_TYPOGRAPHY,
-    border: PAGINATION_BORDER,
+    border: paginationBorder(disabled ? "#e4e4e7" : "#d4d4d8"),
     borderRadius: PAGINATION_CONTROL_RADIUS,
     spacing: PAGINATION_CONTROL_SPACING,
+    ...(disabled ? { disabled: true as const, display: { cursor: "not-allowed" as const } } : {}),
   };
 }
 
-/** Nav > Button("Previous"), Link("1" active), Link("2"), Link("3"), Button("Next") (Checkpoint 1.15.6.3, Part E). No runtime pagination state anywhere on the document model — see pageLink's own doc comment. */
+/** Nav > Link("Previous", disabled), Link("1", current), Link("2"), Link("3"), Link("Next"). See the comment above PAGINATION_FLEX. */
 export function createPaginationNode(): EditorElementNode {
   return {
     id: generateNodeId("nav"),
     tag: "nav",
+    component: "pagination",
+    ariaLabel: PAGINATION_ACCESSIBLE_NAME,
     flowLayout: { display: "flex", flex: PAGINATION_FLEX },
     spacing: {},
     children: [
-      paginationControlButton("Previous"),
+      stepLink("Previous", true),
       pageLink("1", true),
       pageLink("2", false),
       pageLink("3", false),
-      paginationControlButton("Next"),
+      stepLink("Next", false),
     ],
   };
 }

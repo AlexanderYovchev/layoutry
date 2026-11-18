@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { isNavigableLink, resolveAccessibilityAttributes } from "@/features/editor/rules/accessibilityAttributes";
 import {
   DOCUMENT_DEFAULT_STYLE_IDS,
   resolveAudioElementStyle,
@@ -230,6 +231,8 @@ function identity(state: BuildState, node: EditorElementNode): { attributes: Exp
     }
     classNames.push(token);
   }
+  // BC-09.2: generic accessibility fields, exactly as the Preview renders them.
+  for (const [name, value] of resolveAccessibilityAttributes(node, { nativeDisabled: true })) attributes.push({ name, value });
   return { attributes, classNames };
 }
 
@@ -402,7 +405,8 @@ function buildElement(state: BuildState, node: EditorElementNode, styleKey: stri
   if (TEXT_TAGS.has(tag)) {
     const own = identity(state, node);
     const extra: ExportAttribute[] = [];
-    if (tag === "a") extra.push({ name: "href", value: checkedUrl(state, node.id, "href", getLinkHref(node), "link") ?? "#" });
+    // A disabled or current-page link has no href at all (BC-09.2), so it can't navigate without JavaScript.
+    if (tag === "a" && isNavigableLink(node)) extra.push({ name: "href", value: checkedUrl(state, node.id, "href", getLinkHref(node), "link") ?? "#" });
     if (tag === "button") extra.push({ name: "type", value: "button" });
     ignoreChildren(state, node);
     return makeElement(state, node, tag, styleKey, resolveTextElementStyle(node, context), [...own.attributes, ...extra], own.classNames, text(state, node, node.text));

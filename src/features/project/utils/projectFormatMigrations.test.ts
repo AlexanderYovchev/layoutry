@@ -33,9 +33,9 @@ const chain = {
 
 describe("migrateProjectFile", () => {
   it("passes a current-format file through untouched", () => {
-    const file = { format: "layoutry-project", formatVersion: 2, x: 1 };
-    expect(CURRENT_PROJECT_FORMAT_VERSION).toBe(2);
-    expect(PROJECT_FORMAT_MIGRATIONS.map((step) => step.from)).toEqual([1]);
+    const file = { format: "layoutry-project", formatVersion: 3, x: 1 };
+    expect(CURRENT_PROJECT_FORMAT_VERSION).toBe(3);
+    expect(PROJECT_FORMAT_MIGRATIONS.map((step) => step.from)).toEqual([1, 2]);
     expect(migrateProjectFile(file)).toEqual({ ok: true, value: file });
   });
 
@@ -153,8 +153,13 @@ describe("format 1 → 2: spacing zeros become unset (BC-05.3)", () => {
       document,
     };
   }
+  // Only the 1 → 2 step: the chain stops at format 2 (BC-09.2 added 2 → 3).
   function migrated(document: Record<string, unknown>) {
-    const result = migrateProjectFile(v1(document));
+    const result = migrateProjectFile(v1(document), {
+      currentVersion: 2,
+      oldestVersion: 1,
+      migrations: PROJECT_FORMAT_MIGRATIONS,
+    });
     if (!result.ok) throw new Error(result.error.message);
     return result.value as {
       formatVersion: number;

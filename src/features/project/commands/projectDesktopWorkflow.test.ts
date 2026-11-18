@@ -285,113 +285,115 @@ describe("closing the desktop window", () => {
   });
 });
 
-describe("first save of a format 1 file (BC-05.4)", () => {
-  // Bytes a PROJECT-1.3 build wrote (format 1), never regenerated.
-  const LEGACY = readFileSync(
-    path.join(
-      process.cwd(),
-      "test",
-      "fixtures",
-      "persistence",
-      "native-site-original-1.3.layoutry",
-    ),
-    "utf8",
-  );
-  const formatOf = (text: string | undefined) =>
-    text === undefined
-      ? null
-      : (JSON.parse(text) as { formatVersion: number }).formatVersion;
+// BC-05.4, extended to format 3 by BC-09.2: the same protection for a
+// format 1 original (bytes a PROJECT-1.3 build wrote) and a format 2
+// original (bytes the BC-08.5 build wrote). Fixtures are never regenerated.
+describe.each([
+  [1, "native-site-original-1.3.layoutry"],
+  [2, "project-2-legacy-pagination.layoutry"],
+] as const)(
+  "first save of a format %i file (BC-05.4, BC-09.2)",
+  (legacyVersion, fixtureName) => {
+    const LEGACY = readFileSync(
+      path.join(process.cwd(), "test", "fixtures", "persistence", fixtureName),
+      "utf8",
+    );
+    const formatOf = (text: string | undefined) =>
+      text === undefined
+        ? null
+        : (JSON.parse(text) as { formatVersion: number }).formatVersion;
 
-  async function openLegacy() {
-    const harness = setup();
-    harness.desktop.disk.set("Site.layoutry", LEGACY);
-    harness.desktop.script.open = "Site.layoutry";
-    expect(await harness.workflow.openFile()).toBe(true);
-    edit();
-    return harness;
-  }
+    async function openLegacy() {
+      const harness = setup();
+      harness.desktop.disk.set("Site.layoutry", LEGACY);
+      harness.desktop.script.open = "Site.layoutry";
+      expect(await harness.workflow.openFile()).toBe(true);
+      edit();
+      return harness;
+    }
 
-  it("Save asks first and writes nothing", async () => {
-    const { desktop, workflow } = await openLegacy();
-    expect(await workflow.save()).toBe(false);
-    expect(ui().dialog).toEqual({
-      kind: "older-format",
-      file: { fileName: "Site.layoutry", formatVersion: 1 },
+    it("Save asks first and writes nothing", async () => {
+      const { desktop, workflow } = await openLegacy();
+      expect(await workflow.save()).toBe(false);
+      expect(ui().dialog).toEqual({
+        kind: "older-format",
+        file: { fileName: "Site.layoutry", formatVersion: legacyVersion },
+      });
+      expect(desktop.disk.get("Site.layoutry")).toBe(LEGACY);
+      expect(workflow.hasUnsavedChanges()).toBe(true);
     });
-    expect(desktop.disk.get("Site.layoutry")).toBe(LEGACY);
-    expect(workflow.hasUnsavedChanges()).toBe(true);
-  });
 
-  it("Save As keeps the original byte-identical and saves a format 2 copy", async () => {
-    const { desktop, workflow } = await openLegacy();
-    await workflow.save();
-    desktop.script.saveAs = "Site (new).layoutry";
-    expect(await workflow.resolveOlderFormat("save-as")).toBe(true);
-    expect(desktop.disk.get("Site.layoutry")).toBe(LEGACY);
-    expect(formatOf(desktop.disk.get("Site (new).layoutry"))).toBe(2);
-    expect(session().location).toMatchObject({
-      kind: "file",
-      fileName: "Site (new).layoutry",
+    it("Save As keeps the original byte-identical and saves a format 3 copy", async () => {
+      const { desktop, workflow } = await openLegacy();
+      await workflow.save();
+      desktop.script.saveAs = "Site (new).layoutry";
+      expect(await workflow.resolveOlderFormat("save-as")).toBe(true);
+      expect(desktop.disk.get("Site.layoutry")).toBe(LEGACY);
+      expect(formatOf(desktop.disk.get("Site (new).layoutry"))).toBe(3);
+      expect(session().location).toMatchObject({
+        kind: "file",
+        fileName: "Site (new).layoutry",
+      });
+      expect(workflow.hasUnsavedChanges()).toBe(false);
     });
-    expect(workflow.hasUnsavedChanges()).toBe(false);
-  });
 
-  it("a cancelled Save As dialog writes nothing and keeps the work unsaved", async () => {
-    const { desktop, workflow } = await openLegacy();
-    await workflow.save();
-    desktop.script.saveAs = null;
-    expect(await workflow.resolveOlderFormat("save-as")).toBe(false);
-    expect(desktop.disk.get("Site.layoutry")).toBe(LEGACY);
-    expect(desktop.disk.size).toBe(1);
-    expect(ui().dialog).toBeNull();
-    expect(workflow.hasUnsavedChanges()).toBe(true);
-  });
+    it("a cancelled Save As dialog writes nothing and keeps the work unsaved", async () => {
+      const { desktop, workflow } = await openLegacy();
+      await workflow.save();
+      desktop.script.saveAs = null;
+      expect(await workflow.resolveOlderFormat("save-as")).toBe(false);
+      expect(desktop.disk.get("Site.layoutry")).toBe(LEGACY);
+      expect(desktop.disk.size).toBe(1);
+      expect(ui().dialog).toBeNull();
+      expect(workflow.hasUnsavedChanges()).toBe(true);
+    });
 
-  it("Overwrite Original replaces the file only on that explicit choice, then never asks again", async () => {
-    const { desktop, workflow } = await openLegacy();
-    await workflow.save();
-    expect(await workflow.resolveOlderFormat("overwrite")).toBe(true);
-    expect(formatOf(desktop.disk.get("Site.layoutry"))).toBe(2);
-    edit();
-    expect(await workflow.save()).toBe(true);
-    expect(ui().dialog).toBeNull();
-  });
+    it("Overwrite Original replaces the file only on that explicit choice, then never asks again", async () => {
+      const { desktop, workflow } = await openLegacy();
+      await workflow.save();
+      expect(await workflow.resolveOlderFormat("overwrite")).toBe(true);
+      expect(formatOf(desktop.disk.get("Site.layoutry"))).toBe(3);
+      edit();
+      expect(await workflow.save()).toBe(true);
+      expect(ui().dialog).toBeNull();
+    });
 
-  it("Cancel leaves the file and the work as they were; the next Save asks again", async () => {
-    const { desktop, workflow } = await openLegacy();
-    await workflow.save();
-    ui().closeDialog();
-    expect(desktop.disk.get("Site.layoutry")).toBe(LEGACY);
-    expect(workflow.hasUnsavedChanges()).toBe(true);
-    expect(await workflow.save()).toBe(false);
-    expect(ui().dialog?.kind).toBe("older-format");
-  });
+    it("Cancel leaves the file and the work as they were; the next Save asks again", async () => {
+      const { desktop, workflow } = await openLegacy();
+      await workflow.save();
+      ui().closeDialog();
+      expect(desktop.disk.get("Site.layoutry")).toBe(LEGACY);
+      expect(workflow.hasUnsavedChanges()).toBe(true);
+      expect(await workflow.save()).toBe(false);
+      expect(ui().dialog?.kind).toBe("older-format");
+    });
 
-  it("a failed overwrite reports the error, keeps the original and the unsaved work", async () => {
-    const { desktop, workflow } = await openLegacy();
-    await workflow.save();
-    desktop.script.failWrite = "disk-full";
-    expect(await workflow.resolveOlderFormat("overwrite")).toBe(false);
-    expect(ui().dialog?.kind).toBe("error");
-    expect(desktop.disk.get("Site.layoutry")).toBe(LEGACY);
-    expect(workflow.hasUnsavedChanges()).toBe(true);
-  });
+    it("a failed overwrite reports the error, keeps the original and the unsaved work", async () => {
+      const { desktop, workflow } = await openLegacy();
+      await workflow.save();
+      desktop.script.failWrite = "disk-full";
+      expect(await workflow.resolveOlderFormat("overwrite")).toBe(false);
+      expect(ui().dialog?.kind).toBe("error");
+      expect(desktop.disk.get("Site.layoutry")).toBe(LEGACY);
+      expect(workflow.hasUnsavedChanges()).toBe(true);
+    });
 
-  it("closing with unsaved work: Save asks about the format and keeps the window open", async () => {
-    const { desktop, workflow } = await openLegacy();
-    await workflow.requestClose();
-    await workflow.resolveDiscard("save");
-    expect(ui().dialog?.kind).toBe("older-format");
-    expect(desktop.closeResponses).toEqual([false]);
-    expect(desktop.disk.get("Site.layoutry")).toBe(LEGACY);
-  });
+    it("closing with unsaved work: Save asks about the format and keeps the window open", async () => {
+      const { desktop, workflow } = await openLegacy();
+      await workflow.requestClose();
+      await workflow.resolveDiscard("save");
+      expect(ui().dialog?.kind).toBe("older-format");
+      expect(desktop.closeResponses).toEqual([false]);
+      expect(desktop.disk.get("Site.layoutry")).toBe(LEGACY);
+    });
 
-  it("a format 2 file saves in place without asking", async () => {
-    const { desktop, workflow } = setup();
-    desktop.script.saveAs = "Current.layoutry";
-    await workflow.save();
-    edit();
-    expect(await workflow.save()).toBe(true);
-    expect(ui().dialog).toBeNull();
-  });
-});
+    it("a format 3 file saves in place without asking", async () => {
+      const { desktop, workflow } = setup();
+      desktop.script.saveAs = "Current.layoutry";
+      await workflow.save();
+      edit();
+      expect(await workflow.save()).toBe(true);
+      expect(ui().dialog).toBeNull();
+    });
+  },
+);

@@ -9,12 +9,12 @@ serves browser storage (PROJECT-1.2, see
 - **Code:** `src/features/project/`. Public API: `src/features/project/index.ts`.
 - **Document schema:** `src/features/editor/schemas/editorDocumentSchema.ts`.
 
-## Structure (format version 2)
+## Structure (format version 3)
 
 ```json
 {
   "format": "layoutry-project",
-  "formatVersion": 2,
+  "formatVersion": 3,
   "project": {
     "id": "0b7f1c2e-5c1a-4c8e-9a51-2f4d6f0d9e11",
     "name": "Untitled Project",
@@ -44,7 +44,7 @@ serves browser storage (PROJECT-1.2, see
 | Layout: Flow/Free mode, Flex/Grid container and child settings, free geometry, dimensions, size constraints, aspect ratio, child-resize policy | Clipboard                                                                                                 |
 | Styles: spacing, typography, background (image and gradient), border, radius, shape, shadows, filters, display/visibility, position            | Design/Preview mode and Preview runtime visibility                                                        |
 | Media, form, progress and SVG attributes, including the SVG vector scene                                                                       | SVG edit-mode state (editing node, selected objects, tool, draft)                                         |
-| Interactions, initial Preview visibility, transitions, transforms, style locks                                                                 | Snap guides; the Snap on/off preference; panel widths and collapse state (`localStorage`); editor notices |
+| Interactions, initial Preview visibility, transitions, transforms, style locks; accessibility fields and component markers (format 3)       | Snap guides; the Snap on/off preference; panel widths and collapse state (`localStorage`); editor notices |
 | Project metadata: id, name, created/updated timestamps                                                                                         | File paths, storage locations, user or account ids, subscription data, generated HTML/CSS                 |
 
 ## Serialization (`serializeProject`)
@@ -88,12 +88,18 @@ pipeline then runs in this order:
    not be blank or contain control characters (the same rule the Rename
    dialog uses, `rules/projectName.ts`). Timestamps must be ISO 8601 UTC. URL fields reuse the Inspector's own checks: no `javascript:`
    in `href`, `src` or `poster`, and no CSS-breaking characters in
-   background images. Failures give `invalid-structure`, with a path.
+   background images. Format 3's accessibility fields are validated too:
+   `ariaLabel` is 1–250 characters, not blank, with no control
+   characters; `ariaCurrent` is one of the WAI-ARIA tokens except
+   "false"; `disabled` can only be `true`; `component` is a known
+   marker. Failures give `invalid-structure`, with a path.
 7. **Document integrity** (`integrity`, or `too-complex` for limits):
    - the root is `"page"`, and `"page"` appears nowhere else;
    - element ids are unique;
    - only container tags have children;
    - every interaction targets an existing element;
+   - accessibility fields and component markers sit only on tags that can
+     have them (`rules/accessibilityAttributes.ts`, BC-09.2);
    - ids are unique within each shadow, gradient-stop, SVG-object and
      interaction list;
    - depth and element-count limits hold.
@@ -121,10 +127,29 @@ and that 100,000-level nested JSON is rejected without a stack overflow.
 
 ## Versioning and migration policy
 
-- `formatVersion` is an integer. Version 2 is current (BC-05.3). Version 1
-  (PROJECT-1.1 to BC-05.2) still opens through the migration below; its
-  canonical bytes were stable from PROJECT-1.1 until then (pinned by a
-  file written by the PROJECT-1.1 code, see "Compatibility fixtures").
+- `formatVersion` is an integer. Version 3 is current (BC-09.2). Versions
+  1 (PROJECT-1.1 to BC-05.2) and 2 (BC-05.3 to BC-08.5) still open through
+  the migrations below; their canonical bytes are pinned by files written
+  by that code (see "Compatibility fixtures").
+- **Format 3 vs 2 (BC-09.2):** format 3 only adds four optional element
+  fields, so every format 2 document means exactly the same in format 3:
+  - `ariaLabel`: an accessible name (`aria-label`) on a landmark-capable
+    container (nav, header, footer, main, aside, section, form), a link or
+    a button;
+  - `ariaCurrent`: `aria-current` on a link. "page" also makes the link
+    non-navigable: it renders without its href, which stays stored;
+  - `disabled` (`true` only): a disabled link renders without its href as
+    `role="link" aria-disabled="true"`; a disabled button gets the native
+    `disabled` attribute in Preview and Export (`aria-disabled` on the
+    Design Canvas, where a native disabled button couldn't be selected);
+  - `component`: a component marker, today only "pagination" on a nav,
+    set by the Pagination factory and never inferred.
+  They are not a free attribute bag: nothing else can be expressed, so no
+  event handler or arbitrary attribute can reach the HTML. The 2 → 3 step
+  rewrites nothing (no node, id or value changes, and an old Pagination
+  is not converted). It refuses a format 1 or 2 file that already
+  contains one of these fields: no older build wrote one, so such a file
+  is hand-made, and accepting it would let a file claim an old version.
 - **Format 2 vs 1:** the only difference is spacing. In format 1 every
   `spacing.margin` and `spacing.padding` box had four required numbers,
   and 0 meant "no declaration". In format 2 every side and both boxes are
@@ -139,7 +164,8 @@ and that 100,000-level nested JSON is rejected without a stack overflow.
 - **Older than this build:** upgraded by `migrateProjectFile`
   (`utils/projectFormatMigrations.ts`, PROJECT-1.5), one step at a time
   (v1 → v2 → …), each step a `FormatMigration` in
-  `PROJECT_FORMAT_MIGRATIONS`. Today it has one step, 1 → 2 (BC-05.3).
+  `PROJECT_FORMAT_MIGRATIONS`. Today it has two steps, 1 → 2 (BC-05.3)
+  and 2 → 3 (BC-09.2).
 
 ### Migration contract
 
@@ -168,9 +194,10 @@ exactly as it was, and the open just reports the error.
 **Rollback.** Nothing is rewritten on load, so there is nothing to roll
 back. The original stays on disk until the user saves.
 
-**Upgrading an older native file (BC-05.4).** Saving writes the current
-format, which older builds refuse ("made by a newer version"). So the
-first Save to a desktop file that was read in an older format asks first:
+**Upgrading an older native file (BC-05.4, format 3 since BC-09.2).**
+Saving writes the current format, which older builds refuse ("made by a
+newer version"). So the first Save to a desktop file that was read in an
+older format (1 or 2) asks first:
 
 - **Save As… (recommended, focused):** writes a new file and keeps the
   original byte-for-byte;
@@ -189,10 +216,21 @@ the close prompt's Save, saving restored recovery work):
 A Save dialog destination needs no second prompt, because Windows already
 confirmed replacing it. After a successful save the file is in the current
 format, so the prompt never repeats. Recovery snapshots never write to the
-original file. Browser library projects are outside this rule (the product
-decision covers desktop files). An older build that meets a format 2
-library project refuses it with the same "newer version" message and
-doesn't change it.
+original file. The rule compares versions, so it needed no change for
+format 3: a format 1 or 2 file asks, a format 3 file saves straight back.
+
+**Browser storage (BC-09.2 review).** Browser library projects are outside
+this rule (the BC-05.4 product decision covers desktop files), and they
+need no prompt:
+- one origin serves one deployed build, so after an update every tab
+  that loads the app is the new build;
+- a browser never writes back to a file it imported: Save writes the
+  library record, and Download always writes a new file;
+- an older build still open in another tab that meets a format 3 library
+  or recovery record refuses it with the same "newer version" message and
+  doesn't change it, so nothing is lost;
+- browser recovery records hold their own copy of the project text and
+  are migrated in memory on restore, like any open.
 
 ### Adding a version
 
@@ -233,11 +271,17 @@ checkpoints:
 - a PROJECT-1.1 `.layoutry` file with every element type;
 - PROJECT-1.2 library records;
 - PROJECT-1.4 browser and desktop recovery records;
-- a BC-05.3 format 2 file with authored and unset spacing zeros.
+- a BC-05.3 format 2 file with authored and unset spacing zeros;
+- a format 2 file written by the BC-08.5 code with the old Pagination
+  (Previous/Next Buttons, no marker), plus its exported files, which a
+  format 3 build must still export byte for byte;
+- the first format 3 file (BC-09.2): the new Pagination and the other
+  accessibility fields.
 
 Tests check that each still opens without rewriting anything. Format 1
-files are migrated in memory; the format 2 file re-saves to the same
-bytes. See that folder's README. Never regenerate a fixture; add a new
+and 2 files are migrated in memory; a format 2 file re-saves to the same
+bytes apart from its `formatVersion`, and the format 3 file to the very
+same bytes. See that folder's README. Never regenerate a fixture; add a new
 one.
 
 ## Applying a loaded project (restoration contract)

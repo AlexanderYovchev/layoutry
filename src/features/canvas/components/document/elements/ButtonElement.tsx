@@ -7,6 +7,7 @@ import { usePreviewTriggerAria } from "@/features/canvas/hooks/usePreviewTrigger
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
 import { resolveTextElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
+import { accessibilityProps } from "@/features/editor/rules/accessibilityAttributes";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
@@ -25,6 +26,7 @@ export function ButtonElement({ node, parentId, parentLayoutMode, parentFlowDisp
       id={node.htmlId}
       ref={mergeRefs<HTMLElement>(dropRef, dragRef, editable.elementRef)}
       {...documentNodeAttributes(node, parentId)}
+      {...accessibilityProps(node, { nativeDisabled: isPreview })}
       {...triggerAria}
       {...editable.editableProps}
       className={cn(

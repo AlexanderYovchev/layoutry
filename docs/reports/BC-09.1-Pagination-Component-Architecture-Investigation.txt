@@ -1,0 +1,954 @@
+BC-09.1 — PAGINATION COMPONENT ARCHITECTURE AND EXISTING SYSTEM
+INVESTIGATION
+==================================================================
+Date: 2026-11-17
+Baseline: c6a0448 (BC-08.5 committed). Investigation only: no product
+code, schema, test or documentation outside this report was changed.
+Status: awaiting ChatGPT QA review and product decisions. BC-09.2 not
+started.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Layoutry ALREADY has a Pagination component.
+- It was added in Checkpoint 1.15.6.3: Components > Navigation >
+  "Pagination".
+- It is built by createPaginationNode
+  (src/features/editor/factories/navigationCompositions.ts:236).
+- Tree:
+    nav (flex row, nowrap, centered, gap 8)
+      button "Previous" | a "1" (dark bg = active) | a "2" | a "3" |
+      button "Next"
+- There is no marker, no new tag and no state: it is a plain tree of
+  existing primitives, like every other component. Tests assert this
+  (navigationCompositions.test.ts:144-170; store test 173-180).
+- Since BC-06.2 it also gets the "Navigation links" Inspector section
+  (Add / Remove / Move up/down / count, max 12), like any nav.
+So BC-09 is an IMPROVEMENT of an existing, shipped component, not a new
+one. Existing projects contain it, and every decision below must keep
+them opening and exporting unchanged.
+
+What the existing component does well:
+- It is ordinary nodes, so insertion, selection, the Structure panel,
+  duplication, copy/paste, Undo/Redo, save/reopen, export and the
+  Electron app all work today with no special code (section 26
+  baseline).
+- Its links are real anchors with validated hrefs. Design and Preview
+  never navigate; export emits safe hrefs only.
+- Its export is fully static: no JavaScript.
+
+What it cannot do today, measured live on the exported page
+(section 16, 24):
+G1  No accessible name on the nav (no aria-label). With several navs on
+    a page, screen readers can't tell "Pagination" from the site menu.
+G2  The active page is shown by colour only. There's no aria-current
+    (WCAG 1.4.1 Use of Color, 1.3.1 Info and Relationships).
+G3  Previous/Next are <button type="button"> with no behaviour. On an
+    exported page they are focusable controls that do nothing (WCAG
+    4.1.2: a control's role must match what it does).
+G4  "Disabled" (e.g. Previous on page 1) is not representable: Button
+    has no disabled field. It can only be faked with colour, which
+    stays focusable and clickable.
+G5  No list semantics (<ul><li><a>). Not representable: li is a
+    text-only leaf (insertionRules.ts:14-23).
+G6  No ellipsis primitive. A Paragraph "…" works visually (the
+    Breadcrumbs "/" precedent), but there's no aria-hidden.
+G7  No hover / focus / active-state styles: the CSS model has no pseudo
+    states. Focus uses the browser's default ring (the export base
+    stylesheet keeps outline: auto).
+G8  "Add link" in a Pagination copies the LAST link:
+    - its text is "New link", not the next number;
+    - if the last link is the active page, its active styling is
+      copied, giving two "active" pages.
+G9  nowrap overflows on phones: 12 page links at 320 px push the page
+    64 px sideways (37 px at 375 px). The Inspector only suggests Wrap
+    (from 6 links). This conflicts with the standing "content never
+    escapes its container" rule once a user adds links.
+
+The central finding, honestly stated:
+- Every capability that needs NO new field can be done in project format
+  2:
+  - a Pagination-aware Inspector section;
+  - numbered Add with correct styling;
+  - Wrap by default for new Paginations;
+  - an ellipsis Paragraph;
+  - converting Previous/Next to links in new Paginations;
+  - presets.
+- G1, G2 and G4 (accessible name, current page, disabled) need ARIA or
+  disabled attributes. Layoutry has no field for them, and the document
+  schema is STRICT (z.strictObject): an older build refuses a file with
+  an unknown field. So a true accessibility fix needs a small additive
+  field set AND a project format bump (v2 -> v3, identity migration).
+- This is a product decision (decision D3/D9 in section 27). I recommend
+  making it, scoped generically (usable by Breadcrumbs and Navbars too),
+  but it is not mine to make.
+
+Recommended direction (all subject to approval):
+- Static pagination (Option A): authored links to real URLs, an authored
+  active page, export with no JavaScript. Interactive page state
+  (Option B) would need a new runtime state system and data binding;
+  Layoutry is not a CMS. Content switching already exists as the
+  interaction-based Basic Tabs pattern.
+- Keep the flat nav > a structure. No marker field if format v2 must be
+  kept; a marker or ARIA fields if v3 is approved.
+- Turn the Navigation links section into a Pagination-aware variant
+  only where it is clearly a pagination (decision D3), or add a separate
+  "Pagination" section.
+
+Baseline: - Green, apart from two known pre-existing issues that are not product
+  defects (section 26).
+- typecheck, desktop typecheck, lint and production build: clean.
+- Vitest: 6011 passed.
+- Chromium: 280 passed.
+- Firefox/WebKit targeted: 47/48.
+- Electron targeted: 36/36.
+
+
+2. EXISTING COMPONENT ARCHITECTURE
+----------------------------------
+How Layoutry represents reusable components (verified in code):
+- A "component" is a FACTORY that returns an ordinary EditorElementNode
+  subtree of existing tags with authored style fields. Precedent:
+  1.15.6.2 Buttons, 1.15.6.3 Navigation, Cards, Forms, Feedback, Data
+  display, Interactive (factories/*Compositions.ts).
+- Registration:
+  - creationToolbarCategories.ts:386 lists the card ("Pagination",
+    elementType "pagination");
+  - elementFactories.ts:119/960 maps the elementType to its factory;
+  - elementFactories.ts:1070 gives the free-layout default size
+    (320 x 48).
+- Insertion: useInsertElement -> store.insertElement. A composition is
+  inserted as one subtree, so it is one Undo step.
+- No component identity is stored: no marker field, no tag, no variant
+  (stated in the navigationCompositions.ts header and enforced by
+  tests).
+- Component-specific management is STRUCTURAL:
+  - Navigation links: isNavigationLinkContainer(node) = tag "nav"
+    (navigationLinkCommands.ts:36);
+  - List items: ul/ol > li count;
+  - Select options;
+  - Table rows/columns.
+- Navbar, Breadcrumbs, Pagination, Sidebar and Footer nav are therefore
+  indistinguishable after insertion (BC-06.1 report: "Nothing tells a
+  Navbar apart from other navs").
+- Interactive compositions (Collapsible, Basic Tabs, Dropdown, Modal,
+  Toast) reuse the generic click interaction (show/hide/toggle) and
+  initialPreviewVisibility. No component state exists.
+- Components of the same family as Pagination:
+  - Breadcrumbs: nav > a, p"/", a, p"/", a(muted colour = current);
+  - Navbar: nav > a×4 [+ CTA button].
+
+Answers to the brief's nine questions:
+1. Reuse an existing element type? Yes: nav, a, button, p all exist and
+   are already used. No new tag is needed.
+2. A dedicated marker? Only if the Inspector must tell a Pagination
+   apart from other navs reliably. That needs a schema field (format
+   v3) or a weaker heuristic (section 5).
+3. Can existing metadata identify it? Partly: displayName is an existing
+   field ("a component's assigned label like 'Primary Button'",
+   document.ts:67). It is not set by the Pagination factory today, and
+   users can rename it.
+4-6. Save/reopen, copy/paste and duplication preserve every field,
+   displayName included: cloneNodeWithFreshIds copies by spread, gives
+   fresh ids and remaps interactions inside the subtree. A marker field
+   would survive the same way.
+7. Editable child by child? Yes, today: every link and button is a
+   normal node (select, edit text, style, href, interactions).
+8. Managed as one group? Partly: select the nav, use Navigation links;
+   delete, duplicate and move the nav as a whole.
+9. Format v2 preserved? Yes for everything except the ARIA/disabled
+   fields (section 20).
+
+
+3. RECOMMENDED PAGINATION ARCHITECTURE
+--------------------------------------
+Pending approval (decisions in section 27):
+- Model: keep "a composition of ordinary nodes". No proprietary node,
+  no runtime state.
+- Structure (new Paginations; existing ones untouched):
+    nav [accessible name "Pagination" if v3 approved]
+      a "Previous"  (href = previous page URL)
+      a "1"         (active: authored style [+ aria-current if v3])
+      a "2" ... a "N"
+      [p "…" ellipsis, optional]
+      a "Next"
+  Previous/Next become links, because a static page's Previous/Next is
+  navigation to another URL (D2). At a boundary the author removes the
+  control or, if v3 is approved, marks it disabled (D11).
+- Management: a Pagination section in the Inspector for the selected nav
+  (D15):
+  - page links list (reusing navigationLinkCommands);
+  - "Add page" numbering the next page and copying a NON-active page's
+    style;
+  - "Set as current page" (moves the active styling [+ aria-current]
+    in one Undo step);
+  - show/hide Previous, Next, First and Last as real child insert/remove
+    (interaction-safe via commitStructuralEdit).
+- Styling: existing CSS sections on each child and on the nav. No new
+  CSS state system (section 15).
+- Export: static HTML/CSS, no runtime script unless the user adds
+  interactions.
+
+
+4. HTML SEMANTICS
+-----------------
+Recommended pattern (WAI-ARIA APG / common practice):
+  <nav aria-label="Pagination">
+    <ul> <li><a href="?page=1" aria-current="page">1</a></li> ... </ul>
+  </nav>
+- Landmark: nav with an accessible name (needed once a page has more
+  than one nav; WAI-ARIA landmark guidance).
+- Current page: aria-current="page" on the active link (WAI-ARIA 1.2).
+- Previous/Next: links whose text says "Previous"/"Next", or with an
+  accessible label "Previous page"/"Next page".
+- Disabled boundary: omit the link, or render non-link text. Avoid a
+  focusable fake.
+- Keyboard: links are natively Tab-focusable and Enter-activated. No
+  roving tabindex or arrow keys: pagination is not a composite widget.
+- Focus: visible ring (WCAG 2.4.7). Target size of at least 24x24 CSS px
+  (WCAG 2.2 2.5.8).
+
+Mapping to Layoutry today:
+- nav: yes. a: yes, with href (validated). button: yes, type="button"
+  on export.
+- ul > li > a: NOT representable (G5). li is a text leaf; making li a
+  container is a document-model change for every list, out of
+  proportion for Pagination. A list is helpful (it announces "list, 5
+  items") but not required; a named nav of links is a recognised,
+  accessible pattern.
+- aria-label / aria-current / disabled: NOT representable (G1, G2, G4).
+  No attribute fields exist (link.ts header: "not a generic HTML-
+  attribute bag"). The only ARIA Layoutry emits is derived:
+  - interaction triggers get aria-controls/aria-expanded;
+  - dialogs get aria-label from their first heading
+    (resolveDialogAccessibleName).
+- Non-semantic clickables: none. Layoutry has no clickable div.
+
+
+5. COMPONENT IDENTITY
+---------------------
+Options (D3):
+A. Structural, no identity (status quo). Every nav gets the generic
+   Navigation links section; nothing Pagination-specific is possible.
+   Zero risk, zero gain.
+B. displayName "Pagination" set by the factory.
+   - Existing field: no schema change, format v2.
+   - Survives save, copy, paste and duplicate.
+   - Shows in the Structure panel as "Pagination".
+   - Weak: the user can rename it. Existing Paginations don't have it
+     (they'd need a heuristic or a one-click "Treat as pagination").
+   - It also mixes a layer label with behaviour.
+C. A marker field (e.g. `component: "pagination"`) on the nav.
+   - Strong and explicit; survives everything.
+   - Needs a schema change -> format v3, plus a "newer format" refusal
+     in old builds.
+   - Starts a "component identity" concept the codebase has avoided
+     since 1.15.6.2.
+D. Structural heuristic (a nav whose direct links are mostly numbers,
+   with Previous/Next). No schema change, but fragile and surprising
+   (a nav "1, 2, 3" of chapters).
+Recommendation: if v3 is approved for ARIA anyway, C is cheap to add in
+the same migration. If v2 must be kept, B with an explicit, reversible
+"Pagination" mode in the Inspector. Avoid D.
+
+
+6. STATIC VS INTERACTIVE
+------------------------
+Option A — static/visual (recommended):
+- Each page link has its own authored href (e.g. /blog/page/2,
+  ?page=2). The current page is authored per exported page.
+- Works in every export format with no JavaScript; works in Electron
+  exports; zero new runtime.
+- Limitation: Layoutry exports ONE page per project (the document root
+  is a single "page"). A multi-page site means several projects/
+  exports, each authoring its own current page. That is how
+  hand-written static sites do it.
+Option B — interactive:
+- Needs current-page STATE (store slice + Preview runtime + export
+  script), dynamic aria-current/active class switching (no "set
+  style/class" action exists: actions are show/hide/toggle only,
+  interactions.ts:26), and for "content switching", panels bound to
+  pages.
+- Real data pagination (fetching page N of items) needs data binding,
+  which Layoutry does not have and should not grow into (it is not a
+  CMS).
+- "Page panels" can already be approximated with existing interactions
+  (each number shows its panel and hides the others, like Basic Tabs,
+  interactionCompositions.ts:224-249). But the active styling can't
+  follow; N links need about N^2 bindings; and it is not semantic
+  pagination.
+Conclusion: B cannot work without a new state system. Recommend A, and
+keep "content switching" as the Tabs pattern's job.
+
+
+7. CHILD-NODE STRUCTURE
+-----------------------
+- Every control is an ordinary child node with a stable, unique id
+  (generateNodeId). It is editable on its own: text, href, all CSS
+  sections, interactions, Identity (htmlId/class).
+- Specialized management (Inspector, on the nav): the order and count of
+  page links, the current page, and whether boundary controls are
+  present. These are structural edits on real children, never hidden or
+  generated output.
+- Deletion: deleting a child is the normal Delete. It is interaction-
+  safe (deleteSelection -> removeInteractionsTargeting). Removal from the
+  Inspector uses commitStructuralEdit (BC-06.2), the same guard.
+- Reordering: moveNavigationLink swaps among links only, so non-link
+  children (buttons, ellipsis paragraphs) keep their slots. For
+  Pagination, "page" order should be numeric; the swap model works, but
+  renumbering on move is a decision (D10).
+- Duplication of the whole Pagination: cloneNodeWithFreshIds, with fresh
+  ids for every child; interactions inside the subtree are remapped.
+- Selection: click a child selects it; select the nav from the Structure
+  panel or the breadcrumb of its parent. Unchanged.
+- Reuse of BC-06: getNavigationLinks, insertNavigationLink,
+  removeNavigationLink, moveNavigationLink, createNavigationLink
+  (COPIED_STYLE_FIELDS, withoutHiddenState). These are directly
+  reusable. Only "which template to copy" and "what text" need a
+  Pagination rule (G8). No new management architecture is needed.
+
+
+8. INSPECTOR INTEGRATION
+------------------------
+Where each candidate setting belongs:
+Pagination-specific (new section, on the nav):
+- page count (list with Add/Remove, shown as "N pages");
+- current page (choose which link);
+- Previous/Next present; First/Last present; ellipsis present (insert
+  or remove real children);
+- labels: edit inline in the list (it's the child's text); destinations:
+  per page in the list or in the child's own Link section.
+Existing CSS sections (no duplication):
+- spacing between controls = nav Flex gap; alignment = nav
+  justify-content; wrapping = nav Flex wrap;
+- control size/padding/border/radius/colours = each child's own
+  sections.
+Individual child:
+- the active page's look, the boundary controls' look, the hover look:
+  see section 15 (there is no state styling).
+Atomic Undo/Redo:
+- each Inspector action is one store write -> one history entry. That
+  is the existing pattern (navigation links, list counts).
+- "Set current page" must move style (and aria-current if v3) from the
+  old link to the new one in ONE write: a new store action, same
+  pattern.
+Not recommended: a numeric "Total pages" field that silently deletes
+links. BC-06.1 already chose a list with explicit Remove for the same
+reason: a user sees exactly which link goes, and interactions are
+cleaned up visibly.
+
+
+9. COUNT MANAGEMENT
+-------------------
+- Default: 3 page links (the current preset). Keep it: it is small,
+  fits 320 px with Previous/Next (measured: no overflow at 320-1440 px).
+- Minimum: 1 page link in the Inspector list (Remove disabled at 1?).
+  BC-06 allows 0 for generic navs; for Pagination, 0 page links is
+  meaningless. Decision D5.
+- Maximum: the BC-06 cap of 12 applies today (MAX_NAVIGATION_LINKS).
+  Reasoned limits:
+  - Usability: real pagination shows about 5-9 numbers plus an
+    ellipsis; more than that is an anti-pattern (use an ellipsis and
+    First/Last).
+  - Layout: measured overflow at 320 px from 7 links (1 px nav overflow;
+    links shrink to 24.8 px wide), and page overflow from 12 links (64
+    px). 24 px is the WCAG 2.5.8 minimum target; flex shrink already
+    reaches it at 12 links.
+  - Performance: not a factor. 50 Paginations x 14 controls export in
+    about 50 ms (section 25).
+  Recommendation: keep 12 as the hard cap (consistency with BC-06), make
+  new Paginations Wrap by default, and show the existing helper from 6.
+- Decreasing: remove the chosen link (or the last non-current one). The
+  current page can't be removed without choosing a new one first
+  (decision).
+- Interaction references: removal runs removeInteractionsForRemovedNodes
+  in the same write (BC-06.2 fix of BC06-D1). Without it, a dangling
+  binding makes serializeProject throw and saving fails. It must be
+  reused for every new structural command.
+- Styling of new links: copy a NON-current page link (G8 fix); the text
+  is the next number; the href follows the pattern of the previous link
+  if it is recognisable (D12), else "#".
+- Stable ids: always fresh (generateNodeId). Never reuse a removed
+  link's id.
+
+
+10. ACTIVE PAGE REPRESENTATION
+------------------------------
+Options (D9):
+A. Authored style only (status quo): background/colour on that link.
+   - Survives everything; v2.
+   - Not announced (fails 1.3.1/1.4.1 for screen-reader users).
+B. Existing attribute: className "is-current".
+   - Exported, but Layoutry has no stylesheet for classes and it's not
+     announced either.
+C. A new field on the link, e.g. `ariaCurrent: "page"`.
+   - Exported as aria-current="page" and announced.
+   - Survives save/copy/duplicate/Undo; validates as an enum.
+   - Format v3.
+D. A component-level field ("currentPage: 2" on the nav).
+   - Fragile: it indexes children, so it breaks on reorder/remove.
+   - Behaves like a runtime-state field (prohibited since 1.15.6.3).
+   Not recommended.
+Recommendation: C (with the Inspector's "Set as current page" moving it
+plus the style in one write). If v3 is declined: A, documented as a
+known accessibility limitation.
+Active state is STATIC/authored: it does not change during Preview (no
+runtime state without approval). Preview shows exactly the authored
+current page.
+
+
+11. PREVIOUS / NEXT BEHAVIOR
+----------------------------
+Three different things, never to be conflated:
+1. Navigating to a real URL. A link's href; what static sites do; works
+   in export.
+2. Changing the visual active page. A runtime state; does not exist; not
+   proposed.
+3. Changing displayed content. Data binding or panels; does not exist;
+   out of scope.
+Today Previous/Next are buttons, so on an exported page they do
+NOTHING (G3). Recommended for NEW Paginations: links with an href (the
+previous/next page URL), so behaviour 1 works. Existing Paginations keep
+their buttons (no silent migration).
+Boundaries:
+- On page 1, Previous has no destination. Options (D11): remove it;
+  keep it as a link to the same page; or (v3) mark it disabled:
+  non-link text or aria-disabled with no href.
+- A missing destination stays "#" (DEFAULT_LINK_HREF), which is inert
+  and safe. The export emits it unchanged. A future diagnostic could
+  warn about pagination links still pointing at "#".
+Keyboard: native link behaviour (Tab, Enter). Nothing custom.
+
+
+12. FIRST / LAST
+----------------
+- Same model as Previous/Next: optional links to the first/last page
+  URL, inserted/removed by the Inspector as real children.
+- Off by default (D7): with 3 page links the first and last pages are
+  already visible, so First/Last are only useful with an ellipsis.
+- Labels "First"/"Last". A visible text label is clearer than «/» for
+  screen readers, since there's no aria-label field.
+
+
+13. ELLIPSIS
+------------
+- Recommended: a static, non-interactive text separator. It's a
+  Paragraph "…" (the Breadcrumbs "/" precedent, navigationCompositions.ts
+  :133-136), inserted by the Inspector between page links.
+- Not a control: an interactive "…" that expands pages needs runtime
+  state (Option B).
+- Not generated dynamically: no page model exists to compute it from.
+  The author places it.
+- Accessibility: read as "…" ("dot dot dot" / "horizontal ellipsis").
+  Acceptable; aria-hidden would be better but needs an attribute field.
+- Counting: an ellipsis is not a page link, so getNavigationLinks
+  already excludes it (non-a child).
+
+
+14. VISUAL PRESETS
+------------------
+Options (D14):
+A. Separate library cards (Simple numbered, Previous/Next only,
+   Rounded, Underline, Compact, Bordered). Consistent with how Navbar
+   has three cards. Each preset is a factory, 20-40 lines, plus a
+   factory test.
+B. One card with an Inspector "Style" preset picker. This rewrites
+   styles on existing children, overwriting user edits (style-
+   protection and Undo interplay), and needs a preset identity.
+C. Ordinary CSS: users restyle.
+Recommendation: A, with 2-3 cards at most (e.g. "Pagination" =
+numbered + Previous/Next, "Simple Pagination" = Previous/Next only),
+because each card costs a factory, a test and toolbar space. Visual
+variants (rounded/underline/bordered) are better left to CSS editing.
+Existing card unchanged.
+
+
+15. CSS CUSTOMIZATION
+---------------------
+Available per node (verified sections): Typography, Background
+(colour/gradient/image), Border (4 sides), Border Radius, Spacing
+(margin/padding), Size constraints, Flex/Grid container (nav) and child
+settings, Display/Visibility, Box shadow, Filters, Transition,
+Transform, Identity (htmlId/class).
+- Gap, alignment, wrap: nav Flex settings. Yes.
+- Active state: author-styled on the one link. Yes (static).
+- Disabled state: author-styled. Visual only; semantics need v3 (G4).
+- Hover / focus styles: NO. There's no pseudo-state CSS model
+  (transition.ts header: "no pseudo-state styling"). Transition exists
+  but has nothing to transition to without a state style.
+- Focus ring: the browser default. The export keeps outline: auto
+  (exportBaseStylesheet.ts:66-68). Customising it is not possible.
+Missing capability, stated plainly: hover/focus/active pseudo-state
+styling. It is a cross-cutting CSS-model feature (it affects Buttons,
+Links, Cards...) and should be its own milestone, not invented inside
+BC-09.
+
+
+16. RESPONSIVE DESIGN
+---------------------
+Measured on the exported page (Chromium, preset styles; temporary probe,
+deleted):
+  page links  320px            375px            768-1440px
+  3           fits             fits             fits
+  7           nav +1px, links  fits (links      fits
+              shrink to 24.8px shrink to 26px)
+  12          PAGE +64px,      PAGE +37px,      fits
+              4 controls       2 controls
+              off-screen       off-screen
+Controls are 34 px tall (over the 24 px WCAG 2.5.8 minimum, under the
+44 px AAA/platform guidance).
+Strategy options (D13):
+A. Wrap by default for NEW Paginations (flex-wrap: wrap, centred).
+   Predictable, nothing hidden, never overflows. Rows grow.
+B. Keep nowrap; rely on the helper text (today). Overflows on phones.
+C. Horizontal scroll container. Hides controls off-screen; poor on
+   touch.
+D. Hide First/Last or numbers on small screens. Needs breakpoint styles,
+   which Layoutry lacks, and must not hide authored controls without
+   approval.
+Recommendation: A for new Paginations, plus the existing Wrap helper for
+old ones. Changing existing documents' layout is not proposed.
+
+
+17. CANVAS BEHAVIOR
+-------------------
+- Selection: a click on a link or button selects that child (it bubbles
+  to CanvasInteractionBoundary). The nav is selected via the Structure
+  panel or a click on its padding/gap.
+- Design-mode links: LinkElement.preventEditorNavigation calls
+  preventDefault on click (and on keyboard Enter, which dispatches a
+  click), so the editor never navigates. Its href stays real.
+- Resize/drag: ordinary nodes; the nav resizes like any container. In
+  Free layout it has the 320 x 48 default size.
+- Flex/Grid: the nav is a flex container; children are flex items.
+  Grid placement is copied without explicit cells on Add (BC-06.2).
+- Clipping: the editor needs at least 900 px; the narrow-width overflow
+  above applies to the exported page and to narrow containers on the
+  Canvas.
+- Inspector sync: standard selection-driven Inspector. Watch the known
+  local-state staleness pattern for any new list section (memory:
+  reset on last-seen id).
+
+
+18. PREVIEW BEHAVIOR
+--------------------
+- Links: Preview also calls preventDefault (LinkElement's onClick is
+  unconditional). Preview never leaves the project, so a destination
+  can't be followed in Preview: by design (BC-02 isolation).
+- Active page: static. Preview shows what was authored.
+- Buttons: inert unless the user authored interactions.
+- Keyboard and focus: native Tab order (measured on the export:
+  Previous > 1 > 2 > 3 > Next).
+- Preview reset, history and document: unaffected. No runtime state is
+  proposed. If Option B were ever approved, its state would have to
+  live in an ephemeral store slice like runtimeVisibility, never in the
+  document or history.
+- Browser history: none (no navigation happens). Electron: navigation
+  is blocked by hardenWebContents (will-navigate, setWindowOpenHandler
+  deny) in addition.
+
+
+19. EXPORT BEHAVIOR
+-------------------
+Measured export of today's preset:
+  <nav class="... ly-node-2">
+    <button class="ly-button ..." type="button">Previous</button>
+    <a class="ly-link ly-link-underline ly-node-4" href="#">1</a>
+    ... <button ... type="button">Next</button>
+  </nav>
+- No diagnostics; no script.js (no interactions); identical in
+  standalone, separate files, browser ZIP and Electron folder export
+  (the shared exportHtmlCss pipeline).
+- Links: href checked by checkExportUrl("link"): http/https/mailto/tel,
+  relative and fragment pass; javascript:, data: etc. are refused with
+  a diagnostic.
+- Text and attributes are escaped by the printer.
+- Static: no JavaScript is needed for Option A. Disabled/aria-current
+  would be plain attributes if v3 is approved.
+- Note: page links export with the default link underline (ly-link-
+  underline) unless the author sets text-decoration. That is a preset
+  styling choice for BC-09.2.
+
+
+20. PROJECT FORMAT COMPATIBILITY
+--------------------------------
+- Format 2 (current, CURRENT_PROJECT_FORMAT_VERSION) with a strict
+  schema: every object is z.strictObject (editorDocumentSchema.ts:62),
+  so an unknown field is rejected.
+- Fully in format 2:
+  - new factories/presets;
+  - Inspector sections and commands;
+  - displayName identity;
+  - Wrap by default;
+  - an ellipsis Paragraph;
+  - Previous/Next as links.
+- Format 3 required:
+  - aria-current / accessible name / disabled fields;
+  - a component marker.
+  How: an additive field + a 2 -> 3 identity migration in the existing
+  chain (projectFormatMigrations). Older builds then refuse v3 files
+  with the standard "newer format" message.
+- Legacy: format 1 files migrate to 2 (spacing zeros, BC-05.3), and
+  would chain to 3 unchanged. Legacy migration behaviour is not changed
+  by any option.
+- Existing projects with Pagination: every option keeps them opening and
+  exporting byte-identically (no field is added to existing nodes; no
+  preset is rewritten).
+
+
+21. SAVE / REOPEN
+-----------------
+- The current Pagination saves and reopens like any subtree (existing
+  persistence suites; desktop files spec).
+- New fields (if approved) must be added to:
+  - the schema;
+  - the serializer's field order;
+  - the frozen fixtures and the legacy tests (the PROJECT-1.5 pattern).
+
+
+22. UNDO / REDO
+---------------
+- One action = one store write = one history entry (navigation links,
+  list counts). Insertion of a Pagination is one entry.
+- "Set current page", "Add page", "Show Previous" etc. are new single
+  writes. Each must return the same root for a no-op, so no empty
+  history entry is pushed (the navigationLinkCommands convention).
+
+
+23. SECURITY
+------------
+- URLs: isValidLinkHref refuses empty and javascript: at the Inspector.
+  Export re-checks every href with checkExportUrl (scheme normalisation
+  defeats `java\tscript:`), so no new path is needed. A Pagination href
+  goes through the same Link field.
+- Target / rel: there is no target field, so no target=_blank and no
+  window.opener risk. Nothing to add unless a target field is approved
+  (then rel="noopener noreferrer" is mandatory).
+- HTML injection: text and attributes are escaped by the export
+  printer. React escapes on the Canvas.
+- Preview isolation: preventDefault on every link in both modes.
+  Electron blocks navigation and new windows.
+- Export: no runtime script for Option A, so no new script surface.
+No new unsafe navigation path is introduced by any recommended option.
+
+
+24. ACCESSIBILITY
+-----------------
+What Layoutry can guarantee (by structure):
+- native, keyboard-operable links and buttons; logical Tab order;
+- a nav landmark;
+- target height 34 px (over the 2.5.8 minimum);
+- a browser default focus ring;
+- no fake clickables.
+What it cannot guarantee today (needs v3 fields):
+- accessible landmark name (G1);
+- current-page announcement (G2);
+- disabled semantics (G4);
+- an ellipsis hidden from AT (G6).
+What depends on the author:
+- contrast (the preset active page: white on #18181b, about 17:1;
+  inactive #3f3f46 on white, about 10:1; both pass AA);
+- meaningful link text and real destinations;
+- not using colour alone (only fixable with aria-current);
+- wrapping on small screens (D13).
+Screen-reader reading of the preset today: "navigation, Previous button,
+link 1, link 2, link 3, Next button". It has no name and no "current
+page".
+References: WCAG 2.2 SC 1.3.1, 1.4.1, 1.4.3, 2.4.4, 2.4.7, 2.5.8,
+4.1.2; WAI-ARIA 1.2 aria-current; WAI-ARIA APG landmark regions
+(labelling multiple navs).
+
+
+25. PERFORMANCE
+---------------
+- Rendering: 14 controls are 15 ordinary nodes; trivial for the Canvas.
+- Export: 50 Paginations with 12 page links each (750 nodes): 84 / 52 /
+  48 ms per separate-files export (Chromium probe, 3 runs).
+- Count changes and Undo: one immutable path update (updateNav), O(depth
+  + children).
+- Large documents and nested Paginations: no special cost. There's no
+  component registry to scan.
+- Practical limits are usability and layout limits (section 9), not
+  performance.
+
+
+26. EXISTING TEST BASELINE
+--------------------------
+Run on c6a0448 with no source changes. Nothing was modified to make
+anything pass.
+
+npm run typecheck                                   clean
+npx tsc -p desktop/tsconfig.json --noEmit           clean
+npm run lint                                        clean
+npx vitest run                    6011 passed, 1 failed, 1 skipped
+                                  (393 files)
+  - The failure: desktop/files/projectFileSystem.test.ts, "a file
+    opened exclusively by another program is reported as locked".
+  - It timed out at 20 s under full-suite load. That test spawns a
+    Windows process to lock a file.
+  - Alone: 33/33 passed, twice. Pre-existing, load-dependent, not
+    Pagination-related.
+  - Included and green: navigationCompositions.test.ts (Pagination
+    preset shape, no state), useEditorStore.navigationComponents.test.ts,
+    navigationLinkCommands.test.ts, the InspectorNavigationLinksSection
+    tests (including Pagination eligibility), interaction integrity,
+    persistence/migration and export suites.
+npx playwright test --project=chromium              280 passed, 3 skipped
+  - The 3 skipped are the opt-in live provider specs.
+  - The run includes component insertion, navigation links,
+    export-interactions, Preview, Undo/Redo, persistence and embed
+    safety.
+Firefox + WebKit, via a temporary config (deleted):
+  navigation-links, navigation-links-responsive, export-interactions
+                                                    47 passed, 1 failed
+  - The failure: WebKit, export-interactions.spec.ts:296, "exported
+    interactions are keyboard-operable".
+  - Tab does not reach an <a>. This is Playwright Windows WebKit
+    skipping links on Tab, known since BC-06.2. Not a product defect.
+  - It matters for BC-09: keyboard specs for Pagination links need the
+    same documented WebKit exception.
+npx playwright test -c playwright.desktop.config.ts navigation-links
+  security export files editor preview-parity interaction-guidance
+  legacy-format-save                                36 passed
+npm run build                                       compiled successfully
+Live probe (temporary spec, deleted): export markup, overflow at 5
+widths for 3/7/12 page links, Tab order, export timing (sections 16, 19,
+25).
+
+
+27. PRODUCT DECISION MATRIX
+---------------------------
+(R = recommended. None of these is decided.)
+
+D1 Static vs interactive
+   A static authored links (R) | B built-in page state | C content
+     panels via interactions.
+   A: no runtime, works everywhere. B: new state system, export JS.
+     C: exists (Tabs pattern), but not real pagination.
+   Compatibility: A and C need no format change; B needs runtime and
+     export JS, and possibly the format.
+
+D2 Underlying structure
+   A flat nav > a (Previous/Next as LINKS) (R) | B flat nav, Previous/
+     Next as buttons (today) | C nav > ul > li > a.
+   A: honest navigation. B: dead buttons on export (G3). C: requires a
+     container li (a document-model change for every list).
+   Compatibility: A/B v2; C a model change.
+
+D3 Component identity
+   A none | B displayName "Pagination" | C marker field (v3) | D
+     heuristic.
+   R: C if v3 is approved; else B. Avoid D.
+   Compatibility: B v2; C v3.
+
+D4 Default page links
+   A 3 (today) (R) | B 5 | C 7.
+   3 fits 320 px with Previous/Next. 5 fits only with wrap. 7 overflows
+     at 320 px without wrap.
+
+D5 Minimum / maximum
+   A min 1, max 12 (BC-06 cap) (R) | B min 1, max 9 | C min 0, max 12
+     (generic nav rule).
+   12 = consistency with Navbar. 9 = pagination usability. 0 makes
+     Pagination meaningless.
+
+D6 Previous/Next default
+   A both shown (R) | B hidden | C Next only.
+   They are expected; shown today.
+
+D7 First/Last default
+   A hidden (R) | B shown.
+   Redundant with 3 links; useful with an ellipsis.
+
+D8 Ellipsis
+   A optional static Paragraph "…" inserted by the Inspector (R) | B
+     none | C interactive "…" (needs runtime).
+
+D9 Active-page representation
+   A authored style only (today) | B className | C aria-current field
+     (v3) (R) | D currentPage on the nav.
+   C is the only accessible option. D is fragile.
+
+D10 Page destinations
+   A per-link href via the list or the Link section (R) | B a URL
+     pattern on the nav ("?page={n}") generating hrefs | C none ("#").
+   B needs a field (v3) and regeneration rules; A is explicit.
+   Renumbering on reorder: recommend NOT renumbering text
+     automatically; offer "Renumber pages" as an explicit action if
+     wanted.
+
+D11 Disabled boundary behaviour
+   A author removes the control (v2) | B visual-only "disabled"
+     (misleading) | C disabled/aria-disabled field (v3) (R if v3, else
+     A).
+
+D12 New-link styling inheritance
+   A copy a non-current page link; text = next number; href = "#" (R) |
+     B copy the last link (today, G8) | C starter style always.
+   Optional: infer the href pattern from the previous link (B of D10
+     without a field). Recommend no inference in BC-09.2.
+
+D13 Responsive strategy
+   A Wrap by default for new Paginations (R) | B nowrap + helper (today)
+     | C scroll container | D breakpoint hiding (no breakpoints exist).
+   Compatibility: A changes only new insertions.
+
+D14 Visual presets
+   A 2-3 library cards (R) | B one card + style picker | C CSS only.
+
+D15 Inspector management
+   A a dedicated "Pagination" section reusing navigationLinkCommands (R)
+     | B extend the generic Navigation links section with Pagination
+     options when identified | C no change.
+   A needs identity (D3); B blends two concepts into one section.
+
+D16 Individual child editing
+   A keep full child editing (R) | B lock children to the component
+     section.
+   A matches every other composition.
+
+D17 Export JavaScript
+   A none (R, follows D1 A) | B a small runtime for page state (D1 B).
+
+D18 Preview navigation
+   A links never navigate in Preview (today, BC-02 isolation) (R) | B
+     open destinations in an external browser | C simulate within the
+     project (no multi-page model).
+   A keeps Preview isolated. B is a separate cross-cutting feature.
+
+Cross-cutting decision X1: approve project format 3 for a small,
+generic set of accessibility fields (accessible name on landmarks,
+aria-current on links, disabled on buttons/links, optionally a component
+marker), reusable by Breadcrumbs/Navbar. R: approve. It is the only way
+to remove G1/G2/G4, and the migration is a no-op. Decline means BC-09
+ships with those three gaps documented.
+
+
+28. PROPOSED IMPLEMENTATION CHECKPOINTS
+---------------------------------------
+Depends on X1/D3. Two variants:
+
+If X1 approved (format 3):
+- BC-09.2 Document model & format 3:
+  - accessibility fields + optional marker;
+  - schema, serializer, the 2 -> 3 identity migration, frozen fixtures,
+    legacy tests;
+  - Canvas and export emit aria-label/aria-current/disabled.
+  No UI yet. Risk: the format bump (mitigated by the migration chain
+  and PROJECT-1.5 tests).
+- BC-09.3 Pagination factory & semantics:
+  - new preset(s): links for Previous/Next, Wrap by default,
+    aria-current on page 1, nav label;
+  - library cards; the existing card's factory decision;
+  - tests for existing documents unchanged.
+- BC-09.4 Inspector "Pagination" section:
+  - pages list, Add page (numbered, non-current template), Remove
+    (interaction-safe), Set current page (atomic), Previous/Next/First/
+    Last/ellipsis toggles;
+  - staleness-safe local state.
+- BC-09.5 Preview/Export/Electron verification:
+  - static output in all four formats; a11y tree checks in 3 engines;
+  - responsive 320-1440; desktop export.
+- BC-09.6 Final regression and QA.
+
+If X1 declined (format 2):
+- BC-09.2 Factory & semantics: displayName "Pagination", links for
+  Previous/Next, Wrap by default, ellipsis option; documented a11y
+  limitations.
+- BC-09.3 Inspector Pagination section (identity by displayName).
+- BC-09.4 Verification. BC-09.5 Final QA.
+
+Dependencies:
+- the Inspector section depends on identity (D3);
+- "Set current page" depends on D9;
+- presets depend on D2/D13.
+
+
+29. RISKS AND BLOCKERS
+----------------------
+- BLOCKER for accessible current-page/landmark/disabled semantics: no
+  attribute fields + strict schema means format 3 or documented gaps
+  (X1).
+- Existing Paginations: must remain byte-identical on export. No
+  automatic migration of buttons to links or nowrap to wrap.
+- Identity without a marker is weak (displayName can be renamed).
+- Interaction integrity: every new removal must go through
+  commitStructuralEdit, or saving breaks (BC06-D1 history).
+- The Navigation links section already applies to Paginations. Changing
+  its behaviour for Paginations must not change it for Navbars/
+  Breadcrumbs (eligibility tests exist: InspectorNavigationLinksSection
+  .eligibility.test.tsx).
+- Hover/focus styling is expected by users but absent. Do not build a
+  Pagination-only state system.
+- Inspector local-state staleness across sibling selections (known
+  pattern).
+- Test-environment: Playwright WebKit on Windows skips links on Tab
+  (BC-06), so keyboard specs for links need Chromium/Firefox or a
+  documented WebKit exception.
+
+
+30. EXACT SOURCE FILES INVESTIGATED
+-----------------------------------
+- src/features/editor/factories/navigationCompositions.ts
+  (createPaginationNode 236-260; pageLink; paginationControlButton;
+  Breadcrumbs separator precedent 133-162)
+- src/features/editor/factories/navigationCompositions.test.ts (144-200)
+- src/features/editor/stores/useEditorStore.navigationComponents.test.ts
+  (173-180)
+- src/features/editor/factories/elementFactories.ts (119, 960, 1070)
+- src/components/layout/creationToolbarCategories.ts (130, 386)
+- src/features/editor/factories/interactionCompositions.ts (Basic Tabs
+  224-249)
+- src/features/editor/commands/navigationLinkCommands.ts (whole file)
+- src/features/inspector/components/InspectorNavigationLinksSection.tsx
+  and .eligibility.test.tsx (46-71)
+- src/features/editor/stores/useEditorStore.ts (commitStructuralEdit
+  777; count actions 1399-1402)
+- src/features/editor/utils/cloneNodeWithFreshIds.ts
+- src/features/editor/types/document.ts (displayName 67, href 133,
+  htmlId/className 481-498, interactions 534, initialPreviewVisibility
+  550)
+- src/features/editor/types/link.ts (DEFAULT_LINK_HREF, isValidLinkHref)
+- src/features/editor/types/interactions.ts (trigger/action 24-26)
+- src/features/editor/types/transition.ts (no pseudo-state styling)
+- src/features/editor/rules/insertionRules.ts (li leaf 14-23;
+  CONTAINER_TAGS; ALLOWED_CHILD_TAGS)
+- src/features/editor/rules/knownElementTags.ts (no span)
+- src/features/editor/rules/elementCapabilities.ts (supportsHref)
+- src/features/editor/schemas/editorDocumentSchema.ts (strictObject)
+- src/features/project/schemas/projectFileSchema.ts (formatVersion
+  literal)
+- src/features/canvas/components/document/elements/LinkElement.tsx
+  (preventEditorNavigation)
+- src/features/canvas/utils/resolveDialogAccessibleName.ts (derived ARIA
+  precedent)
+- src/features/export/utils/buildExportDocument.ts (a/href 405, button
+  type 406, dialog aria 545)
+- src/features/export/utils/exportUrlPolicy.ts (checkExportUrl)
+- src/features/export/utils/exportBaseStylesheet.ts (focus ring 66-68)
+- desktop/security/hardenWebContents.ts (navigation/new-window guards)
+- docs/reports/BC-06.1, BC-06.2, BC-06.3, BC-04.2, BC-05.3, BC-08.5;
+  export-1.1-architecture-audit.txt
+
+
+31. GIT WORKING-TREE STATUS
+---------------------------
+Branch main, HEAD c6a0448 ("fix(export): stop players under
+visibility:hidden ...", BC-08.5).
+Working tree: only this report is new:
+?? docs/reports/BC-09.1-Pagination-Component-Architecture-Investigation.txt
+- The changelog (changelogs/) is gitignored.
+- No product code, schema, test or config changes. The temporary probe
+  spec and Playwright config were deleted.
+- Nothing is staged or committed.
+
+
+32. QA RECOMMENDATION
+---------------------
+APPROVE BC-09.1 as an investigation.
+- Pagination already exists. BC-09 should improve it as static,
+  accessible navigation (D1 A) and must not build a page-state runtime.
+- The owner must decide X1 first: approve project format 3 for generic
+  accessibility fields, or accept documented gaps G1/G2/G4.
+- Then decide D2-D18. Section 27 marks the recommendations.
+- Do not start BC-09.2 until those decisions are recorded.

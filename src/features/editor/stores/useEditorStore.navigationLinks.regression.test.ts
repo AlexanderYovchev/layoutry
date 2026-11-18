@@ -483,7 +483,7 @@ describe("Navigation links final regression (BC-06.3)", () => {
       store().removeNavigationLink("nav-3ca05eea", "a-legacy00");
 
       const text = save();
-      expect(JSON.parse(text).formatVersion).toBe(2);
+      expect(JSON.parse(text).formatVersion).toBe(3);
       const reopened = parseProjectFile(text);
       if (!reopened.ok) throw new Error(reopened.error.message);
       expect(ids("nav-3ca05eea", reopened.project.document)).toEqual(ids("nav-3ca05eea"));

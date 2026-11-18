@@ -12,6 +12,7 @@ import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { createSelection, selectionFromSingle } from "@/features/editor/types/selection";
 import { NAVIGATION_LINKS_COPY } from "@/features/inspector/utils/navigationLinksCopy";
+import { legacyPaginationNode } from "../../../../test/fixtures/legacyPagination";
 import { InspectorContent } from "./InspectorContent";
 
 const initialState = useEditorStore.getState();
@@ -33,8 +34,9 @@ function links(count: number): EditorElementNode[] {
 /**
  * BC-06.3 — which selections get the Navigation links section, through the
  * real Inspector (InspectorContent → InspectorNodeSummary), not the section
- * in isolation. Every `nav` does; nothing else does, even a container full
- * of links; a multi-selection never does.
+ * in isolation. Every `nav` does, except a marked Pagination (BC-09.2,
+ * which gets its own section in BC-09.3); nothing else does, even a
+ * container full of links; a multi-selection never does.
  */
 describe("Navigation links section eligibility (BC-06.3)", () => {
   afterEach(() => {
@@ -45,7 +47,7 @@ describe("Navigation links section eligibility (BC-06.3)", () => {
     ["Basic Navbar", createBasicNavbarNode, "4 links"],
     ["Navbar with CTA", createNavbarWithCtaNode, "3 links"],
     ["Breadcrumbs", createBreadcrumbsNode, "3 links"],
-    ["Pagination", createPaginationNode, "3 links"],
+    ["legacy (pre-BC-09.2) Pagination", legacyPaginationNode, "3 links"],
     ["Sidebar Navigation", createSidebarNavigationNode, "4 links"],
     ["blank Nav (zero links)", createNavNode, NAVIGATION_LINKS_COPY.empty],
     ["nav with one link", () => ({ id: "nav-one", tag: "nav", children: links(1) }), "1 link"],
@@ -62,12 +64,27 @@ describe("Navigation links section eligibility (BC-06.3)", () => {
     });
   }
 
-  it("counts Pagination's page links, not its Previous/Next buttons", () => {
-    const pagination = createPaginationNode();
+  it("counts a legacy Pagination's page links, not its Previous/Next buttons", () => {
+    const pagination = legacyPaginationNode();
     show([pagination], [pagination.id]);
     const list = screen.getByRole("list", { name: NAVIGATION_LINKS_COPY.title });
     expect(within(list).getAllByRole("listitem")).toHaveLength(pagination.children!.filter((child) => child.tag === "a").length);
     expect(within(list).queryByRole("button", { name: /Previous|Next/ })).toBeNull();
+  });
+
+  it("does not show the generic section for a marked Pagination (BC-09.2), whose Previous/Next are links", () => {
+    const pagination = createPaginationNode();
+    show([pagination], [pagination.id]);
+    expect(sectionHeader()).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Remove / })).toBeNull();
+  });
+
+  it("an unmarked nav that reads exactly like the new Pagination is still an ordinary nav", () => {
+    const lookalike = createPaginationNode();
+    delete lookalike.component;
+    show([lookalike], [lookalike.id]);
+    expect(sectionHeader()).toBeInTheDocument();
+    expect(screen.getByText("5 links")).toBeInTheDocument();
   });
 
   const otherCases: [string, EditorElementNode][] = [

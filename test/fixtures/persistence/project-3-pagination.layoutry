@@ -1,0 +1,336 @@
+{
+  "format": "layoutry-project",
+  "formatVersion": 3,
+  "project": {
+    "createdAt": "2026-11-17T12:00:00.000Z",
+    "id": "3a7b9c1d-2e4f-4a6b-8c0d-1e2f3a4b5c6d",
+    "name": "Pagination v3",
+    "updatedAt": "2026-11-17T12:00:00.000Z"
+  },
+  "document": {
+    "children": [
+      {
+        "ariaLabel": "Site header",
+        "children": [
+          {
+            "disabled": true,
+            "id": "button-off",
+            "tag": "button",
+            "text": "Unavailable"
+          }
+        ],
+        "id": "header-site",
+        "tag": "header"
+      },
+      {
+        "ariaLabel": "Pagination",
+        "children": [
+          {
+            "background": {
+              "color": "transparent"
+            },
+            "border": {
+              "bottom": {
+                "color": "#e4e4e7",
+                "style": "solid",
+                "width": {
+                  "unit": "px",
+                  "value": 1
+                }
+              },
+              "left": {
+                "color": "#e4e4e7",
+                "style": "solid",
+                "width": {
+                  "unit": "px",
+                  "value": 1
+                }
+              },
+              "right": {
+                "color": "#e4e4e7",
+                "style": "solid",
+                "width": {
+                  "unit": "px",
+                  "value": 1
+                }
+              },
+              "top": {
+                "color": "#e4e4e7",
+                "style": "solid",
+                "width": {
+                  "unit": "px",
+                  "value": 1
+                }
+              }
+            },
+            "borderRadius": {
+              "bottomLeft": {
+                "unit": "px",
+                "value": 6
+              },
+              "bottomRight": {
+                "unit": "px",
+                "value": 6
+              },
+              "topLeft": {
+                "unit": "px",
+                "value": 6
+              },
+              "topRight": {
+                "unit": "px",
+                "value": 6
+              }
+            },
+            "disabled": true,
+            "display": {
+              "cursor": "not-allowed"
+            },
+            "href": "#",
+            "id": "a-79e6dd53",
+            "spacing": {
+              "padding": {
+                "bottom": 6,
+                "left": 12,
+                "right": 12,
+                "top": 6
+              }
+            },
+            "tag": "a",
+            "text": "Previous",
+            "typography": {
+              "color": "#a1a1aa",
+              "fontSize": {
+                "unit": "px",
+                "value": 14
+              },
+              "fontWeight": 500,
+              "lineHeight": {
+                "unit": "px",
+                "value": 20
+              },
+              "textDecorationLine": "none"
+            }
+          },
+          {
+            "ariaCurrent": "page",
+            "background": {
+              "color": "#18181b"
+            },
+            "borderRadius": {
+              "bottomLeft": {
+                "unit": "px",
+                "value": 6
+              },
+              "bottomRight": {
+                "unit": "px",
+                "value": 6
+              },
+              "topLeft": {
+                "unit": "px",
+                "value": 6
+              },
+              "topRight": {
+                "unit": "px",
+                "value": 6
+              }
+            },
+            "display": {
+              "cursor": "default"
+            },
+            "href": "#",
+            "id": "a-003997b8",
+            "spacing": {
+              "padding": {
+                "bottom": 6,
+                "left": 12,
+                "right": 12,
+                "top": 6
+              }
+            },
+            "tag": "a",
+            "text": "1",
+            "typography": {
+              "color": "#ffffff"
+            }
+          },
+          {
+            "borderRadius": {
+              "bottomLeft": {
+                "unit": "px",
+                "value": 6
+              },
+              "bottomRight": {
+                "unit": "px",
+                "value": 6
+              },
+              "topLeft": {
+                "unit": "px",
+                "value": 6
+              },
+              "topRight": {
+                "unit": "px",
+                "value": 6
+              }
+            },
+            "href": "#",
+            "id": "a-88718549",
+            "spacing": {
+              "padding": {
+                "bottom": 6,
+                "left": 12,
+                "right": 12,
+                "top": 6
+              }
+            },
+            "tag": "a",
+            "text": "2",
+            "typography": {
+              "color": "#3f3f46"
+            }
+          },
+          {
+            "borderRadius": {
+              "bottomLeft": {
+                "unit": "px",
+                "value": 6
+              },
+              "bottomRight": {
+                "unit": "px",
+                "value": 6
+              },
+              "topLeft": {
+                "unit": "px",
+                "value": 6
+              },
+              "topRight": {
+                "unit": "px",
+                "value": 6
+              }
+            },
+            "href": "#",
+            "id": "a-be58b482",
+            "spacing": {
+              "padding": {
+                "bottom": 6,
+                "left": 12,
+                "right": 12,
+                "top": 6
+              }
+            },
+            "tag": "a",
+            "text": "3",
+            "typography": {
+              "color": "#3f3f46"
+            }
+          },
+          {
+            "background": {
+              "color": "transparent"
+            },
+            "border": {
+              "bottom": {
+                "color": "#d4d4d8",
+                "style": "solid",
+                "width": {
+                  "unit": "px",
+                  "value": 1
+                }
+              },
+              "left": {
+                "color": "#d4d4d8",
+                "style": "solid",
+                "width": {
+                  "unit": "px",
+                  "value": 1
+                }
+              },
+              "right": {
+                "color": "#d4d4d8",
+                "style": "solid",
+                "width": {
+                  "unit": "px",
+                  "value": 1
+                }
+              },
+              "top": {
+                "color": "#d4d4d8",
+                "style": "solid",
+                "width": {
+                  "unit": "px",
+                  "value": 1
+                }
+              }
+            },
+            "borderRadius": {
+              "bottomLeft": {
+                "unit": "px",
+                "value": 6
+              },
+              "bottomRight": {
+                "unit": "px",
+                "value": 6
+              },
+              "topLeft": {
+                "unit": "px",
+                "value": 6
+              },
+              "topRight": {
+                "unit": "px",
+                "value": 6
+              }
+            },
+            "href": "#",
+            "id": "a-c92ad5d2",
+            "spacing": {
+              "padding": {
+                "bottom": 6,
+                "left": 12,
+                "right": 12,
+                "top": 6
+              }
+            },
+            "tag": "a",
+            "text": "Next",
+            "typography": {
+              "color": "#3f3f46",
+              "fontSize": {
+                "unit": "px",
+                "value": 14
+              },
+              "fontWeight": 500,
+              "lineHeight": {
+                "unit": "px",
+                "value": 20
+              },
+              "textDecorationLine": "none"
+            }
+          }
+        ],
+        "component": "pagination",
+        "flowLayout": {
+          "display": "flex",
+          "flex": {
+            "alignItems": "center",
+            "columnGap": 8,
+            "direction": "row",
+            "justifyContent": "center",
+            "rowGap": 8,
+            "wrap": "wrap"
+          }
+        },
+        "id": "nav-cf5d3e1c",
+        "spacing": {},
+        "tag": "nav"
+      },
+      {
+        "ariaCurrent": "step",
+        "href": "#step-2",
+        "id": "a-step",
+        "tag": "a",
+        "text": "Step 2"
+      }
+    ],
+    "id": "page-root",
+    "tag": "page"
+  }
+}

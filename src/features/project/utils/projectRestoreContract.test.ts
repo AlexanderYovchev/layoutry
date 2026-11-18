@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { CURRENT_PROJECT_FORMAT_VERSION } from "@/features/project/types/projectFile";
 import { createElementNode } from "@/features/editor/factories/elementFactories";
 import {
   selectHasUnsavedChanges,
@@ -59,7 +60,7 @@ describe("loading a project into the editor", () => {
     [
       "a newer format",
       serializeProject({ metadata, document: pageWith() }).replace(
-        '"formatVersion": 2',
+        `"formatVersion": ${CURRENT_PROJECT_FORMAT_VERSION}`,
         '"formatVersion": 99',
       ),
     ],

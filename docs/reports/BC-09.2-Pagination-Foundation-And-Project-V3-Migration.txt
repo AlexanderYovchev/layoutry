@@ -1,0 +1,714 @@
+BC-09.2 — PAGINATION FOUNDATION AND PROJECT FORMAT V3 MIGRATION
+=================================================================
+Date: 2026-11-17
+Baseline: c6a0448 (BC-08.5). BC-09.1's report is still untracked in the
+working tree (not committed by the owner yet).
+Status: implemented, uncommitted, waiting for ChatGPT QA. BC-09.3 not
+started.
+Testing: change-focused, as the owner requested (section 20). No full
+Vitest, Chromium or Electron suite was run.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Delivered:
+- Project format 3 is now the canonical format. Format 1 and 2 files
+  still open through an explicit chain: 1 → 2 → 3.
+- Four new, optional, generic element fields:
+  - ariaLabel   → aria-label (accessible name);
+  - ariaCurrent → aria-current;
+  - disabled    → semantics per element type;
+  - component   → a component marker (today only "pagination").
+- The 2 → 3 step rewrites nothing. It refuses an older-format file that
+  already contains a format 3 field (a version-bypass attempt).
+- The BC-05.4 first-save protection now covers format 1 AND format 2
+  desktop files. Its rule compares versions, so no product code changed
+  there; the protection is proven by tests for both versions.
+- New Pagination insertions:
+  - a marked nav labelled "Pagination", wrapping by default;
+  - Previous: a disabled link;
+  - 1: the current page (aria-current="page");
+  - 2 and 3: ordinary links;
+  - Next: an enabled link.
+  The current page and the disabled Previous render with no href, so
+  they can't navigate even without JavaScript. Export needs no script.
+- Legacy Paginations (format 2, Previous/Next Buttons, no marker) are
+  untouched. Tests prove this against a fixture frozen from the BC-08.5
+  code, including byte-identical export.
+
+Results:
+- Every targeted test passed: Vitest, Chromium, Firefox, WebKit and
+  Electron.
+- typecheck, desktop typecheck, lint and production build: clean.
+- No product defect found.
+- One transient e2e failure did not reproduce in three further runs
+  (section 22).
+
+
+2. FILES MODIFIED
+-----------------
+Product code (modified):
+  src/features/project/types/projectFile.ts         CURRENT = 3
+  src/features/project/schemas/projectFileSchema.ts V2 → V3 envelope schema
+  src/features/project/utils/parseProjectFile.ts    uses the V3 schema
+  src/features/project/utils/projectFormatMigrations.ts  2 → 3 step
+  src/features/project/utils/checkDocumentIntegrity.ts   field placement
+  src/features/editor/types/document.ts             4 new fields
+  src/features/editor/schemas/editorDocumentSchema.ts    their validation
+  src/features/editor/factories/navigationCompositions.ts new Pagination
+  src/features/editor/commands/navigationLinkCommands.ts  excludes marked
+                                                          Paginations
+  src/features/editor/stores/useEditorStore.ts      paste/duplicate strip
+                                                    aria-current on the
+                                                    copy root
+  src/features/canvas/components/document/elements/LinkElement.tsx
+  src/features/canvas/components/document/elements/ButtonElement.tsx
+  src/features/canvas/components/document/elements/ContainerElement.tsx
+  src/features/export/utils/buildExportDocument.ts
+Product code (new):
+  src/features/editor/types/accessibility.ts        value types/validation
+  src/features/editor/rules/accessibilityAttributes.ts  tag rules and the
+                                                    single renderer
+  src/features/editor/types/pagination.ts           identity helpers
+Docs (modified):
+  docs/architecture/project-format.md, docs/architecture/export-engine.md
+Tests and fixtures: section 21.
+
+
+3. V3 SCHEMA DESIGN
+-------------------
+- The envelope is unchanged apart from formatVersion: literal 3
+  (projectFileV3Schema). Format 3 only ADDS optional element fields.
+- The element schema stays strict: an unknown field is still refused,
+  never dropped. This applies to future-version fields too.
+- Added fields (editorDocumentSchema.ts):
+    ariaLabel    string, 1-250 chars, not blank, no control characters
+    ariaCurrent  "page" | "step" | "location" | "date" | "time" | "true"
+                 ("false" refused: it means the same as absent)
+    disabled     literal true (enabled = absent; false is refused, so
+                 there is one representation)
+    component    "pagination"
+- Placement is an integrity rule (checkDocumentIntegrity →
+  findMisplacedAccessibilityField). A misplaced field fails the load with
+  code "integrity" and a path:
+    ariaLabel    nav, header, footer, main, aside, section, form, a, button
+    ariaCurrent  a
+    disabled     a, button
+    component    "pagination" only on nav
+  (The Dialog already has a DERIVED accessible name from its heading, so
+  it doesn't accept ariaLabel.)
+- The TypeScript drift guards (assertSameType) cover the new fields, so
+  the schema and EditorElementNode can't diverge.
+- Serialization needed no change: keys are sorted and undefined is
+  omitted.
+
+
+4. ACCESSIBILITY ATTRIBUTES
+---------------------------
+Decision: three generic fields, plus the marker. Investigated:
+- aria-label: yes (ariaLabel). Needed for the nav landmark name.
+- aria-current: yes (ariaCurrent).
+- aria-disabled: NOT a separate field. One generic `disabled` field maps
+  to the right semantics per element type, as the brief asked ("disabled
+  semantics appropriate to the element type"):
+    link   → no href + role="link" + aria-disabled="true"
+             (aria-disabled alone does NOT stop navigation, so the href is
+             removed; role="link" keeps it announced as an unavailable
+             link, since an <a> without href has no role)
+    button → native `disabled` in Preview and Export;
+             aria-disabled="true" on the Design Canvas (a native disabled
+             button swallows the clicks that select it)
+- role: not stored. It is derived only for a disabled link.
+- No other attribute is needed by Pagination. No free attribute bag: event
+  handlers, style or arbitrary attributes can't be expressed (tests try
+  `onclick`, `attributes`, `ariaDisabled`; all refused).
+- One renderer, resolveAccessibilityAttributes (rules/
+  accessibilityAttributes.ts), is used by:
+  - the Canvas, which is also the Preview;
+  - the export (identity() in buildExportDocument.ts).
+  So Preview and Export can't disagree.
+- aria-current="page" also makes a link non-navigable (isNavigableLink):
+  it renders without href. Other tokens ("step", ...) keep the href. The
+  stored href is never deleted, so BC-09.3's "set current page" can move
+  the state and the old current page gets its URL back.
+- Escaping: React on the Canvas, the export printer on export. Tested with
+  `"><img src=x onerror=...>` and `"><script>...</script>&`.
+- Reusable later by Navbar (aria-current on the active item), Breadcrumbs
+  (nav label, current page) and others.
+
+
+5. MIGRATION IMPLEMENTATION
+---------------------------
+The existing step chain (PROJECT-1.5), with one new step:
+  { from: 1, migrate: migrateSpacingZerosToUnset }        (BC-05.3)
+  { from: 2, migrate: migrateToAccessibilityFields }      (BC-09.2)
+- Version paths:
+  - 1 → 2 → 3, 2 → 3, and 3 (passed through untouched);
+  - 4 or newer → "unsupported-version" ("saved by a newer version of
+    Layoutry (format 4)").
+- 2 → 3 is pure and deterministic:
+  - it runs on the dispatcher's structuredClone;
+  - it changes only formatVersion;
+  - no node, id, interaction, CSS or media value is touched;
+  - it never converts an old Pagination.
+- Version-bypass guard: if a format 1 or 2 file contains ariaLabel,
+  ariaCurrent, disabled or component anywhere (root included), the step
+  throws.
+  - The load fails with "migration-failed", and the message names the
+    field.
+  - The file is untouched.
+  - Why: no older build could write those fields, so such a file is
+    forged. Accepting it would let a file claim an old version while
+    carrying new data.
+- Unavoidable serialization difference: re-saving a format 2 file
+  changes exactly one line, `"formatVersion": 2,` → `3,`. Tested
+  byte-for-byte on two frozen format 2 fixtures.
+- Measured cost (section 24): about 16 ms on a 3,265-element, 1.7 MB file.
+
+
+6. LEGACY SAVE PROTECTION
+-------------------------
+- The BC-05.4 rule lives in the desktop main process
+  (projectFileService.write): a write that would RAISE the version the
+  window read returns "older-format" and writes nothing, unless the
+  renderer sends upgradeFormat (only after Overwrite Original).
+- It compares versions, so with CURRENT = 3:
+  - a format 1 or 2 file now asks;
+  - a format 3 file saves straight back.
+  No product change was needed there.
+- Proven for BOTH older versions, in unit tests and in the real Electron
+  app:
+  - Save asks first and writes nothing;
+  - Save As keeps the original byte-identical and writes a format 3 copy;
+  - a cancelled Save As dialog writes nothing;
+  - Cancel and Escape write nothing, and the next Save asks again;
+  - Overwrite only on that explicit choice, and it never asks again;
+  - a failed Overwrite reports the error, keeps the original and the
+    unsaved work, and is not marked as migrated;
+  - closing with unsaved work: Save asks about the format first and the
+    window stays open (the unsaved-close flow can't bypass it);
+  - a format 3 file saves in place without asking.
+- Crash recovery: the BC-05.4 recovery path records the ORIGINAL file's
+  version on the restore token, so saving restored work is protected the
+  same way. Its tests (desktop/recovery, projectRecoveryWorkflow) were
+  re-run and pass. Recovery snapshots never write to the original file.
+
+
+7. BROWSER SAVE BEHAVIOR
+------------------------
+No prompt is needed in the browser, and none was added. This keeps the
+BC-05.4 product decision, which covers desktop files. It is now
+documented in project-format.md ("Browser storage (BC-09.2 review)"):
+- one origin serves one deployed build, so after an update every tab that
+  loads the app is the new build;
+- the browser never writes back to a file it imported: Save writes the
+  library record, and Download always creates a new file;
+- an older build still open in another tab refuses a format 3 library or
+  recovery record with the "newer version" message and doesn't change it,
+  so nothing is lost;
+- browser recovery records hold their own copy of the text and are
+  migrated in memory on restore.
+Browser code changed: none. Browser import of a format 2 file, which
+migrates in memory, is covered by the Chromium spec (section 11).
+
+
+8. ELECTRON SAVE BEHAVIOR
+-------------------------
+- No desktop code changed. The main-process rule is version-generic
+  (section 6).
+- Real-app evidence:
+  - legacy-format-save.spec.ts now runs all four of its tests for a
+    format 1 original AND a format 2 original: 8 tests, passed twice;
+  - a new e2e/desktop/pagination.spec.ts covers insert, Preview, Save to
+    a real file (format 3, marker and fields stored), relaunch with that
+    file, the same markup, and an edited save straight back with no
+    prompt.
+
+
+9. PAGINATION COMPONENT IDENTITY
+--------------------------------
+- The marker is `component: "pagination"` on the nav.
+  - It is set only by createPaginationNode, and only on the root.
+  - isPaginationNode(node) = tag "nav" && component === "pagination".
+- Never inferred: a nav with the exact new structure but no marker is an
+  ordinary nav (test). Navbars and Breadcrumbs never get it (test).
+  Legacy Paginations don't get it.
+- Preserved by save/reopen, copy/paste, duplicate and Undo/Redo: the
+  clone copies every field (store tests, desktop relaunch).
+- There was no existing generic marker architecture (BC-08's Video Embed
+  reuses the iframe's own fields). `component` is the smallest addition,
+  validated as an enum and limited to its root tag.
+- Interim choice (please confirm): a MARKED Pagination no longer gets
+  the generic "Navigation links" section; its commands are no-ops on it.
+  - Why: its Previous/Next are now links. Generic Add would copy Next
+    and append "New link" after it, and Remove could delete the current
+    page.
+  - BC-09.3 adds the dedicated section.
+  - Until then a page can be added by duplicating a page link, which
+    never copies the current state (section 19).
+  - Legacy (unmarked) Paginations keep the generic section exactly as
+    before (tests).
+
+
+10. NEW INSERTION TEMPLATE
+--------------------------
+createPaginationNode (Components > Navigation > Pagination; the card and
+its 320×48 free-layout size are unchanged):
+
+  nav  component "pagination", ariaLabel "Pagination"
+       Flex row, Wrap, centred, gap 8, spacing {}
+    a "Previous"  disabled, href "#", muted text #a1a1aa and border
+                  #e4e4e7, cursor not-allowed
+    a "1"         ariaCurrent "page", href "#", white on #18181b,
+                  cursor default
+    a "2", a "3"  href "#", text #3f3f46 (default underline, as before)
+    a "Next"      href "#", border #d4d4d8, 14 px / 500, no underline
+
+- Previous/Next keep the old Buttons' look: 14 px, medium weight, light
+  border, no underline.
+- Page links are unchanged from the old preset.
+- One design only; no presets (deferred, as briefed).
+- First/Last and the ellipsis are absent (BC-09.3).
+- "#" is the placeholder destination every Layoutry link starts with.
+  The author sets real URLs in each link's Link section.
+
+
+11. LEGACY PAGINATION PRESERVATION
+----------------------------------
+A fixture was frozen BEFORE any code change, written by the c6a0448 code
+in a throwaway test:
+- project-2-legacy-pagination.layoutry, containing:
+  - a Basic Navbar and Breadcrumbs;
+  - the old Pagination, with a click interaction on Next;
+  - that interaction's target Paragraph;
+- its separate-files export at the same commit: index.html, styles.css
+  and script.js.
+Tests:
+- It opens with every node, id, style and interaction exactly as written
+  (deep-equal to the file).
+- It re-saves to the same bytes apart from formatVersion.
+- Its Pagination keeps its Buttons, has no marker and no accessibility
+  fields, and is not identified as a Pagination.
+- The Navbar, Breadcrumbs and legacy Pagination all keep the generic
+  Navigation links management.
+- Its export is byte-for-byte what c6a0448 exported (all three files).
+- Chromium: importing it shows the same markup, no aria-label, and the
+  Navigation links section.
+- Desktop: it is the format 2 original in the BC-05.4 suite.
+
+
+12. HTML SEMANTICS
+------------------
+Exported page (separate files, real output):
+  <nav class="..." aria-label="Pagination">
+    <a class="..." role="link" aria-disabled="true">Previous</a>
+    <a class="..." aria-current="page">1</a>
+    <a class="..." href="#">2</a>
+    <a class="..." href="#">3</a>
+    <a class="..." href="#">Next</a>
+  </nav>
+- A named navigation landmark.
+- Exactly one aria-current.
+- Previous/Next are real links when enabled. No fake button navigation.
+- No unsafe href, and valid nesting (phrasing content in nav).
+- ul > li > a: NOT used. li is a text-only leaf in the document model
+  (insertionRules.ts). Making it a container changes every list, and the
+  brief says not to add a brittle special case. The interim structure
+  the brief accepted is used instead: a named nav of links plus
+  non-interactive current-page text.
+- Screen readers (Chromium accessibility tree, checked with getByRole):
+  - "Pagination" is a navigation landmark;
+  - "Previous" is a link, with aria-disabled;
+  - "1" is not a link, and carries aria-current="page";
+  - 2, 3 and Next are links.
+
+
+13. CURRENT-PAGE BEHAVIOR
+-------------------------
+- Visual: dark background plus white text, so it isn't shown by colour
+  alone.
+- Semantic: aria-current="page".
+- Non-navigable: no href in Design, Preview and Export. With JavaScript
+  turned off, clicking it on the exported page doesn't navigate (tested).
+  It isn't a Tab stop.
+- Selectable and CSS-editable in Design: it is an ordinary Link node, and
+  a click reaches selection (unit and Chromium tests).
+- Survives save/reopen, Undo/Redo and export (tests).
+- Exactly one:
+  - the factory makes one;
+  - duplicating or pasting a node never copies aria-current on the
+    copy's root (withoutCopiedCurrentState), so a duplicated current
+    page is an ordinary page;
+  - duplicating the WHOLE Pagination keeps its own single current page.
+  - Not enforced at load: that would make a project unopenable over a
+    styling matter.
+
+
+14. DISABLED BOUNDARY BEHAVIOR
+------------------------------
+- Previous (page 1 is current) is disabled. Next is enabled.
+- Both stay visible: no display or visibility change.
+- The disabled link has no href, role="link" and aria-disabled="true", so
+  no JavaScript is needed to block it. Clicked with JS off on the export:
+  no navigation (tested).
+- Visual: muted text and border, cursor not-allowed.
+- The last-page boundary (Next disabled) needs "set current page", which
+  is BC-09.3. The model already supports it: `disabled` on Next is the
+  same field, and is tested generically on links and buttons.
+
+
+15. RESPONSIVE DEFAULTS
+-----------------------
+- New Paginations wrap: flex-wrap is wrap, centred.
+- Measured on the exported page (Chromium, Firefox, WebKit):
+  - the default (5 controls) fits ONE row at 320 px, with no sideways
+    scroll;
+  - 12 page links + Previous/Next at 320, 375, 768, 1024 and 1440 px:
+    no sideways page scroll, nothing escapes the nav, every control is at
+    least 24×24 px (WCAG 2.5.8);
+  - one row from 768 px; several rows at 320/375.
+  - This compares with BC-09.1's nowrap measurement: +64 px sideways
+    scroll at 320 px.
+- Nothing is hidden automatically. Old Paginations keep nowrap.
+- Visual note: Previous/Next are 34 px tall and page links 36 px,
+  centred, exactly as in the old preset.
+
+
+16. CANVAS SELECTION
+--------------------
+Verified in Chromium (real UI):
+- Insertion from Components.
+- The nav is selected on insert.
+- Clicking Previous (disabled), 1 (current) and Next selects each one,
+  and the Inspector shows that Link's own Link section with its stored
+  href "#".
+- The URL never changes (no navigation in Design).
+- Undo removes the Pagination; Redo restores the same markup.
+- In a Flex container and a Free-layout container (imported document):
+  same semantics.
+- Move and resize use the unchanged ordinary-node paths. No Canvas
+  infrastructure changed; only three element components pass the
+  attributes.
+- Note: Playwright refuses to click an aria-disabled element ("element is
+  not enabled"). The specs use force:true, a real mouse click. A user is
+  not blocked.
+
+
+17. PREVIEW / EXPORT RENDERING
+------------------------------
+- Preview = the Canvas components with isPreview. The same markup was
+  verified in Chromium, Firefox, WebKit and Electron.
+- Clicking Previous, 1, 2 and Next in Preview:
+  - never navigates;
+  - the document is unchanged after leaving Preview (same attributes).
+- Export:
+  - static attributes only;
+  - no script.js and no <script> for a Pagination;
+  - no diagnostics;
+  - standalone and separate-files modes give identical markup.
+- Keyboard on the exported page (Chromium, Firefox): Tab goes 2 → 3 →
+  Next. Previous and the current page aren't stops.
+  - WebKit: skipped. Playwright's Windows WebKit doesn't Tab to links,
+    known since BC-06.2.
+- No separate Pagination export engine.
+
+
+18. SECURITY REVIEW
+-------------------
+- URLs: no new path.
+  - Enabled links go through the existing checkExportUrl ("link").
+  - A disabled or current link writes NO href at all.
+  - Its STORED href is still validated: the schema refuses javascript:,
+    and export re-validates the document, so a javascript: href refuses
+    the export even on a link that wouldn't render it (tested).
+  - An ordinary link's `java\tscript:` is still refused (tested).
+- Attribute injection: values are escaped (section 4). Only three fixed
+  attribute names come from the fields, plus the derived role. Event
+  handlers and attribute bags can't be stored (tested). The export's
+  attribute-name check still applies.
+- Migration bypass: refused (section 5). A newer format is refused, not
+  best-effort loaded.
+- Preview escape: links still preventDefault in Design and Preview;
+  disabled/current links have no href to follow; Electron's navigation
+  guards are unchanged.
+- No target/rel field exists, so there is no window.opener risk.
+- Unrelated link consumers: the shared URL validation didn't change.
+  Navbar/Breadcrumbs output is unchanged (frozen export), and the
+  existing export-interactions links tests pass.
+
+
+19. UNDO/REDO AND COPY/PASTE
+----------------------------
+Store tests (useEditorStore.pagination.test.ts, 9):
+- insert is one Undo step; Undo removes it; Redo restores it deep-equal;
+- save/reopen keeps the marker, the label, the current page and disabled;
+- duplicating the whole Pagination gives a second marked Pagination with
+  its own single current page and fresh ids;
+- copy/paste of the whole Pagination does the same;
+- duplicating the current page gives an ordinary page "1", so there is
+  still exactly one current page; Undo removes the copy;
+- pasting a copied current page (into the nav, then into the page) adds
+  no second current page;
+- duplicating an ordinary page link copies no state;
+- the generic Navigation links actions are no-ops on a marked Pagination
+  (same document, no history entry);
+- a legacy Pagination keeps them (Add link works as before).
+Interaction-reference integrity: no structural command was added. The
+existing tests are re-run and pass: removal guard, structural-removal
+integrity, interactions, and the dangling-interaction refusal on load.
+
+
+20. TEST-IMPACT MAP
+-------------------
+Changed module → direct tests → direct consumers, and why each was run:
+
+project format/version (projectFile, projectFileSchema, parseProjectFile,
+projectFormatMigrations, checkDocumentIntegrity)
+  → src/features/project/** (all project tests: parse, migrations,
+    legacy fixtures, round-trip, restore contract, commands, desktop
+    workflow, recovery, storage records, workers)
+  → desktop/files/projectFileService, desktop/recovery/**, desktop/ipc
+    (the main-process save and recovery rule)
+  → store tests that save and assert the version (imageUpload,
+    navigationLinks, navigationLinks.regression, videoEmbed)
+  → Electron: legacy-format-save, image-upload, navigation-links,
+    pagination
+editor document model + schema (document.ts, editorDocumentSchema)
+  → src/features/editor/schemas/**, the project parse tests above, and
+    the new projectFormatV3.test.ts
+accessibility rules (new) → Canvas + Export consumers below
+Canvas elements (Link/Button/Container)
+  → src/features/canvas/components/document/** (every element test,
+    renderer, resize matrix) + new accessibilityAttributes.test.tsx
+export (buildExportDocument)
+  → src/features/export/** (export, golden, parity and immutability
+    tests) + new exportAccessibilityAttributes.test.ts + the legacy
+    byte-identical export test
+  → Chromium: export-visual-parity (its catalog includes the new
+    Pagination), export-interactions (every element type, link keyboard
+    and safety)
+factory (navigationCompositions)
+  → src/features/editor/factories/** (includes knownElementTags,
+    elementFactories), navigationComponents store test, CreationToolbar
+    test, InspectorContent test
+navigation link commands
+  → navigationLinkCommands test, InspectorNavigationLinksSection tests
+    (section and eligibility), navigationLinks store tests
+store paste/duplicate
+  → the new pagination store test, keyboard-shortcut test, interactions
+    test
+Browser-sensitive (accessibility tree, Tab, href-less links)
+  → the new pagination-foundation spec on Firefox and WebKit
+Not run, deliberately (unchanged and not a consumer):
+- full Vitest, full Chromium, full Electron;
+- BC-08 media and video security, image upload, recovery soak/benchmark,
+  packaged app.
+
+
+21. EXACT FOCUSED TEST COMMANDS
+-------------------------------
+New test files:
+  src/features/project/utils/projectFormatV3.test.ts              43
+  src/features/editor/stores/useEditorStore.pagination.test.ts      9
+  src/features/canvas/components/document/elements/
+    accessibilityAttributes.test.tsx                               15
+  src/features/export/utils/exportAccessibilityAttributes.test.ts   9
+  e2e/pagination-foundation.spec.ts                                 7
+  e2e/desktop/pagination.spec.ts                                    1
+Updated test files (with what changed):
+  legacyProjectFiles.test.ts
+    - format 3 expectations;
+    - format 2 re-save = same bytes but the version;
+    - +5 tests: the legacy Pagination fixture and the first format 3
+      fixture.
+  projectFormatMigrations.test.ts
+    - the current version is 3 and the steps are [1, 2];
+    - the BC-05.3 tests now run the 1 → 2 step alone.
+  projectDesktopWorkflow.test.ts
+    - the BC-05.4 suite runs for format 1 AND format 2 originals (doubled).
+  parseProjectFile.test.ts
+    - the future-version sample is 4.
+  projectRestoreContract.test.ts
+    - the newer-format sample uses CURRENT.
+  navigationCompositions.test.ts
+    - the new Pagination shape (8 tests).
+  InspectorNavigationLinksSection.eligibility.test.tsx
+    - legacy fixture Pagination keeps the section;
+    - the marked one doesn't;
+    - an unmarked lookalike does.
+  useEditorStore.{imageUpload,navigationLinks,navigationLinks.regression,
+    videoEmbed}.test.ts
+    - version 2 → 3.
+  e2e/desktop/legacy-format-save.spec.ts
+    - parametrised over format 1 and 2 originals.
+  e2e/desktop/image-upload.spec.ts, e2e/desktop/navigation-links.spec.ts
+    - version 2 → 3.
+  New helper: test/fixtures/legacyPagination.ts.
+  New fixtures: test/fixtures/persistence/project-2-legacy-pagination
+    (.layoutry, .export.index.html, .export.styles.css, .export.script.js)
+    and project-3-pagination.layoutry; README updated.
+No test was weakened. Every changed expectation follows a deliberate
+behaviour change (the version number, the new factory shape, the marked
+Pagination leaving the generic section). Each one was replaced by an
+equal-or-stronger assertion.
+
+Commands:
+  npx vitest run src/features/project desktop/files/projectFileService.test.ts
+    desktop/recovery desktop/ipc src/features/editor/schemas
+    src/features/editor/factories src/features/editor/rules
+    src/features/editor/commands/navigationLinkCommands.test.ts
+    src/features/editor/stores/useEditorStore.{navigationComponents,
+    navigationLinks,navigationLinks.regression,pagination,imageUpload,
+    videoEmbed,interactions,structuralRemovalIntegrity}.test.ts
+    src/features/editor/hooks/useEditorKeyboardShortcuts.test.ts
+    src/features/inspector/components/InspectorNavigationLinksSection
+    src/features/inspector/components/InspectorContent.test.tsx
+    src/features/canvas/components/document src/features/export
+    src/components/layout/CreationToolbar.test.tsx
+  npx playwright test e2e/pagination-foundation.spec.ts --project=chromium
+  npx playwright test -c <temporary Firefox+WebKit config, deleted>
+    e2e/pagination-foundation.spec.ts
+  npx playwright test e2e/export-visual-parity.spec.ts
+    e2e/export-interactions.spec.ts --project=chromium
+  npm run desktop:build
+  npx playwright test -c playwright.desktop.config.ts legacy-format-save
+    pagination image-upload navigation-links
+  npx playwright test -c playwright.desktop.config.ts legacy-format-save
+    (repeat, for timings)
+  npm run typecheck; npx tsc -p desktop/tsconfig.json --noEmit;
+  npx eslint <every changed/new .ts/.tsx>; npx prettier --check (files
+  that were clean at HEAD); npm run build
+
+
+22. TEST RESULTS
+----------------
+Vitest, targeted: 121 files, 2162 passed, 1 skipped, 0 failed.
+  The skip is pre-existing and unrelated: recoveryStore "never follows a
+  link planted in the folder" needs symlink rights on this machine.
+Chromium, pagination-foundation: 7/7.
+Firefox + WebKit, pagination-foundation: 14/14.
+  Inside the export test, WebKit's Tab-order check is SKIPPED by the
+  documented exception (not counted as passed).
+Chromium, export-visual-parity + export-interactions:
+  - first run: 11 passed, 2 failed;
+  - then 8/8 (parity alone), 13/13 and 13/13.
+  - The failures were "element(s) not found" on the typography and
+    box-styles documents, which contain no Pagination and none of the
+    changed fields.
+  - They did not reproduce in three more runs. Most likely the dev server
+    was still compiling on a cold start. Recorded as transient, not as a
+    pass.
+  - The catalog document, which includes the new Pagination, passed in
+    every run.
+Electron: legacy-format-save (8), pagination (1), image-upload (2),
+  navigation-links (2): 13/13. legacy-format-save repeated: 8/8.
+No product defect found.
+
+
+23. BUILD / TYPECHECK / LINT
+----------------------------
+npm run typecheck                       clean
+npx tsc -p desktop/tsconfig.json        clean
+npx eslint (all changed/new files)      clean
+prettier                                - the two changed test files that
+                                          were Prettier-clean at HEAD were
+                                          re-formatted;
+                                        - the other changed files were not
+                                          Prettier-clean at HEAD and were
+                                          left in their existing style (no
+                                          unrelated reformatting).
+npm run build                           compiled successfully
+npm run desktop:build                   succeeded
+
+Performance (the changed operations only; throwaway probes, deleted):
+  v2 → v3 load, 3,265 elements / 1.7 MB    71.4 ms (v3 load: 55.5 ms),
+                                           so the migration adds ~16 ms
+  Pagination insertion (store)             0.1 ms
+  render 50 Paginations (jsdom)            296 ms (5 runs, median)
+  export 50 Paginations                    18.2 ms
+  legacy Save As flow, real Electron       2.4 s per test, including
+                                           launch, edit, dialog and the
+                                           write (format 1 and 2 alike)
+
+
+24. KNOWN LIMITATIONS
+---------------------
+- No Inspector UI for the new fields yet. A user can't type an aria-label,
+  set the current page or disable a control. Only the factory sets them
+  (BC-09.3 scope).
+- The Link section of a current or disabled link still edits its stored
+  href, which doesn't render while that state is set. BC-09.3 should
+  explain this in the UI.
+- A marked Pagination has no page add/remove UI until BC-09.3 (section
+  9). Duplicating a page link is the workaround.
+- Cut then paste of the current page drops its current state (the paste
+  is a copy root). Undo restores it.
+- A disabled or current link that the author gave a click interaction
+  still runs it in Preview and on export (only navigation is blocked). No
+  factory creates this. BC-09.4 (interaction regression) should decide.
+- No ul/li list semantics (section 12).
+- No hover/focus styles (cross-cutting CSS-model gap; BC-09.1 G7).
+- Playwright quirks, test-only:
+  - WebKit Tab skip (section 17);
+  - force-click on aria-disabled elements (section 16).
+- An older Layoutry (format 2 build) refuses format 3 files. That is
+  intended ("made by a newer version").
+
+
+25. OPEN DEFECTS
+----------------
+None found in product code.
+Watch item: the one transient e2e failure in section 22. It did not
+reproduce, and it touched no changed code.
+
+
+26. GIT WORKING-TREE STATUS
+---------------------------
+Branch main, HEAD c6a0448. Nothing staged or committed.
+Modified (31): the product, doc and test files in sections 2 and 21, and
+test/fixtures/persistence/README.md.
+Untracked (new):
+  docs/reports/BC-09.1-Pagination-Component-Architecture-Investigation.txt
+    (from BC-09.1)
+  docs/reports/BC-09.2-Pagination-Foundation-And-Project-V3-Migration.txt
+  e2e/desktop/pagination.spec.ts, e2e/pagination-foundation.spec.ts
+  src/features/canvas/components/document/elements/
+    accessibilityAttributes.test.tsx
+  src/features/editor/rules/accessibilityAttributes.ts
+  src/features/editor/stores/useEditorStore.pagination.test.ts
+  src/features/editor/types/accessibility.ts
+  src/features/editor/types/pagination.ts
+  src/features/export/utils/exportAccessibilityAttributes.test.ts
+  src/features/project/utils/projectFormatV3.test.ts
+  test/fixtures/legacyPagination.ts
+  test/fixtures/persistence/project-2-legacy-pagination.layoutry
+    (+ .export.index.html, .export.styles.css, .export.script.js)
+  test/fixtures/persistence/project-3-pagination.layoutry
+Deleted temporary files:
+  - the two fixture-freezing tests, the perf probe and a measurement spec;
+  - the Firefox/WebKit config.
+The changelog (changelogs/) is gitignored. No secrets or generated
+output.
+- The fixtures are test data and should be committed: .gitattributes
+  keeps them byte-exact.
+
+
+27. QA RECOMMENDATION
+---------------------
+APPROVE BC-09.2. It delivers format 3 with an explicit, guarded migration
+and first-save protection proven for format 1 and 2 originals. It adds
+generic, validated accessibility fields and an accessible, static, wrapped
+Pagination for new insertions, while old projects and old Paginations
+stay byte-identical.
+Please confirm or redirect these engineering choices (all reversible):
+1. One `disabled` field (per-type semantics) instead of an aria-disabled
+   field.
+2. aria-current="page" makes ANY link non-navigable, not only in
+   Pagination.
+3. A marked Pagination leaves the generic Navigation links section until
+   BC-09.3.
+4. Copies never carry aria-current on their root (this includes
+   cut+paste).
+5. Format 1/2 files carrying format 3 fields are refused
+   (migration-failed).
+Then BC-09.3 (the Pagination Inspector) can start.

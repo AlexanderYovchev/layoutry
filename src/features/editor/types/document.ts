@@ -24,6 +24,7 @@ import type { InteractionBinding } from "@/features/editor/types/interactions";
 import type { InitialPreviewVisibility } from "@/features/editor/types/previewVisibility";
 import type { TransitionSettings } from "@/features/editor/types/transition";
 import type { TransformSettings } from "@/features/editor/types/transform";
+import type { AriaCurrentValue, ComponentMarker } from "@/features/editor/types/accessibility";
 
 export interface ElementDimensions {
   /**
@@ -584,4 +585,31 @@ export interface EditorElementNode {
    * blanket Design suppression.
    */
   transform?: TransformSettings;
+  /**
+   * This node's own accessible name, exported as `aria-label` (BC-09.2,
+   * project format 3). Only on landmark-capable containers, links and
+   * buttons (rules/accessibilityAttributes.ts); validated by
+   * isValidAriaLabel. Unset renders nothing. See types/accessibility.ts.
+   */
+  ariaLabel?: string;
+  /**
+   * Marks this link as the current item of its set, exported as
+   * `aria-current` (BC-09.2, format 3). "page" also makes the link
+   * non-navigable: it renders without its href, which stays stored.
+   */
+  ariaCurrent?: AriaCurrentValue;
+  /**
+   * An unavailable link or button (BC-09.2, format 3). Only `true` is
+   * stored; enabled is the field's absence. A button gets the native
+   * `disabled` attribute (Preview/Export); a link renders without its href
+   * as `role="link" aria-disabled="true"`, so it can't navigate even
+   * without JavaScript.
+   */
+  disabled?: true;
+  /**
+   * The component this subtree was inserted as (BC-09.2, format 3). Set
+   * only by a component factory, never inferred, and never changes the
+   * rendered HTML. See types/accessibility.ts (ComponentMarker).
+   */
+  component?: ComponentMarker;
 }

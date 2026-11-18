@@ -1,5 +1,11 @@
 import { z } from "zod";
 import { isKnownElementTag } from "@/features/editor/rules/knownElementTags";
+import {
+  ARIA_CURRENT_VALUES,
+  COMPONENT_MARKERS,
+  isValidAriaLabel,
+  MAX_ARIA_LABEL_LENGTH,
+} from "@/features/editor/types/accessibility";
 import type { AspectRatioValue } from "@/features/editor/types/aspectRatio";
 import {
   isValidBackgroundImageUrl,
@@ -482,6 +488,18 @@ export const editorElementNodeSchema = z.strictObject({
   initialPreviewVisibility: z.enum(["visible", "hidden"]).optional(),
   transition: transitionSchema.optional(),
   transform: transformSchema.optional(),
+  // Project format 3 (BC-09.2): generic accessibility fields and the
+  // component marker. Where each may appear is an integrity rule
+  // (rules/accessibilityAttributes.ts).
+  ariaLabel: z
+    .string()
+    .refine(isValidAriaLabel, {
+      message: `an accessible label must be 1–${MAX_ARIA_LABEL_LENGTH} characters, not blank, with no control characters`,
+    })
+    .optional(),
+  ariaCurrent: z.enum(ARIA_CURRENT_VALUES).optional(),
+  disabled: z.literal(true).optional(),
+  component: z.enum(COMPONENT_MARKERS).optional(),
 });
 
 // --- Drift guards: each schema must produce exactly the editor's type. ---

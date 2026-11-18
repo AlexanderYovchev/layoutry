@@ -7,6 +7,8 @@ import { serializeProject } from "@/features/project/utils/serializeProject";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { isVideoEmbedNode } from "@/features/editor/types/videoEmbed";
 import { exportHtmlCss } from "@/features/export/utils/exportHtmlCss";
+import { isNavigationLinkContainer } from "@/features/editor/commands/navigationLinkCommands";
+import { isPaginationNode } from "@/features/editor/types/pagination";
 
 /**
  * PROJECT-1.5 legacy compatibility: `.layoutry` files frozen from earlier
@@ -56,18 +58,18 @@ describe("project files from earlier checkpoints", () => {
     expect(result.project.document.children?.length).toBeGreaterThan(10);
   });
 
-  it("migrates the PROJECT-1.1 file to format 2, changing nothing but its spacing zeros (BC-05.3)", () => {
+  it("migrates the PROJECT-1.1 file to the current format, changing nothing but its spacing zeros (BC-05.3; 2 → 3 changes nothing, BC-09.2)", () => {
     const text = fixture("project-1.1-every-element.layoutry").toString("utf8");
     const result = parseProjectFile(text);
     if (!result.ok) throw new Error(result.error.message);
     const saved: unknown = JSON.parse(serializeProject(result.project));
     const original: unknown = JSON.parse(text);
 
-    // Saving writes format 2. Removing every spacing side that was 0 (and
+    // Saving writes format 3. Removing every spacing side that was 0 (and
     // any box left empty) from the original gives exactly the saved file:
     // nothing else was touched, and every non-zero side survived.
     expect(saved).toEqual(
-      Object.assign({}, stripSpacingZeros(original), { formatVersion: 2 }),
+      Object.assign({}, stripSpacingZeros(original), { formatVersion: 3 }),
     );
     expect(JSON.stringify(original)).toMatch(/"padding":\{"bottom":0/);
     expect(JSON.stringify(saved)).not.toMatch(
@@ -75,7 +77,7 @@ describe("project files from earlier checkpoints", () => {
     );
   });
 
-  it("re-saves a format 2 file to the very same bytes (BC-05.3 fixture, authored zeros included)", () => {
+  it("re-saves a format 2 file to the very same bytes apart from its format version (BC-05.3 fixture, authored zeros included)", () => {
     const text = fixture("project-2-spacing-zero.layoutry").toString("utf8");
     const result = parseProjectFile(text);
     if (!result.ok) throw new Error(result.error.message);
@@ -85,7 +87,9 @@ describe("project files from earlier checkpoints", () => {
     expect(button?.spacing).toEqual({
       padding: { top: 0, right: 0, bottom: 0, left: 0 },
     });
-    expect(serializeProject(result.project)).toBe(text);
+    expect(serializeProject(result.project)).toBe(
+      text.replace('"formatVersion": 2,', '"formatVersion": 3,'),
+    );
   });
 
   it("opens a PROJECT-1.3 native file, through the browser import as well", async () => {
@@ -173,5 +177,89 @@ describe("Embeds in format 1 files stay generic Embeds (BC-08.5)", () => {
     );
     expect(frame).not.toContain("data-ly-video-src");
     expect(frame).not.toContain("allow=");
+  });
+});
+
+/**
+ * BC-09.2: `project-2-legacy-pagination.layoutry` was written by the
+ * BC-08.5 code (c6a0448), before format 3: a Navbar, Breadcrumbs, the old
+ * Pagination preset (Previous/Next Buttons, no marker, no ARIA) with an
+ * interaction on Next, and the interaction's target. Its export files were
+ * written by the same code. Opening it in format 3 must change nothing.
+ */
+describe("a format 2 project with the old Pagination (BC-09.2)", () => {
+  const text = () =>
+    fixture("project-2-legacy-pagination.layoutry").toString("utf8");
+  const open = () => {
+    const result = parseProjectFile(text());
+    if (!result.ok) throw new Error(result.error.message);
+    return result.project;
+  };
+  const navs = (document: EditorElementNode) =>
+    (document.children ?? []).filter((node) => node.tag === "nav");
+
+  it("opens with every node, id, style and interaction exactly as written", () => {
+    const raw: unknown = JSON.parse(text());
+    expect(open().document).toEqual(Reflect.get(Object(raw), "document"));
+  });
+
+  it("re-saves to the same bytes apart from its format version", () => {
+    expect(serializeProject(open())).toBe(
+      text().replace('"formatVersion": 2,', '"formatVersion": 3,'),
+    );
+  });
+
+  it("keeps the old Pagination as an ordinary nav: Buttons, no marker, no accessibility fields", () => {
+    const [navbar, breadcrumbs, pagination] = navs(open().document);
+    expect(pagination.children?.map((child) => child.tag)).toEqual([
+      "button",
+      "a",
+      "a",
+      "a",
+      "button",
+    ]);
+    for (const nav of [navbar, breadcrumbs, pagination]) {
+      expect(isPaginationNode(nav)).toBe(false);
+      // The generic Navigation links section still manages all three.
+      expect(isNavigationLinkContainer(nav)).toBe(true);
+    }
+    expect(JSON.stringify(open().document)).not.toMatch(
+      /"(ariaLabel|ariaCurrent|disabled|component)"/,
+    );
+  });
+
+  it("exports byte-for-byte what the BC-08.5 code exported", () => {
+    const files = exportHtmlCss(open().document, { mode: "separate" }).files;
+    expect(files.map((file) => file.path).sort()).toEqual([
+      "index.html",
+      "script.js",
+      "styles.css",
+    ]);
+    for (const file of files)
+      expect(file.content).toBe(
+        fixture(`project-2-legacy-pagination.export.${file.path}`).toString(
+          "utf8",
+        ),
+      );
+  });
+});
+
+describe("the first format 3 file (BC-09.2 fixture)", () => {
+  it("re-saves to the very same bytes, with the marker and every accessibility field kept", () => {
+    const text = fixture("project-3-pagination.layoutry").toString("utf8");
+    const result = parseProjectFile(text);
+    if (!result.ok) throw new Error(result.error.message);
+    expect(serializeProject(result.project)).toBe(text);
+    const [header, pagination, step] = result.project.document.children ?? [];
+    expect(header.ariaLabel).toBe("Site header");
+    expect(header.children?.[0].disabled).toBe(true);
+    expect(isPaginationNode(pagination)).toBe(true);
+    expect(pagination.ariaLabel).toBe("Pagination");
+    expect(
+      pagination.children?.map(
+        (child) => child.ariaCurrent ?? child.disabled ?? null,
+      ),
+    ).toEqual([true, "page", null, null, null]);
+    expect(step.ariaCurrent).toBe("step");
   });
 });

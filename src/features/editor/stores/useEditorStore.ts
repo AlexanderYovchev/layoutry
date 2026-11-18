@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { withoutCopiedCurrentState } from "@/features/editor/types/pagination";
 import {
   insertNode,
   moveNode,
@@ -1809,7 +1810,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
       const clone = resolveFreeDestinationPlacement(
         state.document,
         destinationParentId,
-        cloneNodeWithFreshIds(sourceNode),
+        withoutCopiedCurrentState(cloneNodeWithFreshIds(sourceNode)),
       );
       // A pasted trigger may still point at a target deleted since the
       // copy; that binding is removed, as deleting the target would have.
@@ -1828,7 +1829,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
       if (!node) return {};
       const parentId = findParentId(state.document, node.id);
       if (!parentId) return {};
-      const clone = resolveFreeDestinationPlacement(state.document, parentId, cloneNodeWithFreshIds(node));
+      const clone = resolveFreeDestinationPlacement(state.document, parentId, withoutCopiedCurrentState(cloneNodeWithFreshIds(node)));
       const document = insertNode(state.document, parentId, clone, {
         referenceId: node.id,
         placement: "after",

@@ -6,6 +6,7 @@ import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttr
 import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
 import { resolveContainerElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
 import { cn, mergeRefs } from "@/lib/utils";
+import { accessibilityProps } from "@/features/editor/rules/accessibilityAttributes";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
@@ -102,6 +103,7 @@ export function ContainerElement({
       id={node.htmlId}
       ref={mergeRefs<HTMLElement>(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
+      {...accessibilityProps(node, { nativeDisabled: isPreview })}
       {...(node.tag === "form" ? { onSubmit: preventEditorFormSubmission } : undefined)}
       {...(node.tag === "label" && !isPreview ? { onClick: preventEditorLabelActivation } : undefined)}
       className={cn(documentDefaultClasses(recipe.defaults), isDragging && "opacity-40", node.className)}

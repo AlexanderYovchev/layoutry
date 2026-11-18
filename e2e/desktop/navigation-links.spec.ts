@@ -8,7 +8,7 @@ import { launchLayoutry, makeTempDir, removeDir, REPO_ROOT, scriptFileDialogs, t
  * BC-06.2 in the real Electron window: Navbar with CTA managed through the
  * Navigation links section (Add, keyboard Move, Remove of a link an
  * interaction targets, Undo/Redo), Preview order, then Save to a real
- * .layoutry file (format 2, the CTA last, no dangling interaction) and a
+ * .layoutry file (format 3, the CTA last, no dangling interaction) and a
  * relaunch that opens the file with the same order.
  */
 
@@ -102,7 +102,7 @@ test("manage Navbar with CTA links, Preview, save to a real file and reopen it",
   await page.keyboard.press("Control+s");
   await expect(page.locator("[data-project-status]")).toHaveAttribute("data-project-status", "saved");
   const saved = JSON.parse(await readFile(target, "utf8")) as { formatVersion: number; document: SavedNode };
-  expect(saved.formatVersion).toBe(2);
+  expect(saved.formatVersion).toBe(3);
   const savedNav = findById(saved.document, navId);
   expect(savedNav?.children?.map((child) => `${child.tag}:${child.text ?? ""}`)).toEqual(expected);
   const home = savedNav?.children?.[0];
@@ -151,6 +151,6 @@ test("a format 1 file's Navbar is managed, then BC-05's upgrade prompt still pro
   await expect(page.locator("[data-project-status]")).toHaveAttribute("data-project-status", "saved");
   expect(await sha(original)).toBe(originalHash);
   const saved = JSON.parse(await readFile(copy, "utf8")) as { formatVersion: number; document: SavedNode };
-  expect(saved.formatVersion).toBe(2);
+  expect(saved.formatVersion).toBe(3);
   expect(findById(saved.document, navId)?.children?.map((child) => `${child.tag}:${child.text ?? ""}`)).toEqual(expected);
 });

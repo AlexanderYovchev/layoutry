@@ -75,7 +75,7 @@ test("upload in the desktop app, Save, reject a bad file, Save As, export, then 
   await page.keyboard.press("Control+s");
   await expect(status(page)).toHaveAttribute("data-project-status", "saved");
   const saved = await savedImage(first, id);
-  expect(saved.formatVersion).toBe(2);
+  expect(saved.formatVersion).toBe(3);
   expect(saved.image).toMatchObject({ src: PNG, displayName: "Blue and orange swatch" });
   expect(Buffer.from(saved.image!.src!.split(",")[1], "base64").equals(imageFixtureBytes("upload-40x30.png"))).toBe(true);
   const savedText = await readFile(first, "utf8");
@@ -135,6 +135,6 @@ test("a format 1 file takes an uploaded image, and BC-05's upgrade prompt still 
   await expect(status(page)).toHaveAttribute("data-project-status", "saved");
   expect(await sha(original)).toBe(originalHash);
   const saved = await savedImage(upgraded, id);
-  expect(saved.formatVersion).toBe(2);
+  expect(saved.formatVersion).toBe(3);
   expect(saved.image?.src).toBe(JPEG);
 });

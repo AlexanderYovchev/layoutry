@@ -1,3 +1,4 @@
+import { findMisplacedAccessibilityField } from "@/features/editor/rules/accessibilityAttributes";
 import { canContainChildren } from "@/features/editor/rules/insertionRules";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { ProjectLimits } from "@/features/project/rules/projectLimits";
@@ -14,7 +15,9 @@ import type { ProjectLoadError } from "@/features/project/types/projectFile";
  * and node count stay within limits; every interaction targets an
  * existing node (deleting a node prunes interactions aimed at it); ids
  * inside each shadow, gradient-stop, SVG-object and interaction list are
- * unique (the editor edits those lists by id).
+ * unique (the editor edits those lists by id); format 3 accessibility
+ * fields and component markers sit only on tags that can have them
+ * (BC-09.2).
  */
 export function checkDocumentIntegrity(
   root: EditorElementNode,
@@ -79,6 +82,9 @@ export function checkDocumentIntegrity(
         `Id "${duplicate.id}" is used more than once in ${duplicate.list}.`,
         `${path}.${duplicate.list}`,
       );
+
+    const misplaced = findMisplacedAccessibilityField(node);
+    if (misplaced) return fail(misplaced.message, `${path}.${misplaced.field}`);
 
     for (const [index, binding] of (node.interactions ?? []).entries()) {
       interactionTargets.push({

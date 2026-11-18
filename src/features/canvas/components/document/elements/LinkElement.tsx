@@ -8,6 +8,7 @@ import { usePreviewTriggerAria } from "@/features/canvas/hooks/usePreviewTrigger
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
 import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
 import { resolveTextElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
+import { accessibilityProps, isNavigableLink } from "@/features/editor/rules/accessibilityAttributes";
 import { getLinkHref } from "@/features/editor/types/link";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
@@ -41,11 +42,13 @@ export function LinkElement({ node, parentId, parentLayoutMode, parentFlowDispla
 
   return (
     <a
-      href={getLinkHref(node)}
+      // BC-09.2: a disabled or current-page link renders no href (it stays stored).
+      href={isNavigableLink(node) ? getLinkHref(node) : undefined}
       onClick={preventEditorNavigation}
       id={node.htmlId}
       ref={mergeRefs<HTMLElement>(dropRef, dragRef, editable.elementRef)}
       {...documentNodeAttributes(node, parentId)}
+      {...accessibilityProps(node, { nativeDisabled: isPreview })}
       {...triggerAria}
       {...editable.editableProps}
       className={cn(

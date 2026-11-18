@@ -1,4 +1,5 @@
 import { createNavbarLinkNode } from "@/features/editor/factories/navigationCompositions";
+import { isPaginationNode } from "@/features/editor/types/pagination";
 import { generateNodeId } from "@/features/editor/utils/generateNodeId";
 import { DEFAULT_LINK_HREF } from "@/features/editor/types/link";
 import type { EditorElementNode } from "@/features/editor/types/document";
@@ -32,9 +33,15 @@ export const NEW_NAVIGATION_LINK_TEXT = "New link";
 
 export type NavigationLinkMoveDirection = "up" | "down";
 
-/** Whether `node` gets navigation-link management (see this file's top comment). */
+/**
+ * Whether `node` gets navigation-link management (see this file's top
+ * comment). A marked Pagination (BC-09.2) does not: its Previous/Next are
+ * links, and generic Add/Remove would copy them or remove its current
+ * page. Pagination gets its own management in BC-09.3. A legacy
+ * Pagination has no marker and keeps this section exactly as before.
+ */
 export function isNavigationLinkContainer(node: EditorElementNode): boolean {
-  return node.tag === "nav";
+  return node.tag === "nav" && !isPaginationNode(node);
 }
 
 /** The nav's direct `<a>` children, in document order. Empty for any other node. */
