@@ -1,5 +1,6 @@
 "use client";
 
+import { useFanOutSetter } from "@/features/inspector/components/InspectorSectionFanOut";
 import { useState } from "react";
 import { InspectorNumberFieldRow } from "@/features/inspector/components/InspectorNumberFieldRow";
 import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
@@ -26,7 +27,7 @@ const START_MODE_OPTIONS = ["Auto", "Fixed"];
  * stays permissive rather than duplicating that bounds logic.
  */
 export function InspectorGridChildSection({ node }: InspectorGridChildSectionProps) {
-  const setGridChildSettings = useEditorStore((state) => state.setGridChildSettings);
+  const setGridChildSettings = useFanOutSetter("gridChild", useEditorStore((state) => state.setGridChildSettings));
   const gridChild = getGridChildSettings(node);
   const [columnStartFixed, setColumnStartFixed] = useState(() => gridChild.columnStart !== "auto");
   const [rowStartFixed, setRowStartFixed] = useState(() => gridChild.rowStart !== "auto");

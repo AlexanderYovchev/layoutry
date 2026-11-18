@@ -1,5 +1,6 @@
 "use client";
 
+import { useFanOutSetter } from "@/features/inspector/components/InspectorSectionFanOut";
 import { InspectorNumericValueControl, type NumericOrAuto } from "@/features/inspector/components/InspectorNumericValueControl";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
@@ -56,7 +57,7 @@ const PROPERTY_LABEL_TO_VALUE: Record<string, TransitionProperty | undefined> = 
  * Action/Target selects already use.
  */
 export function InspectorTransitionSection({ node }: InspectorTransitionSectionProps) {
-  const setElementTransition = useEditorStore((state) => state.setElementTransition);
+  const setElementTransition = useFanOutSetter("transition", useEditorStore((state) => state.setElementTransition));
   const transition = getTransitionSettings(node);
 
   function handlePropertySelect(option: string) {

@@ -1,5 +1,6 @@
 "use client";
 
+import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
 import { InspectorBulkNumberField } from "@/features/inspector/components/InspectorBulkNumberField";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
@@ -43,7 +44,7 @@ export function InspectorBulkBorderRadiusSection({ nodes }: InspectorBulkBorderR
 
   return (
     <InspectorSection label="Border Radius">
-      <InspectorPropertyRow label="Radius" variant="stack" state={effectiveRowState(radius, anyAuthored)}>
+      <InspectorPropertyRow label="Radius" variant="stack" state={effectiveRowState(radius, anyAuthored)} reset={<InspectorResetButton onReset={() => setElementsBorderRadiusAllCorners(ids, undefined)} disabled={!(anyAuthored)} label="Reset border radius on all selected elements" />}>
         <InspectorBulkNumberField
           ariaLabel="Border radius"
           shared={radius}

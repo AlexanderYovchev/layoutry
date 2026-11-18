@@ -1,5 +1,6 @@
 "use client";
 
+import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { InspectorSegmentedRow } from "@/features/inspector/components/InspectorSegmentedRow";
@@ -47,7 +48,7 @@ export function InspectorBulkDisplaySection({ nodes }: InspectorBulkDisplaySecti
 
   return (
     <InspectorSection label="Display">
-      <InspectorPropertyRow label="Display" state={effectiveRowState(display, settings.some((value) => value.display !== undefined))}>
+      <InspectorPropertyRow label="Display" state={effectiveRowState(display, settings.some((value) => value.display !== undefined))} reset={<InspectorResetButton onReset={() => setElementsDisplayField(ids, "display", undefined)} disabled={!(settings.some((value) => value.display !== undefined))} label="Reset display on all selected elements" />}>
         <InspectorSegmentedRow
           label="Display"
           options={DISPLAY_OPTIONS}
@@ -62,7 +63,7 @@ export function InspectorBulkDisplaySection({ nodes }: InspectorBulkDisplaySecti
 
       <InspectorSharedValueNote shared={display} />
 
-      <InspectorPropertyRow label="Visibility" state={effectiveRowState(visibility, settings.some((value) => value.visibility !== undefined))}>
+      <InspectorPropertyRow label="Visibility" state={effectiveRowState(visibility, settings.some((value) => value.visibility !== undefined))} reset={<InspectorResetButton onReset={() => setElementsDisplayField(ids, "visibility", undefined)} disabled={!(settings.some((value) => value.visibility !== undefined))} label="Reset visibility on all selected elements" />}>
         <InspectorSegmentedRow
           label="Visibility"
           options={VISIBILITY_OPTIONS}

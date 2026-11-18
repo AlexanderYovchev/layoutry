@@ -13,6 +13,30 @@ import { InspectorBulkTransitionSection } from "@/features/inspector/components/
 import { InspectorBulkTransformSection } from "@/features/inspector/components/InspectorBulkTransformSection";
 import { InspectorBulkTypographySection } from "@/features/inspector/components/InspectorBulkTypographySection";
 import { InspectorProtectedStyleGroup } from "@/features/inspector/components/InspectorProtectedStyleGroup";
+import { InspectorBackgroundSection } from "@/features/inspector/components/InspectorBackgroundSection";
+import { InspectorBorderRadiusSection } from "@/features/inspector/components/InspectorBorderRadiusSection";
+import { InspectorBorderSection } from "@/features/inspector/components/InspectorBorderSection";
+import { InspectorBoxShadowSection } from "@/features/inspector/components/InspectorBoxShadowSection";
+import { InspectorBulkBackgroundSourcePanel } from "@/features/inspector/components/InspectorBulkBackgroundSourcePanel";
+import { InspectorDisplaySection } from "@/features/inspector/components/InspectorDisplaySection";
+import { InspectorFiltersSection } from "@/features/inspector/components/InspectorFiltersSection";
+import { InspectorFlexChildSection } from "@/features/inspector/components/InspectorFlexChildSection";
+import { InspectorGridChildSection } from "@/features/inspector/components/InspectorGridChildSection";
+import { InspectorLayoutSection } from "@/features/inspector/components/InspectorLayoutSection";
+import { InspectorMixedSectionPanel } from "@/features/inspector/components/InspectorMixedSectionPanel";
+import { InspectorPositionSection } from "@/features/inspector/components/InspectorPositionSection";
+import { InspectorSectionFanOut } from "@/features/inspector/components/InspectorSectionFanOut";
+import { InspectorSpacingSection } from "@/features/inspector/components/InspectorSpacingSection";
+import { InspectorTransformSection } from "@/features/inspector/components/InspectorTransformSection";
+import { InspectorTransitionSection } from "@/features/inspector/components/InspectorTransitionSection";
+import { InspectorTypographySection } from "@/features/inspector/components/InspectorTypographySection";
+import { isSectionUniform, type FanOutSection } from "@/features/inspector/utils/sectionUniformity";
+import { getElementCapabilities } from "@/features/editor/rules/elementCapabilities";
+import { canContainChildren } from "@/features/editor/rules/insertionRules";
+import { getFlexContainerSettings, getFlowLayoutSettings, getGridContainerSettings } from "@/features/editor/types/flowLayout";
+import { getLayoutMode } from "@/features/editor/types/layout";
+import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
+import { Fragment, type ReactNode } from "react";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { intersectElementCapabilities } from "@/features/editor/rules/elementCapabilities";
 import { describeStyleLockNotice, getStyleProtection } from "@/features/editor/rules/styleProtection";
@@ -54,7 +78,24 @@ function describeSelection(nodes: readonly EditorElementNode[]): string {
  * Identity above all (a bulk-copied `id` would create invalid HTML
  * duplicates).
  */
+/**
+ * "Use the primary's layout on all" (BC-10.4): the display mode and its
+ * Flex or Grid settings, written as one transaction (one Undo step).
+ * Only offered when every container is in Flow layout mode.
+ */
+function applyPrimaryLayout(ids: readonly string[], primary: EditorElementNode) {
+  const store = useEditorStore.getState();
+  const flow = getFlowLayoutSettings(primary);
+  store.beginTransaction();
+  store.setElementsSettings(ids, "flowDisplay", flow.display, { live: true });
+  if (flow.display === "flex") store.setElementsSettings(ids, "flexContainer", getFlexContainerSettings(primary), { live: true });
+  if (flow.display === "grid") store.setElementsSettings(ids, "gridContainer", getGridContainerSettings(primary), { live: true });
+  store.commitTransaction();
+}
+
 export function InspectorMultiNodeSummary({ nodes }: InspectorMultiNodeSummaryProps) {
+  const primaryId = useEditorStore((state) => state.selection.primaryId);
+  const setElementsSettings = useEditorStore((state) => state.setElementsSettings);
   const capabilities = intersectElementCapabilities(nodes.map((node) => node.tag));
 
   // Parent Style Protection (Checkpoint 1.15.3, sections 17-18, 26) — a
@@ -79,20 +120,134 @@ export function InspectorMultiNodeSummary({ nodes }: InspectorMultiNodeSummaryPr
   // would always make the section list non-empty), while simultaneously
   // showing a working Spacing section right underneath it would read as
   // self-contradictory.
+  // BC-10.4: each section is either the REAL single-selection editor,
+  // fanned out to every selected element (when they share its authored
+  // settings and tag, see sectionUniformity.ts), or the field-level bulk
+  // section (truthful Mixed/Unknown), or, for list/configuration
+  // sections without a field-level model, an explicit Mixed panel.
+  const ids = nodes.map((node) => node.id);
+  const parents = nodes.map((node) => {
+    const parentId = findParentId(documentModel, node.id);
+    return parentId ? findNodeById(documentModel, parentId) : undefined;
+  });
+  const primary = nodes.find((node) => node.id === primaryId) ?? nodes[nodes.length - 1];
+  const primaryName = getElementDisplayName(primary);
+  const uniform = (section: FanOutSection) => isSectionUniform(section, nodes, parents);
+  const fanOut = (key: string, element: ReactNode) => (
+    <InspectorSectionFanOut key={key} ids={ids}>
+      {element}
+    </InspectorSectionFanOut>
+  );
+  const isFreeChild = parents.map((parent) => parent !== undefined && getLayoutMode(parent) === "free");
+  const noneFreeChild = isFreeChild.every((free) => !free);
+  const noneFreeContainer = nodes.every((node) => getLayoutMode(node) !== "free");
+  const parentDisplays = parents.map((parent) => (parent ? getFlowLayoutSettings(parent).display : undefined));
+  const allContainers = nodes.every((node) => canContainChildren(node.tag) && getElementCapabilities(node.tag).supportsChildLayout);
+
   const capabilityGatedSections = [
-    capabilities.supportsTypography && <InspectorBulkTypographySection key="typography" nodes={nodes} />,
-    capabilities.supportsBackground && <InspectorBulkBackgroundSection key="background" nodes={nodes} />,
-    capabilities.supportsBorder && <InspectorBulkBorderSection key="border" nodes={nodes} />,
-    capabilities.supportsBorderRadius && <InspectorBulkBorderRadiusSection key="borderRadius" nodes={nodes} />,
+    capabilities.supportsTypography &&
+      (uniform("typography") ? fanOut("typography", <InspectorTypographySection node={primary} />) : <InspectorBulkTypographySection key="typography" nodes={nodes} />),
+    capabilities.supportsBackground &&
+      (uniform("background") ? (
+        fanOut("background", <InspectorBackgroundSection node={primary} />)
+      ) : (
+        <Fragment key="background">
+          <InspectorBulkBackgroundSection nodes={nodes} />
+          <InspectorBulkBackgroundSourcePanel nodes={nodes} primary={primary} primaryName={primaryName} />
+        </Fragment>
+      )),
+    capabilities.supportsBorder &&
+      (uniform("border") ? fanOut("border", <InspectorBorderSection node={primary} />) : <InspectorBulkBorderSection key="border" nodes={nodes} />),
+    capabilities.supportsBorderRadius &&
+      (uniform("borderRadius") ? fanOut("borderRadius", <InspectorBorderRadiusSection node={primary} />) : <InspectorBulkBorderRadiusSection key="borderRadius" nodes={nodes} />),
     capabilities.supportsShape && <InspectorBulkShapeSection key="shape" nodes={nodes} />,
+    capabilities.supportsBoxShadow &&
+      (uniform("boxShadow") ? (
+        fanOut("boxShadow", <InspectorBoxShadowSection node={primary} />)
+      ) : (
+        <InspectorMixedSectionPanel
+          key="boxShadow"
+          label="Box Shadow"
+          description="The selected elements have different box shadows."
+          actions={[
+            { label: `Use ${primaryName}'s shadows on all`, onSelect: () => setElementsSettings(ids, "boxShadow", primary.boxShadow) },
+            { label: "Remove all shadows", onSelect: () => setElementsSettings(ids, "boxShadow", undefined) },
+          ]}
+          note="Each element keeps its own shadows until you choose one of these. Afterwards they can be edited together."
+        />
+      )),
     capabilities.supportsMediaFit && <InspectorBulkMediaFitSection key="mediaFit" nodes={nodes} />,
     capabilities.supportsAspectRatio && <InspectorBulkSizeSection key="size" nodes={nodes} />,
-    capabilities.supportsDisplay && <InspectorBulkDisplaySection key="display" nodes={nodes} />,
-    capabilities.supportsPosition && <InspectorBulkPositionSection key="position" nodes={nodes} />,
-    capabilities.supportsFilters && <InspectorBulkFiltersSection key="filters" nodes={nodes} />,
-    capabilities.supportsTransition && <InspectorBulkTransitionSection key="transition" nodes={nodes} />,
-    capabilities.supportsTransform && <InspectorBulkTransformSection key="transform" nodes={nodes} />,
+    capabilities.supportsDisplay &&
+      (uniform("display") ? fanOut("display", <InspectorDisplaySection node={primary} />) : <InspectorBulkDisplaySection key="display" nodes={nodes} />),
+    capabilities.supportsPosition &&
+      (uniform("position") && noneFreeChild && noneFreeContainer ? (
+        fanOut("position", <InspectorPositionSection node={primary} />)
+      ) : (
+        <InspectorBulkPositionSection key="position" nodes={nodes} />
+      )),
+    capabilities.supportsFilters &&
+      (uniform("filters") ? fanOut("filters", <InspectorFiltersSection node={primary} />) : <InspectorBulkFiltersSection key="filters" nodes={nodes} />),
+    capabilities.supportsTransition &&
+      (uniform("transition") ? fanOut("transition", <InspectorTransitionSection node={primary} />) : <InspectorBulkTransitionSection key="transition" nodes={nodes} />),
+    capabilities.supportsTransform &&
+      (uniform("transform") ? fanOut("transform", <InspectorTransformSection node={primary} />) : <InspectorBulkTransformSection key="transform" nodes={nodes} />),
+    noneFreeChild &&
+      parentDisplays.every((display) => display === "flex") &&
+      (uniform("flexChild") ? (
+        fanOut("flexChild", <InspectorFlexChildSection node={primary} />)
+      ) : (
+        <InspectorMixedSectionPanel
+          key="flexChild"
+          label="Flex Child"
+          description="The selected elements have different Flex child settings, or sit in differently laid out containers."
+          actions={[
+            { label: `Use ${primaryName}'s Flex child settings on all`, onSelect: () => setElementsSettings(ids, "flexChild", primary.flexChild) },
+            { label: "Reset Flex child settings on all", onSelect: () => setElementsSettings(ids, "flexChild", undefined) },
+          ]}
+        />
+      )),
+    noneFreeChild &&
+      parentDisplays.every((display) => display === "grid") &&
+      (uniform("gridChild") ? (
+        fanOut("gridChild", <InspectorGridChildSection node={primary} />)
+      ) : (
+        <InspectorMixedSectionPanel
+          key="gridChild"
+          label="Grid Child"
+          description="The selected elements have different Grid placement, or sit in differently laid out grids."
+          actions={[
+            { label: `Use ${primaryName}'s Grid placement on all`, onSelect: () => setElementsSettings(ids, "gridChild", primary.gridChild) },
+            { label: "Reset Grid placement on all", onSelect: () => setElementsSettings(ids, "gridChild", undefined) },
+          ]}
+          note="A placement is clamped to each element's own grid, as for a single element."
+        />
+      )),
   ].filter(Boolean);
+
+  // Layout (the containers' own Flow/Flex/Grid settings): the real editor
+  // when uniform; otherwise an explicit choice to adopt the primary's.
+  const layoutSection = allContainers && (uniform("layout") ? (
+    fanOut("layout", <InspectorLayoutSection node={primary} />)
+  ) : (
+    <InspectorMixedSectionPanel
+      key="layout"
+      label="Content Layout"
+      description="The selected containers lay out their content differently."
+      actions={[
+        {
+          label: `Use ${primaryName}'s layout on all`,
+          disabled: nodes.some((node) => getLayoutMode(node) === "free"),
+          onSelect: () => applyPrimaryLayout(ids, primary),
+        },
+      ]}
+      note={
+        nodes.some((node) => getLayoutMode(node) === "free")
+          ? "Free-layout containers can't adopt a Flow layout together here: convert them one at a time."
+          : "Each container keeps its own layout until you choose this. Afterwards they can be edited together."
+      }
+    />
+  ));
 
   // SVG (Checkpoint 1.15.5) is rendered as its own standalone section,
   // OUTSIDE the shared InspectorProtectedStyleGroup below — unlike every
@@ -127,7 +282,8 @@ export function InspectorMultiNodeSummary({ nodes }: InspectorMultiNodeSummaryPr
       {capabilities.supportsSvgSettings && <InspectorBulkSvgSection nodes={nodes} protections={protections} />}
       <InspectorProtectedStyleGroup protected={anyProtected}>
         {capabilityGatedSections}
-        <InspectorBulkSpacingSection nodes={nodes} />
+        {uniform("spacing") ? fanOut("spacing", <InspectorSpacingSection node={primary} />) : <InspectorBulkSpacingSection nodes={nodes} />}
+        {layoutSection}
       </InspectorProtectedStyleGroup>
     </div>
   );

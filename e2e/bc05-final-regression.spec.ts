@@ -118,18 +118,20 @@ test.describe("BC-05.4 multi-selection effective spacing", () => {
       "p",
     );
 
-    // Two buttons with their own unset 8 / 16 padding: Mixed (not 0).
+    // Two buttons with their own unset 8 / 16 padding (never a false 0).
+    // BC-10.4: they agree (same tag, same authored spacing), so the real
+    // Spacing section is shown for both — its padding opens unlinked, per side.
     await selectOnCanvas(page, "b1");
     await addToSelection(page, "b2");
     await openSection(page, "Spacing");
     await expect(
-      inspector(page).getByLabel("Padding", { exact: true }),
-    ).toHaveAttribute("placeholder", "Mixed");
+      inspector(page).getByLabel("Top", { exact: true }),
+    ).toHaveValue("8");
     await expect(
-      inspector(page).getByLabel("Padding", { exact: true }),
-    ).toHaveValue("");
+      inspector(page).getByLabel("Right", { exact: true }),
+    ).toHaveValue("16");
     await expect(
-      inspector(page).getByLabel("Margin", { exact: true }),
+      inspector(page).getByLabel("Margin (all sides)", { exact: true }),
     ).toHaveValue("0");
 
     // Heading (unset, renders 0) + paragraph (authored 0): both compute 0 → 0, and the row says something is set.
@@ -145,16 +147,19 @@ test.describe("BC-05.4 multi-selection effective spacing", () => {
       .last();
     await expect(paddingRow.getByText("Explicitly set")).toHaveCount(1);
 
-    // Editing the buttons' Mixed padding writes exactly 4 to every side of both, one Undo step.
+    // Editing the buttons' uneven padding (linked) writes exactly 4 to every side of both, one Undo step.
     await selectOnCanvas(page, "b1");
     await addToSelection(page, "b2");
     await openSection(page, "Spacing");
-    await typeInto(page, "Padding", "4");
+    await inspector(page)
+      .getByRole("button", { name: "Unlinked", exact: true })
+      .click();
+    await typeInto(page, "Padding (all sides)", "4");
     for (const id of ["b1", "b2"])
       for (const side of SIDES)
         expect(await computed(page, id, `padding-${side}`)).toBe("4px");
     await expect(
-      inspector(page).getByLabel("Padding", { exact: true }),
+      inspector(page).getByLabel("Padding (all sides)", { exact: true }),
     ).toHaveValue("4");
     expect(await computed(page, "b1", "margin-top"), "margin untouched").toBe(
       "0px",

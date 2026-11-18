@@ -1,5 +1,6 @@
 "use client";
 
+import { useFanOutSetter } from "@/features/inspector/components/InspectorSectionFanOut";
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight } from "lucide-react";
 import { useState } from "react";
 import { InspectorColorFieldShell } from "@/features/inspector/components/InspectorColorFieldShell";
@@ -126,7 +127,7 @@ function renderedOrKeyword(rendered: RenderedKeywordOrNumber | null | undefined,
 }
 
 export function InspectorTypographySection({ node }: InspectorTypographySectionProps) {
-  const setElementTypography = useEditorStore((state) => state.setElementTypography);
+  const setElementTypography = useFanOutSetter("typography", useEditorStore((state) => state.setElementTypography));
   const typography = getTypographySettings(node);
   // Unset font size, line height and letter spacing show (and step from)
   // what the Canvas actually renders — e.g. an H1's 30px / 1.2 / -0.75px

@@ -1,5 +1,6 @@
 "use client";
 
+import { useFanOutSetter, useIsFanOut } from "@/features/inspector/components/InspectorSectionFanOut";
 import { useState } from "react";
 import { InspectorBooleanToggle } from "@/features/inspector/components/InspectorBooleanToggle";
 import { InspectorLinkToggle } from "@/features/inspector/components/InspectorLinkToggle";
@@ -80,17 +81,25 @@ const ALIGN_VALUE_TO_LABEL: Record<AlignItems, string> = { start: "Start", cente
  */
 export function InspectorLayoutSection({ node }: InspectorLayoutSectionProps) {
   const convertToFreeLayout = useConvertContainerToFreeLayout();
-  const convertToFlowLayout = useEditorStore((state) => state.convertToFlowLayout);
-  const setChildResizePolicy = useEditorStore((state) => state.setChildResizePolicy);
-  const setFlowDisplayMode = useEditorStore((state) => state.setFlowDisplayMode);
-  const setFlexContainerSettings = useEditorStore((state) => state.setFlexContainerSettings);
-  const setGridContainerSettings = useEditorStore((state) => state.setGridContainerSettings);
+  const convertToFlowLayoutSingle = useEditorStore((state) => state.convertToFlowLayout);
+  const convertToFlowLayoutFanOut = useFanOutSetter("convertToFlow", (id: string) => convertToFlowLayoutSingle(id));
+  const convertToFlowLayout = (id: string) => convertToFlowLayoutFanOut(id, null);
+  const setChildResizePolicy = useFanOutSetter("childResizePolicy", useEditorStore((state) => state.setChildResizePolicy));
+  const setFlowDisplayMode = useFanOutSetter("flowDisplay", useEditorStore((state) => state.setFlowDisplayMode));
+  const setFlexContainerSettings = useFanOutSetter("flexContainer", useEditorStore((state) => state.setFlexContainerSettings));
+  const setGridContainerSettings = useFanOutSetter("gridContainer", useEditorStore((state) => state.setGridContainerSettings));
   const snapEnabled = useEditorStore((state) => state.snapEnabled);
   const setSnapEnabled = useEditorStore((state) => state.setSnapEnabled);
 
   const isFree = getLayoutMode(node) === "free";
+  // BC-10.4: converting Flow → Free measures each container's own children,
+  // one container at a time, so a multi-selection can't switch the mode
+  // together (multi-resize/free geometry are deferred). Everything else in
+  // this section edits every selected container.
+  const isFanOut = useIsFanOut();
 
   function handleLayoutModeSelect(option: string) {
+    if (isFanOut) return;
     if (option === "Free" && !isFree) convertToFreeLayout(node.id);
     if (option === "Flow" && isFree) convertToFlowLayout(node.id);
   }
@@ -113,7 +122,11 @@ export function InspectorLayoutSection({ node }: InspectorLayoutSectionProps) {
         options={LAYOUT_MODE_OPTIONS}
         activeOption={isFree ? "Free" : "Flow"}
         onSelect={handleLayoutModeSelect}
+        disabled={isFanOut}
       />
+      {isFanOut && (
+        <p className="px-0.5 text-[11px] text-fg-secondary">Switch between Flow and Free one container at a time.</p>
+      )}
       {isFree ? (
         <>
           <InspectorSegmentedRow
@@ -167,7 +180,7 @@ interface FlexContainerControlsProps {
 }
 
 function FlexContainerControls({ node, onChange }: FlexContainerControlsProps) {
-  const setFlexContainerSettingsLive = useEditorStore((state) => state.setFlexContainerSettingsLive);
+  const setFlexContainerSettingsLive = useFanOutSetter("flexContainer", useEditorStore((state) => state.setFlexContainerSettingsLive), { live: true });
   const flex = getFlexContainerSettings(node);
   const [gapLinked, setGapLinked] = useState(() => flex.rowGap === flex.columnGap);
 

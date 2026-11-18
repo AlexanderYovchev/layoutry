@@ -1,5 +1,6 @@
 "use client";
 
+import { useFanOutSetter } from "@/features/inspector/components/InspectorSectionFanOut";
 import { InspectorNumericValueControl, type NumericOrAuto } from "@/features/inspector/components/InspectorNumericValueControl";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
@@ -37,7 +38,7 @@ interface InspectorTransformSectionProps {
  * there are no children to be affected.
  */
 export function InspectorTransformSection({ node }: InspectorTransformSectionProps) {
-  const setElementTransform = useEditorStore((state) => state.setElementTransform);
+  const setElementTransform = useFanOutSetter("transform", useEditorStore((state) => state.setElementTransform));
   const transform = getTransformSettings(node);
 
   function commitField<K extends keyof TransformSettings>(field: K, next: NumericOrAuto, isValid: (value: number) => boolean) {

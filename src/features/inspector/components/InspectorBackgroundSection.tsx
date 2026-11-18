@@ -1,5 +1,6 @@
 "use client";
 
+import { useFanOutSetter } from "@/features/inspector/components/InspectorSectionFanOut";
 import { useState } from "react";
 import { InspectorBackgroundImageControls } from "@/features/inspector/components/InspectorBackgroundImageControls";
 import { InspectorColorFieldShell } from "@/features/inspector/components/InspectorColorFieldShell";
@@ -43,7 +44,7 @@ const SOURCE_VALUE_TO_LABEL: Record<BackgroundSourceType, string> = { image: "Im
  * is made, shared with the Canvas resolver so they can never disagree).
  */
 export function InspectorBackgroundSection({ node }: InspectorBackgroundSectionProps) {
-  const setElementBackground = useEditorStore((state) => state.setElementBackground);
+  const setElementBackground = useFanOutSetter("background", useEditorStore((state) => state.setElementBackground));
   const background = getBackgroundSettings(node);
   const activeSource = getActiveBackgroundSource(background);
 

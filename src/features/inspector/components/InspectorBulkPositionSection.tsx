@@ -1,5 +1,6 @@
 "use client";
 
+import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { InspectorSegmentedRow } from "@/features/inspector/components/InspectorSegmentedRow";
@@ -45,7 +46,7 @@ export function InspectorBulkPositionSection({ nodes }: InspectorBulkPositionSec
 
   return (
     <InspectorSection label="Position">
-      <InspectorPropertyRow label="Position" state={position.kind === "mixed" ? "mixed" : position.value ? "set" : "unset"}>
+      <InspectorPropertyRow label="Position" state={position.kind === "mixed" ? "mixed" : position.value ? "set" : "unset"} reset={<InspectorResetButton onReset={() => setElementsPositionField(ids, "position", undefined)} disabled={!(nodes.some((node) => getPositionSettings(node).position !== undefined))} label="Reset position on all selected elements" />}>
         <InspectorSegmentedRow
           label="Position"
           options={POSITION_OPTIONS}

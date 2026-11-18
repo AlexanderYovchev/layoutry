@@ -1,5 +1,6 @@
 "use client";
 
+import { useFanOutSetter } from "@/features/inspector/components/InspectorSectionFanOut";
 import { useState } from "react";
 import { InspectorLinkToggle } from "@/features/inspector/components/InspectorLinkToggle";
 import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
@@ -263,7 +264,7 @@ function OverflowSubsection({ display, nodeId, onCommit }: OverflowSubsectionPro
  * normally regardless of the node's own pointer-events value.
  */
 export function InspectorDisplaySection({ node }: InspectorDisplaySectionProps) {
-  const setElementDisplay = useEditorStore((state) => state.setElementDisplay);
+  const setElementDisplay = useFanOutSetter("display", useEditorStore((state) => state.setElementDisplay));
   const display = getDisplaySettings(node);
 
   function commitField<K extends keyof DisplaySettings>(field: K, value: DisplaySettings[K]) {

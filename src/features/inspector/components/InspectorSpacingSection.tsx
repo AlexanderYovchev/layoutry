@@ -1,5 +1,6 @@
 "use client";
 
+import { useFanOutSetter } from "@/features/inspector/components/InspectorSectionFanOut";
 import { useState } from "react";
 import { InspectorLinkToggle } from "@/features/inspector/components/InspectorLinkToggle";
 import { InspectorNumericValueControl } from "@/features/inspector/components/InspectorNumericValueControl";
@@ -236,8 +237,8 @@ const UNSET_MARGIN: DisplayedEdges = { top: 0, right: 0, bottom: 0, left: 0 };
  * the same atomic write this section's commit triggers.
  */
 export function InspectorSpacingSection({ node }: InspectorSpacingSectionProps) {
-  const setElementMargin = useEditorStore((state) => state.setElementMargin);
-  const setElementPadding = useEditorStore((state) => state.setElementPadding);
+  const setElementMargin = useFanOutSetter("margin", useEditorStore((state) => state.setElementMargin));
+  const setElementPadding = useFanOutSetter("padding", useEditorStore((state) => state.setElementPadding));
   const spacing = getElementSpacing(node);
   const allPaddingAuthored = EDGE_SIDES.every((side) => spacing.padding[side] !== undefined);
   // 0 only until the first measurement (one layout effect), or for a node that isn't rendered.

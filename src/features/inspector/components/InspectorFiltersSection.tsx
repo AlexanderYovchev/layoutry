@@ -1,5 +1,6 @@
 "use client";
 
+import { useFanOutSetter } from "@/features/inspector/components/InspectorSectionFanOut";
 import { useState } from "react";
 import { InspectorNumericValueControl, type NumericOrAuto } from "@/features/inspector/components/InspectorNumericValueControl";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
@@ -93,8 +94,8 @@ const SPECIAL_EFFECTS_FIELDS: readonly PercentFieldConfig[] = [
  * stylistic transform.
  */
 export function InspectorFiltersSection({ node }: InspectorFiltersSectionProps) {
-  const setElementFilters = useEditorStore((state) => state.setElementFilters);
-  const setElementFiltersLive = useEditorStore((state) => state.setElementFiltersLive);
+  const setElementFilters = useFanOutSetter("filters", useEditorStore((state) => state.setElementFilters));
+  const setElementFiltersLive = useFanOutSetter("filters", useEditorStore((state) => state.setElementFiltersLive), { live: true });
   const filters = getFilterSettings(node);
 
   const [errors, setErrors] = useState<Partial<Record<PercentField | "blur", string>>>({});

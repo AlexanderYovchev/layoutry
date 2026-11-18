@@ -1,5 +1,6 @@
 "use client";
 
+import { useFanOutSetter } from "@/features/inspector/components/InspectorSectionFanOut";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { InspectorBooleanToggle } from "@/features/inspector/components/InspectorBooleanToggle";
@@ -73,8 +74,8 @@ function geometryPatch(field: GeometryField, value: CssLengthValue | undefined):
  * InspectorGradientSection's `selectedStopId` already established.
  */
 export function InspectorBoxShadowSection({ node }: InspectorBoxShadowSectionProps) {
-  const setElementBoxShadow = useEditorStore((state) => state.setElementBoxShadow);
-  const setElementBoxShadowLive = useEditorStore((state) => state.setElementBoxShadowLive);
+  const setElementBoxShadow = useFanOutSetter("boxShadow", useEditorStore((state) => state.setElementBoxShadow));
+  const setElementBoxShadowLive = useFanOutSetter("boxShadow", useEditorStore((state) => state.setElementBoxShadowLive), { live: true });
   const beginTransaction = useEditorStore((state) => state.beginTransaction);
   const commitTransaction = useEditorStore((state) => state.commitTransaction);
   const cancelTransaction = useEditorStore((state) => state.cancelTransaction);

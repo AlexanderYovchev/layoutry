@@ -1,5 +1,6 @@
 "use client";
 
+import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
 import { InspectorBulkNumberField } from "@/features/inspector/components/InspectorBulkNumberField";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
@@ -36,7 +37,7 @@ export function InspectorBulkSizeSection({ nodes }: InspectorBulkSizeSectionProp
 
   return (
     <InspectorSection label="Size">
-      <InspectorPropertyRow label="Min width" state={minWidth.kind === "mixed" ? "mixed" : minWidth.value !== undefined ? "set" : "unset"}>
+      <InspectorPropertyRow label="Min width" state={minWidth.kind === "mixed" ? "mixed" : minWidth.value !== undefined ? "set" : "unset"} reset={<InspectorResetButton onReset={() => setElementsSizeConstraintField(ids, "minWidth", undefined)} disabled={!(nodes.some((node) => getSizeConstraints(node).minWidth !== undefined))} label="Reset min width on all selected elements" />}>
         <InspectorBulkNumberField
           ariaLabel="Min width"
           shared={withSharedFallback(minWidth, 0)}
@@ -44,7 +45,7 @@ export function InspectorBulkSizeSection({ nodes }: InspectorBulkSizeSectionProp
           onCommit={(value) => isValidSizeConstraintValue(value) && setElementsSizeConstraintField(ids, "minWidth", value)}
         />
       </InspectorPropertyRow>
-      <InspectorPropertyRow label="Min height" state={minHeight.kind === "mixed" ? "mixed" : minHeight.value !== undefined ? "set" : "unset"}>
+      <InspectorPropertyRow label="Min height" state={minHeight.kind === "mixed" ? "mixed" : minHeight.value !== undefined ? "set" : "unset"} reset={<InspectorResetButton onReset={() => setElementsSizeConstraintField(ids, "minHeight", undefined)} disabled={!(nodes.some((node) => getSizeConstraints(node).minHeight !== undefined))} label="Reset min height on all selected elements" />}>
         <InspectorBulkNumberField
           ariaLabel="Min height"
           shared={withSharedFallback(minHeight, 0)}
@@ -52,7 +53,7 @@ export function InspectorBulkSizeSection({ nodes }: InspectorBulkSizeSectionProp
           onCommit={(value) => isValidSizeConstraintValue(value) && setElementsSizeConstraintField(ids, "minHeight", value)}
         />
       </InspectorPropertyRow>
-      <InspectorPropertyRow label="Max width" state={maxWidth.kind === "mixed" ? "mixed" : maxWidth.value !== undefined ? "set" : "unset"}>
+      <InspectorPropertyRow label="Max width" state={maxWidth.kind === "mixed" ? "mixed" : maxWidth.value !== undefined ? "set" : "unset"} reset={<InspectorResetButton onReset={() => setElementsSizeConstraintField(ids, "maxWidth", undefined)} disabled={!(nodes.some((node) => getSizeConstraints(node).maxWidth !== undefined))} label="Reset max width on all selected elements" />}>
         <InspectorBulkNumberField
           ariaLabel="Max width"
           shared={withSharedFallback(maxWidth, 0)}
@@ -60,7 +61,7 @@ export function InspectorBulkSizeSection({ nodes }: InspectorBulkSizeSectionProp
           onCommit={(value) => isValidSizeConstraintValue(value) && setElementsSizeConstraintField(ids, "maxWidth", value)}
         />
       </InspectorPropertyRow>
-      <InspectorPropertyRow label="Max height" state={maxHeight.kind === "mixed" ? "mixed" : maxHeight.value !== undefined ? "set" : "unset"}>
+      <InspectorPropertyRow label="Max height" state={maxHeight.kind === "mixed" ? "mixed" : maxHeight.value !== undefined ? "set" : "unset"} reset={<InspectorResetButton onReset={() => setElementsSizeConstraintField(ids, "maxHeight", undefined)} disabled={!(nodes.some((node) => getSizeConstraints(node).maxHeight !== undefined))} label="Reset max height on all selected elements" />}>
         <InspectorBulkNumberField
           ariaLabel="Max height"
           shared={withSharedFallback(maxHeight, 0)}

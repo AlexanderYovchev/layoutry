@@ -1,5 +1,6 @@
 "use client";
 
+import { useFanOutSetter } from "@/features/inspector/components/InspectorSectionFanOut";
 import { useRef, useState, type KeyboardEvent } from "react";
 import { InspectorBackgroundPositionGrid } from "@/features/inspector/components/InspectorBackgroundPositionGrid";
 import { InspectorNumericValueControl, type NumericOrAuto } from "@/features/inspector/components/InspectorNumericValueControl";
@@ -183,7 +184,7 @@ function BackgroundImageUrlField({ value, onCommit, error }: BackgroundImageUrlF
  * now owns.
  */
 export function InspectorBackgroundImageControls({ node }: InspectorBackgroundImageControlsProps) {
-  const setElementBackground = useEditorStore((state) => state.setElementBackground);
+  const setElementBackground = useFanOutSetter("background", useEditorStore((state) => state.setElementBackground));
   const background = getBackgroundSettings(node);
   const hasImage = Boolean(background.image);
 

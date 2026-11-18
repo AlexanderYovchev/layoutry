@@ -1,5 +1,6 @@
 "use client";
 
+import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
 import { InspectorBulkNumberField } from "@/features/inspector/components/InspectorBulkNumberField";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
@@ -22,7 +23,7 @@ export function InspectorBulkFiltersSection({ nodes }: InspectorBulkFiltersSecti
 
   return (
     <InspectorSection label="Filters">
-      <InspectorPropertyRow label="Opacity" state={opacity.kind === "mixed" ? "mixed" : opacity.value !== undefined ? "set" : "unset"}>
+      <InspectorPropertyRow label="Opacity" state={opacity.kind === "mixed" ? "mixed" : opacity.value !== undefined ? "set" : "unset"} reset={<InspectorResetButton onReset={() => setElementsFilterField(ids, "opacity", undefined)} disabled={!(nodes.some((node) => getFilterSettings(node).opacity !== undefined))} label="Reset opacity on all selected elements" />}>
         <InspectorBulkNumberField
           ariaLabel="Opacity"
           shared={withSharedFallback(opacity, 100)}
@@ -31,7 +32,7 @@ export function InspectorBulkFiltersSection({ nodes }: InspectorBulkFiltersSecti
           onCommit={(value) => isValidOpacityValue(value) && setElementsFilterField(ids, "opacity", value)}
         />
       </InspectorPropertyRow>
-      <InspectorPropertyRow label="Blur" state={blur.kind === "mixed" ? "mixed" : blur.value !== undefined ? "set" : "unset"}>
+      <InspectorPropertyRow label="Blur" state={blur.kind === "mixed" ? "mixed" : blur.value !== undefined ? "set" : "unset"} reset={<InspectorResetButton onReset={() => setElementsFilterField(ids, "blur", undefined)} disabled={!(nodes.some((node) => getFilterSettings(node).blur !== undefined))} label="Reset blur on all selected elements" />}>
         <InspectorBulkNumberField
           ariaLabel="Blur"
           shared={withSharedFallback(blur, 0)}

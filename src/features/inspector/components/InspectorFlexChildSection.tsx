@@ -1,5 +1,6 @@
 "use client";
 
+import { useFanOutSetter } from "@/features/inspector/components/InspectorSectionFanOut";
 import { useState } from "react";
 import { InspectorNumberFieldRow } from "@/features/inspector/components/InspectorNumberFieldRow";
 import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
@@ -40,7 +41,7 @@ const ALIGN_SELF_VALUE_TO_LABEL: Record<AlignSelf, string> = {
  * and a fixed pixel value rather than exposing raw CSS flex-basis syntax.
  */
 export function InspectorFlexChildSection({ node }: InspectorFlexChildSectionProps) {
-  const setFlexChildSettings = useEditorStore((state) => state.setFlexChildSettings);
+  const setFlexChildSettings = useFanOutSetter("flexChild", useEditorStore((state) => state.setFlexChildSettings));
   const flexChild = getFlexChildSettings(node);
   const [basisFixed, setBasisFixed] = useState(() => flexChild.basis !== "auto");
 

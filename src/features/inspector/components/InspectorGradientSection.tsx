@@ -1,5 +1,6 @@
 "use client";
 
+import { useFanOutSetter } from "@/features/inspector/components/InspectorSectionFanOut";
 import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { InspectorBackgroundPositionGrid } from "@/features/inspector/components/InspectorBackgroundPositionGrid";
@@ -65,8 +66,8 @@ const SHAPE_OPTIONS = ["Ellipse", "Circle"];
  * switching away to Image and back.
  */
 export function InspectorGradientSection({ node }: InspectorGradientSectionProps) {
-  const setElementBackground = useEditorStore((state) => state.setElementBackground);
-  const setElementBackgroundLive = useEditorStore((state) => state.setElementBackgroundLive);
+  const setElementBackground = useFanOutSetter("background", useEditorStore((state) => state.setElementBackground));
+  const setElementBackgroundLive = useFanOutSetter("background", useEditorStore((state) => state.setElementBackgroundLive), { live: true });
   const beginTransaction = useEditorStore((state) => state.beginTransaction);
   const commitTransaction = useEditorStore((state) => state.commitTransaction);
   const cancelTransaction = useEditorStore((state) => state.cancelTransaction);

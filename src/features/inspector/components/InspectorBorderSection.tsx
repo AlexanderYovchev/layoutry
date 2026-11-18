@@ -1,5 +1,6 @@
 "use client";
 
+import { useFanOutSetter } from "@/features/inspector/components/InspectorSectionFanOut";
 import { useState } from "react";
 import { InspectorBorderVisualSideSelector } from "@/features/inspector/components/InspectorBorderVisualSideSelector";
 import { InspectorColorFieldShell } from "@/features/inspector/components/InspectorColorFieldShell";
@@ -85,7 +86,7 @@ const PRESETS: { preset: BorderPreset; label: string }[] = [
  * the sides subsequently becoming equal by coincidence.
  */
 export function InspectorBorderSection({ node }: InspectorBorderSectionProps) {
-  const setElementBorder = useEditorStore((state) => state.setElementBorder);
+  const setElementBorder = useFanOutSetter("border", useEditorStore((state) => state.setElementBorder));
   const border = getBorderSettings(node);
 
   const [mode, setMode] = useState<BorderMode>(() => (borderSidesEqual(border) ? "unified" : "individual"));

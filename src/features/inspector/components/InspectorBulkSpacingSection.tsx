@@ -1,5 +1,6 @@
 "use client";
 
+import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
 import { InspectorBulkNumberField } from "@/features/inspector/components/InspectorBulkNumberField";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
@@ -63,6 +64,7 @@ const BASELINE: RenderedPadding = { top: 0, right: 0, bottom: 0, left: 0 };
  */
 export function InspectorBulkSpacingSection({ nodes }: InspectorBulkSpacingSectionProps) {
   const setElementsSpacingAllSides = useEditorStore((state) => state.setElementsSpacingAllSides);
+  const setElementsSettings = useEditorStore((state) => state.setElementsSettings);
   const ids = nodes.map((node) => node.id);
 
   const margins = nodes.map((node) => getElementSpacing(node).margin);
@@ -77,10 +79,10 @@ export function InspectorBulkSpacingSection({ nodes }: InspectorBulkSpacingSecti
 
   return (
     <InspectorSection label="Spacing">
-      <InspectorPropertyRow label="Margin" state={rowState(margin, margins)}>
+      <InspectorPropertyRow label="Margin" state={rowState(margin, margins)} reset={<InspectorResetButton onReset={() => setElementsSettings(ids, "margin", undefined)} disabled={!(margins.some((box) => Object.keys(box ?? {}).length > 0))} label="Reset margin on all selected elements" />}>
         <InspectorBulkNumberField ariaLabel="Margin" shared={margin} onCommit={(value) => setElementsSpacingAllSides(ids, "margin", value)} />
       </InspectorPropertyRow>
-      <InspectorPropertyRow label="Padding" state={rowState(padding, paddings)}>
+      <InspectorPropertyRow label="Padding" state={rowState(padding, paddings)} reset={<InspectorResetButton onReset={() => setElementsSettings(ids, "padding", undefined)} disabled={!(paddings.some((box) => Object.keys(box ?? {}).length > 0))} label="Reset padding on all selected elements" />}>
         <InspectorBulkNumberField ariaLabel="Padding" shared={padding} onCommit={(value) => setElementsSpacingAllSides(ids, "padding", value)} />
       </InspectorPropertyRow>
     </InspectorSection>

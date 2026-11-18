@@ -1,5 +1,6 @@
 "use client";
 
+import { useFanOutSetter } from "@/features/inspector/components/InspectorSectionFanOut";
 import { useState } from "react";
 import { InspectorLinkToggle } from "@/features/inspector/components/InspectorLinkToggle";
 import { InspectorNumericValueControl, type NumericOrAuto } from "@/features/inspector/components/InspectorNumericValueControl";
@@ -424,7 +425,7 @@ const NO_ACTIVE_OPTION = "";
  * inherits it for free, the same way Checkpoint 5.2 did.
  */
 export function InspectorPositionSection({ node }: InspectorPositionSectionProps) {
-  const setElementPosition = useEditorStore((state) => state.setElementPosition);
+  const setElementPosition = useFanOutSetter("position", useEditorStore((state) => state.setElementPosition));
   const position = getPositionSettings(node);
   const isSet = position.position !== undefined;
 

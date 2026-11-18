@@ -1,5 +1,6 @@
 "use client";
 
+import { useFanOutSetter } from "@/features/inspector/components/InspectorSectionFanOut";
 import { useState } from "react";
 import { InspectorBorderRadiusCornerSelector } from "@/features/inspector/components/InspectorBorderRadiusCornerSelector";
 import { InspectorNumericValueControl, type NumericOrAuto } from "@/features/inspector/components/InspectorNumericValueControl";
@@ -56,7 +57,7 @@ const PRESETS: { preset: BorderRadiusPreset; label: string }[] = [
  * counterpart of border.ts's borderSidesEqual.
  */
 export function InspectorBorderRadiusSection({ node }: InspectorBorderRadiusSectionProps) {
-  const setElementBorderRadius = useEditorStore((state) => state.setElementBorderRadius);
+  const setElementBorderRadius = useFanOutSetter("borderRadius", useEditorStore((state) => state.setElementBorderRadius));
   const radius = getBorderRadiusSettings(node);
 
   const [mode, setMode] = useState<RadiusMode>(() => (borderRadiusCornersEqual(radius) ? "unified" : "individual"));

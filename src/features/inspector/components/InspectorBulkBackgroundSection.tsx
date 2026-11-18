@@ -1,5 +1,6 @@
 "use client";
 
+import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
 import { InspectorBulkTextField } from "@/features/inspector/components/InspectorBulkTextField";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
@@ -46,7 +47,7 @@ export function InspectorBulkBackgroundSection({ nodes }: InspectorBulkBackgroun
 
   return (
     <InspectorSection label="Background">
-      <InspectorPropertyRow label="Color" state={effectiveRowState(color, anyAuthored)}>
+      <InspectorPropertyRow label="Color" state={effectiveRowState(color, anyAuthored)} reset={<InspectorResetButton onReset={() => setElementsBackgroundField(ids, "color", undefined)} disabled={!(anyAuthored)} label="Reset background color on all selected elements" />}>
         <InspectorBulkTextField
           ariaLabel="Background color"
           shared={color}

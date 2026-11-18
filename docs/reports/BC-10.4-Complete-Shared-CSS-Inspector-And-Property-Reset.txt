@@ -1,0 +1,311 @@
+BC-10.4 — Complete Shared CSS Inspector Controls & Property Reset
+=================================================================
+Date: 2026-11-18
+Base: HEAD 8a382cd (BC-10.3, committed). All BC-10.4 work is uncommitted.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+The multi-selection Inspector now offers every compatible CSS section of the
+single-selection Inspector. Two complementary paths:
+
+  a) UNIFORM selections (same tag, identical authored settings for that
+     section, and for Flex/Grid child sections the same parent layout): the
+     REAL single-selection section is rendered for the primary element and
+     every setter it calls is fanned out to all selected elements. This gives
+     full parity for free — units, keywords, live sliders, per-field Reset,
+     gradient stops, shadow layers, Flex/Grid container options.
+
+  b) NON-UNIFORM selections: the BC-10.3 effective-value bulk sections
+     (truthful Mixed/Unknown), now completed (full Typography) and given a
+     per-property "Reset … on all selected elements" button; or, for
+     list/configuration-shaped sections (box shadow, background
+     image/gradient, Content Layout, Flex child, Grid child), an explicit
+     Mixed panel with "Use <primary>'s … on all" and Reset/Remove. Nothing is
+     ever silently replaced with the primary's value.
+
+Every edit and Reset is all-or-nothing (a style lock on any target blocks the
+whole edit with a notice), touches each element once (parent + child
+included), and is one Undo step; live gestures are one Undo step through the
+existing begin/commitTransaction. No project-format, Preview or Export change.
+
+
+2. FULL CSS INSPECTOR COVERAGE MATRIX
+-------------------------------------
+Section            | Uniform selection            | Non-uniform selection                         | Reset in multi
+-------------------+------------------------------+-----------------------------------------------+-----------------------------
+Typography         | real section, fanned out     | bulk: all 9 fields (NEW: family, weight,      | per field (NEW)
+                   |                              | style, decoration, align, line height,        |
+                   |                              | letter spacing were missing)                  |
+Background colour  | real section, fanned out     | bulk colour (effective)                       | colour (NEW)
+Background image / | real section (Gradient /     | Mixed panel: "Use X's image/gradient on all", | Remove images and gradients
+gradient           | image controls) fanned out   | "Remove images and gradients from all"; each  | from all (NEW)
+                   |                              | element keeps its own colour                  |
+Border             | real section (per side)      | bulk all-sides width/style/colour             | width/style/colour (NEW)
+Border radius      | real section (per corner)    | bulk all-corners                              | radius (NEW)
+Box shadow         | real section (layer list,    | Mixed panel: "Use X's shadows on all",        | Remove all shadows (NEW)
+                   | drag reorder) fanned out NEW | "Remove all shadows"                          |
+Filters            | real section (sliders, live) | bulk opacity/blur                             | opacity/blur (NEW)
+Transform          | real section fanned out NEW  | bulk (BC-10.3)                                | via real section when uniform
+Transition         | real section fanned out NEW  | bulk (BC-10.3)                                | via real section when uniform
+Display/visibility | real section fanned out      | bulk display/visibility                       | display/visibility (NEW)
+Position           | real section fanned out      | bulk position                                 | position (NEW)
+                   | (only when no element is a   |                                               |
+                   | free-layout child/container) |                                               |
+Spacing            | real section (box model,     | bulk margin/padding (effective)               | margin/padding (NEW)
+                   | linked/unlinked) fanned out  |                                               |
+Content Layout     | real section fanned out NEW  | Mixed panel: "Use X's layout on all"          | real section's own resets
+(Flex/Grid         | (Flow<->Free switch held     | (disabled if any container is in Free layout) |
+container)         | back, see 19)                |                                               |
+Flex child         | real section fanned out NEW  | Mixed panel: Use X's / Reset                  | Reset (NEW)
+(all parents flex) |                              |                                               |
+Grid child         | real section fanned out NEW  | Mixed panel: Use X's / Reset                  | Reset (NEW)
+(all parents grid) | (placement clamped per grid) |                                               |
+Size min/max       | bulk                         | bulk                                          | min/max W/H (NEW)
+Shape, Media fit   | bulk (unchanged)             | bulk (unchanged)                              | unchanged
+
+Hidden as before when incompatible: sections whose capability does not hold
+for every selected element (e.g. Typography for a selection with an image,
+Flex child unless every parent is a Flex container).
+
+
+3. NEWLY EXPOSED CONTROLS
+-------------------------
+- Box shadow (layers, inset, offsets, blur, spread, colour, reorder).
+- Background gradients (linear/radial, angle, draggable stops) and images.
+- Transform, Transition — full single editors when uniform.
+- Content Layout: Flex direction/wrap/justify/align/gaps; Grid
+  columns/rows/gaps; child resize policy.
+- Flex child (grow/shrink/basis/align-self), Grid child (start/span).
+- Bulk Typography: font family, weight, style, decoration, align, line
+  height, letter spacing (previously only size and colour).
+- Reset buttons on every bulk field listed in section 2.
+
+
+4. ELIGIBILITY RULES
+--------------------
+src/features/inspector/utils/sectionUniformity.ts — isSectionUniform(section,
+nodes, parents):
+- false for fewer than two elements or different tags (defaults differ by
+  tag, so "the same authored value" would not mean "the same rendered value");
+- compares the section's authored fields with a key-sorted, undefined-free
+  JSON (SECTION_FIELDS); e.g. borderRadius also compares `shape`, layout
+  compares layoutMode + flowLayout + childResizePolicy;
+- flexChild/gridChild also require identical parent layout (PARENT_FIELDS).
+Section visibility (InspectorMultiNodeSummary): Content Layout only when all
+are containers; Flex/Grid child only when every parent is Flex/Grid;
+Position only when no element is a free-layout child or container (as for
+single selection).
+
+
+5. REUSED SINGLE-SELECTION COMPONENTS
+-------------------------------------
+No editor was duplicated. InspectorSectionFanOut (context) + useFanOutSetter
+(key, setter, {live}) wrap the existing setters in 16 single-selection
+section files; outside a fan-out they return the original setter unchanged,
+so single selection behaves exactly as before. Inside, a call becomes
+setElementsSettings(ids, key, value, {live}). The store action runs the SAME
+single-node command per element (sectionSettingsCommands.ts COMMANDS map), so
+validation/clamping is identical to single selection.
+
+
+6. MIXED/UNKNOWN INTEGRATION
+----------------------------
+Non-uniform bulk fields use the BC-10.3 resolver unchanged
+(effectiveValueOf / resolveSharedEffective: measured, else absolute
+authored, else Unknown). The new Typography bulk fields use the same helper.
+Uniform selections need no Mixed state: identical tag + authored settings
+render identically. Mixed panels say "Mixed." and change nothing until the
+user picks an action. After Undo/Redo the Inspector recomputes from the
+document (useRenderedStyles re-measures per document change), so states do
+not go stale; the uniform/Mixed choice is also recomputed each render.
+
+
+7. COMPLEX CSS VALUE SAFETY
+---------------------------
+Shadows, gradients, transforms and transitions are never reduced to a
+flattened string in multi-selection: they are either edited by the real
+editor (uniform) or copied whole as the primary's typed settings ("Use X's…").
+backgroundSource replaces only the image/gradient part and keeps each
+element's own colour. Grid placement is clamped per element against its own
+parent grid (clampGridChildPlacement), as for one element.
+
+
+8. RESET BEHAVIOR BY PROPERTY
+-----------------------------
+Reset = write `undefined` for that field on every selected element (the
+element falls back to its own tag default — which may legitimately still be
+Mixed, e.g. h1 vs p line height; the UI does not force it). Enabled when ANY
+selected element authors the field, so a Mixed field can be reset. Only that
+field changes (tested: resetting line height keeps the paragraph's italic).
+Spacing Reset clears the whole margin/padding box. Shadows: Remove all.
+Background source: Remove images and gradients (colour kept). Flex/Grid
+child: Reset (writes undefined child settings).
+
+
+9. SHORTHAND/LONGHAND BEHAVIOR
+------------------------------
+No new CSS properties are emitted; all writes go through the existing typed
+model and existing style resolvers, so the shorthand/longhand discipline of
+earlier checkpoints (border sides, radius corners, overflow) is unchanged.
+Bulk "all sides/corners" fields write every side/corner field, as BC-10.3.
+
+
+10. ATOMIC EDIT AND RESET GUARANTEES
+------------------------------------
+setElementsSettings (non-live) uses guardedBulkStyleMutation: the protection
+of EVERY target is checked first; if any is protected nothing is written and
+an editor notice explains why. applySectionSettings returns the original root
+when every target is unchanged, so a no-op adds no history entry. Unique ids
+only (a duplicated id is written once).
+
+
+11. UNDO/REDO AND LIVE-EDIT TRANSACTIONS
+----------------------------------------
+Non-live edit/Reset = one pushHistory. Live writes ({live: true}, used by the
+real sections' sliders/drags) write without history inside the existing
+beginTransaction/commitTransaction, so a gesture is one Undo step (tested,
+including a selection change in mid-gesture). "Use X's layout on all" is a
+transaction of two live writes (flowDisplay then flex/grid container) = one
+Undo step. No second history system. Redo tested on the Grid columns edit.
+
+
+12. LOCKED-ELEMENT BEHAVIOR
+---------------------------
+Live and non-live paths both check every target's style protection first; a
+single locked element blocks the edit/Reset for all (document and history
+unchanged, notice shown). Tested.
+
+
+13. PARENT/CHILD SELECTION BEHAVIOR
+-----------------------------------
+applySectionSettings iterates the unique selected ids and calls the
+single-node command per id (no recursive traversal), so a selected parent and
+child each receive the edit exactly once (tested). Inherited effects are
+re-measured on the next render.
+
+
+14. PREVIEW/EXPORT PARITY
+-------------------------
+Shared edits are ordinary authored settings. Verified: Chromium Canvas and
+Preview both render the fanned-out italic for both paragraphs; the export
+stylesheet carries the shared shadow once per element rule (.ly-node-2 and
+.ly-node-3) with no selection metadata. No export code changed.
+
+
+15. PROJECT COMPATIBILITY
+-------------------------
+No serialization fields, no format v3 change, no migration change. The
+fan-out context, uniformity and Mixed decisions are render-time only and
+never persisted.
+
+
+16. SOURCE FILES MODIFIED
+-------------------------
+New:
+  src/features/editor/commands/sectionSettingsCommands.ts
+  src/features/inspector/components/InspectorSectionFanOut.tsx
+  src/features/inspector/components/InspectorMixedSectionPanel.tsx
+  src/features/inspector/components/InspectorBulkBackgroundSourcePanel.tsx
+  src/features/inspector/utils/sectionUniformity.ts
+  tests: sectionSettingsCommands.test.ts, sectionUniformity.test.ts,
+         InspectorMultiNodeSummary.sharedControls.test.tsx,
+         e2e/multi-selection-shared-controls.spec.ts
+Modified:
+  src/features/editor/stores/useEditorStore.ts (setElementsSettings)
+  src/features/inspector/components/InspectorMultiNodeSummary.tsx
+  src/features/inspector/components/InspectorBulkTypographySection.tsx (all fields + Reset)
+  InspectorBulk{Background,Border,BorderRadius,Display,Filters,Position,Size,Spacing}Section.tsx (Reset)
+  Single sections (setters wrapped with useFanOutSetter): BackgroundImageControls,
+    Background, BorderRadius, Border, BoxShadow, Display, Filters, FlexChild,
+    Gradient, GridChild, Layout (+ Flow/Free held back in fan-out), Position,
+    Spacing, Transform, Transition, Typography
+  e2e/bc05-final-regression.spec.ts (see 17)
+
+
+17. FOCUSED TEST-IMPACT MAP
+---------------------------
+Changed code                         -> tests run (why)
+sectionSettingsCommands.ts           -> sectionSettingsCommands.test.ts (new)
+sectionUniformity.ts                 -> sectionUniformity.test.ts (new)
+useEditorStore setElementsSettings,  -> editor/stores + editor/commands folders
+  guardedBulkStyleMutation reuse        (store contracts, history, persistence classification)
+16 single sections + fan-out hook    -> whole src/features/inspector folder (single-selection
+                                        behavior must be unchanged outside a fan-out)
+MultiNodeSummary + bulk sections     -> sharedControls test (new), inspector folder
+                                        (BC-10.3 bulk/effective tests)
+Real rendering / Preview / one Undo  -> e2e/multi-selection-shared-controls.spec.ts (new)
+BC-10.3 regression                   -> e2e/multi-selection-effective-values.spec.ts
+BC-10.2 regression                   -> e2e/multi-selection-structure-delete.spec.ts
+BC-05 spacing / Reset size           -> e2e/bc05-final-regression.spec.ts
+Export parity                        -> one export assertion in the sharedControls test
+                                        (export code unchanged; no export suite run)
+
+Updated pre-existing test (intentional behavior change, not weakened):
+e2e/bc05-final-regression.spec.ts "BC-05.4 multi-selection effective
+spacing" selected two plain buttons and expected the BULK all-sides Padding
+field to read "Mixed". Two same-tag buttons with identical (unset) spacing
+are now UNIFORM, so the real Spacing section is shown: its padding opens
+unlinked per side. The steps now assert Top = 8 and Right = 16 (still never a
+false 0), Margin (all sides) = 0, and the edit links padding and types 4 —
+still asserting computed 4px on all four sides of BOTH buttons, margin
+untouched, and one Undo. The heading+paragraph bulk steps are unchanged.
+
+
+18. EXACT TEST COMMANDS AND RESULTS
+-----------------------------------
+npx vitest run src/features/editor/commands/sectionSettingsCommands.test.ts src/features/inspector/utils/sectionUniformity.test.ts
+  -> 2 files, 10 tests passed
+npx vitest run src/features/inspector src/features/editor/stores src/features/editor/commands
+  -> 148 files, 2298 tests passed (included the sharedControls file at 11 tests)
+npx vitest run src/features/inspector/components/InspectorMultiNodeSummary.sharedControls.test.tsx
+  -> 15 tests passed (after adding Grid+Redo, 40-element, mid-gesture
+     selection change, export parity)
+npx playwright test e2e/multi-selection-shared-controls.spec.ts --project=chromium
+  -> 3 passed
+npx playwright test e2e/multi-selection-effective-values.spec.ts e2e/multi-selection-structure-delete.spec.ts e2e/bc05-final-regression.spec.ts --project=chromium
+  -> 10 passed, 1 failed (the BC-05.4 expectation described in 17)
+npx playwright test e2e/bc05-final-regression.spec.ts --project=chromium -g "effective spacing"
+  -> 1 passed after the update
+npx tsc --noEmit -p .                              -> 0 errors
+npx eslint <all changed/new .ts/.tsx>             -> clean
+npx prettier --check (only files clean at HEAD: e2e/bc05-final-regression.spec.ts) -> clean
+Not run (policy): full Vitest, full Chromium, Firefox/WebKit, Electron, export
+suite, build (no integration boundary changed).
+
+
+19. KNOWN LIMITATIONS
+---------------------
+- Flow <-> Free layout switching is disabled in multi-selection (Free -> Flow
+  and Flow -> Free need per-container DOM measurement); the note says
+  "Switch between Flow and Free one container at a time." "Use X's layout on
+  all" is disabled when any container is in Free layout.
+- Size, Shape and Media fit stay bulk even when uniform (Size is tied to
+  per-element measured dimensions and the BC-05.4 single Reset size).
+- Bulk numeric fields are px only; full unit choice is available when the
+  selection is uniform (the real section).
+- "Use X's layout on all" is two guarded live writes in one transaction.
+  The lock check runs before each, and a locked element blocks the first, so
+  nothing is written; but cancelTransaction does not roll the document back,
+  so the atomicity relies on the per-write guards.
+- Uniformity requires the same tag; e.g. h1 + h2 with identical shadows still
+  get the Mixed panel and need one "Use X's shadows on all" before the layer
+  editor appears.
+- Bulk Typography keeps small local option label tables (weights,
+  decorations) duplicated from the single section.
+- Transform/Transition have no bulk per-field Reset when non-uniform (their
+  BC-10.3 bulk fields remain as before).
+
+
+20. GIT WORKING-TREE STATUS
+---------------------------
+Uncommitted: 28 modified tracked files (27 src + e2e/bc05-final-regression.spec.ts)
+and 9 new files (section 16). This report and the changelog are not to be
+staged (changelogs/ is gitignored). No commit, no push.
+
+
+21. QA RECOMMENDATION
+---------------------
+Ready for ChatGPT QA. Suggested focus: the uniform-vs-Mixed decision for
+each section, the BC-05.4 e2e expectation update (section 17), and the Flow/
+Free limitation. If accepted, proceed to BC-10.5 only on approval.

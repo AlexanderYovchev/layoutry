@@ -1,5 +1,6 @@
 "use client";
 
+import { InspectorResetButton } from "@/features/inspector/components/InspectorResetButton";
 import { InspectorBulkNumberField } from "@/features/inspector/components/InspectorBulkNumberField";
 import { InspectorBulkTextField } from "@/features/inspector/components/InspectorBulkTextField";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
@@ -119,7 +120,7 @@ export function InspectorBulkBorderSection({ nodes }: InspectorBulkBorderSection
 
   return (
     <InspectorSection label="Border">
-      <InspectorPropertyRow label="Width" variant="stack" state={effectiveRowState(width, authored.width)}>
+      <InspectorPropertyRow label="Width" variant="stack" state={effectiveRowState(width, authored.width)} reset={<InspectorResetButton onReset={() => setElementsBorderAllSidesField(ids, "width", undefined)} disabled={!(authored.width)} label="Reset border width on all selected elements" />}>
         <InspectorBulkNumberField
           ariaLabel="Border width"
           shared={width}
@@ -134,6 +135,7 @@ export function InspectorBulkBorderSection({ nodes }: InspectorBulkBorderSection
       <InspectorSegmentedRow
         label="Style"
         state={effectiveRowState(style, authored.style)}
+        reset={<InspectorResetButton onReset={() => setElementsBorderAllSidesField(ids, "style", undefined)} disabled={!(authored.style)} label="Reset border style on all selected elements" />}
         options={STYLE_LABELS}
         activeOption={style.kind === "same" ? STYLE_VALUE_TO_LABEL[style.value] : NO_ACTIVE_OPTION}
         onSelect={(option) => {
@@ -145,7 +147,7 @@ export function InspectorBulkBorderSection({ nodes }: InspectorBulkBorderSection
 
       <InspectorSharedValueNote shared={style} />
 
-      <InspectorPropertyRow label="Color" state={effectiveRowState(color, authored.color)}>
+      <InspectorPropertyRow label="Color" state={effectiveRowState(color, authored.color)} reset={<InspectorResetButton onReset={() => setElementsBorderAllSidesField(ids, "color", undefined)} disabled={!(authored.color)} label="Reset border color on all selected elements" />}>
         <InspectorBulkTextField
           ariaLabel="Border color"
           shared={color}

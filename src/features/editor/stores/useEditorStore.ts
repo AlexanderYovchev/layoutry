@@ -2,6 +2,11 @@ import { create } from "zustand";
 import { canActivateInteractions } from "@/features/editor/rules/accessibilityAttributes";
 import { withoutCopiedCurrentState, type PaginationControlRole } from "@/features/editor/types/pagination";
 import {
+  applySectionSettings,
+  type SectionSettingsKey,
+  type SectionSettingsValues,
+} from "@/features/editor/commands/sectionSettingsCommands";
+import {
   addPaginationPage as addPaginationPageCommand,
   normalizePaginationsAfterEdit,
   removePaginationPage as removePaginationPageCommand,
@@ -614,6 +619,19 @@ interface EditorState {
    * one entry per targeted node.
    */
   setElementsTypographyField: <K extends keyof TypographySettings>(ids: readonly string[], field: K, value: TypographySettings[K]) => void;
+  /**
+   * BC-10.4: one single-selection section's whole settings written to every
+   * element in `ids` (sectionSettingsCommands), for a multi-selection whose
+   * elements share that section's authored settings. All-or-nothing: if any
+   * element is style-protected, nothing changes (the usual notice). One
+   * history entry; `live` writes none (a gesture inside begin/commitTransaction).
+   */
+  setElementsSettings: <K extends SectionSettingsKey>(
+    ids: readonly string[],
+    key: K,
+    value: SectionSettingsValues[K],
+    options?: { live?: boolean },
+  ) => void;
   setElementsBackgroundField: <K extends Exclude<keyof BackgroundSettings, "size" | "customSize" | "gradient">>(
     ids: readonly string[],
     field: K,
@@ -2061,6 +2079,15 @@ export const useEditorStore = create<EditorState>()((set) => ({
   // sections 17-18): if ANY targeted id is style-protected, the WHOLE bulk
   // mutation is blocked — none of the unprotected targets change either —
   // matching guardedBulkStyleMutation's own doc comment.
+  setElementsSettings: (ids, key, value, options) =>
+    set((state) => {
+      if (!options?.live) return guardedBulkStyleMutation(state, ids, (document) => applySectionSettings(document, ids, key, value));
+      const protections = ids.map((id) => getStyleProtection(state.document, id));
+      if (protections.some((result) => result.protected)) return nextEditorNoticeState(state, describeStyleLockNotice(protections, true));
+      const document = applySectionSettings(state.document, ids, key, value);
+      return document === state.document ? {} : { document };
+    }),
+
   setElementsTypographyField: (ids, field, value) =>
     set((state) =>
       guardedBulkStyleMutation(state, ids, (document) => setElementsTypographyFieldCommand(document, new Set(ids), field, value)),
