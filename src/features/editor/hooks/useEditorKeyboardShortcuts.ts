@@ -96,7 +96,8 @@ export function useEditorKeyboardShortcuts(): void {
         if (store.svgEditingNodeId && store.selectedSvgObjectIds.length > 0) {
           store.removeSvgObjects(store.svgEditingNodeId, store.selectedSvgObjectIds);
         } else {
-          store.deleteSelection();
+          // BC-10.2: two or more selected elements ask for confirmation first.
+          store.requestDeleteSelection();
         }
         return;
       }

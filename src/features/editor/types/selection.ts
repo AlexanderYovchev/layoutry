@@ -56,9 +56,9 @@ export function toggleSelectionId(selection: EditorSelection, id: string): Edito
  * stays selected (only its primary status may change), rather than being
  * removed the way Ctrl/Cmd+click would. Canvas has no natural linear
  * order to build a real "range" from (see this checkpoint's own report),
- * so this is the one, predictable Shift behavior there; Structure's own
- * Shift handling is a separate, dedicated helper (see documentTreeUtils'
- * sibling-range logic) since a tree row order genuinely exists there.
+ * so this is the one, predictable Shift behavior there. The Structure
+ * panel, which has a real row order, uses selectRange below instead
+ * (BC-10.2; before that it also used this additive helper).
  */
 export function addSelectionId(selection: EditorSelection, id: string): EditorSelection {
   if (selection.ids.includes(id)) return { ...selection, primaryId: id };
@@ -92,4 +92,37 @@ export function normalizeSelection(selection: EditorSelection, existingIds: Read
   if (ids.length === selection.ids.length && primaryStillValid) return selection;
   if (ids.length === 0) return EMPTY_SELECTION;
   return { ids, primaryId: primaryStillValid ? selection.primaryId : ids[ids.length - 1] };
+}
+
+/**
+ * Structure panel Shift+click range selection (BC-10.2). `orderedIds` is
+ * the Structure panel's VISIBLE row order (collapsed descendants are not
+ * in it, so they are never selected by a range); the range runs from the
+ * anchor to `targetId` inclusive, in that order, across containers.
+ *
+ * The anchor is the last plainly clicked or Ctrl/Cmd-clicked row. It is
+ * used only while it is still selected and visible; otherwise the primary
+ * selection (if visible) is the anchor, else `targetId` itself. The anchor
+ * is returned so repeated Shift+clicks keep it.
+ *
+ * `additive` (Ctrl/Cmd+Shift) adds the range to the existing selection;
+ * otherwise the range replaces it. The clicked row becomes the primary.
+ */
+export function selectRange(
+  selection: EditorSelection,
+  anchorId: string | null,
+  targetId: string,
+  orderedIds: readonly string[],
+  additive: boolean,
+): { selection: EditorSelection; anchorId: string } {
+  const targetIndex = orderedIds.indexOf(targetId);
+  if (targetIndex === -1) return { selection, anchorId: anchorId ?? targetId };
+  const usable = (id: string | null | undefined): id is string =>
+    id !== null && id !== undefined && selection.ids.includes(id) && orderedIds.includes(id);
+  const anchor = usable(anchorId) ? anchorId : usable(selection.primaryId) ? selection.primaryId : targetId;
+  const anchorIndex = orderedIds.indexOf(anchor);
+  const [from, to] = anchorIndex <= targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
+  const range = orderedIds.slice(from, to + 1);
+  const ids = additive ? [...selection.ids, ...range.filter((id) => !selection.ids.includes(id))] : range;
+  return { selection: createSelection(ids, targetId), anchorId: anchor };
 }

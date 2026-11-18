@@ -1,0 +1,564 @@
+BC-10.1 — MULTI-SELECTION AND SHARED CSS ARCHITECTURE INVESTIGATION
+====================================================================
+Date: 2026-11-18
+Baseline: 61cee9e (BC-09.5 committed). Investigation only: no
+production code, schema or test changed. Waiting for owner decisions
+and ChatGPT QA. BC-10.2 not started.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Multi-selection and shared CSS editing ALREADY EXIST in a substantial
+first form (Checkpoint 1.15.2, extended by 1.15.3 Parent Style
+Protection and BC-05.4 effective-spacing Mixed). BC-10 is therefore a
+completion and consistency milestone, not a new architecture.
+
+Exists today (verified in source):
+- Selection model: `selection: { ids[], primaryId }`, editor-only state
+  (types/selection.ts). Actions: selectOnly, toggleSelection
+  (Ctrl/Cmd), addToSelection (Shift, additive), setSelection,
+  clearSelection.
+- Stale ids are dropped at read time (normalizeSelection in
+  useSelectedNodes).
+- Canvas: Ctrl/Cmd+click toggles, Shift+click adds, a click on empty
+  space clears. Every selected node gets an outline; non-primary
+  members are drawn softer. Resize handles appear only for a single
+  selection.
+- Structure panel: the same Ctrl/Cmd toggle and Shift add.
+- Multi-selection Inspector (InspectorMultiNodeSummary):
+  - shows "N elements selected";
+  - 14 bulk CSS sections, each gated by intersectElementCapabilities
+    (shown only if EVERY selected tag supports it);
+  - no semantic sections (Identity, Link, ...).
+- Bulk mutations: setElements*Field store actions (22). Each is one
+  store write, so one Undo entry, and all-or-nothing: the whole edit is
+  refused, with a notice, if any target is style-protected
+  (guardedBulkStyleMutation).
+- Mixed: a SharedValue<T> union ("same" | "mixed").
+- Delete acts on the whole selection, collapsing nested selections to
+  their roots (normalizeSelectionRoots) and cleaning interactions.
+
+Missing or inconsistent:
+F1  Mixed is computed TWO ways.
+    - Spacing compares EFFECTIVE rendered values (the BC-05.4 approved
+      rule).
+    - Every other bulk section compares AUTHORED values (a 1.15.2 design
+      choice) and substitutes a fallback for "all unset".
+    - Verified with an exploratory test: an unset h1 (renders 32 px) and
+      an unset p (16 px) show bulk Font size "16" instead of Mixed.
+      That is misleading (Medium).
+F2  The bulk sections are a reduced "representative" surface.
+    - Typography has 3 of its fields; Border and Spacing edit all sides
+      at once only.
+    - No bulk Box shadow, Gradient, Flex/Grid container (Layout),
+      Flex/Grid child or Interactions.
+    - Reset exists in only some bulk sections (Transform, Transition,
+      partly Shape/Media fit).
+F3  Copy, cut and duplicate act on the PRIMARY only (an explicit 1.15.2
+    deferral); Paste pastes one node.
+F4  Drag moves one node, and the move collapses the selection to that
+    node. There is no multi-drag and no multi-resize (by design).
+F5  Structure panel Shift+click is additive, NOT a range. The
+    selection.ts comment says the Structure panel has a sibling-range
+    helper; the code calls addToSelection. A doc/code mismatch (Low).
+F6  No keyboard selection shortcuts: no Select All, no Shift+arrows in
+    the tree. Escape clears.
+F7  No responsive breakpoint model exists at all, and no pseudo-state
+    CSS. The responsive questions are about a future model.
+F8  There is no maximum selection size (the 1.15.2 performance tests
+    target hundreds).
+
+Recommended architecture:
+- Keep the existing model, actions and guards.
+- Unify Mixed on one rule: EFFECTIVE values, BC-05.4's approved
+  definition, extended section by section.
+- Bring the bulk sections to parity with the single-selection sections,
+  using the same per-field resolvers and validators.
+- Add multi-node copy/duplicate through the existing clone path.
+- Leave multi-drag and multi-resize as an explicit later decision.
+20 product decisions are in section 13.
+
+
+2. EXISTING SELECTION ARCHITECTURE
+----------------------------------
+- types/selection.ts: EditorSelection { ids: string[]; primaryId?: string }.
+  - Insertion-ordered and unique; primaryId is always a member, or
+    absent.
+  - Helpers: selectionFromSingle, toggleSelectionId (removing the
+    primary reassigns it to the last remaining member),
+    addSelectionId, createSelection (dedup), normalizeSelection.
+- useEditorStore.ts:
+  - `selection` slice; selectElement/selectOnly (single),
+    toggleSelection, addToSelection, setSelection, clearSelection;
+  - SVG vector objects have their own separate selection
+    (selectedSvgObjectIds).
+- hooks/useSelectedNode.ts (useSelectedNodes):
+  - reads the selection against the CURRENT document;
+  - stale ids are dropped at read time (normalizeSelection), so delete,
+    undo and count shrinks need no write-time patching.
+- Persistence: none. Selection is not in EditorElementNode, not cloned,
+  not serialized (project-format.md "Not persisted: Selection").
+  replaceDocument resets it; Undo/Redo snapshots documents, not
+  selection.
+- Answers to the brief's questions:
+  1. multiple ids: yes;
+  2. multiple outlines: yes;
+  3. Ctrl/Cmd+click toggles and Shift+click adds: yes;
+  4. Structure panel multi-selection: yes (toggle/add; no range, F5);
+  5. selection survives Inspector edits: yes (bulk actions don't touch
+     selection);
+  6. different parents: allowed;
+  7. nested parent and child: allowed in selection; Delete collapses to
+     roots; bulk style edits apply to both;
+  8. drag/resize: single-node only (F4);
+  9. keyboard: Delete covers all; Copy/Cut/Duplicate/Paste are primary
+     only (F3);
+  10. transient: editor-only.
+
+
+3. EXISTING CANVAS SELECTION BEHAVIOR
+-------------------------------------
+- CanvasInteractionBoundary (one delegated window click listener):
+  - Design: Ctrl/Cmd → toggleSelection; Shift → addToSelection; plain →
+    selectOnly;
+  - a click on blank space or the page root clears;
+  - Preview: runs interactions, no selection.
+- Clicking an already-selected element without a modifier: selectOnly,
+  so it reduces to that one element. Ctrl/Cmd+click on it removes it.
+- Overlays (CanvasOverlay → SelectionOverlay): one outline per selected
+  node; isPrimary chooses outline-canvas-selection vs
+  outline-canvas-selection-soft and the label dims. showHandles only
+  when exactly one node is selected (and it isn't protected or in SVG
+  edit mode).
+- Drag (dnd-kit via useNodeDragSource; EditorApp.handleDragEnd →
+  resolveDragEndMove → moveElement):
+  - one node;
+  - moveElement sets selectionFromSingle(nodeId), so a multi-selection
+    collapses on drag.
+- Resize: ResizeOverlay and FreeChildResizeHandles, primary only.
+- Escape clears the selection (Design).
+
+
+4. EXISTING STRUCTURE PANEL SELECTION BEHAVIOR
+----------------------------------------------
+- StructureTree.handleSelect: Ctrl/Cmd → toggleSelection, Shift →
+  addToSelection, plain → selectOnly. Rows have aria-selected.
+- Arrow keys move FOCUS (roving), not selection. Home/End are supported.
+- F5: no range selection, despite the selection.ts doc comment claiming
+  "Structure's own Shift handling is a separate, dedicated helper (see
+  documentTreeUtils' sibling-range logic)". That file doesn't exist and
+  the code uses addToSelection.
+
+
+5. CSS INSPECTOR ARCHITECTURE
+-----------------------------
+Single selection: InspectorNodeSummary.
+- Per-section components gated by getElementCapabilities(tag).
+- Values come from per-type getters (getTypographySettings, ...) plus
+  rendered fallbacks for unset fields: useRenderedTypography,
+  useRenderedPadding (BC-01/BC-05).
+- Property states (set/unset/mixed/invalid) via InspectorPropertyRow
+  (Checkpoint 4.1).
+- Live edits use begin/commit/cancelTransaction (BC-01, 4.3.1), so one
+  history entry per gesture.
+- Reset per field/section (BC-05.2: CSS reset is one Undo step).
+Multi selection: InspectorMultiNodeSummary.
+- capabilities = intersectElementCapabilities(tags); a section shows only
+  if every tag supports it. Spacing is always shown.
+- Parent Style Protection: if ANY node is protected, the controls are
+  disabled and the store refuses the bulk edit atomically.
+- 14 bulk sections:
+  - Typography (size, weight, colour);
+  - Background (colour/image fields, not gradient);
+  - Border (all sides);
+  - Border radius (all corners);
+  - Shape; Media fit; Size;
+  - Display/Visibility; Position; Filters; Transition; Transform;
+  - SVG;
+  - Spacing (all sides, effective values).
+- No bulk: Box shadow, Gradient, Layout (Flex/Grid container), Flex
+  child, Grid child, Interactions, and all semantic sections.
+- Bulk fields (InspectorBulkNumberField, InspectorBulkTextField,
+  segmented rows) commit on Enter/blur: one store action, one entry.
+  Bulk sliders (InspectorSliderField with null = Mixed) are used in
+  some sections.
+
+
+6. MIXED-VALUE HANDLING
+-----------------------
+- inspector/types/sharedValue.ts: resolveSharedValue(nodes, selector,
+  isEqual) → { kind: "same", value } | { kind: "mixed" }.
+- withSharedFallback substitutes a default for "all unset".
+- Authored comparison (every bulk section except Spacing): by design
+  (1.15.2 report H), "never go mixed merely because different tags
+  render different native defaults".
+- Effective comparison (Spacing, BC-05.4 approved):
+  - each node's effective value (authored side, else the rendered
+    padding, else margin 0);
+  - one number only when every side of every node agrees, else Mixed;
+  - the row STATE still follows authored data.
+- Finding F1 (Medium, existing):
+  - the two rules disagree, and the authored rule plus fallback can show
+    a wrong concrete value;
+  - verified: an unset h1 + p show Font size "16" (the h1 renders 32);
+  - the same risk applies to any unset field with tag-dependent
+    defaults: line height, colour (shown empty), button padding is
+    already handled.
+- Recommendation (D6):
+  - adopt the BC-05.4 rule everywhere a rendered default can differ:
+    display the effective value, show Mixed when effective values
+    differ, keep the row state from authored data;
+  - fields with no tag-dependent default (e.g. opacity) behave the same
+    either way.
+  - Do not replace the spacing rule.
+
+
+7. RESPONSIVE CSS MODEL
+-----------------------
+- None exists: no breakpoints and no per-breakpoint overrides in
+  EditorElementNode.
+- The export's @media rules are generated only (reduced motion, etc.).
+- So "active breakpoint", "inherited responsive value" and "reset at a
+  breakpoint" have no implementation today. Nothing needs altering.
+- Recommendation (D12), for when a responsive model is built: a
+  multi-selection edit applies to the ACTIVE breakpoint only, for every
+  selected node; Mixed is computed from the values effective at that
+  breakpoint; Reset clears the override at the active breakpoint only.
+  BC-10 doesn't need to implement any of this.
+
+
+8. CSS MUTATION AND TRANSACTION ARCHITECTURE
+--------------------------------------------
+- Bulk commands (editor/commands/bulkCommands.ts, 54 tests): pure
+  functions over a Set of ids, reusing the single-node per-field setters.
+  They return the same root when nothing changed.
+- Store: guardedBulkStyleMutation(state, ids, mutate):
+  - if any id is protected: refuse everything (a notice, no history);
+  - else one pushHistory and one document write.
+  That is all-or-nothing with exactly one Undo entry. It is the safest
+  mechanism to reuse.
+- Validation: each section validates input before committing
+  (isValidFontSize, isValidCssColor, ...), and the schema enforces it on
+  save. A per-node failure can't arise mid-write: commands are pure and
+  apply the same validated value to each node, and an unsupported tag
+  is excluded by the capability gate.
+- Partial failure: not possible today (an invalid value is never
+  committed; a protected node blocks all).
+- Live transactions: beginTransaction/commitTransaction are generic
+  (snapshot the document), so a bulk slider drag is one entry. Gradient
+  editing (4.3.1) already uses them.
+
+
+9. UNDO/REDO INTEGRATION
+------------------------
+- pushHistory snapshots the whole document, so Undo/Redo restore every
+  node of a bulk edit together.
+- Selection is not part of history: after Undo, normalizeSelection
+  drops ids that no longer exist; ids that survive stay selected.
+- Ids are stable: bulk edits never regenerate ids.
+
+
+10. COPY / PASTE / DELETE IMPLICATIONS
+-------------------------------------
+- Delete: multi-aware (normalizeSelectionRoots, collectDeletedIds,
+  removeInteractionsTargeting, BC-09.3 Pagination invariants). One entry.
+- Copy/Cut/Duplicate: eligibleSelectedNode = primary only; the clipboard
+  shape is already nodes[] (`clipboard.nodes[0]` is used).
+- Multi-copy would need:
+  - roots only (normalizeSelectionRoots);
+  - document order;
+  - cloneNodeWithFreshIds per root, with one shared id map so
+    interactions BETWEEN copied roots remap too (today the map is per
+    clone);
+  - the BC-09 rules: withoutCopiedCurrentState and the Pagination
+    invariants;
+  - the save-size limit (subtreeHasEmbeddedData).
+- Multi-paste destination: one parent (the primary's parent, or the
+  selected container); insert in order; select all pasted roots.
+- Interaction-reference integrity: removeInteractionsWithMissingTargets
+  after paste (exists); deletion cleanup (exists).
+
+
+11. PREVIEW / EXPORT ISOLATION
+------------------------------
+- Selection is editor-only state:
+  - not serialized;
+  - enterPreview ignores it; CanvasOverlay returns null in Preview;
+  - the keyboard shortcuts are disabled in Preview (comment in
+    useEditorKeyboardShortcuts).
+- Export reads only the document.
+- No coupling found. BC-10 can stay out of Preview and Export entirely.
+
+
+12. ARCHITECTURAL RISKS
+-----------------------
+R1 Mixed rule change (F1): the measured values need the Canvas DOM
+   (useRendered*). The selection may include off-screen or hidden nodes
+   (display:none, runtime-hidden), so measurement can fail. BC-05.4's
+   approach handles failure with a fallback; reuse it.
+R2 Bulk parity (F2):
+   - list-shaped models (Box shadow) and object-shaped ones (Gradient)
+     have no meaningful per-field "same" across nodes;
+   - "replace all with the primary's list" is the only sane bulk
+     semantics, and it is destructive, hence a product decision (D7/D8).
+R3 Layout (Flex/Grid) bulk edits change the children's flow. They are
+   valid but high-impact; the containers must all be flow containers.
+R4 Multi-copy id remapping across roots: a new shared-map variant of
+   cloneNodeWithFreshIds is needed. Getting it wrong yields dangling
+   interactions (BC06-D1 class).
+R5 Multi-drag:
+   - dnd-kit is single-active;
+   - mixed parents and Free-layout geometry make "move together"
+     ill-defined;
+   - high regression risk (BC-03 lessons).
+R6 Parent+child both selected: a bulk style edit hits both (fine), but
+   multi-copy and multi-drag must use roots only. Delete already does.
+R7 Inspector local-state staleness across selection changes (the known
+   pattern): new bulk fields must use the last-seen-key reset.
+R8 Performance: the measured Mixed reads N nodes. Hundreds are fine
+   (the 1.15.2 tests); with no cap, add a soft limit only if measured
+   necessary.
+
+
+13. PRODUCT DECISION MATRIX
+---------------------------
+(R = recommended. Complexity / regression risk: L, M, H.)
+
+D1 Multi-select modifier
+   A Ctrl/Cmd toggles, Shift adds (current) (R) | B Shift toggles
+     (Figma-like) | C Shift range in Structure, Ctrl/Cmd toggle
+     everywhere.
+   A keeps current users' habits. C adds a real tree range (F5).
+   Complexity A: none; C: M. Risk: L.
+   Note: recommend A plus C's tree range as an addition (D17).
+
+D2 Clicking an already-selected element
+   A plain click selects only it (current) (R) | B a plain click keeps
+     the selection (needed for multi-drag) | C keeps it until mouse-up
+     without a drag.
+   A is simple and predictable. B/C only matter if multi-drag is
+   approved. Complexity C: M. Risk: M.
+
+D3 Parent and child together
+   A allowed; bulk CSS applies to both; structural ops use roots (current)
+     (R) | B selecting one deselects its ancestors/descendants | C
+     forbidden.
+   A matches the current Delete behaviour and is least surprising for
+   styling. Risk: L.
+
+D4 Cross-container selection
+   A allowed (current) (R) | B same parent only.
+   CSS is per-node; parents don't matter. Multi-paste/drag rules differ
+   (D13/D15). Risk: L.
+
+D5 Maximum selection
+   A no cap (current) (R) | B a soft cap with a notice (e.g. 200) | C a
+     hard cap.
+   No measured need. Revisit with measurements. Risk: L.
+
+D6 Mixed display
+   A effective values everywhere (extend BC-05.4) (R) | B authored values
+     (current, except Spacing) | C effective for numeric/visual fields,
+     authored for keyword fields.
+   A fixes F1 and matches the approved Spacing rule. It needs DOM
+   measurement (R1). Complexity: M per section. Risk: M.
+
+D7 Shared property eligibility
+   A capability intersection (current) (R) | B union, with per-node
+     skipping | C intersection plus "partially applicable" sections
+     flagged.
+   A is safe and already centralised. B causes surprise partial edits.
+
+D8 Unsupported / complex properties (Box shadow, Gradient, Layout,
+   Flex/Grid child)
+   A add bulk sections with "same" only when structurally equal, Mixed
+     otherwise; an edit replaces the whole value on every node, behind an
+     explicit "Apply to all" (R for Box shadow and Gradient) | B don't
+     offer them in multi-selection (current) | C per-field edits only.
+   A is honest and explicit. Layout container edits: A, but only when
+   every node is a flow container. Complexity: H. Risk: M.
+
+D9 All-or-nothing vs partial
+   A all-or-nothing (current: a protected node blocks all) (R) | B apply
+     to the eligible nodes and report the skipped ones.
+   A keeps Undo and atomicity simple and matches 1.15.3. Risk: L.
+
+D10 Undo grouping
+   A one entry per committed bulk edit; a slider drag is one transaction
+     (R) | B one entry per node.
+   A already holds. Risk: L.
+
+D11 Reset across the selection
+   A Reset clears the authored field on every selected node, one entry
+     (R) | B reset the primary only | C reset only the nodes that author
+     it.
+   A matches single-selection semantics (C has the same effect as A,
+   since unset nodes don't change). Add Reset to every bulk section
+   (F2). Complexity: M. Risk: L.
+
+D12 Responsive behaviour
+   A when breakpoints exist, edits and Reset apply to the active
+     breakpoint; Mixed uses the effective values there (R) | B edits
+     apply to the base styles only.
+   There is no breakpoint model today, so nothing is built in BC-10.
+
+D13 Multi-drag
+   A not supported; the drag collapses the selection (current) (R for
+     BC-10) | B move every selected root together into the drop target
+     (Flow only) | C including Free layout with relative offsets.
+   B/C: H complexity, H risk (dnd-kit single active, BC-03).
+   Recommend a separate later milestone.
+
+D14 Multi-resize
+   A not supported (current) (R) | B proportional resize of all | C
+     width/height fields in the bulk Size section only (exists for
+     dimensions).
+   C already covers numeric sizing. Risk A: none.
+
+D15 Multi-copy/paste/duplicate
+   A extend to all selected roots, in document order, with one shared id
+     map; paste into one destination; select the pasted roots (R) | B
+     primary only (current).
+   Complexity: M. Risk: M (R4). High user value.
+
+D16 Multi-delete
+   A keep the current behaviour (roots, interaction cleanup, one entry)
+     (R). Already done.
+
+D17 Structure panel multi-selection
+   A keep toggle/add, and add a Shift range between visible rows
+     (R) | B keep the current behaviour (additive Shift) | C range plus
+     Ctrl/Cmd+A selecting siblings.
+   A fixes F5. Complexity: L-M. Risk: L.
+
+D18 Persistence across Save/Reopen
+   A never persisted (current) (R) | B restore the last selection on
+     reopen (session-local).
+   A keeps documents clean. B is a nicety, outside the document.
+
+D19 Removed elements
+   A drop at read time (current normalizeSelection) (R) | B also prune
+     on write.
+   A already works for every path. Risk: L.
+
+D20 Visual indicators
+   A outline per node, softer for non-primary, handles only for single
+     (current) (R) | B add a group bounding box | C add a count badge on
+     the primary label.
+   C is cheap and helpful. B suggests group transforms that don't exist.
+
+
+14. RECOMMENDED IMPLEMENTATION CHECKPOINTS
+-----------------------------------------
+(Each change-focused; each depends on the one before.)
+BC-10.2 Selection foundation polish (no CSS changes)
+  - Structure panel Shift range (D17); fix the F5 doc mismatch;
+  - a count badge (D20 C) if approved;
+  - an Escape/selection audit.
+  Low risk.
+BC-10.3 Shared Mixed rule (D6)
+  - extract a reusable "effective shared value" helper from BC-05.4
+    (sharedEffectiveValue and the useRendered* hooks);
+  - migrate Typography first (it fixes F1), then the other sections with
+    tag-dependent defaults.
+  No new mutations.
+BC-10.4 Bulk section parity (D7/D8/D11)
+  - full Typography fields; per-side Border/Spacing;
+  - Reset everywhere;
+  - Box shadow/Gradient "apply to all";
+  - Layout and Flex/Grid child.
+  Reuses the setElements* pattern and guardedBulkStyleMutation.
+BC-10.5 Multi copy/cut/duplicate/paste (D15)
+  - a shared-id-map clone and roots in document order;
+  - the BC-09 Pagination rules and the save-size guard.
+BC-10.6 Final focused QA
+  - Undo/Redo, protection, Preview/Export isolation;
+  - mixed-tag matrix (p+p, h+p, button+link, container+text,
+    image+text, different parents).
+Deferred (separate milestone if wanted): multi-drag (D13), multi-resize
+(D14 B), a responsive model (D12).
+
+
+15. FOCUSED TEST RECOMMENDATIONS
+--------------------------------
+- Reuse: useEditorStore.multiSelection.test.ts, bulkCommands.test.ts
+  (54), InspectorBulk*Section tests, the BC-05.4 bulk spacing tests.
+- New per checkpoint:
+  - 10.2: tree range unit + one Chromium tree spec;
+  - 10.3: an effective-Mixed matrix per migrated section (h1+p
+    font-size, button+p padding, ...), with a DOM measurement test in
+    Chromium only;
+  - 10.4: per new bulk action, one atomic-Undo test and one protection
+    test, plus an Inspector test;
+  - 10.5: multi-copy id remap (interactions between roots), Pagination
+    current-page copy rule, save-size refusal, Undo.
+- No full suites. Firefox/WebKit only for measurement-dependent Mixed
+  (10.3), if layout engines differ. Electron: none (no desktop-specific
+  code).
+
+
+16. FILES INVESTIGATED
+----------------------
+src/features/editor/types/selection.ts
+src/features/editor/stores/useEditorStore.ts (selection actions;
+  eligibleSelectedNode; guardedBulkStyleMutation; setElements* actions;
+  copy/cut/paste/duplicate/delete; moveElement; transactions)
+src/features/editor/commands/bulkCommands.ts (+ test count)
+src/features/editor/hooks/useSelectedNode.ts, useEditorKeyboardShortcuts.ts
+src/features/editor/components/EditorApp.tsx (drag end, Edit menu availability)
+src/features/editor/components/structure/StructureTree.tsx, StructureTreeNode.tsx
+src/features/canvas/components/CanvasInteractionBoundary.tsx
+src/features/canvas/components/overlay/CanvasOverlay.tsx, SelectionOverlay.tsx
+src/features/canvas/hooks/useNodeDragSource.ts
+src/features/inspector/components/InspectorMultiNodeSummary.tsx
+src/features/inspector/components/InspectorBulk*Section.tsx (14),
+  InspectorBulkNumberField.tsx, InspectorBulkTextField.tsx, InspectorSliderField.tsx
+src/features/inspector/types/sharedValue.ts
+src/features/inspector/hooks/useRenderedPadding.ts, useRenderedTypography.ts
+src/features/editor/rules/elementCapabilities.ts (intersectElementCapabilities)
+src/features/editor/rules/styleProtection.ts (via the store)
+src/features/export/utils/printExportStylesheet.ts (no breakpoint model)
+docs/architecture/project-format.md (selection not persisted)
+
+
+17. EXPLORATORY TESTS RUN
+-------------------------
+One throwaway Vitest probe (deleted; nothing in the tree):
+- render InspectorBulkTypographySection for an unset h1 and an unset p,
+  and read the fields;
+- result: Font size = "16" (no Mixed), Text color = "" (placeholder
+  #000000);
+- purpose: confirm F1 from source with observed behaviour.
+(Two earlier attempts failed only on my selector; the third wrote the
+values to a scratch file.)
+No other tests were run: everything else was established by source
+inspection.
+
+
+18. GIT WORKING-TREE STATUS
+---------------------------
+Branch main, HEAD 61cee9e. Before this report the tree was clean. The
+probe test was deleted.
+Now: only this report is new.
+?? docs/reports/BC-10.1-Multi-Selection-And-Shared-CSS-Architecture-Investigation.txt
+The changelog (changelogs/) is gitignored. Nothing staged or committed.
+
+
+19. QUESTIONS REQUIRING OWNER APPROVAL
+--------------------------------------
+Q1 D6: extend the BC-05.4 effective-value Mixed rule to every bulk
+   section (it fixes F1)?
+Q2 D8: offer Box shadow / Gradient / Layout / Flex/Grid child in
+   multi-selection, as an explicit "replace on all" edit?
+Q3 D15: implement multi-copy/cut/duplicate/paste in BC-10 (with roots
+   only and a shared id map)?
+Q4 D13/D14: confirm multi-drag and multi-resize stay out of BC-10?
+Q5 D17: add a Shift range in the Structure panel (and keep Shift
+   additive on the Canvas)?
+Q6 D20: add a selection count badge?
+Q7 D2: keep "plain click on a selected element selects only it"?
+Q8 D5: no selection cap for now?
+Q9 Confirm the checkpoint sequence 10.2 to 10.6 (section 14).
+Defaults if approved as recommended: D1 A, D2 A, D3 A, D4 A, D5 A,
+D6 A, D7 A, D8 A, D9 A, D10 A, D11 A, D12 A (future), D13 A, D14 A,
+D15 A, D16 A, D17 A, D18 A, D19 A, D20 A+C.

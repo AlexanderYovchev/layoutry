@@ -1,0 +1,360 @@
+BC-10.2 — STRUCTURE RANGE SELECTION AND SAFE MULTI-DELETE
+=========================================================
+Date: 2026-11-18
+Baseline: 61cee9e (BC-09.5 committed). The BC-10.1 report is still
+untracked in the tree.
+Status: implemented, uncommitted, waiting for ChatGPT QA. BC-10.3 not
+started.
+Testing: change-focused (section 15).
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+- Structure panel range selection:
+  - Shift+click selects the contiguous range of VISIBLE rows from a
+    transient anchor to the clicked row, across containers;
+  - Ctrl/Cmd+Shift+click adds that range to the selection;
+  - Ctrl/Cmd+click toggles; a plain click selects one row;
+  - collapsed descendants are never selected by a range;
+  - the page root is never part of a range.
+  On the Canvas, Shift stays additive (approved D1/D17).
+- A compact "N selected" line in the Structure panel (polite live
+  region) for 2 or more selected elements.
+- Mandatory confirmation for EVERY delete of 2 or more selected elements
+  (owner decision 18):
+  - one store flow (requestDeleteSelection → pendingDeletion →
+    confirm/cancel) behind both user-facing entry points
+    (Delete/Backspace and Edit › Delete);
+  - the dialog reuses the shared Dialog: Cancel is focused, and Escape
+    cancels.
+  - Confirming revalidates the captured targets. If the selection or the
+    targets changed, nothing is deleted and a notice says why.
+  - A parent and child selected together are removed once.
+  - The nested count is exact.
+  - One Undo step.
+- A single delete behaves exactly as before (no dialog).
+- No change to drag, resize, clipboard, the CSS Inspector, Preview,
+  Export or the project format.
+Tests:
+- targeted Vitest 67 files, 889 passed (25 new tests in 4 files, plus
+  updated ones);
+- Chromium 3/3 (new);
+- typecheck and lint clean.
+
+
+2. SOURCE FILES MODIFIED
+------------------------
+Product:
+  src/features/editor/types/selection.ts
+    + selectRange (pure); a doc comment corrected
+  src/features/editor/stores/useEditorStore.ts
+    + selectionAnchorId, pendingDeletion, selectRange,
+      requestDeleteSelection, confirmPendingDeletion,
+      cancelPendingDeletion;
+    the shared deleteNodesById / planDeletion;
+    the anchor kept by the selection actions;
+    reset on replaceDocument and enterPreview
+  src/features/editor/components/structure/StructureTree.tsx
+    Shift range, the count line, aria-multiselectable
+  src/features/editor/components/MultiDeleteConfirmDialog.tsx (new)
+  src/features/editor/components/EditorApp.tsx
+    mounts the dialog; Edit › Delete → request
+  src/features/editor/hooks/useEditorKeyboardShortcuts.ts
+    Delete/Backspace → request
+Tests:
+  new: selection.test.ts (+6), useEditorStore.multiDelete.test.ts (12),
+    StructureTree.rangeSelection.test.tsx (8),
+    MultiDeleteConfirmDialog.test.tsx (5),
+    e2e/multi-selection-structure-delete.spec.ts (3);
+  updated: useEditorKeyboardShortcuts.test.ts (spies follow
+    requestDeleteSelection), useEditorStore.persistence.test.ts (the 2
+    new fields are reset on load; that test requires every store field
+    to be classified).
+
+
+3. STRUCTURE RANGE-SELECTION BEHAVIOR
+-------------------------------------
+- Order: the Structure panel's visible flattened rows
+  (getVisibleNodeIds with the open-node set). Never ids or alphabetical
+  order.
+- Range = the rows from the anchor to the clicked row inclusive, either
+  direction:
+  - crossing containers is allowed (it follows the row order);
+  - the hierarchy is untouched (selection only);
+  - a collapsed container counts as one row, and its hidden children
+    are not selected;
+  - a visible parent and child may both be selected.
+- The page root: excluded from ranges. A Shift+click on the Page row
+  itself only adds it, as before.
+- The clicked row becomes the primary.
+
+
+4. ANCHOR BEHAVIOR
+------------------
+- selectionAnchorId (store, transient):
+  - set by a plain click (selectOnly/selectElement), Ctrl/Cmd+click
+    (toggle), Canvas Shift (add) and setSelection (its primary);
+  - cleared by clearSelection, replaceDocument and delete (which sets
+    the fallback selection).
+- Shift+click keeps the resolved anchor, so repeated Shift+clicks move
+  only the endpoint.
+- Validity: the anchor is used only while it is SELECTED and VISIBLE.
+  Otherwise the primary (if visible) is the anchor, else the clicked row.
+  This also covers selection changes the anchor didn't see (insert,
+  paste, undo).
+- Never saved (asserted: the serialized project contains no
+  "selection"/"anchor").
+
+
+5. MODIFIER-KEY BEHAVIOR
+------------------------
+Structure panel:
+  plain                → select only this row (new anchor)
+  Ctrl / Cmd           → toggle (anchor = this row)
+  Shift                → range from the anchor (replaces the selection)
+  Ctrl/Cmd + Shift     → range added to the selection
+Canvas (unchanged): plain → only; Ctrl/Cmd → toggle; Shift → add.
+Playwright's "ControlOrMeta" was used in the browser test; jsdom tests
+cover ctrlKey and metaKey separately.
+
+
+6. CANVAS/STRUCTURE SYNCHRONIZATION
+-----------------------------------
+- One store selection (no second store).
+- Verified in Chromium:
+  - a Structure range → 4 Canvas outlines, 4 aria-selected rows,
+    "4 selected", and the Inspector's "4 elements selected";
+  - Ctrl toggle → 3;
+  - a Canvas click → the Structure row is selected and the selection
+    reduces to it;
+  - Escape → cleared.
+- The primary keeps the strong outline and the others the soft one
+  (unchanged code).
+
+
+7. SELECTED COUNT INDICATOR
+---------------------------
+- A one-line "N selected" above the tree, for 2 or more selected
+  elements.
+- 11 px secondary text, like the existing Inspector help lines; it does
+  not cover the tree.
+- An aria-live="polite" paragraph that is always mounted (sr-only and
+  empty for 0 or 1), so changes are announced.
+- Counts only ids that exist (stale ids never inflate it); one memoised
+  id set per document.
+- The tree also gets aria-multiselectable="true".
+- The Inspector header ("N elements selected") is unchanged and agrees.
+
+
+8. MULTI-DELETE CONFIRMATION
+----------------------------
+- Entry points found:
+  - useEditorKeyboardShortcuts (Delete/Backspace);
+  - EditorApp's Edit menu command (applicationMenus "Delete"), which is
+    also the Electron app's in-app menu.
+  There is no context menu and no Structure-panel delete button. Both
+  entry points now call requestDeleteSelection.
+- deleteSelection stays the immediate primitive (programmatic and
+  internal; existing tests use it).
+- The dialog (MultiDeleteConfirmDialog, the shared Dialog and button
+  styles):
+  - title: "Delete selected elements?";
+  - body: "You are about to delete N selected elements." [+ "This will
+    also remove M nested element(s) inside them."] "This action can be
+    undone.";
+  - buttons: Cancel (focused) and Delete elements (danger style);
+  - Escape, the close button and the backdrop cancel.
+- Single-element delete: no dialog (unchanged).
+- Design only: enterPreview closes any pending confirmation; the
+  shortcuts were already off in Preview.
+
+
+9. PARENT/CHILD DEDUPLICATION
+-----------------------------
+planDeletion:
+- selectedIds: the existing ids, never the root;
+- rootIds = normalizeSelectionRoots (each subtree once);
+- totalCount = the unique ids under the roots;
+- nestedCount = totalCount − selectedIds.length.
+Example (tested): select a section, one of its grandchildren, and a
+sibling paragraph:
+- roots: section and paragraph;
+- 6 elements removed; "3 nested";
+- one write, with interactions targeting removed nodes cleaned.
+
+
+10. CONFIRMATION SAFETY
+-----------------------
+- The targets are captured at request time (pendingDeletion).
+- On confirm, they are revalidated: the current selection must contain
+  exactly the same existing ids, and the removal total must match.
+  Otherwise nothing is deleted and the notice "The selection changed
+  before you confirmed, so nothing was deleted." is shown. Never
+  retargeted.
+- Tested: the selection changed while asking; a target removed by Undo
+  while asking.
+- Duplicate submissions:
+  - confirm clears pendingDeletion in the same write;
+  - a second confirm is a no-op;
+  - a second request while asking is ignored (tested).
+- Cancel: the document object, history and selection are identical
+  (tested).
+
+
+11. UNDO/REDO INTEGRITY
+-----------------------
+- A confirmed delete is one pushHistory.
+- Undo restores the exact document, including the removed interaction
+  binding; Redo reproduces it.
+- The result serialises (tested).
+- Chromium: one Undo click restored all 4 removed elements, and Undo was
+  then disabled.
+
+
+12. CLIPBOARD INTERACTION ASSESSMENT
+------------------------------------
+- Cut (cutSelection) still acts on the PRIMARY only, so it removes one
+  element and needs no confirmation (decision 18 applies to removing 2
+  or more).
+- Copy, paste and duplicate are unchanged.
+- Multi-clipboard is BC-10.5. When cut becomes multi-node there, it must
+  go through the same confirmation (planDeletion is reusable). Noted for
+  BC-10.5.
+- Drag/resize: unchanged code. A drag moves one node and collapses the
+  selection to it, as before.
+
+
+13. PREVIEW/EXPORT ISOLATION
+----------------------------
+- The anchor, pendingDeletion and the count line are editor-only:
+  - not in EditorElementNode;
+  - not serialised (tested);
+  - reset on load.
+- The dialog lives in EditorApp chrome; enterPreview clears pending.
+- No Preview, Export, schema or migration file was touched.
+
+
+14. ACCESSIBILITY
+-----------------
+- The tree has aria-multiselectable="true"; rows keep aria-selected.
+- The count is a polite live region.
+- The dialog:
+  - a named dialog (the shared Dialog: focus trap and Escape);
+  - initial focus on the safe Cancel;
+  - the danger action is explicit text ("Delete elements").
+- Keyboard: Delete/Backspace open the confirmation, and Tab/Enter
+  operate it. Range selection is mouse-based (Shift+click). There is no
+  Shift+Arrow range in the tree (not requested; arrows move focus as
+  before).
+
+
+15. FOCUSED TEST-IMPACT MAP
+---------------------------
+types/selection (selectRange) → selection.test.ts
+store (anchor, range, request/confirm/cancel, deleteNodesById refactor)
+  → useEditorStore.multiDelete.test.ts (new), the whole stores folder
+    (every existing delete, cut, paste, interaction, Pagination and
+    persistence test that goes through the refactored delete),
+    persistence field-classification test
+StructureTree → StructureTree.rangeSelection (new), the existing
+  StructureTree / StructurePanel / styleProtection tests (the
+  components folder)
+MultiDeleteConfirmDialog + EditorApp → the dialog test (new), the
+  EditorApp test (components folder), the AppShell/AppHeader/menu tests
+  (src/components/layout)
+keyboard shortcuts → useEditorKeyboardShortcuts.test.ts
+Canvas selection and overlays (consumers of the selection) →
+  CanvasInteractionBoundary, the overlay folder
+Multi-selection Inspector (regression: unchanged bulk editing) →
+  InspectorMultiNodeSummary*, InspectorBulk*
+Browser: e2e/multi-selection-structure-delete.spec.ts (Chromium).
+Not run:
+- full suites;
+- Firefox/WebKit (no engine-specific behaviour: React click modifiers
+  and the shared Dialog);
+- Electron (same renderer, same in-app menu and shortcuts; no desktop
+  code);
+- the production build (no schema, export or bundle-integration change);
+- Pagination, migration, media and export suites (untouched).
+
+
+16. EXACT TEST COMMANDS AND RESULTS
+-----------------------------------
+A. npx vitest run src/features/editor/types/selection.test.ts → 26 passed
+B. npx vitest run src/features/editor/stores/useEditorStore.multiDelete.test.ts
+   → 12 passed
+C. npx vitest run src/features/editor/components/structure/StructureTree.rangeSelection.test.tsx
+   → 8 passed
+D. npx vitest run src/features/editor/components/MultiDeleteConfirmDialog.test.tsx
+   → 5 passed
+E. npx vitest run src/features/editor/types/selection.test.ts
+   src/features/editor/components src/features/editor/stores
+   src/features/editor/hooks/useEditorKeyboardShortcuts.test.ts
+   src/features/canvas/components/CanvasInteractionBoundary.test.tsx
+   src/features/canvas/components/overlay
+   src/features/inspector/components/InspectorMultiNodeSummary
+   src/features/inspector/components/InspectorBulk src/components/layout
+   - first runs (the narrower set): 4 failed in
+     useEditorKeyboardShortcuts.test.ts. They were intentional: the spies
+     watched deleteSelection; the shortcut now calls
+     requestDeleteSelection. All 9 spies were updated, including the
+     negative ones, so they keep meaning something.
+   - then 1 failed: the persistence test that requires every new store
+     field to be classified. The 2 fields were added to its
+     reset-on-load list (they are reset).
+   - final: 67 files, 889 passed, 0 failed, 0 skipped.
+F. npx playwright test e2e/multi-selection-structure-delete.spec.ts --project=chromium
+   - first: 2 passed, 1 failed (my locator matched the Inspector's two
+     "4 elements selected" texts; .first() added);
+   - final: 3 passed, 0 failed.
+G. npm run typecheck → clean. npx eslint (changed/new files) → clean.
+   Prettier: no file that was clean at HEAD became unformatted.
+   - StructureTree.tsx was not clean at HEAD. An accidental
+     reformatting was reverted, and only my edits were reapplied.
+
+
+17. KNOWN LIMITATIONS
+---------------------
+- Canvas Shift stays additive; there is no Canvas range (approved).
+- No Shift+Arrow keyboard range in the tree.
+- Keyboard shortcuts (e.g. Ctrl+Z) still reach the editor while the
+  dialog is open. That is the existing behaviour for every dialog. If
+  an Undo changes the targets, confirming deletes nothing (revalidation,
+  tested).
+- Cut stays primary-only until BC-10.5, which must route a multi-cut
+  through this confirmation.
+- Inherited: the Mixed inconsistency (BC-10.1 F1), fixed in BC-10.3.
+
+
+18. GIT WORKING-TREE STATUS
+---------------------------
+Branch main, HEAD 61cee9e. Nothing staged or committed.
+ M src/features/editor/components/EditorApp.tsx
+ M src/features/editor/components/structure/StructureTree.tsx
+ M src/features/editor/hooks/useEditorKeyboardShortcuts.test.ts
+ M src/features/editor/hooks/useEditorKeyboardShortcuts.ts
+ M src/features/editor/stores/useEditorStore.persistence.test.ts
+ M src/features/editor/stores/useEditorStore.ts
+ M src/features/editor/types/selection.test.ts
+ M src/features/editor/types/selection.ts
+?? docs/reports/BC-10.1-Multi-Selection-And-Shared-CSS-Architecture-Investigation.txt (BC-10.1)
+?? docs/reports/BC-10.2-Structure-Range-Selection-And-Safe-Multi-Delete.txt
+?? e2e/multi-selection-structure-delete.spec.ts
+?? src/features/editor/components/MultiDeleteConfirmDialog.tsx
+?? src/features/editor/components/MultiDeleteConfirmDialog.test.tsx
+?? src/features/editor/components/structure/StructureTree.rangeSelection.test.tsx
+?? src/features/editor/stores/useEditorStore.multiDelete.test.ts
+The changelog is gitignored.
+
+
+19. QA RECOMMENDATION
+---------------------
+APPROVE BC-10.2.
+- Range selection follows the visible Structure order with a
+  predictable, transient anchor.
+- The count is accessible.
+- Every multi-delete is confirmed through one shared, revalidating flow
+  with exact counts and one Undo step.
+- Single delete, drag, resize, clipboard, the CSS Inspector, Preview,
+  Export and the project format are unchanged.
+BC-10.3 (the unified effective Mixed rule) can follow.

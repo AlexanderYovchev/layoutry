@@ -6,6 +6,7 @@ import {
   isNodeSelected,
   normalizeSelection,
   selectionFromSingle,
+  selectRange,
   toggleSelectionId,
 } from "./selection";
 
@@ -114,5 +115,45 @@ describe("normalizeSelection (stale-id reconciliation)", () => {
   it("returns the identical reference when nothing is stale (no unnecessary re-render)", () => {
     const selection = { ids: ["a", "b"], primaryId: "a" };
     expect(normalizeSelection(selection, new Set(["a", "b", "c"]))).toBe(selection);
+  });
+});
+
+describe("selectRange — Structure panel Shift+click (BC-10.2)", () => {
+  // Visible rows in order; a collapsed container's children are simply absent.
+  const rows = ["a", "b", "b1", "b2", "c", "d"];
+  const one = (id: string) => ({ ids: [id], primaryId: id });
+
+  it("selects the contiguous visible range from the anchor to the clicked row, either direction", () => {
+    expect(selectRange(one("b"), "b", "c", rows, false).selection).toEqual({ ids: ["b", "b1", "b2", "c"], primaryId: "c" });
+    expect(selectRange(one("c"), "c", "a", rows, false).selection).toEqual({ ids: ["a", "b", "b1", "b2", "c"], primaryId: "a" });
+  });
+
+  it("keeps the anchor, so a second Shift+click re-ranges from it", () => {
+    const first = selectRange(one("b"), "b", "d", rows, false);
+    const second = selectRange(first.selection, first.anchorId, "b1", rows, false);
+    expect(second.anchorId).toBe("b");
+    expect(second.selection.ids).toEqual(["b", "b1"]);
+  });
+
+  it("Ctrl/Cmd+Shift adds the range without removing the existing selection", () => {
+    const result = selectRange({ ids: ["a", "d"], primaryId: "d" }, "d", "b1", rows, true);
+    expect(result.selection).toEqual({ ids: ["a", "d", "b1", "b2", "c"], primaryId: "b1" });
+  });
+
+  it("only visible rows are ranged: a collapsed container's hidden children are never selected", () => {
+    const collapsed = ["a", "b", "c", "d"];
+    expect(selectRange(one("a"), "a", "c", collapsed, false).selection.ids).toEqual(["a", "b", "c"]);
+  });
+
+  it("an anchor that is no longer selected falls back to the primary, then to the clicked row", () => {
+    expect(selectRange({ ids: ["c"], primaryId: "c" }, "a", "d", rows, false).selection.ids).toEqual(["c", "d"]);
+    expect(selectRange({ ids: [] }, "a", "b1", rows, false)).toEqual({ selection: { ids: ["b1"], primaryId: "b1" }, anchorId: "b1" });
+    // An anchor hidden by collapsing is not usable either.
+    expect(selectRange({ ids: ["b1", "c"], primaryId: "c" }, "b1", "d", ["a", "b", "c", "d"], false).selection.ids).toEqual(["c", "d"]);
+  });
+
+  it("a click outside the visible rows changes nothing", () => {
+    const selection = one("a");
+    expect(selectRange(selection, "a", "zz", rows, false).selection).toBe(selection);
   });
 });

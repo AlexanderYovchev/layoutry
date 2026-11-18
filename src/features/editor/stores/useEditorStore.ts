@@ -153,6 +153,7 @@ import {
   EMPTY_SELECTION,
   selectionFromSingle,
   toggleSelectionId,
+  selectRange as selectRangeOf,
   type EditorSelection,
 } from "@/features/editor/types/selection";
 import { describeStyleLockNotice, getStyleProtection, type StyleProtectionResult } from "@/features/editor/rules/styleProtection";
@@ -218,6 +219,18 @@ interface EditorState {
    * goes through useSelectedNodes instead.
    */
   selection: EditorSelection;
+  /**
+   * The Structure panel's range anchor (BC-10.2): the last row plainly
+   * clicked or Ctrl/Cmd-clicked. Transient editor state, never saved; only
+   * used while it is still selected (see selectRange in types/selection).
+   */
+  selectionAnchorId: string | null;
+  /**
+   * A requested multi-element delete waiting for confirmation (BC-10.2).
+   * Captures the exact targets when requested; confirming revalidates
+   * them. Never part of history or the saved document.
+   */
+  pendingDeletion: PendingDeletion | null;
   clipboard: EditorClipboard | null;
   past: HistoryEntry[];
   future: HistoryEntry[];
@@ -732,7 +745,29 @@ interface EditorState {
   cutSelection: () => void;
   pasteClipboard: () => void;
   duplicateSelection: () => void;
+  /**
+   * Deletes the whole selection IMMEDIATELY (roots only, interactions
+   * cleaned, one history entry). Programmatic; user-facing commands use
+   * requestDeleteSelection, which asks first for 2+ elements (BC-10.2).
+   */
   deleteSelection: () => void;
+  /**
+   * The user-facing Delete (keyboard, Edit menu): one selected element is
+   * deleted at once, exactly as before; two or more open the confirmation
+   * (pendingDeletion) and change nothing yet. Ignored while a confirmation
+   * is already open.
+   */
+  requestDeleteSelection: () => void;
+  /**
+   * Deletes the captured targets, only if the selection still holds exactly
+   * them and they all still exist; otherwise nothing is deleted and a
+   * notice says why. Closes the confirmation either way.
+   */
+  confirmPendingDeletion: () => void;
+  /** Closes the confirmation; the document, history and selection are untouched. */
+  cancelPendingDeletion: () => void;
+  /** Structure panel Shift+click (BC-10.2): selects the visible range from the anchor to targetId; additive (Ctrl/Cmd+Shift) keeps the existing selection. */
+  selectRange: (targetId: string, visibleIds: readonly string[], additive: boolean) => void;
   undo: () => void;
   redo: () => void;
 
@@ -935,6 +970,50 @@ function nextEditorNoticeState(state: EditorState, message: string): Partial<Edi
  * deleted subtree (Checkpoint 1.15.6.8, Part H, section 37), not just the
  * root ids themselves.
  */
+/** What a delete of these selected ids would remove (BC-10.2), counted on the actual tree. */
+export interface PendingDeletion {
+  /** The selected ids that exist (never the document root), in selection order. */
+  selectedIds: string[];
+  /** Selected ids that aren't inside another selected element: each subtree is removed once. */
+  rootIds: string[];
+  /** Every element removed, each counted once (selected ones included). */
+  totalCount: number;
+  /** Elements removed only because an ancestor is removed (not themselves selected). */
+  nestedCount: number;
+}
+
+function planDeletion(document: EditorElementNode, ids: readonly string[]): PendingDeletion {
+  const selectedIds = ids.filter((id) => id !== document.id && findNodeById(document, id) !== undefined);
+  const rootIds = normalizeSelectionRoots(document, selectedIds);
+  const totalCount = collectDeletedIds(document, rootIds).size;
+  return { selectedIds, rootIds, totalCount, nestedCount: totalCount - selectedIds.length };
+}
+
+const STALE_DELETION_NOTICE = "The selection changed before you confirmed, so nothing was deleted.";
+
+/**
+ * The one deletion write (shared by deleteSelection and a confirmed
+ * request): roots only, so a selected parent and child are removed once;
+ * interactions targeting anything removed are removed in the same write;
+ * Pagination invariants hold; one history entry.
+ */
+function deleteNodesById(state: EditorState, ids: readonly string[]): Partial<EditorState> {
+  const roots = normalizeSelectionRoots(state.document, ids.filter((id) => id !== state.document.id));
+  if (roots.length === 0) return {};
+  const parentId = findParentId(state.document, roots[0]);
+  const deletedIds = collectDeletedIds(state.document, roots);
+  const afterRemoval = removeNodesByIds(state.document, new Set(roots));
+  if (afterRemoval === state.document) return {};
+  const document = withPaginationInvariants(state.document, removeInteractionsTargeting(afterRemoval, deletedIds));
+  const fallback = resolveDeletionFallbackSelection(parentId, state.document.id);
+  return {
+    ...pushHistory(state),
+    document,
+    selection: selectionFromSingle(fallback),
+    selectionAnchorId: fallback,
+  };
+}
+
 function collectDeletedIds(document: EditorElementNode, rootIds: readonly string[]): Set<string> {
   const ids = new Set<string>();
   for (const rootId of rootIds) {
@@ -993,6 +1072,8 @@ function eligibleSelectedNode(state: EditorState): EditorElementNode | undefined
 export const useEditorStore = create<EditorState>()((set) => ({
   document: fixtureDocument,
   selection: EMPTY_SELECTION,
+  selectionAnchorId: null,
+  pendingDeletion: null,
   clipboard: null,
   past: [],
   future: [],
@@ -1011,12 +1092,21 @@ export const useEditorStore = create<EditorState>()((set) => ({
   activeSnapGuides: null,
   persistedDocument: fixtureDocument,
 
-  selectElement: (id) => set({ selection: selectionFromSingle(id) }),
-  selectOnly: (id) => set({ selection: selectionFromSingle(id) }),
-  toggleSelection: (id) => set((state) => ({ selection: toggleSelectionId(state.selection, id) })),
-  addToSelection: (id) => set((state) => ({ selection: addSelectionId(state.selection, id) })),
-  setSelection: (ids, primaryId) => set({ selection: createSelection(ids, primaryId) }),
-  clearSelection: () => set({ selection: EMPTY_SELECTION }),
+  selectElement: (id) => set({ selection: selectionFromSingle(id), selectionAnchorId: id }),
+  selectOnly: (id) => set({ selection: selectionFromSingle(id), selectionAnchorId: id }),
+  toggleSelection: (id) => set((state) => ({ selection: toggleSelectionId(state.selection, id), selectionAnchorId: id })),
+  addToSelection: (id) => set((state) => ({ selection: addSelectionId(state.selection, id), selectionAnchorId: id })),
+  setSelection: (ids, primaryId) =>
+    set(() => {
+      const selection = createSelection(ids, primaryId);
+      return { selection, selectionAnchorId: selection.primaryId ?? null };
+    }),
+  clearSelection: () => set({ selection: EMPTY_SELECTION, selectionAnchorId: null }),
+  selectRange: (targetId, visibleIds, additive) =>
+    set((state) => {
+      const result = selectRangeOf(state.selection, state.selectionAnchorId, targetId, visibleIds, additive);
+      return { selection: result.selection, selectionAnchorId: result.anchorId };
+    }),
 
   // Insertion and selecting the newly inserted node are one atomic
   // update — every insertion method (click, drag) goes through this
@@ -1123,6 +1213,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
       svgDraft: null,
       transactionSnapshot: null,
       historyMergeSnapshot: null,
+      // A delete confirmation never survives into Preview (BC-10.2).
+      pendingDeletion: null,
     })),
 
   exitPreview: () => set({ editorMode: "design", runtimeVisibility: {} }),
@@ -1937,21 +2029,33 @@ export const useEditorStore = create<EditorState>()((set) => ({
   // path handles an ordinary single-node delete too (roots.length === 1
   // degenerates to the pre-1.15.2 behavior exactly), so there is no
   // separate single-selection code path to keep in sync.
-  deleteSelection: () =>
+  deleteSelection: () => set((state) => deleteNodesById(state, state.selection.ids)),
+
+  requestDeleteSelection: () =>
     set((state) => {
-      const roots = normalizeSelectionRoots(state.document, state.selection.ids);
-      if (roots.length === 0) return {};
-      const parentId = findParentId(state.document, roots[0]);
-      const deletedIds = collectDeletedIds(state.document, roots);
-      const afterRemoval = removeNodesByIds(state.document, new Set(roots));
-      if (afterRemoval === state.document) return {};
-      const document = withPaginationInvariants(state.document, removeInteractionsTargeting(afterRemoval, deletedIds));
-      return {
-        ...pushHistory(state),
-        document,
-        selection: selectionFromSingle(resolveDeletionFallbackSelection(parentId, state.document.id)),
-      };
+      if (state.pendingDeletion) return {};
+      const plan = planDeletion(state.document, state.selection.ids);
+      if (plan.selectedIds.length === 0) return {};
+      if (plan.selectedIds.length === 1) return deleteNodesById(state, plan.selectedIds);
+      return { pendingDeletion: plan };
     }),
+
+  confirmPendingDeletion: () =>
+    set((state) => {
+      const pending = state.pendingDeletion;
+      if (!pending) return {};
+      // The exact targets the user confirmed: the selection must still be
+      // exactly them, and every one must still exist. Never retargeted.
+      const current = planDeletion(state.document, state.selection.ids);
+      const unchanged =
+        current.selectedIds.length === pending.selectedIds.length &&
+        pending.selectedIds.every((id) => current.selectedIds.includes(id)) &&
+        current.totalCount === pending.totalCount;
+      if (!unchanged) return { ...nextEditorNoticeState(state, STALE_DELETION_NOTICE), pendingDeletion: null };
+      return { ...deleteNodesById(state, pending.selectedIds), pendingDeletion: null };
+    }),
+
+  cancelPendingDeletion: () => set((state) => (state.pendingDeletion ? { pendingDeletion: null } : {})),
 
   // Every bulk command below is guarded atomically (Checkpoint 1.15.3,
   // sections 17-18): if ANY targeted id is style-protected, the WHOLE bulk
@@ -2086,6 +2190,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
       documentSessionId: state.documentSessionId + 1,
       persistedDocument: document,
       selection: EMPTY_SELECTION,
+      selectionAnchorId: null,
+      pendingDeletion: null,
       past: [],
       future: [],
       transactionSnapshot: null,

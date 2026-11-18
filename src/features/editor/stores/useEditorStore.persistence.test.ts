@@ -114,6 +114,9 @@ describe("replaceDocument — the atomic restoration contract", () => {
       "document",
       "persistedDocument",
       "selection",
+      // BC-10.2: the Structure range anchor and an open multi-delete confirmation.
+      "selectionAnchorId",
+      "pendingDeletion",
       "past",
       "future",
       "transactionSnapshot",

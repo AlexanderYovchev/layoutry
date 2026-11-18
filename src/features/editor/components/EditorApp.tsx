@@ -17,6 +17,7 @@ import type { ProjectIdentityInfo } from "@/components/layout/ProjectIdentity";
 import type { CatalogCardPlaceholder } from "@/components/layout/creationToolbarCategories";
 import { DocumentCanvas } from "@/features/canvas/components/DocumentCanvas";
 import { EditorNoticeBanner } from "@/features/editor/components/EditorNoticeBanner";
+import { MultiDeleteConfirmDialog } from "@/features/editor/components/MultiDeleteConfirmDialog";
 import { StructurePanel } from "@/features/editor/components/structure/StructurePanel";
 import { InspectorContent } from "@/features/inspector/components/InspectorContent";
 import { isInsertableElementType } from "@/features/editor/factories/elementFactories";
@@ -131,7 +132,8 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
     onCopy: () => useEditorStore.getState().copySelection(),
     onPaste: () => useEditorStore.getState().pasteClipboard(),
     onDuplicate: () => useEditorStore.getState().duplicateSelection(),
-    onDelete: () => useEditorStore.getState().deleteSelection(),
+    // BC-10.2: two or more selected elements ask for confirmation first.
+    onDelete: () => useEditorStore.getState().requestDeleteSelection(),
   };
 
   const previewControl = {
@@ -193,6 +195,7 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
         project={project}
       />
       <EditorNoticeBanner />
+      <MultiDeleteConfirmDialog />
       {overlays}
       <DragOverlay>
         {activeDrag && (

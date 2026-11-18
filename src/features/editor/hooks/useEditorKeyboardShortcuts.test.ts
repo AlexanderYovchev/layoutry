@@ -78,18 +78,18 @@ describe("useEditorKeyboardShortcuts", () => {
     expect(spy).toHaveBeenCalledOnce();
   });
 
-  it("Delete calls deleteSelection", () => {
+  it("Delete calls requestDeleteSelection (which confirms 2+ elements, BC-10.2)", () => {
     renderHook(() => useEditorKeyboardShortcuts());
-    const spy = vi.spyOn(useEditorStore.getState(), "deleteSelection");
+    const spy = vi.spyOn(useEditorStore.getState(), "requestDeleteSelection");
 
     pressKey("Delete");
 
     expect(spy).toHaveBeenCalledOnce();
   });
 
-  it("Backspace calls deleteSelection", () => {
+  it("Backspace calls requestDeleteSelection (BC-10.2)", () => {
     renderHook(() => useEditorKeyboardShortcuts());
-    const spy = vi.spyOn(useEditorStore.getState(), "deleteSelection");
+    const spy = vi.spyOn(useEditorStore.getState(), "requestDeleteSelection");
 
     pressKey("Backspace");
 
@@ -98,7 +98,7 @@ describe("useEditorKeyboardShortcuts", () => {
 
   it("does not trigger delete while typing in an input", () => {
     renderHook(() => useEditorKeyboardShortcuts());
-    const spy = vi.spyOn(useEditorStore.getState(), "deleteSelection");
+    const spy = vi.spyOn(useEditorStore.getState(), "requestDeleteSelection");
     const input = document.createElement("input");
     document.body.appendChild(input);
 
@@ -122,7 +122,7 @@ describe("useEditorKeyboardShortcuts", () => {
 
   it("does not trigger shortcuts while typing in a contenteditable element", () => {
     renderHook(() => useEditorKeyboardShortcuts());
-    const spy = vi.spyOn(useEditorStore.getState(), "deleteSelection");
+    const spy = vi.spyOn(useEditorStore.getState(), "requestDeleteSelection");
     const editable = document.createElement("div");
     editable.setAttribute("contenteditable", "true");
     document.body.appendChild(editable);
@@ -168,7 +168,7 @@ describe("useEditorKeyboardShortcuts — SVG Drawing Mode routing (Checkpoint 1.
     renderHook(() => useEditorKeyboardShortcuts());
     seedSvgEditingState({ selectedSvgObjectIds: ["r1", "r2"] });
     const removeSpy = vi.spyOn(useEditorStore.getState(), "removeSvgObjects");
-    const deleteSpy = vi.spyOn(useEditorStore.getState(), "deleteSelection");
+    const deleteSpy = vi.spyOn(useEditorStore.getState(), "requestDeleteSelection");
 
     pressKey("Delete");
 
@@ -180,7 +180,7 @@ describe("useEditorKeyboardShortcuts — SVG Drawing Mode routing (Checkpoint 1.
     renderHook(() => useEditorKeyboardShortcuts());
     seedSvgEditingState({ selectedSvgObjectIds: [] });
     const removeSpy = vi.spyOn(useEditorStore.getState(), "removeSvgObjects");
-    const deleteSpy = vi.spyOn(useEditorStore.getState(), "deleteSelection");
+    const deleteSpy = vi.spyOn(useEditorStore.getState(), "requestDeleteSelection");
 
     pressKey("Delete");
 
@@ -190,7 +190,7 @@ describe("useEditorKeyboardShortcuts — SVG Drawing Mode routing (Checkpoint 1.
 
   it("Delete outside Drawing Mode retains ordinary document delete behavior", () => {
     renderHook(() => useEditorKeyboardShortcuts());
-    const deleteSpy = vi.spyOn(useEditorStore.getState(), "deleteSelection");
+    const deleteSpy = vi.spyOn(useEditorStore.getState(), "requestDeleteSelection");
 
     pressKey("Backspace");
 
