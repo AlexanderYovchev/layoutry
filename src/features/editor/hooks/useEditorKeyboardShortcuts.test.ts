@@ -273,4 +273,18 @@ describe("useEditorKeyboardShortcuts — SVG Drawing Mode routing (Checkpoint 1.
     // own Escape-clears-selection handler) ever runs.
     expect(clearOuterSelection).not.toHaveBeenCalled();
   });
+
+  it("BC-10.5: with several elements selected, Ctrl/Cmd+C/X/V/D inside a text field stay the field's own (no editor copy, cut, paste or duplicate)", () => {
+    renderHook(() => useEditorKeyboardShortcuts());
+    useEditorStore.getState().replaceDocument({ id: "page-root", tag: "page", children: [{ id: "a", tag: "p", text: "A" }, { id: "b", tag: "p", text: "B" }] });
+    useEditorStore.getState().setSelection(["a", "b"]);
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    const before = useEditorStore.getState().document;
+    for (const key of ["c", "x", "v", "d"]) fireEvent.keyDown(input, { key, ctrlKey: true });
+    expect(useEditorStore.getState().clipboard).toBeNull();
+    expect(useEditorStore.getState().pendingDeletion).toBeNull();
+    expect(useEditorStore.getState().document).toBe(before);
+    input.remove();
+  });
 });

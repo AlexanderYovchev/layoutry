@@ -174,6 +174,7 @@ import { resolveDeletionFallbackSelection } from "@/features/editor/utils/resolv
 import { resolveDestinationParent } from "@/features/editor/utils/resolveDestinationParent";
 import { getGridContainerSettings } from "@/features/editor/types/flowLayout";
 import type { EditorClipboard } from "@/features/editor/types/clipboard";
+import { duplicateRootsInPlace, existingSelectedIds, orderedSelectionRoots, pasteCopiesInto } from "@/features/editor/commands/multiClipboardCommands";
 import type { DropZone } from "@/features/editor/utils/resolveDropZone";
 import type { HistoryEntry } from "@/features/editor/types/history";
 import type { ElementDimensions, EditorElementNode } from "@/features/editor/types/document";
@@ -759,9 +760,31 @@ interface EditorState {
   setSvgObjectsStroke: (svgNodeId: string, objectIds: readonly string[], stroke: string | undefined) => void;
   setSvgObjectsStrokeWidth: (svgNodeId: string, objectIds: readonly string[], strokeWidth: number) => void;
 
+  /**
+   * One selected element: copies it, as before. Two or more (BC-10.5): copies
+   * the minimal set of selected subtrees (a selected child of a selected
+   * parent is inside the parent's copy), in document order. No document or
+   * history change.
+   */
   copySelection: () => void;
+  /**
+   * One selected element: cut at once, as before. Two or more (BC-10.5): opens
+   * the same confirmation as a multi-delete (pendingDeletion, kind "cut");
+   * nothing is removed and the clipboard is untouched until it is confirmed.
+   */
   cutSelection: () => void;
+  /**
+   * One clipboard element: as before. Several (BC-10.5): all of them, as fresh
+   * copies, into ONE destination (the single-paste destination rule), in
+   * order; rejected as a whole with a notice if that container can't accept
+   * every one. One history entry; the copies become the selection.
+   */
   pasteClipboard: () => void;
+  /**
+   * One selected element: as before. Two or more (BC-10.5): each selected
+   * subtree is duplicated right after its original, in its own parent. All or
+   * nothing, one history entry; the copies become the selection.
+   */
   duplicateSelection: () => void;
   /**
    * Deletes the whole selection IMMEDIATELY (roots only, interactions
@@ -990,6 +1013,8 @@ function nextEditorNoticeState(state: EditorState, message: string): Partial<Edi
  */
 /** What a delete of these selected ids would remove (BC-10.2), counted on the actual tree. */
 export interface PendingDeletion {
+  /** What confirming does (BC-10.5): delete, or cut (delete + put the removed subtrees on the clipboard). */
+  kind: "delete" | "cut";
   /** The selected ids that exist (never the document root), in selection order. */
   selectedIds: string[];
   /** Selected ids that aren't inside another selected element: each subtree is removed once. */
@@ -1000,14 +1025,34 @@ export interface PendingDeletion {
   nestedCount: number;
 }
 
-function planDeletion(document: EditorElementNode, ids: readonly string[]): PendingDeletion {
+function planDeletion(document: EditorElementNode, ids: readonly string[], kind: PendingDeletion["kind"] = "delete"): PendingDeletion {
   const selectedIds = ids.filter((id) => id !== document.id && findNodeById(document, id) !== undefined);
   const rootIds = normalizeSelectionRoots(document, selectedIds);
   const totalCount = collectDeletedIds(document, rootIds).size;
-  return { selectedIds, rootIds, totalCount, nestedCount: totalCount - selectedIds.length };
+  return { kind, selectedIds, rootIds, totalCount, nestedCount: totalCount - selectedIds.length };
 }
 
 const STALE_DELETION_NOTICE = "The selection changed before you confirmed, so nothing was deleted.";
+const STALE_CUT_NOTICE = "The selection changed before you confirmed, so nothing was cut.";
+/** BC-10.5: a multi-paste whose destination can't take every copied element. */
+export const MULTI_PASTE_REJECTED_NOTICE = "These elements can't all go in the selected container, so nothing was pasted. Select a container that accepts them.";
+/** BC-10.5: a multi-duplicate that can't place every copy. */
+export const MULTI_DUPLICATE_REJECTED_NOTICE = "These elements can't all be duplicated where they are, so nothing was duplicated.";
+
+/**
+ * A confirmed multi-cut (BC-10.5): exactly the confirmed delete, and the
+ * removed subtrees (as they were just before removal, in document order)
+ * become the clipboard in the SAME write — only when the removal happened,
+ * so a failed cut never replaces the clipboard and nothing disappears that
+ * can't be pasted.
+ */
+function cutNodesById(state: EditorState, ids: readonly string[]): Partial<EditorState> {
+  const roots = orderedSelectionRoots(state.document, ids);
+  if (roots.length === 0) return {};
+  const removed = deleteNodesById(state, ids);
+  if (!removed.document) return {};
+  return { ...removed, clipboard: { operation: "cut", nodes: roots, sourceParentId: findParentId(state.document, roots[0].id) } };
+}
 
 /**
  * The one deletion write (shared by deleteSelection and a confirmed
@@ -1060,6 +1105,47 @@ function buildInitialRuntimeVisibility(document: EditorElementNode): Record<stri
   }
   visit(document);
   return visibility;
+}
+
+/**
+ * Multi-paste (BC-10.5): fresh copies of every clipboard root, cloned as one
+ * set, into the one destination the single paste would use. Bindings aimed
+ * at elements deleted since the copy are dropped, as for one element.
+ */
+function pasteMany(state: EditorState, clipboard: EditorClipboard): Partial<EditorState> {
+  const destinationParentId = resolveDestinationParent(state.document, state.selection.primaryId ?? null, clipboard.sourceParentId);
+  const result = pasteCopiesInto(state.document, destinationParentId, clipboard.nodes);
+  if (!result.ok) return nextEditorNoticeState(state, MULTI_PASTE_REJECTED_NOTICE);
+  return commitCopies(state, result.document, result.rootIds, result.formerCurrentPageIds, true);
+}
+
+/** Multi-duplicate (BC-10.5): each selected subtree's copy right after its original. */
+function duplicateMany(state: EditorState): Partial<EditorState> {
+  const roots = orderedSelectionRoots(state.document, state.selection.ids);
+  const result = duplicateRootsInPlace(state.document, roots);
+  if (!result.ok) return nextEditorNoticeState(state, MULTI_DUPLICATE_REJECTED_NOTICE);
+  return commitCopies(state, result.document, result.rootIds, result.formerCurrentPageIds, false);
+}
+
+function commitCopies(
+  state: EditorState,
+  inserted: EditorElementNode,
+  rootIds: readonly string[],
+  formerCurrentPageIds: ReadonlySet<string>,
+  dropMissingTargets: boolean,
+): Partial<EditorState> {
+  const document = withPaginationInvariants(
+    state.document,
+    dropMissingTargets ? removeInteractionsWithMissingTargets(inserted) : inserted,
+    formerCurrentPageIds.size > 0 ? { ordinaryLookIds: formerCurrentPageIds } : undefined,
+  );
+  const hasEmbeddedData = rootIds.some((id) => {
+    const node = findNodeById(document, id);
+    return node !== undefined && subtreeHasEmbeddedData(node);
+  });
+  if (hasEmbeddedData && !documentFitsSaveLimit(document)) return nextEditorNoticeState(state, COPY_TOO_LARGE_NOTICE);
+  const primaryId = rootIds[rootIds.length - 1];
+  return { ...pushHistory(state), document, selection: createSelection(rootIds, primaryId), selectionAnchorId: primaryId };
 }
 
 function eligibleSelectedNode(state: EditorState): EditorElementNode | undefined {
@@ -1965,6 +2051,10 @@ export const useEditorStore = create<EditorState>()((set) => ({
 
   copySelection: () =>
     set((state) => {
+      if (existingSelectedIds(state.document, state.selection.ids).length > 1) {
+        const roots = orderedSelectionRoots(state.document, state.selection.ids);
+        return { clipboard: { operation: "copy", nodes: roots, sourceParentId: findParentId(state.document, roots[0].id) } };
+      }
       const node = eligibleSelectedNode(state);
       if (!node) return {};
       const sourceParentId = findParentId(state.document, node.id);
@@ -1973,6 +2063,9 @@ export const useEditorStore = create<EditorState>()((set) => ({
 
   cutSelection: () =>
     set((state) => {
+      if (state.pendingDeletion) return {};
+      // Two or more selected elements: confirm first, like a multi-delete.
+      if (existingSelectedIds(state.document, state.selection.ids).length > 1) return { pendingDeletion: planDeletion(state.document, state.selection.ids, "cut") };
       const node = eligibleSelectedNode(state);
       if (!node) return {};
       const sourceParentId = findParentId(state.document, node.id);
@@ -1989,6 +2082,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
 
   pasteClipboard: () =>
     set((state) => {
+      if (state.pendingDeletion) return {};
+      if (state.clipboard && state.clipboard.nodes.length > 1) return pasteMany(state, state.clipboard);
       const sourceNode = state.clipboard?.nodes[0];
       if (!sourceNode) return {};
       const destinationParentId = resolveDestinationParent(
@@ -2024,6 +2119,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
 
   duplicateSelection: () =>
     set((state) => {
+      if (state.pendingDeletion) return {};
+      if (existingSelectedIds(state.document, state.selection.ids).length > 1) return duplicateMany(state);
       const node = eligibleSelectedNode(state);
       if (!node) return {};
       const parentId = findParentId(state.document, node.id);
@@ -2069,8 +2166,9 @@ export const useEditorStore = create<EditorState>()((set) => ({
         current.selectedIds.length === pending.selectedIds.length &&
         pending.selectedIds.every((id) => current.selectedIds.includes(id)) &&
         current.totalCount === pending.totalCount;
-      if (!unchanged) return { ...nextEditorNoticeState(state, STALE_DELETION_NOTICE), pendingDeletion: null };
-      return { ...deleteNodesById(state, pending.selectedIds), pendingDeletion: null };
+      const cut = pending.kind === "cut";
+      if (!unchanged) return { ...nextEditorNoticeState(state, cut ? STALE_CUT_NOTICE : STALE_DELETION_NOTICE), pendingDeletion: null };
+      return { ...(cut ? cutNodesById(state, pending.selectedIds) : deleteNodesById(state, pending.selectedIds)), pendingDeletion: null };
     }),
 
   cancelPendingDeletion: () => set((state) => (state.pendingDeletion ? { pendingDeletion: null } : {})),

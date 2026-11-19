@@ -50,9 +50,21 @@ function cloneSvgSceneWithFreshIds(scene: SvgScene): SvgScene {
  * rewritten or cleared.
  */
 export function cloneNodeWithFreshIds(node: EditorElementNode): EditorElementNode {
+  return cloneNodesWithFreshIds([node])[0];
+}
+
+/**
+ * BC-10.5 — several roots cloned as ONE set: the old-id -> new-id map is
+ * built for every node of every root first, then every clone is remapped
+ * against that complete map, so a trigger in one copied root that targets
+ * an element in ANOTHER copied root points at that element's copy (never
+ * back at the original). Targets outside the whole set stay untouched,
+ * exactly as for one root.
+ */
+export function cloneNodesWithFreshIds(nodes: readonly EditorElementNode[]): EditorElementNode[] {
   const idMap = new Map<string, string>();
-  const cloned = cloneSubtree(node, idMap);
-  return remapInteractionTargets(cloned, idMap);
+  const cloned = nodes.map((node) => cloneSubtree(node, idMap));
+  return cloned.map((node) => remapInteractionTargets(node, idMap));
 }
 
 function cloneSubtree(node: EditorElementNode, idMap: Map<string, string>): EditorElementNode {

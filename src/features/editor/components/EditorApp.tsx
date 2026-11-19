@@ -109,13 +109,12 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
 
   const sensors = useSensors(useSensor(PointerSensor, POINTER_SENSOR_OPTIONS));
 
-  // Cut/Copy/Duplicate stay single-target (primary-only) operations this
-  // checkpoint (Checkpoint 1.15.2 explicitly deferred multi-node clipboard/
-  // duplicate — see this checkpoint's report, section M); Delete already
-  // supports the full selection, so its own menu/shortcut availability is
-  // keyed off the whole selection instead.
+  // Cut/Copy/Duplicate act on the whole selection since BC-10.5 (one
+  // element exactly as before; two or more as their selected subtrees), so
+  // they are available whenever a selected element isn't the page root.
   const primarySelectedId = selection.primaryId ?? null;
-  const hasEligiblePrimarySelection = primarySelectedId !== null && primarySelectedId !== documentModel.id;
+  const hasEligiblePrimarySelection =
+    (primarySelectedId !== null && primarySelectedId !== documentModel.id) || selection.ids.some((id) => id !== documentModel.id);
   const hasEligibleSelection = selection.ids.length > 0;
 
   const editMenuCommands: EditMenuCommands = {

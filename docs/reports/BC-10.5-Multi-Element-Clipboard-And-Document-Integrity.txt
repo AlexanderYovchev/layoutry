@@ -1,0 +1,356 @@
+BC-10.5 — Multi-Element Clipboard Operations & Document Integrity
+=================================================================
+Date: 2026-11-18
+Base: HEAD d3ea6f1 (BC-10.4, committed). All BC-10.5 work is uncommitted.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Copy, Cut, Paste and Duplicate now act on the whole selection. With ONE
+selected element (or one clipboard element) every path is the pre-existing
+code, unchanged. With two or more:
+
+- Copy captures the minimal set of selected subtrees (a selected element
+  inside another selected element is part of its ancestor's copy), in
+  document order. No document, history or selection change.
+- Cut opens the BC-10.2 confirmation, worded for a cut ("Cut selected
+  elements?" / "Cut elements"). Nothing is removed, and the clipboard is not
+  touched, until it is confirmed. Confirming revalidates the targets (never
+  retargets), removes each subtree once, cleans interactions aimed at them,
+  and fills the clipboard in the SAME write. One Undo step.
+- Paste puts fresh copies of every clipboard root into ONE destination (the
+  existing single-paste destination rule), in order. If that container
+  can't accept every root, nothing is pasted and a notice says why. One
+  Undo step; the pasted roots become the selection.
+- Duplicate puts each selected subtree's copy right after its original, in
+  its own parent (cross-container selections stay where they are). All or
+  nothing, one Undo step; the copies become the selection.
+- The roots are cloned as ONE set with one old-id -> new-id map, so an
+  interaction from one copied root to an element inside another copied root
+  points at the copy, never back at the original.
+
+No project-format, migration, Preview, Export or desktop change.
+
+
+2. EXISTING CLIPBOARD ARCHITECTURE (investigated before changing anything)
+-------------------------------------------------------------------------
+- Internal clipboard only: store field `clipboard: EditorClipboard | null`,
+  `{ operation: "copy" | "cut", nodes: EditorElementNode[], sourceParentId }`
+  (types/clipboard.ts). It is not the OS clipboard, is not in history and is
+  not persisted. `nodes` was already an array, always of length 1, so the
+  type needed NO change.
+- Entry points: useEditorKeyboardShortcuts (Ctrl/Cmd+C/X/V/D, ignored in
+  input/textarea/select/contenteditable and in Preview), and the Edit menu
+  (applicationMenus.ts via EditorApp's EditMenuCommands). Both call the
+  same store actions. There are NO Structure-panel or Canvas context menus,
+  and the desktop shell has no native menu (Menu.setApplicationMenu(null)),
+  so no other entry point exists to change.
+- Cloning: utils/cloneNodeWithFreshIds.ts (fresh element, interaction and
+  SVG-object ids; internal interaction targets remapped by
+  remapInteractionTargets; external targets kept).
+- Destination: utils/resolveDestinationParent.ts: the selected container,
+  else the selected leaf's parent, else the clipboard's source parent if it
+  still exists, else the page root. Free containers place the node with
+  resolveFreeDestinationPlacement.
+- Insertion validation: documentCommands.insertNode, which returns the same
+  root when canParentAcceptChild rejects the child.
+- Pagination: withPaginationInvariants + withoutCopiedCurrentState (BC-09.3:
+  a copy is never the current page).
+- Save-size guard: COPY_TOO_LARGE_NOTICE for copies carrying embedded
+  images (BC-07.2).
+- Before this checkpoint, Copy, Cut, Paste and Duplicate were primary-only.
+
+
+3. SOURCE FILES CHANGED
+-----------------------
+New:
+  src/features/editor/commands/multiClipboardCommands.ts
+    existingSelectedIds, orderedSelectionRoots, pasteCopiesInto,
+    duplicateRootsInPlace (pure, all-or-nothing)
+  src/features/editor/commands/multiClipboardCommands.test.ts
+  src/features/editor/stores/useEditorStore.multiClipboard.test.ts
+  e2e/multi-selection-clipboard.spec.ts
+Modified:
+  src/features/editor/utils/cloneNodeWithFreshIds.ts
+    new cloneNodesWithFreshIds(nodes): one shared id map. The single
+    cloneNodeWithFreshIds now delegates to it with [node]; same result.
+  src/features/editor/stores/useEditorStore.ts
+    - copySelection, cutSelection, pasteClipboard, duplicateSelection get a
+      2+ branch; the 1-element code below it is unchanged.
+    - PendingDeletion.kind: "delete" | "cut".
+    - planDeletion(…, kind).
+    - cutNodesById, pasteMany, duplicateMany, commitCopies.
+    - Notices: STALE_CUT_NOTICE, MULTI_PASTE_REJECTED_NOTICE,
+      MULTI_DUPLICATE_REJECTED_NOTICE.
+    - confirmPendingDeletion branches on the kind.
+    - Cut, Paste and Duplicate do nothing while a confirmation is open.
+  src/features/editor/components/MultiDeleteConfirmDialog.tsx
+    MULTI_CUT_COPY and describePendingCut; the dialog words itself by
+    pending.kind.
+  src/features/editor/components/EditorApp.tsx
+    Edit menu Cut/Copy/Duplicate are enabled when any selected element
+    isn't the page root (previously primary-only); stale comment updated.
+  src/features/editor/components/MultiDeleteConfirmDialog.test.tsx (+3 tests)
+  src/features/editor/hooks/useEditorKeyboardShortcuts.test.ts (+1 test)
+
+
+4. MULTI-COPY BEHAVIOR
+----------------------
+existingSelectedIds keeps only ids that still resolve and aren't the page
+root. orderedSelectionRoots keeps the top-level ones (normalizeSelectionRoots)
+in document pre-order. The clipboard holds those subtrees exactly as they
+are (every descendant, styles, content, component markers, interactions,
+embedded data), with sourceParentId = the first root's parent. The document,
+history and selection are untouched. Invalid ids are skipped without
+dropping the valid ones.
+
+
+5. MULTI-CUT CONFIRMATION
+-------------------------
+- 2+ existing selected ids: pendingDeletion = planDeletion(…, "cut").
+- Dialog: title "Cut selected elements?".
+- Message: "You are about to cut N selected elements. This will also remove
+  M nested elements." plus "The elements can be pasted elsewhere, and the
+  cut can be undone."
+- Buttons: Cancel (focused first; Escape, the close button and the backdrop
+  also cancel) and "Cut elements".
+- Cancel: document, selection, history and clipboard unchanged.
+- Confirm: the same revalidation as BC-10.2 (the selection must still be
+  exactly the confirmed ids and the total count unchanged). Otherwise
+  nothing is cut, the clipboard is unchanged, and the notice says "The
+  selection changed before you confirmed, so nothing was cut."
+- The clipboard is written only in the same store write as a successful
+  removal (cutNodesById returns {} if nothing was removed), so elements can
+  never disappear without being pasteable.
+- One selected element: cut at once, exactly as before.
+
+
+6. MULTI-PASTE DESTINATION RULES
+--------------------------------
+- One destination: resolveDestinationParent(primary, clipboard
+  sourceParentId), the unchanged single-paste rule. Every root is appended
+  there in clipboard (document) order, as the single paste appends one.
+- Free destination: each copy is placed by resolveFreeDestinationPlacement
+  against the copies already placed, so they don't stack.
+- Before committing, canParentAcceptChild is checked for every root, and
+  insertNode must accept every insertion. Otherwise nothing is pasted and
+  MULTI_PASTE_REJECTED_NOTICE is shown.
+- Roots are never scattered across containers, and subtrees are never
+  flattened.
+
+
+7. MULTI-DUPLICATE PLACEMENT RULES
+----------------------------------
+Each root's copy is inserted right after its original in the original's own
+parent (insertNode with { referenceId, placement: "after" }), so siblings A, B
+become A, A', B, B'. Originals never move. If any root has no parent or any
+insertion is rejected, nothing is duplicated (MULTI_DUPLICATE_REJECTED_NOTICE).
+As for a single duplicate, the save-size guard applies, the copies are
+placed freshly in Free containers, and no copy is a current page.
+
+
+8. PARENT/CHILD ROOT DEDUPLICATION
+----------------------------------
+Uses the actual ancestor chain (normalizeSelectionRoots). Example from the
+brief, tested: Section A + its Button + its Paragraph + Section B gives
+[A, B], each copied once with its complete subtree, including unselected
+descendants. The same root set is used for Cut and Duplicate. Cut counts
+via the BC-10.2 plan: each removed element is counted once.
+
+
+9. CROSS-CONTAINER BEHAVIOR
+---------------------------
+- Copy/Cut: roots from different containers, kept in document order.
+- Paste: one destination, as the brief recommends.
+- Duplicate: each copy stays in its own container.
+Tested in unit tests and in Chromium.
+
+
+10. ID REMAPPING
+----------------
+cloneNodesWithFreshIds walks every root and builds one complete old -> new
+map, covering elements and descendants. Interaction ids and SVG-object ids
+are also regenerated. Only after the map is complete is each clone remapped
+(remapInteractionTargets: a typed walk of the interaction bindings, no
+string replacement). Fresh ids are generated on every paste, so repeated
+pastes never collide. Before commit, a uniqueness pass over the whole tree
+rejects any duplicate id.
+
+
+11. INTERACTION-REFERENCE HANDLING
+----------------------------------
+- Target inside the copied set: remapped to the copy (tested between two
+  separate roots, and in Preview in Chromium: the pasted button toggles the
+  pasted target and the original target stays visible).
+- Target outside the copied set: kept, as for one element.
+- Paste drops a binding whose external target no longer exists
+  (removeInteractionsWithMissingTargets, the same rule as single paste).
+- Cut: bindings on REMAINING elements aimed at anything removed are
+  deleted, as Delete does. Undo restores them. The clipboard keeps the
+  subtrees as they were, so bindings between cut elements are remapped
+  correctly on a later paste, and a paste never assumes the original cut
+  ids still exist (tested).
+
+
+12. COMPLEX COMPONENT COMPATIBILITY
+-----------------------------------
+- Pagination: tested by duplicating the current page together with
+  another page. The copies are ordinary pages (withoutCopiedCurrentState,
+  ordinaryLookIds), and the Pagination still has exactly one current page,
+  the original. Legacy Paginations are not rewritten (withPaginationInvariants
+  only touches marked ones, as before).
+- Navbar/links, forms, buttons with interactions, media and video embeds:
+  copied by value through the same clone as single copy. Embed settings and
+  security fields are untouched, and embedded image data is reused by
+  value, exactly as for one element. Copies carrying embedded data go
+  through the same save-size guard.
+- Nested layout containers: deep subtrees are preserved (tested).
+Not separately browser-tested this checkpoint: Navbar, forms, images, video
+(no component-specific code changed).
+
+
+13. ATOMIC MUTATIONS
+--------------------
+The pure functions return { ok: false } instead of a partial tree. The store
+commits one document, with Pagination invariants and dangling-binding
+cleanup in the same write, or nothing plus a notice. A failed cut doesn't
+change the clipboard. Cut, Paste and Duplicate are ignored while a
+confirmation is open.
+
+
+14. UNDO/REDO
+-------------
+One pushHistory per successful multi-cut, multi-paste and multi-duplicate.
+Copy and a rejected operation create no history entry. Undo/Redo restore
+hierarchy, content, styles, interactions and order; snapshots are whole
+documents. The clipboard is not in history, so Undo of a cut leaves it
+intact (tested). Stale selected ids are dropped at read time
+(useSelectedNodes, unchanged).
+
+
+15. SELECTION AFTER OPERATIONS
+------------------------------
+- Paste/Duplicate: exactly the new top-level copies (never their
+  descendants). The primary is the last copy, and the Structure range
+  anchor is set to it.
+- Cut: the BC-10.2 deletion fallback (the first root's parent).
+- Copy: unchanged.
+Canvas outlines, Structure and Inspector follow from the store (2 outlines
+checked in Chromium).
+
+
+16. TEXT-EDITING SAFETY
+-----------------------
+Unchanged guard: shortcuts are ignored when the event target is an input,
+textarea, select or contenteditable. Added a jsdom test with a 2-element
+selection, and a Chromium test (Ctrl+A, Ctrl+X in the Inspector's Font
+family field cuts the field's text, opens no dialog, and Ctrl+D there
+duplicates nothing).
+
+
+17. PREVIEW/EXPORT PARITY
+-------------------------
+Pasted and duplicated elements are ordinary document nodes. No runtime
+script and no selection or clipboard metadata is added. Preview behaviour
+of a remapped interaction was verified in Chromium. Export code is
+untouched, and no export suite was run (policy).
+
+
+18. PROJECT FORMAT COMPATIBILITY
+--------------------------------
+No serialization change, no v3 change, no migration. The clipboard and
+pendingDeletion are editor-only (already classified as transient by the
+persistence test, which passed). Pasted content survives Save/Reopen
+(tested in Chromium).
+
+
+19. FOCUSED TEST-IMPACT MAP
+---------------------------
+Changed code                              -> tests run (why)
+multiClipboardCommands.ts (new)           -> multiClipboardCommands.test.ts (new)
+cloneNodeWithFreshIds (delegates)         -> cloneNodeWithFreshIds.test.ts and every store
+                                             test that copies/duplicates (listed below)
+store copy/cut/paste/duplicate/confirm    -> useEditorStore.multiClipboard.test.ts (new),
+                                             multiDelete, and all store tests that call these
+                                             actions (button/card/dataDisplay/form components,
+                                             imageUpload, interactions, navigation links (+regression),
+                                             navigationComponents, pagination, paginationManagement,
+                                             persistence, previewVisibility, shape, spacingZero, svg,
+                                             svgEditMode, videoEmbed, the main store test)
+MultiDeleteConfirmDialog                  -> its test (+3 cut tests), BC-10.2 e2e spec
+EditorApp menu enablement                 -> EditorApp, AppHeader, AppShell, ResourceScrollRegion,
+                                             ProjectWorkspace tests (they render EditorApp/menus)
+keyboard hook (unchanged, new test)       -> useEditorKeyboardShortcuts.test.ts
+real browser                              -> e2e/multi-selection-clipboard.spec.ts (new, 6 tests),
+                                             e2e/multi-selection-structure-delete.spec.ts (shared dialog)
+Selection: every test file whose source mentions one of copySelection,
+cutSelection, pasteClipboard, duplicateSelection, cloneNodeWithFreshIds,
+pendingDeletion, requestDeleteSelection, canCut, canDuplicate or EditorApp
+(grep) — 31 files.
+
+
+20. EXACT TEST COMMANDS AND RESULTS
+-----------------------------------
+npx vitest run src/features/editor/stores/useEditorStore.multiClipboard.test.ts            -> 20 passed
+npx vitest run src/features/editor/components/MultiDeleteConfirmDialog.test.tsx src/features/editor/hooks/useEditorKeyboardShortcuts.test.ts -> 31 passed
+npx vitest run src/features/editor/commands/multiClipboardCommands.test.ts                 -> 8 passed
+npx vitest run <the 31 files in section 19>                                                -> 31 files, 636 tests passed
+npx playwright test e2e/multi-selection-clipboard.spec.ts --project=chromium
+  -> first run 4 passed, 2 failed. Both failures were test-script mistakes,
+     not app bugs: the key name "shift" (Playwright needs "Shift") and the
+     wrong project-status locator. Fixed, then 6 passed.
+npx playwright test e2e/multi-selection-clipboard.spec.ts e2e/multi-selection-structure-delete.spec.ts --project=chromium -> 9 passed
+npx tsc --noEmit -p .                              -> 0 errors
+npx eslint <all changed/new files>                -> clean
+Prettier: none of the modified files were Prettier-clean at HEAD, so none were reformatted.
+Not run (policy): the full Vitest suite, the full Chromium suite,
+Firefox/WebKit, Electron (no desktop path changed), the BC-07/08/09 suites,
+the export suite, a build.
+
+
+21. KNOWN LIMITATIONS
+---------------------
+- Multi-paste appends at the END of the destination, the existing
+  single-paste rule (not "after the selected leaf"). If the selected element
+  is itself one of the copied containers, the paste goes inside it, also
+  the existing single rule.
+- A multi-cut current page pasted back into its own Pagination becomes an
+  ordinary page. The single-element "cut and paste back keeps it current"
+  rule (BC-09.3) applies only to one element. The Pagination still always
+  has one current page.
+- htmlId (the authored HTML id) is copied as-is, exactly like single
+  copy/duplicate, so two elements can share an authored HTML id until one
+  is renamed. Pre-existing behaviour; not changed here.
+- Copies landing in a Free container are placed one by one (no overlap),
+  but their original relative arrangement is not kept.
+- Structural clipboard operations are not blocked by the child-style lock;
+  that lock covers styles only, the existing single-element semantics.
+- No Structure or Canvas context menus exist, so only the keyboard and the
+  Edit menu were wired (both already shared the store actions).
+- Navbar link limits are not enforced by paste or duplicate (only tag
+  nesting rules are), the same as single paste today.
+
+
+22. GIT WORKING-TREE STATUS
+---------------------------
+Modified (6):
+  src/features/editor/components/EditorApp.tsx
+  src/features/editor/components/MultiDeleteConfirmDialog.tsx
+  src/features/editor/components/MultiDeleteConfirmDialog.test.tsx
+  src/features/editor/hooks/useEditorKeyboardShortcuts.test.ts
+  src/features/editor/stores/useEditorStore.ts
+  src/features/editor/utils/cloneNodeWithFreshIds.ts
+New (4): e2e/multi-selection-clipboard.spec.ts,
+  src/features/editor/commands/multiClipboardCommands.ts and its test,
+  src/features/editor/stores/useEditorStore.multiClipboard.test.ts
+Plus this report and the changelog, which are not to be staged
+(changelogs/ is gitignored). No commit, no push.
+
+
+23. QA RECOMMENDATION
+---------------------
+Ready for ChatGPT QA. Suggested focus:
+- the paste destination (the existing single rule, applied to all roots);
+- the multi-cut current-page limitation;
+- the copied htmlId behaviour (pre-existing).
+BC-10.6 not started.
