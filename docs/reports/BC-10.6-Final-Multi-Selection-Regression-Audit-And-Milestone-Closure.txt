@@ -1,0 +1,380 @@
+BC-10.6 — Final Multi-Selection Regression Audit & Milestone Closure
+====================================================================
+Date: 2026-11-19
+Base: HEAD 3e90d79 (BC-10.5.1, committed). BC-10.6 changes are uncommitted.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+The audit exercised BC-10's features TOGETHER: selection, effective
+Mixed/Unknown, shared edits and Reset, clipboard, Free placement, HTML ids,
+Navbar/Pagination invariants, interactions, Undo/Redo, Preview/Export and
+save/reopen. It found ONE genuine BC-10 regression, and fixed it.
+
+R1 (Medium, introduced in BC-10.5.1, FIXED)
+  Copies from two DIFFERENT Free containers were laid out in one shared
+  coordinate space. Elements at the same stored position in their own
+  containers (e.g. both at 20,20) were pasted exactly on top of each other.
+  That contradicts the existing placement rule: one insertion never lands
+  on top of another.
+  Fix: offsets are kept only among copies from the SAME source container;
+  sub-groups from different containers are stacked top to bottom in
+  document order, 16px apart. That is the stacking rule BC-10.5.1 already
+  used for Flow-origin copies, so no new policy was invented.
+  Alternative for the owner (not implemented): place the sub-groups side by
+  side instead of stacked.
+
+No other defects found.
+- All 20 approved product decisions hold (section 4).
+- Focused tests pass: 268 Vitest tests in 20 BC-10 files, 22 Chromium
+  tests, and 14 Firefox + WebKit tests.
+- No unresolved High or Critical BC-10 defect.
+Recommendation: BC-10 is ready for closure review. The closure decision is
+ChatGPT's.
+
+
+2. SCOPE AND PREVIOUS CHECKPOINT EVIDENCE
+-----------------------------------------
+Read: the BC-10.1, 10.2, 10.3, 10.4, 10.5 and 10.5.1 reports and the
+current code. Reused evidence (unchanged since): the BC-10.2 range/anchor
+and delete-confirmation tests, BC-10.3 effective normalization, BC-10.4
+fan-out and Reset, BC-10.5 clipboard, and BC-10.5.1 integrity. All of these
+were rerun once as one combined set (section 17), because the audit
+touched the shared clipboard code.
+New in BC-10.6:
+- src/features/editor/stores/useEditorStore.bc10Audit.test.ts (18 tests);
+- e2e/bc10-final-audit.spec.ts (3 tests).
+Both add only cross-feature scenarios that no earlier test combined.
+
+
+3. TEST-IMPACT MATRIX
+---------------------
+Feature           | Modules                              | Prior evidence             | Remaining integration risk                     | BC-10.6 verification                      | Result
+------------------+--------------------------------------+----------------------------+------------------------------------------------+-------------------------------------------+-------
+Selection         | types/selection, StructureTree,      | 10.2 unit + e2e            | stale ids after clipboard + Undo/Redo chains   | audit: cleanup across paste/dup/cut/undo/ | pass
+                  | useSelectedNodes                     |                            | Canvas + Structure mixed input                 | redo; e2e A (Canvas + Structure Ctrl)     |
+Delete/Cut confirm| MultiDeleteConfirmDialog, store      | 10.2/10.5 unit + e2e       | Escape + Edit menu + interactions together     | e2e C                                     | pass
+Effective Mixed   | effectiveCss, useRenderedStyles      | 10.3 unit + e2e (Chromium) | browser normalization differences              | 10.3 e2e on Firefox + WebKit              | pass
+Shared edit/Reset | sectionSettingsCommands, bulk/fan-out| 10.4 unit + e2e            | Reset Undo/Redo per section; unrelated values  | audit: 6 Reset cases + no-op + parent/    | pass
+                  | sections, store setElements*         |                            | kept; parent/child once                        | child; e2e A (edit/Undo/Redo), D (Reset)  |
+Clipboard         | multiClipboardCommands, clone, store | 10.5 unit + e2e            | paste → shared edit → Undo chains, references  | audit workflow B/C; e2e C                 | pass
+Free placement    | placeFreeGroup                       | 10.5.1 unit + e2e          | cross-container coordinate spaces, near edges, | audit repro (FAILED -> fixed), bounds/    | pass after fix
+                  |                                      |                            | repeated paste near capacity                   | capacity case; integrity e2e FF/WebKit    |
+HTML ids          | uniqueHtmlIdsForCopies               | 10.5.1 unit + e2e          | export duplicate-id diagnostics after a        | audit workflow E (export diagnostics)     | pass
+                  |                                      |                            | complex duplicate                              |                                           |
+Navbar limit      | exceedsNavigationLinkLimit           | 10.5.1 unit                | legacy over-limit nav + other edits            | audit legacy nav                          | pass
+Pagination        | withPaginationInvariants             | 10.5/10.5.1 unit           | repeated paste + multi-duplicate + Undo/Redo   | audit (3 pastes, duplicate, 4 Undo/Redo)  | pass
+Interactions      | clone remap, removeInteractions*     | 10.5 unit + e2e            | across Cut → Undo → Redo → Paste; export       | audit workflow C/E; e2e C (Preview)       | pass
+Serialization     | serializeProject (unchanged)         | 10.2 unit                  | after clipboard + Reset; Inspector metadata    | audit workflow D; e2e D (save/reopen)     | pass
+
+
+4. APPROVED PRODUCT-DECISION COMPLIANCE MATRIX
+----------------------------------------------
+ 1 Ctrl/Cmd+Click toggles                  OK  10.2 unit; e2e A (Canvas Ctrl + Structure Ctrl)
+ 2 Plain click selects only it             OK  10.2 unit/e2e; e2e helpers rely on it throughout
+ 3 Structure Shift+Click visible range     OK  StructureTree.rangeSelection.test (rerun)
+ 4 Ctrl/Cmd+Shift+Click adds a range       OK  same file (additive)
+ 5 Parent + child selectable together      OK  audit (parent+child edit once; dedup copy/dup)
+ 6 Cross-container selection               OK  e2e A, audit workflow B
+ 7 No selection cap                        OK  10.4 (40 elements); no cap in code
+ 8 Shared controls only where supported    OK  InspectorMultiNodeSummary tests (rerun); section 6
+ 9 Mixed compares effective CSS            OK  effectiveCss tests; 10.3 e2e on Chromium/Firefox/WebKit
+10 Mixed until an explicit edit            OK  e2e A: Mixed returns after Undo
+11 Shared edits all-or-nothing             OK  10.4 lock test (rerun); audit no partial results
+12 One logical edit = one Undo             OK  audit (every case asserts past length)
+13 Reset targets every selected element    OK  audit (6 sections); e2e D
+14 Multi copy/cut/paste/duplicate          OK  10.5 + audit + e2e C/D
+15 Parent/child subtree copied once        OK  10.5 tests (rerun); audit E (leaf inside nest)
+16 Multi-delete/cut confirmation           OK  e2e C (keyboard + Edit menu + Escape)
+17 Selection transient, never saved        OK  audit D (file has no selection keys); e2e D (nothing selected after reopen)
+18 Invalid ids dropped, valid kept         OK  audit (normalizeSelection keeps h, z)
+19 Multi-drag/resize deferred              OK  not implemented
+20 Breakpoints deferred                    OK  not implemented
+BC-06 Navbar limit and BC-09 Pagination invariants: OK (sections 11 and 19
+of the matrix above).
+
+
+5. CANVAS/STRUCTURE SELECTION RESULTS
+-------------------------------------
+e2e A, cross-container:
+- Canvas click on a heading in one container, then Structure Ctrl+click on
+  a paragraph in another;
+- the count reads "2 selected", 2 Canvas outlines are shown, both rows have
+  aria-selected, and the Inspector shows the multi view.
+Range exclusion of collapsed descendants and additive ranges: the BC-10.2
+StructureTree.rangeSelection tests (rerun, pass).
+Cleanup: through paste, duplicate and cut, and each Undo/Redo, no selected
+id is missing (audit). Undo restores the selection saved with the history
+entry; stale ids are dropped at read time and the primary falls back to
+the last valid id.
+
+
+6. MIXED CSS AND INSPECTOR RESULTS
+----------------------------------
+BC-10.3 effective comparisons:
+- font size, colour equivalence, inherited vs authored, border sides,
+  radius corners, hidden/unmeasurable → Unknown;
+- 10.3 e2e passes on Chromium, and now on Firefox and WebKit (5 tests × 2).
+e2e A: h2 + p line heights 40/20 show "Mixed"; after one shared value and
+an Undo it is Mixed again (no false uniform value).
+Eligibility review (BC-10.4 design, not a regression). No supported
+property becomes impossible to edit, but some need an extra step:
+- Box shadow, background image/gradient, Content Layout and Flex/Grid child
+  that DIFFER: first "Use <primary>'s … on all" (or Reset), then the full
+  editor.
+- Flow <-> Free switching: one container at a time.
+- Transform/Transition that differ: bulk fields only, with no per-field
+  Reset (the Reset exists once they agree).
+- Different tags (h1 + h2): the "uniform" full editors need the same tag;
+  bulk fields cover the shared properties.
+
+
+7. SHARED CSS EDITING AND RESET RESULTS
+---------------------------------------
+Audit, one case each:
+- typography line height;
+- padding;
+- background colour;
+- border width;
+- box shadow (multi-layer);
+- Flex child.
+In every case, on 2 elements with DIFFERENT values: Reset clears both, one
+Undo entry, Undo restores each original value, Redo resets again.
+Unrelated values are kept:
+- transform, margin, the multi-layer shadow and the 3-stop gradient survive
+  unrelated Resets;
+- resetting a gradient element's colour leaves the gradient and shadows.
+Also verified:
+- A no-op edit adds no history.
+- Parent + child (with a duplicated id) are each edited once.
+- Live gesture and selection change mid-gesture: the BC-10.4 tests (rerun).
+- Lock blocks everything: the BC-10.4 test (rerun).
+- Invalid values: the Inspector fields validate before any store call
+  (BC-10.3/10.4 Inspector tests, not rerun this checkpoint).
+e2e D: a bulk "Reset padding" on the two duplicated buttons leaves the
+originals' 20/30px padding.
+
+
+8. CLIPBOARD RESULTS
+--------------------
+Audit workflow B: a cross-container copy (button + its target + a Flex
+child) pasted at the page root.
+- 3 roots selected.
+- The internal reference is remapped; the external one is kept.
+- A shared font-weight edit applies to the pasted copies only.
+- Undo the edit, Undo the paste (copies gone), Redo: references valid and
+  all element ids unique.
+Workflow E: a Navbar, a Pagination, a trigger + target and a nested
+container (gradient + shadow), plus a selected leaf inside it, are
+duplicated as one step. Result:
+- 5 copies, each right after its original;
+- the leaf is not duplicated twice;
+- references remapped; one current page per Pagination;
+- unique "-copy" HTML ids;
+- one Undo removes all 5.
+e2e C: paste after an undone cut gives fresh, unique element ids.
+
+
+9. FREE-LAYOUT PLACEMENT RESULTS
+--------------------------------
+- Cross-container repro: FAILED before the fix (copies overlapped), passes
+  after.
+  - Same-container copies keep their exact offset (120, 40).
+  - The second container's copy is stacked 16px below.
+  - No overlaps; everything stays inside 600 × 400.
+- Near the right edge and near capacity: a 240px-wide group pasted five
+  times into a 260px-wide Free container that already holds a 200 × 300
+  child.
+  - All 10 copies stay inside the bounds.
+  - Widths are never shrunk.
+  - The nested child's geometry is kept.
+  - Overlap happens only through the pre-existing last-resort cascade.
+- A 200px-wide container refuses the 240px group as a whole (notice, no
+  history).
+- 10.5.1 integrity e2e (rendered arrangement and unique DOM id) passes on
+  Chromium, Firefox and WebKit.
+
+
+10. AUTHORED HTML ID RESULTS
+----------------------------
+Workflow E:
+- the duplicated Navbar and target get "site-nav-copy" and "target-copy";
+- the export has no "duplicate-html-id" diagnostic.
+The BC-10.5.1 tests (rerun) cover:
+- repeated paste ("-copy-2");
+- "#fragment" remapping;
+- external URL untouched;
+- cut/paste keeps the id;
+- live DOM unique on 3 browsers.
+
+
+11. NAVBAR AND PAGINATION INTEGRITY
+-----------------------------------
+- Navbar: the BC-10.5.1 tests (rerun) cover single paste, multi-paste,
+  single duplicate, multi-duplicate and nested insertion.
+- Navbar, audit: a legacy nav with 14 links refuses a pasted 15th and is
+  left exactly as it was (same object). Non-clipboard edits to its links
+  still work.
+- Pagination, audit: one current page after 3 repeated pastes of
+  [current page, page 3] into the same Pagination, after a multi-duplicate
+  of [current, page 2], and after every one of 4 Undo and 4 Redo steps.
+- Pagination: the same-parent cut/paste-back keeps the current page
+  (10.5.1, rerun).
+- BC-09.5 drag invariant: no BC-10 code touches moveElement, so the BC-09
+  evidence stands (not rerun).
+
+
+12. INTERACTION-REFERENCE INTEGRITY
+-----------------------------------
+Audit workflow C, with a trigger aimed at an internal target and at an
+external one:
+- Cutting the external target removes that binding.
+- Undo restores both bindings; Redo removes the binding again.
+- Pasting the cut target back creates a new element; the original trigger
+  is not silently re-pointed at it.
+e2e C: after Cut → Undo, the trigger still toggles its target in Preview.
+Export (workflow E): aria-controls count exactly doubles after duplicating
+trigger + target (and is above 0 before).
+
+
+13. INTEGRATED WORKFLOW RESULTS
+-------------------------------
+A  Multi-select → CSS edit → Undo → Redo          e2e A                          pass
+B  Copy → Paste → edit → Undo ×2 → Redo           audit workflow B               pass
+C  Cut → Cancel(Escape) → Confirm → Undo → Paste   e2e C + audit workflow C       pass
+D  Duplicate → Reset → Save/Reopen                 e2e D + audit workflow D       pass
+E  Complex components                              audit workflow E (+ export)    pass
+
+
+14. UNDO/REDO
+-------------
+Every operation asserts exactly one history entry, and Undo/Redo
+round-trips were checked for:
+- shared edit and Reset (6 sections);
+- paste and duplicate;
+- cut;
+- Pagination.
+No stale selection and no Mixed staleness after Undo (e2e A).
+
+
+15. PREVIEW/EXPORT PARITY
+-------------------------
+- Shared edits: Canvas, Preview and Export (BC-10.4, rerun).
+- Clipboard: Preview toggle works after Cut/Undo (e2e C).
+- Export after a complex duplicate (workflow E): ok, no duplicate ids,
+  references, one current page per Pagination, no selection metadata.
+No export code was changed.
+
+
+16. PROJECT v3 COMPATIBILITY
+----------------------------
+- Workflow D: the serialized file has formatVersion 3 and none of these
+  keys: selection, selectionAnchorId, clipboard, pendingDeletion,
+  primaryId, mixed, unresolved, renderedStyles.
+- e2e D: the save/reopen round trip keeps the copies and their Reset
+  padding; nothing is selected after reopening.
+- No schema, migration or serialization file was changed in BC-10.
+
+
+17. EXACT TESTS AND COMMANDS
+----------------------------
+npx vitest run src/features/editor/stores/useEditorStore.bc10Audit.test.ts
+  (repro first: 1 failed as expected → fix → 41/41 with the clipboard files,
+   then the full audit file 18/18)
+npx vitest run <20 BC-10 files>
+  → 20 files, 268 tests passed. The files:
+  - editor/commands: multiClipboardCommands, sectionSettingsCommands;
+  - editor/components: MultiDeleteConfirmDialog;
+  - editor/components/structure: StructurePanel, StructureTree (+ its
+    rangeSelection and styleProtection tests);
+  - editor/hooks: useEditorKeyboardShortcuts;
+  - editor/stores: bc10Audit, clipboardIntegrity, multiClipboard,
+    multiDelete, multiSelection;
+  - editor/types and utils: selection, cloneNodeWithFreshIds;
+  - inspector: InspectorMultiNodeSummary (+ its sharedControls and
+    styleProtection tests), effectiveCss, sectionUniformity.
+npx playwright test e2e/bc10-final-audit.spec.ts --project=chromium → 3 passed
+npx playwright test <the BC-10 e2e specs> --project=chromium → 22 passed. The specs:
+  - bc10-final-audit;
+  - multi-selection-structure-delete;
+  - multi-selection-effective-values;
+  - multi-selection-shared-controls;
+  - multi-selection-clipboard;
+  - multi-selection-clipboard-integrity.
+npx playwright test -c <temporary Firefox+WebKit config, deleted after the run>
+  e2e/multi-selection-effective-values.spec.ts e2e/multi-selection-clipboard-integrity.spec.ts
+  → 14 passed (7 × 2 browsers). Chosen because these are the
+  browser-dependent parts: computed-style normalization and the rendered
+  Free arrangement / DOM ids.
+npx tsc --noEmit -p .  → 0 errors
+npx eslint <changed/new files> → clean (one unused-import warning in the new
+  spec, fixed)
+Prettier: neither modified file was Prettier-clean at HEAD, so nothing was
+reformatted.
+Not run (policy): the full Vitest/browser/Electron suites, BC-01–BC-09
+milestone suites, the export regression, a build. Electron: no desktop code
+or shortcut changed.
+
+
+18. TEST COUNTS AND FAILURES
+----------------------------
+Vitest: 268/268 (BC-10 set, including the 18 new audit tests).
+Chromium: 22/22. Firefox + WebKit: 14/14.
+Failures during the audit:
+- The cross-container Free repro: NEW BC-10 REGRESSION, fixed (R1).
+- An audit fixture used transform { rotate } instead of { rotateDeg }; the
+  project serializer correctly rejected it. Test expectation mismatch;
+  fixture fixed.
+- An audit fixture passed fontWeight as the string "700" (caught by tsc).
+  Test fixture mismatch; fixed.
+No timing failures, no unresolved failures.
+
+
+19. CORRECTIONS MADE DURING BC-10.6
+-----------------------------------
+src/features/editor/commands/multiClipboardCommands.ts
+  - placeFreeGroup(parent, nodes, sourceKeys): Free sub-groups per source
+    container, stacked in document order, 16px apart; Flow-origin copies
+    below; the bounds check and atomic refusal unchanged.
+  - insertCopies(…, sourceKeys).
+  - pasteCopiesInto(…, origin?: { sourceParentIds?, cut? }).
+src/features/editor/stores/useEditorStore.ts
+  pasteMany passes the clipboard's sourceParentIds (always) and cut.
+New tests: useEditorStore.bc10Audit.test.ts, e2e/bc10-final-audit.spec.ts.
+
+
+20. KNOWN LIMITATIONS AND DEFERRED IMPROVEMENTS (non-blocking)
+--------------------------------------------------------------
+- Owner decision invited: Free sub-groups from different containers are
+  stacked vertically. Side-by-side placement is the alternative.
+- Free bounds are the existing approximate one-shot bounds (stored size,
+  else 400 × 300). A group that doesn't fit them is refused, never shrunk.
+- After a paste the copies are selected, so if one of them is a container
+  the next paste goes inside it (the existing single-paste rule).
+- BC-10.4: the full uniform editors require the same tag. Size, Shape and
+  Media fit stay bulk. Flow/Free switching is one container at a time.
+  Transform/Transition have no per-field Reset while they differ. Bulk
+  numbers are px only.
+- Existing projects with duplicate authored ids are not repaired (the
+  export still warns).
+- Multi-drag, multi-resize and responsive breakpoints remain deferred, as
+  approved.
+
+
+21. GIT WORKING-TREE STATUS
+---------------------------
+ M src/features/editor/commands/multiClipboardCommands.ts
+ M src/features/editor/stores/useEditorStore.ts
+?? e2e/bc10-final-audit.spec.ts
+?? src/features/editor/stores/useEditorStore.bc10Audit.test.ts
+Plus this report and the changelog, which are not to be staged. No commit,
+no push. BC-11 not started.
+
+
+22. FINAL QA RECOMMENDATION
+---------------------------
+All 15 closure conditions are met on the evidence above. The one regression
+found (R1, Medium) is fixed and covered by a test. No High or Critical
+BC-10 defect remains. Recommend that ChatGPT approve closing BC-10, and
+that the owner decide on the Free sub-group arrangement (stacked, as
+implemented, or side by side).

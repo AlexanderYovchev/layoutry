@@ -95,37 +95,57 @@ const FREE_GROUP_GAP_PX = 16;
 /**
  * BC-10.5.1 — Free-layout geometry for copies landing TOGETHER in one Free
  * container, keeping their arrangement:
- * - copies that already had a Free position keep their offsets from one
- *   another (their stored x/y, shifted so the group starts at 0,0; copies
- *   from different Free containers share one coordinate space);
+ * - copies that came from the SAME Free container keep their offsets from
+ *   one another (their stored x/y, shifted so that sub-group starts at 0,0);
+ * - BC-10.6: copies from DIFFERENT source containers are separate
+ *   sub-groups, stacked top to bottom in document order, 16px apart (stored
+ *   x/y from different containers are not comparable, and sharing one space
+ *   pasted two (20,20) elements exactly on top of each other);
  * - copies from Flow containers have no position, so they are stacked
- *   below, in order, at their default Free size.
+ *   below those, in order, at their default Free size.
  * The whole group is then placed as ONE block by the same rule as one
  * inserted element (resolveFreeInsertionPosition: the first grid slot
  * where it overlaps no existing child, else a cascade), so a repeated paste
  * lands at a new offset. Sizes are never shrunk to fit: a group larger than
  * the container is refused (null), never distorted. Descendants keep their
- * own geometry inside each copy.
+ * own geometry inside each copy. `sourceKeys[index]` names each copy's
+ * source container (undefined: all one sub-group).
  */
-function placeFreeGroup(parent: EditorElementNode, nodes: readonly EditorElementNode[]): FreeLayoutGeometry[] | null {
+function placeFreeGroup(
+  parent: EditorElementNode,
+  nodes: readonly EditorElementNode[],
+  sourceKeys: readonly (string | null | undefined)[],
+): FreeLayoutGeometry[] | null {
   const bounds = approximateFreeContainerSize(parent);
-  const positioned = nodes.flatMap((node) => (node.freeLayout ? [node.freeLayout] : []));
-  const minX = positioned.length > 0 ? Math.min(...positioned.map((geometry) => geometry.x)) : 0;
-  const minY = positioned.length > 0 ? Math.min(...positioned.map((geometry) => geometry.y)) : 0;
-  let bottom: number | null = positioned.length > 0 ? Math.max(...positioned.map((geometry) => geometry.y - minY + geometry.height)) : null;
-  const relative = nodes.map((node): FreeLayoutGeometry => {
-    if (node.freeLayout) return { ...node.freeLayout, x: node.freeLayout.x - minX, y: node.freeLayout.y - minY };
-    const size = getDefaultFreeElementSizeForNode(node);
-    const y = bottom === null ? 0 : bottom + FREE_GROUP_GAP_PX;
-    bottom = y + size.height;
-    return { x: 0, y, width: size.width, height: size.height };
+  const relative: (FreeLayoutGeometry | undefined)[] = nodes.map(() => undefined);
+  let cursor = 0;
+  const subGroups = new Map<string | null | undefined, number[]>();
+  nodes.forEach((node, index) => {
+    if (node.freeLayout) subGroups.set(sourceKeys[index], [...(subGroups.get(sourceKeys[index]) ?? []), index]);
   });
-  const width = Math.max(...relative.map((geometry) => geometry.x + geometry.width));
-  const height = Math.max(...relative.map((geometry) => geometry.y + geometry.height));
+  for (const indices of subGroups.values()) {
+    const geometries = indices.map((index) => nodes[index].freeLayout!);
+    const minX = Math.min(...geometries.map((geometry) => geometry.x));
+    const minY = Math.min(...geometries.map((geometry) => geometry.y));
+    indices.forEach((index, position) => {
+      const geometry = geometries[position];
+      relative[index] = { ...geometry, x: geometry.x - minX, y: cursor + geometry.y - minY };
+    });
+    cursor += Math.max(...geometries.map((geometry) => geometry.y - minY + geometry.height)) + FREE_GROUP_GAP_PX;
+  }
+  nodes.forEach((node, index) => {
+    if (node.freeLayout) return;
+    const size = getDefaultFreeElementSizeForNode(node);
+    relative[index] = { x: 0, y: cursor, width: size.width, height: size.height };
+    cursor += size.height + FREE_GROUP_GAP_PX;
+  });
+  const laidOut = relative.flatMap((geometry) => (geometry ? [geometry] : []));
+  const width = Math.max(...laidOut.map((geometry) => geometry.x + geometry.width));
+  const height = Math.max(...laidOut.map((geometry) => geometry.y + geometry.height));
   if (width > bounds.width || height > bounds.height) return null;
   const existing = (parent.children ?? []).flatMap((child) => (child.freeLayout ? [child.freeLayout] : []));
   const origin = resolveFreeInsertionPosition(existing, { width, height }, bounds);
-  const placed = relative.map((geometry) => ({ ...geometry, x: origin.x + geometry.x, y: origin.y + geometry.y }));
+  const placed = laidOut.map((geometry) => ({ ...geometry, x: origin.x + geometry.x, y: origin.y + geometry.y }));
   const fits = placed.every((geometry) => geometry.x >= 0 && geometry.y >= 0 && geometry.x + geometry.width <= bounds.width && geometry.y + geometry.height <= bounds.height);
   return fits ? placed : null;
 }
@@ -147,6 +167,7 @@ function insertCopies(
   sources: readonly EditorElementNode[],
   placements: readonly (CopyPlacement | null)[],
   keepCurrentIndex?: number,
+  sourceKeys: readonly (string | null | undefined)[] = [],
 ): CopiesInsertion {
   if (sources.length === 0) return { ok: false, reason: "destination" };
   const resolved: CopyPlacement[] = [];
@@ -176,7 +197,11 @@ function insertCopies(
   for (const [parentId, indices] of byParent) {
     const parent = findNodeById(document, parentId);
     if (!parent || getLayoutMode(parent) !== "free") continue;
-    const geometries = placeFreeGroup(parent, indices.map((index) => prepared[index]));
+    const geometries = placeFreeGroup(
+      parent,
+      indices.map((index) => prepared[index]),
+      indices.map((index) => sourceKeys[index]),
+    );
     if (!geometries) return { ok: false, reason: "free-bounds" };
     indices.forEach((index, position) => {
       prepared[index] = { ...prepared[index], freeLayout: geometries[position] };
@@ -202,24 +227,28 @@ function insertCopies(
  * if a Free destination can't hold the group's arrangement, or if a nav
  * would go over the link limit.
  *
- * `cut.sourceParentIds` (aligned with `sources`) applies the BC-09.3
- * single-element rule to a cut: a cut current page pasted back into the
- * very Pagination it came from stays its current page.
+ * `origin.sourceParentIds` (aligned with `sources`) is each root's parent at
+ * copy/cut time: Free copies from different containers are laid out as
+ * separate sub-groups (placeFreeGroup), and for a cut (`origin.cut`) the
+ * BC-09.3 single-element rule applies: a cut current page pasted back into
+ * the very Pagination it came from stays its current page.
  */
 export function pasteCopiesInto(
   document: EditorElementNode,
   destinationParentId: string,
   sources: readonly EditorElementNode[],
-  cut?: { sourceParentIds: readonly (string | null)[] },
+  origin?: { sourceParentIds?: readonly (string | null)[]; cut?: boolean },
 ): CopiesInsertion {
-  const keepCurrentIndex = cut
-    ? sources.findIndex((source, index) => source.ariaCurrent === "page" && cut.sourceParentIds[index] === destinationParentId)
+  const sourceParentIds = origin?.sourceParentIds ?? [];
+  const keepCurrentIndex = origin?.cut
+    ? sources.findIndex((source, index) => source.ariaCurrent === "page" && sourceParentIds[index] === destinationParentId)
     : -1;
   return insertCopies(
     document,
     sources,
     sources.map(() => ({ parentId: destinationParentId })),
     keepCurrentIndex === -1 ? undefined : keepCurrentIndex,
+    sourceParentIds,
   );
 }
 

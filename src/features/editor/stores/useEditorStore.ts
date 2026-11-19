@@ -1139,8 +1139,10 @@ function buildInitialRuntimeVisibility(document: EditorElementNode): Record<stri
  */
 function pasteMany(state: EditorState, clipboard: EditorClipboard): Partial<EditorState> {
   const destinationParentId = resolveDestinationParent(state.document, state.selection.primaryId ?? null, clipboard.sourceParentId);
-  const cut = clipboard.operation === "cut" && clipboard.sourceParentIds ? { sourceParentIds: clipboard.sourceParentIds } : undefined;
-  const result = pasteCopiesInto(state.document, destinationParentId, clipboard.nodes, cut);
+  const result = pasteCopiesInto(state.document, destinationParentId, clipboard.nodes, {
+    sourceParentIds: clipboard.sourceParentIds,
+    cut: clipboard.operation === "cut",
+  });
   if (!result.ok) return nextEditorNoticeState(state, PASTE_REJECTION_NOTICES[result.reason]);
   return commitCopies(state, result.document, result.rootIds, result.formerCurrentPageIds, true, result.keptCurrentPageId);
 }
