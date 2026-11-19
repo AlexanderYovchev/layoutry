@@ -30,6 +30,11 @@ export interface EditMenuCommands {
   onPaste: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  /** BC-11.2 Copy CSS / Paste CSS. Optional: a host without them shows both disabled. */
+  canCopyStyle?: boolean;
+  canPasteStyle?: boolean;
+  onCopyStyle?: () => void;
+  onPasteStyle?: () => void;
 }
 
 /**
@@ -309,6 +314,22 @@ function editMenu(commands: EditMenuCommands): TopLevelMenu {
         shortcut: "Ctrl+D",
         disabled: !commands.canDuplicate,
         onSelect: commands.onDuplicate,
+      },
+      {
+        type: "command",
+        id: "edit-copy-css",
+        label: "Copy CSS",
+        shortcut: "Ctrl+Alt+C",
+        disabled: !commands.canCopyStyle,
+        onSelect: commands.onCopyStyle,
+      },
+      {
+        type: "command",
+        id: "edit-paste-css",
+        label: "Paste CSS",
+        shortcut: "Ctrl+Alt+V",
+        disabled: !commands.canPasteStyle,
+        onSelect: commands.onPasteStyle,
       },
       {
         type: "command",

@@ -47,38 +47,57 @@ export function useEditorKeyboardShortcuts(): void {
 
       const meta = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
+      // BC-11.2: modifiers are matched exactly. Before, any Ctrl/Cmd+C also
+      // fired with Alt or Shift held, so Ctrl+Alt+C (Copy CSS) or
+      // Ctrl+Shift+C copied elements too.
+      const plain = meta && !event.altKey && !event.shiftKey;
+      // Copy/Paste CSS: Ctrl/Cmd+Alt+C / V. Matched by physical key, since
+      // macOS Option changes event.key ("ç" for Option+C); AltGr (reported
+      // as Ctrl+Alt on Windows layouts that type a character with it) never
+      // counts as this shortcut.
+      const styleChord = meta && event.altKey && !event.shiftKey && !event.getModifierState?.("AltGraph");
 
-      if (meta && key === "z" && event.shiftKey) {
+      if (styleChord && event.code === "KeyC") {
+        event.preventDefault();
+        store.copyStyle();
+        return;
+      }
+      if (styleChord && event.code === "KeyV") {
+        event.preventDefault();
+        store.pasteStyle();
+        return;
+      }
+      if (meta && !event.altKey && key === "z" && event.shiftKey) {
         event.preventDefault();
         store.redo();
         return;
       }
-      if (meta && key === "z") {
+      if (plain && key === "z") {
         event.preventDefault();
         store.undo();
         return;
       }
-      if (event.ctrlKey && key === "y") {
+      if (event.ctrlKey && !event.altKey && !event.shiftKey && key === "y") {
         event.preventDefault();
         store.redo();
         return;
       }
-      if (meta && key === "c") {
+      if (plain && key === "c") {
         event.preventDefault();
         store.copySelection();
         return;
       }
-      if (meta && key === "x") {
+      if (plain && key === "x") {
         event.preventDefault();
         store.cutSelection();
         return;
       }
-      if (meta && key === "v") {
+      if (plain && key === "v") {
         event.preventDefault();
         store.pasteClipboard();
         return;
       }
-      if (meta && key === "d") {
+      if (plain && key === "d") {
         event.preventDefault();
         store.duplicateSelection();
         return;

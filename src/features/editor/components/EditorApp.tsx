@@ -90,6 +90,7 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
   const documentModel = useEditorStore((state) => state.document);
   const selection = useEditorStore((state) => state.selection);
   const clipboard = useEditorStore((state) => state.clipboard);
+  const styleClipboard = useEditorStore((state) => state.styleClipboard);
   const hasPast = useEditorStore((state) => state.past.length > 0);
   const hasFuture = useEditorStore((state) => state.future.length > 0);
   const editorMode = useEditorStore((state) => state.editorMode);
@@ -133,6 +134,12 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
     onDuplicate: () => useEditorStore.getState().duplicateSelection(),
     // BC-10.2: two or more selected elements ask for confirmation first.
     onDelete: () => useEditorStore.getState().requestDeleteSelection(),
+    // BC-11.2: Copy CSS reads the primary element; Paste CSS needs a copied
+    // style and something selected (the store re-validates both).
+    canCopyStyle: primarySelectedId !== null && primarySelectedId !== documentModel.id,
+    canPasteStyle: styleClipboard !== null && selection.ids.some((id) => id !== documentModel.id),
+    onCopyStyle: () => useEditorStore.getState().copyStyle(),
+    onPasteStyle: () => useEditorStore.getState().pasteStyle(),
   };
 
   const previewControl = {

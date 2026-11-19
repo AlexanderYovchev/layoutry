@@ -48,6 +48,8 @@ export function HelpDialogs({ openDialogId, onClose }: HelpDialogsProps) {
             { label: "Redo", keys: "Ctrl+Shift+Z" },
             { label: "Copy", keys: "Ctrl+C" },
             { label: "Paste", keys: "Ctrl+V" },
+            { label: "Copy CSS", keys: "Ctrl+Alt+C" },
+            { label: "Paste CSS", keys: "Ctrl+Alt+V" },
           ].map(({ label, keys }) => (
             <div
               key={label}

@@ -1,0 +1,434 @@
+BC-11.2 — CSS Clipboard Foundation & Paste Implementation
+=========================================================
+Date: 2026-11-19
+Base: HEAD 810176f. All BC-11.2 work is uncommitted.
+Approved decisions implemented: D1=A, D2=A, D3=A, D4=B, D5=A, D6=A, D7=A
+(D8 not implemented, as instructed).
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+- Copy CSS (Ctrl/Cmd+Alt+C, Edit > Copy CSS) stores a deep-cloned
+  snapshot of the PRIMARY selected element's AUTHORED CSS, every group it
+  authored, in a new editor-only CSS clipboard. That clipboard is separate
+  from the element clipboard.
+- Paste CSS (Ctrl/Cmd+Alt+V, Edit > Paste CSS):
+  - MERGES the snapshot into every selected element: the source's
+    authored fields replace the same fields, and everything else is kept;
+  - applies each group only where that element supports it;
+  - names skipped groups in one notice;
+  - commits one all-or-nothing write and one Undo step;
+  - is blocked as a whole by a style lock on any destination or by any
+    invalid write.
+- Element identity, text, HTML id, class, interactions, links, children and
+  parent are never copied.
+- The BC-11.1 shortcut defect is fixed: element Copy/Cut/Paste/Duplicate
+  now require exact modifiers.
+- No project-format change; Canvas, Preview and Export use the existing
+  rendering paths.
+
+
+2. ARCHITECTURE CHANGES
+-----------------------
+New:
+- types/styleClipboard.ts: StyleSnapshot, StyleGroupKey and the
+  StyleClipboard payload, with a `version: 1` discriminator.
+- commands/styleClipboardCommands.ts:
+  - the group registry;
+  - captureStyleSnapshot and applyStyleSnapshot (pure);
+  - STYLE_GROUP_KEYS and styleGroupLabel.
+Store:
+- the `styleClipboard` field;
+- copyStyle and pasteStyle;
+- the feedback notices.
+Keyboard: exact-modifier matching plus the two CSS chords.
+Edit menu: optional Copy CSS / Paste CSS items in EditMenuCommands, wired
+in EditorApp.
+Help: the Keyboard Shortcuts dialog lists both chords.
+No second CSS representation: the snapshot holds the document model's own
+typed settings.
+
+
+3. CSS GROUP REGISTRY
+---------------------
+One entry per group: label, capture, supports and apply. Each is offered
+by the SAME rules the Inspector uses to show its section:
+getElementCapabilities, plus InspectorNodeSummary's per-node rules.
+
+Group                  Settings owned                                   Offered on (Inspector rule)
+size                   Flow dimensions (W/H) or Free box size;          supportsAspectRatio (gates the Size section)
+                       sizeConstraints; aspectRatio
+flexChild              flexChild                                        not a Free child, parent display = flex
+gridChild              gridChild (clamped per destination grid)         not a Free child, parent display = grid
+mediaFit               mediaFit                                         supportsMediaFit
+svgPaint               svgFill / svgStroke / svgStrokeWidth             supportsSvgSettings
+typography             typography                                       supportsTypography
+background             background (incl. gradient/image)                supportsBackground
+border                 border (per side)                                supportsBorder
+borderRadius           borderRadius (per corner)                        supportsBorderRadius
+shape                  shape                                            supportsShape
+boxShadow              boxShadow (layer list)                           supportsBoxShadow
+filters                filters                                          supportsFilters
+transition             transition                                       supportsTransition
+transform              transform                                        supportsTransform
+display                display (display/visibility/overflow/cursor/…)   supportsDisplay
+position               position (position, offsets, z-index)            supportsPosition, not a Free child/container
+spacing                margin / padding                                 always (as the Inspector)
+layout                 flowLayout (block/Flex/Grid + settings) or       a container with supportsChildLayout, in the
+                       Free childResizePolicy                           SAME Flow/Free mode as the source
+
+Categories:
+- 1 (presentation) and 2 (layout) are all of the above.
+- 3 (structural) and 4 (behaviour) are never captured:
+  - id, tag, htmlId, className, text and form values;
+  - href, src, poster;
+  - interactions, initialPreviewVisibility, lockChildStyles, component
+    markers, aria fields;
+  - svgKind, svgViewBox and svgScene;
+  - children and parent;
+  - Free x/y placement;
+  - aspectRatioLocked (an editor resize preference).
+The registry is the only list. It reuses the capability flags rather than
+keeping its own tag lists.
+
+
+4. AUTHORED SNAPSHOT DESIGN
+---------------------------
+- capture() takes only defined fields.
+- A group is absent when the source authored nothing in it, so defaults are
+  never materialized.
+- Units (CssLengthValue), keywords, lists, gradients and layout objects are
+  kept as typed.
+- Everything is deep-cloned with structuredClone. Tested: editing and then
+  deleting the source leaves the snapshot unchanged.
+- Size, as the source authored it:
+  - a Free child's box size from freeLayout;
+  - otherwise the Flow preferred width/height;
+  - offsets are never copied.
+- Layout: a Free container captures mode "free" (plus a resize policy, if
+  any). A Flow container captures flowLayout only if authored.
+
+
+5. SEPARATE CLIPBOARD IMPLEMENTATION
+------------------------------------
+- `styleClipboard: StyleClipboard | null` in the store:
+  { version: 1, sourceName (feedback only), groups }.
+- Independent of `clipboard`: tested in both directions, in the store and
+  in Chromium.
+- Session-only: kept across project loads like the element clipboard. The
+  persistence test's field classification was updated, plus a new test
+  that it survives replaceDocument.
+- Never in history; never serialized (tested).
+
+
+6. COPY CSS COMMAND
+-------------------
+The source is the primary element (eligibleSelectedNode: exists, not the
+page root).
+- No source: "Select an element to copy its CSS."
+- An empty source CLEARS the CSS clipboard (so an older snapshot is never
+  pasted by surprise): "<name> has no CSS settings of its own, so nothing
+  was copied."
+- Success: "CSS copied from <name>."
+No document or history change, and the selection is unchanged. With
+several elements selected, only the primary is read (no merging of
+sources, no Mixed values).
+
+
+7. PASTE CSS COMMAND
+--------------------
+Steps:
+1. The CSS clipboard must exist ("Copy CSS from an element first.").
+2. Destinations = existingSelectedIds: valid, unique, not the page root, so
+   stale ids are ignored ("Select the elements to paste CSS onto." if none).
+3. Style protection is checked for EVERY destination; any lock refuses
+   all, with the existing lock notice.
+4. applyStyleSnapshot.
+5. The save-size guard runs when the snapshot carries an uploaded
+   (data:) background image.
+6. One pushHistory.
+Outcomes:
+- nothing compatible → "No compatible CSS settings to paste."
+- identical values → "The selected elements already have these CSS
+  settings." (no history)
+- invalid → refused whole.
+- skipped groups → "CSS pasted. Skipped: …".
+- A clean success shows no notice; the visible change is the feedback.
+
+
+8. MERGE SEMANTICS
+------------------
+The merge depth equals the Inspector's per-property granularity:
+- Per field: typography, background, filters, transform, display,
+  position, media fit, size constraints, SVG paint.
+- Per side and field: border. Per side: margin and padding.
+- Per corner: radius.
+- Whole values: shadow lists, transition, Flex/Grid container objects,
+  Flex/Grid child objects, flow display, shape, aspect ratio, Flow/Free box
+  size.
+The brief's example is tested: source red + 12px padding onto a blue
+destination with a shadow gives red, 12px, and the shadow kept. Other
+fields are kept too: the destination's own font weight and margin.
+
+
+9. MULTI-DESTINATION BEHAVIOR
+-----------------------------
+Every destination receives the SAME snapshot, never another destination's
+result. Tested: cross-container; cross-tag (p, div and a nested p); a
+parent and child, each once (unique ids, no subtree traversal); no cap.
+
+
+10. COMPATIBILITY FILTERING
+---------------------------
+Per destination and per group, by the rules in section 3. A skipped group
+is filtering (D5), not failure. The remaining writes are still one
+all-or-nothing commit. Nothing is written into a field the destination's
+Inspector doesn't offer.
+
+
+11. SKIPPED-GROUP FEEDBACK
+--------------------------
+One notice for the whole paste: "CSS pasted. Skipped: Typography, Position."
+The list is the union across destinations, de-duplicated, in registry order.
+Tested for Typography (a section), Content layout (a Free container),
+Flex child settings (a block parent) and Position (a Free child).
+
+
+12. LAYOUT CSS SUPPORT
+----------------------
+- Flex and Grid container settings (direction, wrap, justify, align,
+  align-content, gaps, columns, rows) apply to a Flow container through
+  the Inspector's commands (setFlowDisplayMode, flexContainer,
+  gridContainer). A block or grid container becomes Flex, as authored on
+  the source (D4=B).
+- Flex child settings (grow, shrink, basis, align-self) and Grid child
+  settings (clamped to the destination's own grid, identical to the
+  single-element clamp) apply under a matching parent.
+- Width/height:
+  - Flow destinations: preferred W/H, keeping the destination's own
+    offsets.
+  - Free children: box size at their own x/y; must fit their container's
+    (approximate) bounds, or the WHOLE paste is refused with "The copied
+    size doesn't fit inside a Free container…". It is never shrunk, never
+    escapes.
+- Min/max and aspect ratio apply everywhere Size is offered.
+- Position applies except on Free children and Free containers (Free
+  layout owns position there, as in the Inspector).
+- Limitation (structural): Flow <-> Free switching is NOT done by Paste
+  CSS. Flow → Free needs a DOM measurement per child, and Free → Flow
+  discards every child's geometry; both are dedicated conversion commands,
+  not settings writes. The Content layout group applies only when the
+  destination is already in the source's mode, and is otherwise skipped
+  and named. Product clarification is welcome if a "convert as well"
+  option is wanted.
+- Parents, tags and children are never changed.
+
+
+13. COMPLEX VALUE HANDLING
+--------------------------
+- Multi-layer shadows, multi-stop gradients, transforms, filters (blur
+  length with unit) and transitions are copied by value.
+- Each destination gets its own deep copy, never aliased (tested:
+  different object references, equal values).
+- Shadow layer and gradient stop ids are kept. They are local to one
+  element, and a pasted list replaces the destination's whole list, so they
+  stay unique within each element (tested). No unnecessary regeneration.
+
+
+14. BACKGROUND IMAGE SAFETY
+---------------------------
+- Image settings are copied as authored.
+- When the snapshot's background image is embedded (data:),
+  documentFitsSaveLimit is checked on the complete result. If it would
+  exceed the limit, the whole paste is refused with the existing
+  COPY_TOO_LARGE notice (tested with a refusing guard).
+- Images are never dropped.
+- The export validates image URLs as before.
+
+
+15. ATOMIC TRANSACTIONS
+-----------------------
+- Two pre-checks run before anything changes: every destination's lock
+  (the same rule as guardedBulkStyleMutation), and the snapshot's
+  applicability.
+- Writes happen on an immutable copy of the document.
+- Validation runs before commit:
+  - the Free-size bound;
+  - editorElementNodeSchema.safeParse on every changed destination
+    (tested with a corrupt display value: nothing is pasted);
+  - the save-size guard.
+- Then exactly one store write.
+- No-op detection compares each destination's own fields, because some
+  per-field commands return a new object for an identical value.
+
+
+16. UNDO/REDO
+-------------
+- One history entry per Paste CSS. Undo restores B exactly as it was
+  (deep equal to the original node); Redo reapplies.
+- Copy CSS and every refusal create no entry.
+- A repeated identical paste creates no entry.
+Tested in the store and in Chromium.
+
+
+17. KEYBOARD MODIFIER FIX
+-------------------------
+Before, `meta && key === "c"` also fired with Alt or Shift held (the same
+for x, v, d and z). Now:
+- Element Copy/Cut/Paste/Duplicate and Undo need Ctrl/Cmd with NO Alt and
+  NO Shift.
+- Redo = Ctrl/Cmd+Shift+Z without Alt, or Ctrl+Y without Alt or Shift.
+- Copy/Paste CSS = Ctrl/Cmd+Alt+C/V without Shift.
+  - Matched by event.code (KeyC/KeyV), because macOS Option changes
+    event.key ("ç").
+  - Never while AltGraph is active, which protects layouts that type a
+    character with AltGr.
+- Text inputs, textareas, selects and contenteditable keep native behaviour
+  (the existing guard).
+- Preview mode ignores the chords too (the existing guard).
+Tested:
+- the Ctrl+Alt and Cmd+Option chords;
+- Ctrl+Shift+C/V/X/D and Ctrl+Alt+X/D call nothing;
+- plain chords are unchanged;
+- AltGr;
+- a textarea.
+
+
+18. EDIT MENU INTEGRATION
+-------------------------
+"Copy CSS" (Ctrl+Alt+C) and "Paste CSS" (Ctrl+Alt+V) come after Duplicate.
+- Copy CSS is enabled with a valid primary.
+- Paste CSS is enabled with a CSS snapshot and a selected non-root element.
+- Both call the same store actions as the keyboard.
+- The new EditMenuCommands fields are optional: a host without them shows
+  both items disabled, so other menu hosts and fixtures are unaffected.
+- Ordinary Copy/Paste are unchanged.
+- Section-level Inspector controls are not implemented (BC-11.3).
+  captureStyleSnapshot and applyStyleSnapshot already take an optional
+  `groups` filter, so BC-11.3 can call them per section without rewriting
+  clipboard logic.
+
+
+19. CANVAS/PREVIEW/EXPORT COMPATIBILITY
+---------------------------------------
+Paste writes ordinary authored settings through the existing commands. In
+Chromium:
+- the Canvas and Preview show A's look on B;
+- B's interaction still toggles its target in Preview;
+- the export CSS contains A's background twice (A and B) and B's text.
+No runtime script and no export change.
+
+
+20. PROJECT v3 COMPATIBILITY
+----------------------------
+No schema, serialization or migration change. The CSS clipboard, source
+name, notices and computed caches are never serialized (tested).
+
+
+21. FILES CHANGED
+-----------------
+New:
+  src/features/editor/types/styleClipboard.ts
+  src/features/editor/commands/styleClipboardCommands.ts
+  src/features/editor/stores/useEditorStore.styleClipboard.test.ts (19 tests)
+  e2e/css-clipboard.spec.ts (3 tests)
+Modified:
+  src/features/editor/stores/useEditorStore.ts
+    styleClipboard field, copyStyle/pasteStyle, notices
+  src/features/editor/hooks/useEditorKeyboardShortcuts.ts
+    exact modifiers, CSS chords
+  src/features/editor/components/EditorApp.tsx
+    menu wiring
+  src/components/layout/applicationMenus.ts
+    Copy CSS / Paste CSS items, optional fields
+  src/components/layout/HelpDialogs.tsx
+    the shortcuts list
+  src/features/editor/hooks/useEditorKeyboardShortcuts.test.ts (+5 tests)
+  src/components/layout/AppHeader.test.tsx (+1 test)
+  src/features/editor/stores/useEditorStore.persistence.test.ts
+    styleClipboard classified as kept, +1 test
+  e2e/multi-selection-clipboard.spec.ts
+    its Edit-menu helper matched items by prefix (^Paste), which the new
+    "Paste CSS" item made ambiguous. It now matches the exact item name;
+    the behaviour tested is unchanged.
+
+
+22. EXACT FOCUSED TESTS AND RESULTS
+-----------------------------------
+npx vitest run src/features/editor/stores/useEditorStore.styleClipboard.test.ts
+  -> first run 17 passed, 2 failed. Both were test mistakes:
+     - a fixture used transition property "all", which isn't an allowed
+       value; the new pre-commit validation correctly refused the paste;
+     - a grid-clamp expectation didn't match the existing single-element
+       clamp; it now compares with clampGridChildPlacement itself.
+     After the fixes: 19 passed.
+npx vitest run src/features/editor/stores/useEditorStore.persistence.test.ts -> 11 passed
+npx vitest run src/features/editor/hooks/useEditorKeyboardShortcuts.test.ts src/components/layout/AppHeader.test.tsx
+  -> the keyboard file first failed to transform: my shell-scripted edit
+     mangled template literals in the new test. Rewritten, then 28 passed;
+     AppHeader passed.
+Affected set:
+npx vitest run <styleClipboard, persistence, keyboard, AppHeader, AppShell,
+  EditorApp, ProjectWorkspace, sectionSettingsCommands tests>
+  -> 8 files, 134 tests passed.
+After Prettier on the three files that were clean at HEAD: AppHeader,
+persistence and AppShell → 62 passed.
+npx playwright test e2e/css-clipboard.spec.ts --project=chromium -> 3 passed
+npx playwright test e2e/multi-selection-clipboard.spec.ts e2e/bc10-final-audit.spec.ts --project=chromium
+  (the element clipboard and Undo/Redo shortcuts are affected by the
+  modifier fix)
+  -> 8 passed, 1 failed: the BC-10.5 menu-helper ambiguity (section 21).
+     After the fix, multi-selection-clipboard 6/6.
+npx tsc --noEmit -p . -> 0 errors
+npx eslint <all changed/new .ts/.tsx> -> clean
+npx prettier --write src/components/layout/HelpDialogs.tsx src/components/layout/applicationMenus.ts src/features/editor/stores/useEditorStore.persistence.test.ts
+  (the only changed files that were Prettier-clean at HEAD; the diff stays
+  limited to the changes)
+Not run (policy): the full Vitest/browser/Electron suites, BC-01–BC-10
+milestone suites, the export suite and a build. No integration boundary
+needed a build. Electron: there is no desktop menu and no desktop
+shortcut code; the renderer handler is the one tested.
+
+
+23. KNOWN LIMITATIONS
+---------------------
+- Flow <-> Free container conversion is not done by Paste CSS (section 12).
+  The Content layout group is skipped when the modes differ.
+- Free-child size uses the existing approximate container bounds; a size
+  that doesn't fit is refused, never shrunk.
+- The authored class name (className) is not copied: it is treated as
+  identity, consistent with the "do not copy authored HTML IDs" rule. A
+  product decision is invited if class tokens should count as CSS.
+- Pasting onto Pagination links changes their look. The current page's
+  look is its own CSS (BC-09). This is valid, and the invariant still holds.
+- A clean paste shows no notice; only copy, skips and refusals do.
+- No exact computed-appearance mode (D8, deferred).
+- No section- or property-level Inspector controls yet (BC-11.3).
+
+
+24. GIT WORKING-TREE STATUS
+---------------------------
+ M e2e/multi-selection-clipboard.spec.ts
+ M src/components/layout/AppHeader.test.tsx
+ M src/components/layout/HelpDialogs.tsx
+ M src/components/layout/applicationMenus.ts
+ M src/features/editor/components/EditorApp.tsx
+ M src/features/editor/hooks/useEditorKeyboardShortcuts.test.ts
+ M src/features/editor/hooks/useEditorKeyboardShortcuts.ts
+ M src/features/editor/stores/useEditorStore.persistence.test.ts
+ M src/features/editor/stores/useEditorStore.ts
+?? e2e/css-clipboard.spec.ts
+?? src/features/editor/commands/styleClipboardCommands.ts
+?? src/features/editor/stores/useEditorStore.styleClipboard.test.ts
+?? src/features/editor/types/styleClipboard.ts
+?? docs/reports/BC-11.1-… and this report, plus the changelog. None are to
+be staged. No commit, no push. BC-11.3 not started.
+
+
+25. QA RECOMMENDATION
+---------------------
+Ready for ChatGPT QA. Suggested focus:
+- the Content-layout Flow/Free skip rule (section 12);
+- the Free-child size refusal;
+- whether className should count as CSS;
+- the exact-modifier change for the element shortcuts.

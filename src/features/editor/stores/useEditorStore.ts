@@ -162,7 +162,9 @@ import {
   selectRange as selectRangeOf,
   type EditorSelection,
 } from "@/features/editor/types/selection";
-import { describeStyleLockNotice, getStyleProtection, type StyleProtectionResult } from "@/features/editor/rules/styleProtection";
+import { describeStyleLockNotice, getReadableNodeName, getStyleProtection, type StyleProtectionResult } from "@/features/editor/rules/styleProtection";
+import { applyStyleSnapshot, captureStyleSnapshot, isEmptyStyleSnapshot } from "@/features/editor/commands/styleClipboardCommands";
+import type { StyleClipboard } from "@/features/editor/types/styleClipboard";
 import { documentFitsSaveLimit, subtreeHasEmbeddedData } from "@/features/editor/rules/documentSaveLimitGuard";
 import { clampGridChildPlacement } from "@/features/editor/utils/clampGridChildPlacement";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
@@ -240,6 +242,13 @@ interface EditorState {
    */
   pendingDeletion: PendingDeletion | null;
   clipboard: EditorClipboard | null;
+  /**
+   * BC-11.2: the CSS clipboard — an authored-CSS snapshot from Copy CSS.
+   * Independent of the element clipboard (copying one never replaces the
+   * other); session-only like it: kept across project loads, never in
+   * history, never saved.
+   */
+  styleClipboard: StyleClipboard | null;
   past: HistoryEntry[];
   future: HistoryEntry[];
   /** Non-null while a continuous interaction (currently: resize) is mid-drag — see beginResizeTransaction. */
@@ -789,6 +798,22 @@ interface EditorState {
    */
   duplicateSelection: () => void;
   /**
+   * Copy CSS (BC-11.2): the PRIMARY selected element's authored CSS, every
+   * group it authored, as a deep-cloned snapshot in styleClipboard. No
+   * document or history change. A source with no CSS of its own clears the
+   * CSS clipboard (so an older snapshot is never pasted by surprise), with
+   * a notice.
+   */
+  copyStyle: () => void;
+  /**
+   * Paste CSS (BC-11.2): merges the snapshot into every selected element
+   * (valid ids only), each group only where that element supports it
+   * (skipped groups are named in one notice). All or nothing: a style lock
+   * on any of them, or any invalid write, changes nothing. One history
+   * entry; none for a no-op.
+   */
+  pasteStyle: () => void;
+  /**
    * Deletes the whole selection IMMEDIATELY (roots only, interactions
    * cleaned, one history entry). Programmatic; user-facing commands use
    * requestDeleteSelection, which asks first for 2+ elements (BC-10.2).
@@ -1047,6 +1072,18 @@ export const FREE_GROUP_DUPLICATE_REJECTED_NOTICE = "The copies don't fit in the
 export const NAVIGATION_LINK_LIMIT_PASTE_NOTICE = `A navigation bar can have at most ${MAX_NAVIGATION_LINKS} links, so nothing was pasted.`;
 export const NAVIGATION_LINK_LIMIT_DUPLICATE_NOTICE = `A navigation bar can have at most ${MAX_NAVIGATION_LINKS} links, so nothing was duplicated.`;
 
+/** BC-11.2 Copy/Paste CSS feedback. */
+export const STYLE_COPY_NO_SOURCE_NOTICE = "Select an element to copy its CSS.";
+export const styleCopiedNotice = (name: string) => `CSS copied from ${name}.`;
+export const styleCopyEmptyNotice = (name: string) => `${name} has no CSS settings of its own, so nothing was copied.`;
+export const STYLE_PASTE_EMPTY_CLIPBOARD_NOTICE = "Copy CSS from an element first.";
+export const STYLE_PASTE_NO_DESTINATION_NOTICE = "Select the elements to paste CSS onto.";
+export const STYLE_PASTE_NOTHING_COMPATIBLE_NOTICE = "No compatible CSS settings to paste.";
+export const STYLE_PASTE_UNCHANGED_NOTICE = "The selected elements already have these CSS settings.";
+export const STYLE_PASTE_FREE_SIZE_NOTICE = "The copied size doesn't fit inside a Free container it would apply to, so nothing was pasted.";
+export const STYLE_PASTE_INVALID_NOTICE = "These CSS settings can't be applied here, so nothing was pasted.";
+export const stylePastedWithSkipsNotice = (labels: readonly string[]) => `CSS pasted. Skipped: ${labels.join(", ")}.`;
+
 const PASTE_REJECTION_NOTICES: Record<CopiesRejection, string> = {
   destination: MULTI_PASTE_REJECTED_NOTICE,
   "free-bounds": FREE_GROUP_PASTE_REJECTED_NOTICE,
@@ -1207,6 +1244,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   selectionAnchorId: null,
   pendingDeletion: null,
   clipboard: null,
+  styleClipboard: null,
   past: [],
   future: [],
   transactionSnapshot: null,
@@ -2165,6 +2203,37 @@ export const useEditorStore = create<EditorState>()((set) => ({
       if (exceedsNavigationLinkLimit(state.document, document)) return nextEditorNoticeState(state, NAVIGATION_LINK_LIMIT_DUPLICATE_NOTICE);
       if (subtreeHasEmbeddedData(clone) && !documentFitsSaveLimit(document)) return nextEditorNoticeState(state, COPY_TOO_LARGE_NOTICE);
       return { ...pushHistory(state), document, selection: selectionFromSingle(clone.id) };
+    }),
+
+  copyStyle: () =>
+    set((state) => {
+      const source = eligibleSelectedNode(state);
+      if (!source) return nextEditorNoticeState(state, STYLE_COPY_NO_SOURCE_NOTICE);
+      const name = getReadableNodeName(source);
+      const groups = captureStyleSnapshot(state.document, source);
+      if (isEmptyStyleSnapshot(groups)) return { ...nextEditorNoticeState(state, styleCopyEmptyNotice(name)), styleClipboard: null };
+      return { ...nextEditorNoticeState(state, styleCopiedNotice(name)), styleClipboard: { version: 1, sourceName: name, groups } };
+    }),
+
+  pasteStyle: () =>
+    set((state) => {
+      if (state.pendingDeletion) return {};
+      const clipboard = state.styleClipboard;
+      if (!clipboard) return nextEditorNoticeState(state, STYLE_PASTE_EMPTY_CLIPBOARD_NOTICE);
+      const ids = existingSelectedIds(state.document, state.selection.ids);
+      if (ids.length === 0) return nextEditorNoticeState(state, STYLE_PASTE_NO_DESTINATION_NOTICE);
+      // BC-10 contract: a style lock on any destination blocks the whole paste.
+      const protections = ids.map((id) => getStyleProtection(state.document, id));
+      if (protections.some((result) => result.protected)) return nextEditorNoticeState(state, describeStyleLockNotice(protections, ids.length > 1));
+      const result = applyStyleSnapshot(state.document, ids, clipboard.groups);
+      if (result.status === "nothing-compatible") return nextEditorNoticeState(state, STYLE_PASTE_NOTHING_COMPATIBLE_NOTICE);
+      if (result.status === "unchanged") return nextEditorNoticeState(state, STYLE_PASTE_UNCHANGED_NOTICE);
+      if (result.status === "invalid") return nextEditorNoticeState(state, result.reason === "free-size" ? STYLE_PASTE_FREE_SIZE_NOTICE : STYLE_PASTE_INVALID_NOTICE);
+      // A copied uploaded background image on several elements must still fit the save limit (BC-07.2).
+      const embedsImage = clipboard.groups.background?.image !== undefined && /^\s*data:/i.test(clipboard.groups.background.image);
+      if (embedsImage && !documentFitsSaveLimit(result.document)) return nextEditorNoticeState(state, COPY_TOO_LARGE_NOTICE);
+      const notice = result.skipped.length > 0 ? nextEditorNoticeState(state, stylePastedWithSkipsNotice(result.skipped)) : {};
+      return { ...pushHistory(state), document: result.document, ...notice };
     }),
 
   // Multi-selection-aware (Checkpoint 1.15.2, Part 16): normalizes to

@@ -43,7 +43,7 @@ async function select(page: Page, ids: string[]) {
 
 async function editMenu(page: Page, item: string) {
   await page.getByRole("menuitem", { name: "Edit" }).click();
-  await page.getByRole("menuitem", { name: new RegExp(`^${item}`) }).click();
+  await page.getByRole("menuitem", { name: item, exact: true }).click();
 }
 
 test.beforeEach(async ({ page }) => {

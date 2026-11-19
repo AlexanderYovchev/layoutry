@@ -78,6 +78,16 @@ describe("replaceDocument — the atomic restoration contract", () => {
     expect(store().snapEnabled).toBe(false);
   });
 
+  it("keeps the CSS clipboard across a project load (BC-11.2)", () => {
+    store().selectOnly("heading-1");
+    store().setElementTypography("heading-1", { color: "#ff0000" });
+    store().copyStyle();
+    const styleClipboard = store().styleClipboard;
+    expect(styleClipboard).not.toBeNull();
+    store().replaceDocument(loadedDocument);
+    expect(store().styleClipboard).toBe(styleClipboard);
+  });
+
   it("is one store update: subscribers never observe a half-applied load", () => {
     makeEdit();
     const observed: { documentIsNew: boolean; historyCleared: boolean }[] = [];
@@ -133,7 +143,8 @@ describe("replaceDocument — the atomic restoration contract", () => {
       "svgDraft",
       "activeSnapGuides",
     ];
-    const kept = ["clipboard", "snapEnabled"];
+    // BC-11.2: the CSS clipboard is app-level, like the element clipboard.
+    const kept = ["clipboard", "styleClipboard", "snapEnabled"];
     const dataFields = Object.entries(initialState)
       .filter(([, value]) => typeof value !== "function")
       .map(([key]) => key)

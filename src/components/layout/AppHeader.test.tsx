@@ -324,6 +324,35 @@ describe("AppHeader", () => {
     expect(onCopy).toHaveBeenCalledOnce();
   });
 
+  it("BC-11.2: Copy CSS / Paste CSS are disabled without their commands, and call them when enabled", async () => {
+    const user = userEvent.setup();
+    const onCopyStyle = vi.fn();
+    const onPasteStyle = vi.fn();
+    const { rerender } = render(
+      <AppHeader viewState={defaultViewState} onToggleView={vi.fn()} editMenuCommands={noopEditMenuCommands} previewControl={noopPreviewControl} />,
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Edit" }));
+    expect(screen.getByRole("menuitem", { name: "Copy CSS" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "Paste CSS" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "Copy CSS" })).toHaveTextContent("Ctrl+Alt+C");
+    await user.keyboard("{Escape}");
+
+    rerender(
+      <AppHeader
+        viewState={defaultViewState}
+        onToggleView={vi.fn()}
+        editMenuCommands={{ ...noopEditMenuCommands, canCopyStyle: true, canPasteStyle: true, onCopyStyle, onPasteStyle }}
+        previewControl={noopPreviewControl}
+      />,
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Edit" }));
+    await user.click(screen.getByRole("menuitem", { name: "Copy CSS" }));
+    expect(onCopyStyle).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("menuitem", { name: "Edit" }));
+    await user.click(screen.getByRole("menuitem", { name: "Paste CSS" }));
+    expect(onPasteStyle).toHaveBeenCalledOnce();
+  });
+
   describe("File menu and project identity (PROJECT-1.2)", () => {
     function fileCommands(overrides: Partial<FileMenuCommands> = {}): FileMenuCommands {
       return {

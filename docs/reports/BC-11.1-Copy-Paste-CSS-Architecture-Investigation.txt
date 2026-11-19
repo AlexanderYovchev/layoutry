@@ -1,0 +1,508 @@
+BC-11.1 — Copy/Paste CSS Settings — Architecture Investigation
+==============================================================
+Date: 2026-11-19
+Base: HEAD 810176f (BC-10.6). Investigation only: no production code or tests
+were changed, and no tests were run (code inspection was sufficient for
+every question; see section 17).
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Layoutry's styles are not CSS text. Each element stores TYPED, AUTHORED
+settings objects:
+  typography, background, border, borderRadius, boxShadow, filters,
+  transform, transition, display, position, spacing, sizeConstraints,
+  aspectRatio, shape, mediaFit, flowLayout, flexChild, gridChild, svg paint.
+An unset field means "this tag's default". The Canvas paints that default
+with a class, and Export emits it as a rule, from one table
+(canvas/utils/documentDefaultStyles.ts). No CSS-wide keywords (inherit,
+initial, unset) or CSS variables can be authored: the validators reject
+them. Export serializes the same typed fields. Computed CSS exists only
+transiently, for BC-10.3's Inspector comparisons.
+
+Recommendations (product decisions in section 18):
+- WHAT is copied. A snapshot of the source's AUTHORED settings, grouped by
+  the existing Inspector sections. No computed values. Unset stays unset:
+  nothing is materialized into explicit declarations.
+- WHERE it is kept. A separate, editor-only "style clipboard", independent
+  of the element clipboard. Never saved, not in history.
+- HOW it is applied.
+  - Paste CSS = MERGE by default: the source's authored properties replace
+    the destination's same properties; everything the source left unset is
+    kept on the destination.
+  - Applied group by group, only where the destination supports that
+    group (the same capability rules as the Inspector). Unsupported groups
+    are skipped, and the notice says which.
+  - One guarded, all-or-nothing write (a style lock on any destination
+    blocks everything), one Undo step. It goes through the SAME
+    per-section commands the Inspector uses (BC-10.4
+    sectionSettingsCommands), so validation and clamping are identical.
+- WHO is the source. The single primary selected element.
+- HOW the user triggers it. Edit menu "Copy CSS" / "Paste CSS", and
+  Ctrl/Cmd+Alt+C / Ctrl/Cmd+Alt+V.
+  Prerequisite found: the current shortcut handler treats Ctrl+Alt+C and
+  Ctrl+Shift+C as plain element Copy, and the same for V, X and D. It must
+  require "no Alt" for the element shortcuts first.
+- Proposed checkpoints: BC-11.2 (core and keyboard/menu), BC-11.3
+  (per-section copy/paste in the Inspector, optional Replace), BC-11.4
+  (final audit).
+
+
+2. EXISTING CSS ARCHITECTURE
+----------------------------
+- Document model (editor/types/document.ts): EditorElementNode carries
+  per-concern typed settings, each with its own type and validation module
+  under editor/types/* and command module under editor/commands/*.
+  Lengths are CssLengthValue { value, unit } (types/typography.ts), so
+  units are preserved. Shadows are a list (ShadowLayer[]), gradients are
+  typed stop lists, and transforms are { translateX, translateY, rotateDeg,
+  scale }.
+- Defaults: an unset field gets its tag default. DOCUMENT_DEFAULT_STYLES
+  is "the single source of truth for both the Canvas (classes) and
+  HTML/CSS export (declarations)", and elementStyleRecipes.ts decides which
+  default applies when a field is unset.
+- Eligibility: rules/elementCapabilities.ts, getElementCapabilities and
+  intersectElementCapabilities. Examples:
+  - supportsTypography: text-bearing tags only;
+  - supportsBackground: no media tags;
+  - supportsBorder, BorderRadius, BoxShadow, Filters, Display, Position,
+    AspectRatio, Transition, Transform: default true, page/body opt out
+    (plus option/row-group tags for some);
+  - supportsShape: containers only; supportsMediaFit: media;
+    supportsSvgSettings: svg; supportsChildLayout: containers.
+  - Per-node exceptions: no Position for Free children or Free hosts;
+    Flex/Grid child settings only under a Flex/Grid parent.
+- Writes: whole-settings commands per section, set<X>Settings(root, id,
+  settings). BC-10.4's sectionSettingsCommands.ts maps a section key to
+  that command. applySectionSettings(root, ids, key, value) runs it per
+  unique id and returns the same root for a no-op.
+  The store's guardedBulkStyleMutation:
+  - checks style protection (the lockChildStyles ancestry) for every
+    target first;
+  - writes once;
+  - pushes one history entry.
+- Reset (BC-05): Reset writes `undefined` to the field, falling back to
+  the tag default. Per-field Reset granularity already exists per section;
+  this is the natural "property" unit for CSS paste.
+- Computed CSS (BC-10.3): inspector/hooks/useRenderedStyles and
+  utils/effectiveCss. getComputedStyle runs per selected element for
+  Mixed/Unknown; it is transient and never stored.
+- Export (export/utils/buildExportDocument.ts): builds CSS from the same
+  typed fields plus the default-style rules, and validates every
+  declaration (validateExportCssValue).
+- Precedent for "copy an element's look": the BC-06
+  navigationLinkCommands.COPIED_STYLE_FIELDS (spacing, flexChild,
+  gridChild, typography, background, border, borderRadius, shape,
+  boxShadow, filters, display, aspectRatio, sizeConstraints, transition,
+  transform, className). It deep-clones them with structuredClone and
+  deliberately never copies identity, behaviour or placement.
+
+
+3. EXISTING CLIPBOARD ARCHITECTURE
+----------------------------------
+- Element clipboard: the store field `clipboard: EditorClipboard | null`
+  (types/clipboard.ts):
+  { operation, nodes, sourceParentId, sourceParentIds? }.
+  It is internal (not the OS clipboard), session-only, never in history,
+  never saved, and survives replaceDocument ("the clipboard … app-level and
+  survive").
+- Entry points: useEditorKeyboardShortcuts (window keydown; ignored in
+  input/textarea/select/contenteditable and in Preview) and the Edit menu
+  (components/layout/applicationMenus.ts via EditorApp's
+  EditMenuCommands). There are no context menus, and the desktop shell has
+  no native menu (desktop/main/main.ts sets Menu.setApplicationMenu(null)).
+- FINDING (relevant to BC-11 shortcuts): the editor shortcut handler
+  matches `(ctrlKey || metaKey) && key === "c"` with NO altKey/shiftKey
+  check (the same for x, v and d). So Ctrl+Alt+C, Ctrl+Shift+C,
+  Ctrl+Alt+V and so on all trigger element Copy/Paste today. Project
+  shortcuts (useProjectKeyboardShortcuts) already reject altKey.
+
+
+4. AUTHORED VERSUS COMPUTED CSS
+-------------------------------
+A. Copy explicitly authored settings (the typed fields as stored).
+  - Predictable: you get exactly what was set in the Inspector.
+  - Units, keywords (auto) and lists are kept as typed.
+  - Inheritance and defaults: unset stays unset, so the destination keeps
+    its own tag default (a paragraph stays a paragraph's size).
+  - Shorthand/longhand: no issue. The model has no shorthand strings;
+    border sides, radius corners and spacing edges are separate fields.
+  - Complex values (shadows, gradients, transforms) are copied by value
+    and stay editable.
+  - Parity is automatic: the same fields the Inspector writes, so Canvas,
+    Preview and Export follow.
+  - Undo/Redo: an ordinary document write.
+  - Performance: no DOM measurement.
+  - Responsive: the same fields a future breakpoint layer would override.
+  - Limitation: a source whose look comes partly from its TAG default
+    (e.g. a button's default 8/16 padding) transfers only what was
+    authored.
+B. Copy effective computed values.
+  - It looks exactly like the source.
+  - But it turns defaults and inheritance into hundreds of explicit
+    overrides ("materialization").
+  - It loses units: computed values are px; em, %, rem and auto are gone.
+  - It loses the structure of complex values: computed box-shadow and
+    gradient strings would have to be parsed back into typed layers and
+    stops.
+  - It depends on the source being rendered and measurable (BC-10.3 has
+    Unknown cases: hidden, off-screen, Preview).
+  - Undo is large, and the user can no longer tell what was authored.
+  - Rejected.
+C. Authored plus a deliberate default strategy. For example, materialize
+   the source's TAG default where the destination's tag differs. This is
+   only useful cross-tag (h2 → p). It still materializes, and the right
+   rule is a product question.
+Recommendation: A. A narrow C could come later, behind an explicit option
+("Match the source's look exactly"), if the owner wants it.
+
+
+5. CSS COPY SCOPE OPTIONS
+-------------------------
+- All supported style groups (the recommended MVP default).
+- Only the groups visible in the Inspector: equivalent to "all supported
+  by the source", since visibility is the capability.
+- One Inspector section (Copy/Paste typography only). It needs a section
+  header affordance; recommended for BC-11.3.
+- One property (copy just the line height). It needs per-row affordances
+  and a property-level payload; defer.
+- An explicit combination (a "Paste special…" dialog with checkboxes).
+  Most flexible, most UI; defer.
+Architectural difference: the payload must be GROUP-KEYED from day one,
+Partial<Record<StyleGroup, settings>>. Copying a subset is then the same
+payload with fewer keys, and pasting a subset filters the keys. The only
+property-level extension needed is optional field filtering within a
+group (for merge, see section 10). Nothing in the "all groups" design
+blocks the subsets.
+
+
+6. SOURCE SELECTION OPTIONS
+---------------------------
+- Single source: the PRIMARY selected element (recommended). The Edit
+  menu label can name it ("Copy CSS from Heading").
+- Multiple sources:
+  - (a) disable Copy CSS for 2+ elements;
+  - (b) use the primary, as above;
+  - (c) copy only the values that are the same on all of them (BC-10.3
+    "same"), with Mixed values omitted.
+  (c) is clever but surprising, because what you get depends on hidden
+  agreement. Recommend (b), with the menu label naming the source, or (a)
+  if the owner prefers zero ambiguity.
+- Canvas versus Structure: no difference. Both set the same store
+  selection, so source resolution is identical.
+- A source with Mixed values: not applicable to a single source. Mixed is
+  only a property of a multi-selection.
+
+
+7. DESTINATION COMPATIBILITY
+----------------------------
+Per group, using the capability rules (section 2):
+- Button → Button, Heading → Heading: everything applies.
+- Heading → Paragraph, Button → Link: all text, box and effect groups
+  apply, since all are text-bearing. Unset font size stays each tag's
+  default (approach A).
+- Container → Container: all box/effect groups. Layout (flowLayout) only
+  if included (decision D4). Shape applies (container-only).
+- Container → Text: Typography isn't on the container, so there is
+  nothing to copy for it. Shape doesn't apply to text, so it is skipped.
+  Background, border, radius, shadow, filters, spacing, display and
+  transform apply.
+- Text → Container: Typography skipped (the container doesn't support it).
+- Flex container → Grid container: only with the Layout group. Copying
+  flowLayout would CHANGE the destination's display (grid → flex), which
+  is a structural layout change. Recommend excluding Layout from the
+  default (D4).
+- Flex/Grid child settings: only meaningful when the destination's parent
+  is the same kind. gridChild placement must be clamped to the
+  destination's own grid (applySectionSettings already does this).
+- Position: skipped for Free children and Free containers (Free layout
+  owns position).
+- Media fit: media → media only. SVG paint: svg → svg only.
+Incompatible properties, options:
+- A. Skip, and report it in the notice ("Typography wasn't applied to 2
+  containers"). This matches how the Inspector simply doesn't offer those
+  controls; cross-tag paste stays useful.
+- B. Fail the whole paste. Strict, but any cross-tag paste would fail on
+  some group, so the feature would be nearly useless across tags.
+- C. Confirm. An extra dialog for a common, harmless case, against the
+  "avoid excessive confirmations" direction of BC-10.
+Recommend A. Atomicity still holds: the set of writes is decided up front
+and committed once. Skipping an unsupported group is not a partial
+failure.
+
+
+8. MULTI-DESTINATION BEHAVIOR
+-----------------------------
+- One or several destinations: the same operation, through the existing
+  existingSelectedIds (valid ids only, never the page root, unique).
+- Different tags or containers: compatibility is decided per destination
+  and per group (section 7). Each destination gets its supported subset.
+- A selected parent and child: each destination is written exactly once
+  (unique ids, no subtree traversal), like BC-10.4.
+- Style-locked destinations: if ANY destination is protected, the whole
+  paste is blocked with the existing lock notice
+  (guardedBulkStyleMutation). This is the BC-10 contract, unchanged.
+- The source among the destinations: it is a no-op for the source
+  (identical values), so harmless.
+
+
+9. CLIPBOARD ARCHITECTURE RECOMMENDATION
+----------------------------------------
+- A. Extend EditorClipboard with a "style" variant. One clipboard: Copy
+  CSS would wipe copied elements, and Copy elements would wipe copied CSS.
+  Users routinely do both ("copy this card, and its button's style"), so
+  this fights a natural workflow.
+- B. A separate store field, `styleClipboard: StyleClipboard | null`.
+  - The two clipboards are independent.
+  - Session-only, like the element clipboard: survives
+    replaceDocument/open project, never in history, never serialized.
+  - Must be classified as transient in useEditorStore.persistence.test,
+    the existing guard that makes every new store field declare this.
+  - Memory: one small typed object, cloned once at copy time. Embedded
+    image data in a background image is the only large part, and it can
+    be referenced, not duplicated, until paste.
+- C. One typed union payload holding both. It has A's coupling unless
+  both slots are kept, which is effectively B.
+Recommend B.
+
+
+10. MERGE VERSUS REPLACE SEMANTICS
+----------------------------------
+Brief example: source color red; destination color blue and a large box
+shadow.
+- A. Merge: the destination becomes red and KEEPS its shadow.
+- B. Replace: the destination's whole authored style becomes the source's,
+  so the shadow is removed.
+- C. Both, explicitly: "Paste CSS" (merge) and "Paste CSS (replace)".
+Merge granularity matters. Recommended: the per-property granularity the
+Inspector's Reset already uses.
+- Typography: per field (family, size, weight, style, decoration, colour,
+  align, line height, letter spacing).
+- Spacing and border: per side and field. Radius: per corner.
+- Display, filters, transform, transition, position, size constraints:
+  per field.
+- Box shadow, gradient stops, background image source: as one value.
+  Lists are atomic: you cannot sensibly merge two shadow stacks.
+Recommend A (merge) as the default: it is the only mode that never
+removes something the user didn't copy. Replace (or "Paste and clear
+others") is an explicit secondary command, BC-11.3 or decision D2.
+
+
+11. INHERITANCE AND RESET CONSIDERATIONS
+----------------------------------------
+- Source has no authored value: merge leaves the destination's value
+  alone; replace resets it (writes undefined, back to the tag default).
+- Inherited or initial value: not representable in the model, so it
+  cannot be copied. Inheritance is the renderer's job: Layoutry renders
+  typography on text leaves (a BC-10.3 finding).
+- Explicit unset, inherit or initial: not authorable. The validators
+  reject them (e.g. isValidOverflowValue("inherit") === false; media fit
+  rejects inherit/initial/unset/revert).
+- A source property that was Reset is simply unset (see "no authored
+  value" above).
+Result: approach A never "converts defaults into hundreds of explicit
+declarations". The payload holds only what the source authored, which is
+typically a handful of fields.
+
+
+12. COMPLEX CSS HANDLING
+------------------------
+Copying the typed values by value (structuredClone, as BC-06 does) is
+sufficient for:
+- gradients (typed stops);
+- multiple box shadows (layer list);
+- filters (opacity/blur);
+- transforms (four numbers);
+- transitions (typed);
+- Flex/Grid definitions;
+- percentages and relative units (CssLengthValue keeps the unit).
+They must be applied through the existing per-section commands, which
+validate and normalize: list ids, the grid placement clamp, and
+background source/colour combinations.
+Extra care is needed for:
+- Shadow layer and gradient stop IDS: they must be unique within one
+  element only (checkDocumentIntegrity checks ids inside each list).
+  Copying a list to another element keeps them unique there; a copied
+  list may keep its ids or get fresh ones (fresh is safer for later
+  per-layer editing).
+- Background images with embedded (uploaded) data: the same save-size
+  guard as element paste (COPY_TOO_LARGE_NOTICE, BC-07.2) must apply when
+  pasting onto several destinations.
+- Pagination page links: a page's current/ordinary look IS its background,
+  border, shadow, text colour and cursor (paginationCommands.getStateLook).
+  Pasting CSS onto a Pagination's links changes those looks. This is
+  harmless to the one-current-page invariant, but it is a visible
+  interaction worth a test.
+- CSS variables: not supported by the model, so nothing to do.
+
+
+13. SHORTCUT AND MENU OPTIONS
+-----------------------------
+Existing shortcuts: Ctrl+Z, Ctrl+Shift+Z/Ctrl+Y, Ctrl+X/C/V/D, Delete,
+Ctrl+A, Ctrl+Shift+A, Ctrl+N/O/S, Ctrl+Shift+S, Ctrl+= / - / 0, F11.
+Candidates:
+- Ctrl/Cmd+Alt+C / Ctrl/Cmd+Alt+V (recommended). This is the convention
+  in design tools for copy/paste properties, and it is free in Layoutry.
+  - It requires fixing the handler first (section 3 finding): the plain
+    C/X/V/D branches must require !altKey (and !shiftKey for C/V/X/D),
+    or the new shortcut also copies elements.
+  - AltGr: on Windows, AltGr is reported as Ctrl+Alt. On layouts where
+    AltGr+C or AltGr+V types a character, `event.key` is that character,
+    not "c" or "v". Matching on `event.key` (as the handler does today),
+    not `event.code`, avoids hijacking it.
+- Ctrl+Shift+C / Ctrl+Shift+V. Ctrl+Shift+C opens Chrome/Edge DevTools'
+  element picker in the browser build, so the app can't reliably own it.
+  Ctrl+Shift+V is "paste as plain text" inside fields. Not recommended.
+- Property-level copy: no shortcut. Use Inspector row actions (deferred).
+Menus:
+- Edit menu: "Copy CSS" and "Paste CSS" right after Paste/Duplicate.
+  - Copy CSS is disabled without a single eligible source.
+  - Paste CSS is disabled with an empty style clipboard or no valid
+    destination.
+- Inspector: in BC-11.3, a section-header action ("Copy section CSS /
+  Paste section CSS").
+- Text fields keep native behaviour: the existing isEditableTarget guard
+  already applies.
+
+
+14. ATOMIC TRANSACTION DESIGN (for BC-11.2; not implemented)
+------------------------------------------------------------
+A pure command:
+  applyStyleSnapshot(root, destinationIds, snapshot, { mode: "merge" | "replace" })
+Steps:
+1. Resolve destinations: existingSelectedIds, unique, no page root.
+2. For each destination and each snapshot group: skip if unsupported
+   (capability, per-node exceptions, parent-dependent child groups).
+   Otherwise compute the next settings, the merge or replace of the
+   destination's current settings with the snapshot's.
+3. Write through the same per-section command the Inspector uses (the
+   sectionSettingsCommands COMMANDS map, plus the few groups it doesn't
+   cover yet: sizeConstraints, aspectRatio, shape, mediaFit, svg paint).
+4. Return the same root if every destination is unchanged, so a no-op
+   pushes no history.
+In the store:
+  pasteStyle() = guardedBulkStyleMutation(state, ids, (document) => applyStyleSnapshot(…))
+- One write and one history entry.
+- A lock on any destination blocks all.
+- Undo restores every destination's authored settings (whole-document
+  snapshots).
+- A notice lists the skipped groups.
+- Copy CSS = a deep-cloned snapshot of the source's groups at copy time,
+  with no document change and no history.
+Snapshot semantics (section 18 of the brief):
+- The source is deleted after Copy CSS: the snapshot is independent, so
+  paste still works.
+- The destination selection changes before Paste: destinations are read
+  at paste time.
+- A destination is deleted: it is filtered out, as for every BC-10
+  command.
+- Element Copy after Copy CSS: independent clipboards, nothing lost.
+- Undo/Redo after Paste CSS: an ordinary history entry. The style
+  clipboard is untouched.
+
+
+15. PREVIEW/EXPORT COMPATIBILITY
+--------------------------------
+A paste writes ordinary authored settings, so the Canvas, Preview and
+Export already render them through the existing resolvers and default
+tables. No runtime script, no new CSS output, and no export change. The
+export validates declarations as today.
+
+
+16. PROJECT v3 COMPATIBILITY
+----------------------------
+No serialization change and no migration. The style clipboard is
+editor-only state. Pasted styles are ordinary fields that schema v3
+already describes.
+
+
+17. FOCUSED FUTURE TEST PLAN (to execute in BC-11.2/11.3)
+--------------------------------------------------------
+Unit (pure command):
+- Snapshot accuracy: only authored groups and fields, units and lists
+  kept, deep-cloned (mutating the source afterwards doesn't change the
+  snapshot).
+- Same-tag merge and replace: absent fields kept (merge) or reset
+  (replace).
+- Cross-tag: h2 → p, button → a, container ↔ text; unsupported groups
+  skipped and reported; Free child position skipped; Flex child needs a
+  Flex parent; grid placement clamped.
+- Complex values: a 2-layer shadow, a 3-stop gradient, a transform, a
+  transition, Flex/Grid; list ids unique per element.
+- No-op: same root, no history.
+Store:
+- Multi-destination: cross-container, parent + child once, and one style
+  lock blocks all (document and history unchanged, lock notice).
+- Undo restores each destination's own original values; Redo reapplies.
+- Clipboard independence: Copy CSS doesn't change the element clipboard,
+  and vice versa.
+- The style clipboard survives replaceDocument and is never serialized
+  (persistence classification test).
+- Embedded-image size guard; Pagination link look.
+Keyboard and menu:
+- Ctrl+Alt+C/V call Copy/Paste CSS and NOT element copy/paste.
+- Plain Ctrl+C/V unchanged.
+- Inside input, textarea or contenteditable: nothing.
+- Preview mode: nothing.
+- Edit menu enablement.
+Browser (a small Chromium set): the brief's button example (blue/white/
+8px/12px onto gray/black/0/6) checked by computed style in Canvas and
+Preview, plus an export CSS assertion, and one Undo.
+Not needed: Electron (no desktop path), full suites.
+No exploratory test was run for BC-11.1: every question was answered by
+code inspection. The shortcut finding is plain in
+useEditorKeyboardShortcuts.ts, `meta && key === "c"` with no alt check.
+
+
+18. OPEN PRODUCT DECISIONS
+--------------------------
+D1 Default paste mode: Merge (recommended) or Replace; and whether Replace
+   ships in BC-11.2 or BC-11.3.
+D2 Default copy scope: all supported style groups (recommended), or
+   start with per-section only.
+D3 Multi-selection source: the primary, named in the menu (recommended),
+   or disabled for 2+.
+D4 Which groups count as "CSS" by default. Recommended:
+   - INCLUDED: typography, background, border, radius, box shadow,
+     filters, transform, transition, display, spacing, size constraints,
+     aspect ratio, shape, media fit, SVG paint.
+   - EXCLUDED by default: container Layout (flowLayout, childResizePolicy:
+     it changes how children are laid out), Flex/Grid CHILD settings
+     (they depend on the parent), position.
+   - NEVER copied: dimensions (width/height), Free geometry, className.
+   Please confirm, especially:
+   - position (copy only if both are non-Free?);
+   - className (BC-06 copies it for links; for CSS paste it is authored
+     identity, so recommend excluding);
+   - Flex/Grid child settings.
+D5 Incompatible groups: skip with a notice (recommended), fail the whole
+   paste, or confirm.
+D6 Shortcuts: Ctrl/Cmd+Alt+C / Ctrl/Cmd+Alt+V (recommended), with the
+   element-shortcut modifier fix as part of BC-11.2.
+D7 Feedback wording: one notice listing skipped groups, or silent skips.
+D8 (Later) A "match exact look" option that materializes the source's tag
+   defaults when tags differ (approach C).
+
+
+19. RECOMMENDED IMPLEMENTATION CHECKPOINTS
+------------------------------------------
+BC-11.2 Core:
+- the style snapshot type and the group registry (capability + command per
+  group);
+- applyStyleSnapshot (merge, plus replace if D1 says so);
+- the styleClipboard store field, Copy CSS / Paste CSS actions and
+  notices;
+- the Edit menu items;
+- Ctrl/Cmd+Alt+C/V plus the element-shortcut modifier fix;
+- focused unit, store and keyboard tests, and 2–3 Chromium tests.
+BC-11.3 Inspector integration: per-section Copy/Paste CSS on the section
+headers, Replace mode if deferred, and wording.
+BC-11.4 Final audit: cross-feature (BC-10 multi-selection, Reset, element
+clipboard, Pagination/Navbar, export parity) and closure.
+
+
+20. GIT WORKING-TREE STATUS
+---------------------------
+Clean at HEAD 810176f before this report. The only new files are this
+report and the changelog handoff, which are not to be staged. No
+production code was modified. No commit, no push. BC-11.2 not started.

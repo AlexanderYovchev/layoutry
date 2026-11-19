@@ -287,4 +287,72 @@ describe("useEditorKeyboardShortcuts — SVG Drawing Mode routing (Checkpoint 1.
     expect(useEditorStore.getState().document).toBe(before);
     input.remove();
   });
+
+  describe("BC-11.2: Copy/Paste CSS chords and exact modifiers", () => {
+    const spies = () => {
+      const state = useEditorStore.getState();
+      return {
+        copyStyle: vi.spyOn(state, "copyStyle"),
+        pasteStyle: vi.spyOn(state, "pasteStyle"),
+        copySelection: vi.spyOn(state, "copySelection"),
+        pasteClipboard: vi.spyOn(state, "pasteClipboard"),
+        cutSelection: vi.spyOn(state, "cutSelection"),
+        duplicateSelection: vi.spyOn(state, "duplicateSelection"),
+      };
+    };
+
+    it("Ctrl+Alt+C / Ctrl+Alt+V call Copy/Paste CSS, never element Copy/Paste", () => {
+      renderHook(() => useEditorKeyboardShortcuts());
+      const spy = spies();
+      pressKey("c", { ctrlKey: true, altKey: true, code: "KeyC" });
+      pressKey("v", { ctrlKey: true, altKey: true, code: "KeyV" });
+      expect(spy.copyStyle).toHaveBeenCalledOnce();
+      expect(spy.pasteStyle).toHaveBeenCalledOnce();
+      expect(spy.copySelection).not.toHaveBeenCalled();
+      expect(spy.pasteClipboard).not.toHaveBeenCalled();
+    });
+
+    it("macOS Cmd+Option+C (event.key 'ç') still matches by physical key", () => {
+      renderHook(() => useEditorKeyboardShortcuts());
+      const spy = spies();
+      pressKey("ç", { metaKey: true, altKey: true, code: "KeyC" });
+      pressKey("√", { metaKey: true, altKey: true, code: "KeyV" });
+      expect(spy.copyStyle).toHaveBeenCalledOnce();
+      expect(spy.pasteStyle).toHaveBeenCalledOnce();
+    });
+
+    it("Ctrl+Shift+C/V/X/D and Ctrl+Alt+X/D trigger nothing; plain Ctrl+C/V/X/D are unchanged", () => {
+      renderHook(() => useEditorKeyboardShortcuts());
+      const spy = spies();
+      const code = (key: string) => `Key${key.toUpperCase()}`;
+      for (const key of ["c", "v", "x", "d"]) pressKey(key.toUpperCase(), { ctrlKey: true, shiftKey: true, code: code(key) });
+      for (const key of ["x", "d"]) pressKey(key, { ctrlKey: true, altKey: true, code: code(key) });
+      expect(Object.values(spy).every((mock) => mock.mock.calls.length === 0)).toBe(true);
+      for (const key of ["c", "v", "x", "d"]) pressKey(key, { ctrlKey: true, code: code(key) });
+      expect([spy.copySelection, spy.pasteClipboard, spy.cutSelection, spy.duplicateSelection].every((mock) => mock.mock.calls.length === 1)).toBe(true);
+      expect(spy.copyStyle).not.toHaveBeenCalled();
+    });
+
+    it("AltGr (a character-typing key on some layouts) never counts as the CSS chord", () => {
+      renderHook(() => useEditorKeyboardShortcuts());
+      const spy = spies();
+      const event = new KeyboardEvent("keydown", { key: "c", code: "KeyC", ctrlKey: true, altKey: true, bubbles: true });
+      Object.defineProperty(event, "getModifierState", { value: (modifier: string) => modifier === "AltGraph" });
+      window.dispatchEvent(event);
+      expect(spy.copyStyle).not.toHaveBeenCalled();
+      expect(spy.copySelection).not.toHaveBeenCalled();
+    });
+
+    it("inside a text field the CSS chords are the field's own", () => {
+      renderHook(() => useEditorKeyboardShortcuts());
+      const spy = spies();
+      const input = document.createElement("textarea");
+      document.body.appendChild(input);
+      fireEvent.keyDown(input, { key: "c", code: "KeyC", ctrlKey: true, altKey: true });
+      fireEvent.keyDown(input, { key: "v", code: "KeyV", ctrlKey: true, altKey: true });
+      expect(spy.copyStyle).not.toHaveBeenCalled();
+      expect(spy.pasteStyle).not.toHaveBeenCalled();
+      input.remove();
+    });
+  });
 });
