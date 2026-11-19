@@ -70,8 +70,8 @@ describe("pasteCopiesInto", () => {
 
   it("all or nothing: a destination that rejects one copy keeps the document as it was", () => {
     const document = root();
-    expect(pasteCopiesInto(document, "list", [findNodeById(document, "li")!, findNodeById(document, "p")!])).toEqual({ ok: false });
-    expect(pasteCopiesInto(document, "missing", [findNodeById(document, "p")!])).toEqual({ ok: false });
+    expect(pasteCopiesInto(document, "list", [findNodeById(document, "li")!, findNodeById(document, "p")!])).toEqual({ ok: false, reason: "destination" });
+    expect(pasteCopiesInto(document, "missing", [findNodeById(document, "p")!])).toEqual({ ok: false, reason: "destination" });
   });
 });
 
@@ -86,6 +86,6 @@ describe("duplicateRootsInPlace", () => {
 
   it("rejects the whole duplicate when a root has no parent (the page root)", () => {
     const document = root();
-    expect(duplicateRootsInPlace(document, [document, findNodeById(document, "p")!])).toEqual({ ok: false });
+    expect(duplicateRootsInPlace(document, [document, findNodeById(document, "p")!])).toEqual({ ok: false, reason: "destination" });
   });
 });

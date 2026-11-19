@@ -2277,7 +2277,7 @@ describe("useEditorStore — HTML Identity foundation (Checkpoint 1.15.1)", () =
     }
   });
 
-  it("duplicates a customized node with fresh id, preserving htmlId/className, with independent post-duplicate editing", () => {
+  it("duplicates a customized node with fresh id, a unique copy of its htmlId (BC-10.5.1) and its className, with independent post-duplicate editing", () => {
     useEditorStore.getState().setElementHtmlId("section-1", "hero");
     useEditorStore.getState().setElementClassName("section-1", "hero-section featured");
 
@@ -2292,7 +2292,8 @@ describe("useEditorStore — HTML Identity foundation (Checkpoint 1.15.1)", () =
     const duplicate = sections.find((c) => c.id !== "section-1" && !sectionsBefore.some((s) => s.id === c.id))!;
 
     expect(duplicate.id).not.toBe(original.id);
-    expect(duplicate.htmlId).toBe("hero");
+    // BC-10.5.1: an authored HTML id is never duplicated on the page; the copy gets the next free "-copy" id.
+    expect(duplicate.htmlId).toBe("hero-copy");
     expect(duplicate.className).toBe("hero-section featured");
 
     useEditorStore.getState().setElementHtmlId(duplicate.id, "hero-2");

@@ -1,0 +1,253 @@
+BC-10.5.1 — Clipboard Integrity Corrections
+===========================================
+Date: 2026-11-19
+Base: HEAD 15a05eb (BC-10.5, committed). All BC-10.5.1 work is uncommitted.
+
+
+1. SUMMARY
+----------
+Four BC-10.5 QA items, each investigated in the code first:
+
+  A  Free-layout group paste     CONFIRMED  -> fixed (paste AND multi-duplicate)
+  B  Navbar link limit           CONFIRMED  -> fixed (multi AND single paste/duplicate)
+  C  Duplicate authored HTML ids CONFIRMED  -> fixed (multi AND single paste/duplicate)
+  D  Pagination current page     CONFIRMED inconsistency (not an invalid
+                                  state) -> fixed: the single-element rule now
+                                  also applies to a multi-cut
+
+Everything stays all-or-nothing. A refused operation changes nothing and
+shows a specific notice. Each successful operation is one Undo step. No
+project-format, migration, Preview, Export or desktop change.
+
+
+2. A — FREE-LAYOUT POSITION PRESERVATION
+----------------------------------------
+Root cause:
+  insertCopies placed every copy on its own with
+  resolveFreeDestinationPlacement, which searches the first free grid slot
+  for ONE element. Each copy therefore got an unrelated position, and the
+  group's relative offsets were lost.
+
+Fix (multiClipboardCommands.ts, placeFreeGroup):
+  - Copies going into the same Free container are placed as one group.
+  - Copies with a stored Free position keep their offsets from one another.
+    Their x/y are shifted so the group starts at 0,0; copies from different
+    Free containers share one coordinate space.
+  - Copies from Flow containers have no position. They are stacked below,
+    in document order, 16px apart, at their default Free size
+    (getDefaultFreeElementSizeForNode, the size a single paste would use).
+  - The group's bounding box is placed by the existing single-element rule,
+    resolveFreeInsertionPosition: the first 16px grid slot where it
+    overlaps no existing child, else the cascade fallback. A repeated paste
+    therefore lands at a new offset with the same arrangement.
+  - Descendants keep their own geometry inside each copy (copied by value).
+  - Sizes are never shrunk. If the group is larger than the destination's
+    approximate bounds (approximateFreeContainerSize, the same bounds single
+    paste uses), or any copy would end outside them, nothing is pasted and
+    the notice says "These elements don't fit in this container at their
+    size and arrangement, so nothing was pasted."
+  - Multi-duplicate gets the same rule: copies that share a Free parent are
+    placed as a group in that parent.
+  - Single paste and single duplicate are unchanged
+    (resolveFreeDestinationPlacement).
+
+
+3. B — NAVBAR LINK LIMIT
+------------------------
+Root cause:
+  insertNode only checks tag nesting (canParentAcceptChild). The BC-06
+  limit (MAX_NAVIGATION_LINKS = 12 direct links per non-Pagination nav) was
+  enforced only by "Add link". Paste and duplicate, single and multi, could
+  create a 13th link, or a new nav with more than 12.
+
+Fix:
+  exceedsNavigationLinkLimit(before, after) in multiClipboardCommands.ts,
+  built on the existing getNavigationLinks / isNavigationLinkContainer /
+  MAX_NAVIGATION_LINKS. It checks the complete resulting document before
+  commit.
+  - Refused: any nav with more than 12 links that is new (pasted or
+    duplicated, at any depth) or that gained links.
+  - Not refused: a legacy nav that already had more than 12 and gains none.
+    This matches BC-06's "existing navs with more are kept; only adding is
+    refused".
+  - Applied to multi-paste, multi-duplicate, and also the single paste and
+    single duplicate. The same invalid state was reachable through them,
+    and the rule is the existing BC-06 one.
+  - Notices: "A navigation bar can have at most 12 links, so nothing was
+    pasted." / "…duplicated." Nothing is discarded or trimmed.
+
+
+4. C — AUTHORED HTML IDS
+------------------------
+Investigation (confirmed):
+  - Every Canvas/Preview element renders id={node.htmlId}
+    (canvas/components/document/elements/*).
+  - The export writes the id on every element and only warns
+    "duplicate-html-id" (buildExportDocument identity()).
+  - cloneNodeWithFreshIds copied htmlId unchanged, so every copy produced
+    two elements with the same DOM id in Canvas, Preview and Export.
+    Verified in Chromium before and after the fix.
+  - The only document field that references an authored id is a link's
+    href "#id". There is no for/aria-labelledby in the model (see
+    resolveDialogAccessibleName.ts, which rejected htmlId references for
+    this reason).
+
+Fix (new utils/uniqueHtmlIdsForCopies.ts, withUniqueHtmlIdsForCopies):
+  - A copy whose authored id is already used in the document, or by an
+    earlier copy in the same operation, gets the first free "<id>-copy",
+    "<id>-copy-2", …
+  - An id that is free is KEPT. A cut element pasted back keeps its id,
+    because the original is gone, exactly like a move.
+  - A link INSIDE the copies whose href is exactly "#<old id>" of a renamed
+    COPIED element is rewritten to "#<new id>". Copied together, they stay
+    together, like interaction targets in BC-10.5.
+  - Links outside the copies, any other URL (for example
+    "https://…/#hero"), and text are never touched.
+  - Applied to multi-paste, multi-duplicate, single paste and single
+    duplicate.
+
+Compatibility implication (intentional, test updated):
+  Duplicating or pasting a copy of an element with an authored id no longer
+  keeps the identical id; the copy gets "<id>-copy". The Checkpoint 1.15.1
+  test "duplicates a customized node … preserving htmlId" asserted the old
+  duplicate-id behavior. It now asserts "hero-copy", and still checks that
+  className is copied and the original keeps "hero". Existing saved
+  projects are not rewritten; this only affects new copies.
+
+
+5. D — PAGINATION CURRENT-PAGE INTEGRITY
+----------------------------------------
+Investigation:
+  - BC-10.5 never created two current pages. Every copy's root lost
+    aria-current (withoutCopiedCurrentState), and withPaginationInvariants
+    keeps exactly one current page; after a cut, another page is promoted.
+  - The single-element rule (BC-09.3, pasteClipboard) is intentional: a
+    CUT current page pasted back into the Pagination it came from is a
+    move, so it stays current (preferredCurrentId); any other paste of it
+    is an ordinary page.
+  - Multi-paste couldn't apply that rule because the clipboard only kept
+    the FIRST root's parent. A multi-cut current page pasted back became an
+    ordinary page, which is valid but inconsistent with the single rule.
+
+Fix:
+  - EditorClipboard gains the optional editor-only `sourceParentIds`
+    (aligned with nodes), set for multi-element copy and cut.
+  - pasteCopiesInto applies the single rule per root: a cut current page
+    whose own source parent is the destination keeps aria-current, and is
+    passed as preferredCurrentId. Every other copy of a current page is
+    ordinary (ordinaryLookIds).
+  - Only one page per Pagination was current, so at most one root
+    qualifies. The invariants still guarantee exactly one current page.
+  - Copy (not cut), or a paste into another Pagination: an ordinary page,
+    as before.
+
+
+6. EXACT CHANGES
+----------------
+New:
+  src/features/editor/utils/uniqueHtmlIdsForCopies.ts
+  src/features/editor/stores/useEditorStore.clipboardIntegrity.test.ts (12 tests)
+  e2e/multi-selection-clipboard-integrity.spec.ts (2 tests)
+Modified:
+  src/features/editor/commands/multiClipboardCommands.ts
+    - CopiesRejection reasons ("destination" | "free-bounds" |
+      "navigation-links").
+    - placeFreeGroup.
+    - exceedsNavigationLinkLimit.
+    - insertCopies validates parents up front, then: HTML ids, current
+      page, group Free placement, insert, link limit, id uniqueness.
+    - pasteCopiesInto(…, cut?) keeps a cut current page current.
+  src/features/editor/stores/useEditorStore.ts
+    - The notice per rejection reason.
+    - multiClipboard() fills sourceParentIds.
+    - commitCopies passes preferredCurrentId.
+    - The single paste and single duplicate use withUniqueHtmlIdsForCopies
+      and exceedsNavigationLinkLimit.
+  src/features/editor/types/clipboard.ts (optional sourceParentIds)
+  src/features/editor/commands/multiClipboardCommands.test.ts
+    Two rejection assertions now include the reason (the API gained it).
+  src/features/editor/stores/useEditorStore.test.ts
+    The 1.15.1 duplicate test, see 4.
+
+
+7. TARGETED TEST COMMANDS AND RESULTS
+-------------------------------------
+npx vitest run src/features/editor/stores/useEditorStore.multiClipboard.test.ts src/features/editor/commands/multiClipboardCommands.test.ts
+  -> 26 passed, 2 failed. The failures were the two { ok: false }
+     assertions; the result now carries a reason. Updated, then 8/8 for
+     the commands file.
+npx vitest run src/features/editor/stores/useEditorStore.clipboardIntegrity.test.ts
+  -> first run 10 passed, 2 failed. Both were test mistakes:
+     (a) the repeated-paste test didn't reselect the destination; after a
+         paste the copies are selected, and one is a container, which by
+         the existing rule receives the next paste;
+     (b) the "too big" duplicate fixture actually fit through the existing
+         cascade fallback.
+     Fixed the fixtures, then 12 passed.
+Affected-file run: every test file mentioning copySelection, cutSelection,
+pasteClipboard, duplicateSelection, cloneNodeWithFreshIds, pendingDeletion,
+requestDeleteSelection, canDuplicate, canCut, EditorApp, EditorClipboard or
+clipboard (grep) — 34 files:
+  -> 668 passed, 2 failed:
+     (1) the 1.15.1 htmlId duplicate test: the intended behavior change, see
+         4. Updated.
+     (2) ExportCodeDialog "blocks export when the engine refuses the
+         document": export code untouched. It passed alone (19/19) and in
+         the rerun below, so it was a timing failure under parallel load,
+         not caused by this change.
+npx vitest run src/features/editor/stores/useEditorStore.test.ts src/features/export/components/ExportCodeDialog.test.tsx -> 164 passed
+npx playwright test e2e/multi-selection-clipboard-integrity.spec.ts e2e/multi-selection-clipboard.spec.ts --project=chromium
+  -> 8 passed.
+     The first attempt appended the two new tests inside the BC-10.5 spec,
+     which already imports one project in its beforeEach; the second import
+     timed out (test-setup issue). They now live in their own spec file.
+npx tsc --noEmit -p .                       -> 0 errors
+npx eslint <changed/new .ts files>          -> clean
+npx prettier --write src/features/editor/types/clipboard.ts (the only
+  changed file that was Prettier-clean at HEAD)
+Not run (policy): full Vitest/browser/Electron suites, the BC-06/BC-09
+milestone suites, export regression, build.
+
+
+8. KNOWN LIMITATIONS
+--------------------
+- Free bounds are the existing APPROXIMATE one-shot bounds (stored size,
+  else 400 x 300), as for single paste. A group that fits the real rendered
+  container but not the approximation is refused, never distorted.
+- Copies from different Free containers keep their stored coordinates
+  relative to one another in one shared space. Their containers' different
+  sizes and positions are not combined into a page-level arrangement.
+- The paste destination is still the existing rule. After a paste the
+  copies are selected, so if one is a container the next paste goes inside
+  it. Single paste has always behaved this way.
+- A renamed "-copy" id is only re-linked from links inside the same copied
+  set. Links elsewhere on the page keep pointing at the original, which is
+  intentional.
+- Stored projects that already contain duplicate authored ids are not
+  repaired; the export still warns about them.
+- The single paste/duplicate now also refuse an over-limit nav and rename
+  a duplicate authored id. Both are behavior changes for invalid states
+  only.
+
+
+9. GIT WORKING-TREE STATUS
+--------------------------
+ M src/features/editor/commands/multiClipboardCommands.test.ts
+ M src/features/editor/commands/multiClipboardCommands.ts
+ M src/features/editor/stores/useEditorStore.test.ts
+ M src/features/editor/stores/useEditorStore.ts
+ M src/features/editor/types/clipboard.ts
+?? e2e/multi-selection-clipboard-integrity.spec.ts
+?? src/features/editor/stores/useEditorStore.clipboardIntegrity.test.ts
+?? src/features/editor/utils/uniqueHtmlIdsForCopies.ts
+Plus this report and the changelog, which are not to be staged. No commit,
+no push. BC-10.6 not started.
+
+
+10. QA RECOMMENDATION
+---------------------
+Ready for ChatGPT QA. Suggested focus:
+- the "-copy" HTML id rule and its single-element compatibility change;
+- extending the link limit to single paste/duplicate;
+- the shared coordinate space for copies that come from different Free
+  containers.

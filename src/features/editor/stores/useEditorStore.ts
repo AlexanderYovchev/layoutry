@@ -66,6 +66,7 @@ import {
   createNavigationLink,
   getNavigationLinks,
   insertNavigationLink,
+  MAX_NAVIGATION_LINKS,
   moveNavigationLink as moveNavigationLinkCommand,
   removeNavigationLink as removeNavigationLinkCommand,
   type NavigationLinkMoveDirection,
@@ -174,7 +175,8 @@ import { resolveDeletionFallbackSelection } from "@/features/editor/utils/resolv
 import { resolveDestinationParent } from "@/features/editor/utils/resolveDestinationParent";
 import { getGridContainerSettings } from "@/features/editor/types/flowLayout";
 import type { EditorClipboard } from "@/features/editor/types/clipboard";
-import { duplicateRootsInPlace, existingSelectedIds, orderedSelectionRoots, pasteCopiesInto } from "@/features/editor/commands/multiClipboardCommands";
+import { duplicateRootsInPlace, exceedsNavigationLinkLimit, existingSelectedIds, orderedSelectionRoots, pasteCopiesInto, type CopiesRejection } from "@/features/editor/commands/multiClipboardCommands";
+import { withUniqueHtmlIdsForCopies } from "@/features/editor/utils/uniqueHtmlIdsForCopies";
 import type { DropZone } from "@/features/editor/utils/resolveDropZone";
 import type { HistoryEntry } from "@/features/editor/types/history";
 import type { ElementDimensions, EditorElementNode } from "@/features/editor/types/document";
@@ -1038,6 +1040,29 @@ const STALE_CUT_NOTICE = "The selection changed before you confirmed, so nothing
 export const MULTI_PASTE_REJECTED_NOTICE = "These elements can't all go in the selected container, so nothing was pasted. Select a container that accepts them.";
 /** BC-10.5: a multi-duplicate that can't place every copy. */
 export const MULTI_DUPLICATE_REJECTED_NOTICE = "These elements can't all be duplicated where they are, so nothing was duplicated.";
+/** BC-10.5.1: copies going into a Free container whose arrangement doesn't fit there at their sizes. */
+export const FREE_GROUP_PASTE_REJECTED_NOTICE = "These elements don't fit in this container at their size and arrangement, so nothing was pasted.";
+export const FREE_GROUP_DUPLICATE_REJECTED_NOTICE = "The copies don't fit in their container at their size and arrangement, so nothing was duplicated.";
+/** BC-10.5.1: a paste or duplicate that would give a navigation bar more than MAX_NAVIGATION_LINKS links (BC-06). */
+export const NAVIGATION_LINK_LIMIT_PASTE_NOTICE = `A navigation bar can have at most ${MAX_NAVIGATION_LINKS} links, so nothing was pasted.`;
+export const NAVIGATION_LINK_LIMIT_DUPLICATE_NOTICE = `A navigation bar can have at most ${MAX_NAVIGATION_LINKS} links, so nothing was duplicated.`;
+
+const PASTE_REJECTION_NOTICES: Record<CopiesRejection, string> = {
+  destination: MULTI_PASTE_REJECTED_NOTICE,
+  "free-bounds": FREE_GROUP_PASTE_REJECTED_NOTICE,
+  "navigation-links": NAVIGATION_LINK_LIMIT_PASTE_NOTICE,
+};
+const DUPLICATE_REJECTION_NOTICES: Record<CopiesRejection, string> = {
+  destination: MULTI_DUPLICATE_REJECTED_NOTICE,
+  "free-bounds": FREE_GROUP_DUPLICATE_REJECTED_NOTICE,
+  "navigation-links": NAVIGATION_LINK_LIMIT_DUPLICATE_NOTICE,
+};
+
+/** Each root's parent, aligned with `roots` (BC-10.5.1, see EditorClipboard.sourceParentIds). */
+function multiClipboard(document: EditorElementNode, operation: EditorClipboard["operation"], roots: EditorElementNode[]): EditorClipboard {
+  const sourceParentIds = roots.map((root) => findParentId(document, root.id));
+  return { operation, nodes: roots, sourceParentId: sourceParentIds[0] ?? null, sourceParentIds };
+}
 
 /**
  * A confirmed multi-cut (BC-10.5): exactly the confirmed delete, and the
@@ -1051,7 +1076,7 @@ function cutNodesById(state: EditorState, ids: readonly string[]): Partial<Edito
   if (roots.length === 0) return {};
   const removed = deleteNodesById(state, ids);
   if (!removed.document) return {};
-  return { ...removed, clipboard: { operation: "cut", nodes: roots, sourceParentId: findParentId(state.document, roots[0].id) } };
+  return { ...removed, clipboard: multiClipboard(state.document, "cut", roots) };
 }
 
 /**
@@ -1114,16 +1139,17 @@ function buildInitialRuntimeVisibility(document: EditorElementNode): Record<stri
  */
 function pasteMany(state: EditorState, clipboard: EditorClipboard): Partial<EditorState> {
   const destinationParentId = resolveDestinationParent(state.document, state.selection.primaryId ?? null, clipboard.sourceParentId);
-  const result = pasteCopiesInto(state.document, destinationParentId, clipboard.nodes);
-  if (!result.ok) return nextEditorNoticeState(state, MULTI_PASTE_REJECTED_NOTICE);
-  return commitCopies(state, result.document, result.rootIds, result.formerCurrentPageIds, true);
+  const cut = clipboard.operation === "cut" && clipboard.sourceParentIds ? { sourceParentIds: clipboard.sourceParentIds } : undefined;
+  const result = pasteCopiesInto(state.document, destinationParentId, clipboard.nodes, cut);
+  if (!result.ok) return nextEditorNoticeState(state, PASTE_REJECTION_NOTICES[result.reason]);
+  return commitCopies(state, result.document, result.rootIds, result.formerCurrentPageIds, true, result.keptCurrentPageId);
 }
 
 /** Multi-duplicate (BC-10.5): each selected subtree's copy right after its original. */
 function duplicateMany(state: EditorState): Partial<EditorState> {
   const roots = orderedSelectionRoots(state.document, state.selection.ids);
   const result = duplicateRootsInPlace(state.document, roots);
-  if (!result.ok) return nextEditorNoticeState(state, MULTI_DUPLICATE_REJECTED_NOTICE);
+  if (!result.ok) return nextEditorNoticeState(state, DUPLICATE_REJECTION_NOTICES[result.reason]);
   return commitCopies(state, result.document, result.rootIds, result.formerCurrentPageIds, false);
 }
 
@@ -1133,12 +1159,12 @@ function commitCopies(
   rootIds: readonly string[],
   formerCurrentPageIds: ReadonlySet<string>,
   dropMissingTargets: boolean,
+  keptCurrentPageId?: string,
 ): Partial<EditorState> {
-  const document = withPaginationInvariants(
-    state.document,
-    dropMissingTargets ? removeInteractionsWithMissingTargets(inserted) : inserted,
-    formerCurrentPageIds.size > 0 ? { ordinaryLookIds: formerCurrentPageIds } : undefined,
-  );
+  const document = withPaginationInvariants(state.document, dropMissingTargets ? removeInteractionsWithMissingTargets(inserted) : inserted, {
+    ...(formerCurrentPageIds.size > 0 ? { ordinaryLookIds: formerCurrentPageIds } : {}),
+    ...(keptCurrentPageId ? { preferredCurrentId: keptCurrentPageId } : {}),
+  });
   const hasEmbeddedData = rootIds.some((id) => {
     const node = findNodeById(document, id);
     return node !== undefined && subtreeHasEmbeddedData(node);
@@ -2053,7 +2079,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
     set((state) => {
       if (existingSelectedIds(state.document, state.selection.ids).length > 1) {
         const roots = orderedSelectionRoots(state.document, state.selection.ids);
-        return { clipboard: { operation: "copy", nodes: roots, sourceParentId: findParentId(state.document, roots[0].id) } };
+        return { clipboard: multiClipboard(state.document, "copy", roots) };
       }
       const node = eligibleSelectedNode(state);
       if (!node) return {};
@@ -2096,7 +2122,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
       // a current page is an ordinary page (state and look).
       const wasCurrentPage = sourceNode.ariaCurrent === "page";
       const movesCurrentPage = wasCurrentPage && state.clipboard?.operation === "cut" && destinationParentId === state.clipboard.sourceParentId;
-      const fresh = cloneNodeWithFreshIds(sourceNode);
+      // BC-10.5.1: the copy's authored HTML id is made unique (kept if free).
+      const [fresh] = withUniqueHtmlIdsForCopies(state.document, [cloneNodeWithFreshIds(sourceNode)]);
       const clone = resolveFreeDestinationPlacement(
         state.document,
         destinationParentId,
@@ -2109,6 +2136,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
         removeInteractionsWithMissingTargets(insertNode(state.document, destinationParentId, clone)),
         movesCurrentPage ? { preferredCurrentId: clone.id } : wasCurrentPage ? { ordinaryLookIds: new Set([clone.id]) } : undefined,
       );
+      if (exceedsNavigationLinkLimit(state.document, document)) return nextEditorNoticeState(state, NAVIGATION_LINK_LIMIT_PASTE_NOTICE);
       if (subtreeHasEmbeddedData(clone) && !documentFitsSaveLimit(document)) return nextEditorNoticeState(state, COPY_TOO_LARGE_NOTICE);
       return {
         ...pushHistory(state),
@@ -2125,12 +2153,14 @@ export const useEditorStore = create<EditorState>()((set) => ({
       if (!node) return {};
       const parentId = findParentId(state.document, node.id);
       if (!parentId) return {};
-      const clone = resolveFreeDestinationPlacement(state.document, parentId, withoutCopiedCurrentState(cloneNodeWithFreshIds(node)));
+      const [fresh] = withUniqueHtmlIdsForCopies(state.document, [cloneNodeWithFreshIds(node)]);
+      const clone = resolveFreeDestinationPlacement(state.document, parentId, withoutCopiedCurrentState(fresh));
       const document = withPaginationInvariants(
         state.document,
         insertNode(state.document, parentId, clone, { referenceId: node.id, placement: "after" }),
         node.ariaCurrent === "page" ? { ordinaryLookIds: new Set([clone.id]) } : undefined,
       );
+      if (exceedsNavigationLinkLimit(state.document, document)) return nextEditorNoticeState(state, NAVIGATION_LINK_LIMIT_DUPLICATE_NOTICE);
       if (subtreeHasEmbeddedData(clone) && !documentFitsSaveLimit(document)) return nextEditorNoticeState(state, COPY_TOO_LARGE_NOTICE);
       return { ...pushHistory(state), document, selection: selectionFromSingle(clone.id) };
     }),
