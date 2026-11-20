@@ -116,7 +116,7 @@ const GROUPS: { [K in StyleGroupKey]: StyleGroup<K> } = {
     },
   },
   borderRadius: {
-    label: "Border radius",
+    label: "Border Radius",
     capture: (_, node) => authored(node.borderRadius),
     supports: (destination) => destination.capabilities.supportsBorderRadius,
     apply: (root, { node }, value) => section(root, [node.id], "borderRadius", { ...node.borderRadius, ...clone(value) }),
@@ -128,7 +128,7 @@ const GROUPS: { [K in StyleGroupKey]: StyleGroup<K> } = {
     apply: (root, { node }, value) => setElementShape(root, node.id, value),
   },
   boxShadow: {
-    label: "Box shadow",
+    label: "Box Shadow",
     // A layer stack is one value: it replaces the destination's stack whole.
     // Layer ids are local to one element, so the copy keeps them.
     capture: (_, node) => (node.boxShadow && node.boxShadow.length > 0 ? clone(node.boxShadow) : undefined),
@@ -136,7 +136,7 @@ const GROUPS: { [K in StyleGroupKey]: StyleGroup<K> } = {
     apply: (root, { node }, value) => section(root, [node.id], "boxShadow", clone(value)),
   },
   filters: {
-    label: "Filters",
+    label: "Visual Effects",
     capture: (_, node) => authored(node.filters),
     supports: (destination) => destination.capabilities.supportsFilters,
     apply: (root, { node }, value) => section(root, [node.id], "filters", { ...node.filters, ...clone(value) }),
@@ -154,7 +154,7 @@ const GROUPS: { [K in StyleGroupKey]: StyleGroup<K> } = {
     apply: (root, { node }, value) => section(root, [node.id], "transform", { ...node.transform, ...clone(value) }),
   },
   display: {
-    label: "Display",
+    label: "Display & Visibility",
     capture: (_, node) => authored(node.display),
     supports: (destination) => destination.capabilities.supportsDisplay,
     apply: (root, { node }, value) => section(root, [node.id], "display", { ...node.display, ...clone(value) }),
@@ -223,13 +223,13 @@ const GROUPS: { [K in StyleGroupKey]: StyleGroup<K> } = {
     },
   },
   mediaFit: {
-    label: "Media fit",
+    label: "Media",
     capture: (_, node) => authored(node.mediaFit),
     supports: (destination) => destination.capabilities.supportsMediaFit,
     apply: (root, { node }, value) => setMediaFitSettings(root, node.id, { ...node.mediaFit, ...clone(value) }),
   },
   svgPaint: {
-    label: "SVG fill and stroke",
+    label: "SVG Fill & Stroke",
     capture: (_, node) => authored({ fill: node.svgFill, stroke: node.svgStroke, strokeWidth: node.svgStrokeWidth }),
     supports: (destination) => destination.capabilities.supportsSvgSettings,
     apply: (root, { node }, value) => {
@@ -241,7 +241,7 @@ const GROUPS: { [K in StyleGroupKey]: StyleGroup<K> } = {
     },
   },
   layout: {
-    label: "Content layout",
+    label: "Content Layout",
     capture: (_, node) => {
       if (!canContainChildren(node.tag)) return undefined;
       if (getLayoutMode(node) === "free") return { mode: "free", ...(node.childResizePolicy ? { childResizePolicy: node.childResizePolicy } : {}) };
@@ -262,13 +262,13 @@ const GROUPS: { [K in StyleGroupKey]: StyleGroup<K> } = {
     },
   },
   flexChild: {
-    label: "Flex child settings",
+    label: "Flex item",
     capture: (_, node) => (node.flexChild ? clone(node.flexChild) : undefined),
     supports: (destination) => !destination.isFreeChild && destination.parentFlowDisplay === "flex",
     apply: (root, { node }, value) => section(root, [node.id], "flexChild", clone(value)),
   },
   gridChild: {
-    label: "Grid child settings",
+    label: "Grid item",
     capture: (_, node) => (node.gridChild ? clone(node.gridChild) : undefined),
     supports: (destination) => !destination.isFreeChild && destination.parentFlowDisplay === "grid",
     // Clamped to the destination's own grid, as for one element.

@@ -185,7 +185,7 @@ describe("section-level Copy/Paste CSS (BC-11.3)", () => {
     expect(node("grid").flowLayout?.flex).toEqual(flex);
     expect(node("free").layoutMode).toBe("free");
     expect(node("free").flowLayout).toBeUndefined();
-    expect(notice()).toBe(stylePastedWithSkipsNotice(["Content layout"]));
+    expect(notice()).toBe(stylePastedWithSkipsNotice(["Content Layout"]));
   });
 
   it("Flex child section copies only the item settings, never the parent's container settings", () => {

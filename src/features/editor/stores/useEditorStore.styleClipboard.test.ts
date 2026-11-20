@@ -261,7 +261,7 @@ describe("Copy/Paste CSS (BC-11.2)", () => {
       expect(node("gridBox").flowLayout?.flex).toEqual(flex);
       expect(node("freeBox").flowLayout).toBeUndefined();
       expect(node("freeBox").layoutMode).toBe("free");
-      expect(notice()).toBe(stylePastedWithSkipsNotice(["Content layout"]));
+      expect(notice()).toBe(stylePastedWithSkipsNotice(["Content Layout"]));
     });
 
     it("Flex/Grid child settings apply only under a Flex/Grid parent; a grid placement is clamped to the destination's grid", () => {
@@ -277,7 +277,7 @@ describe("Copy/Paste CSS (BC-11.2)", () => {
       run(() => store().pasteStyle());
       expect(node("fd").flexChild).toEqual({ grow: 2, shrink: 0, basis: "auto", alignSelf: "end" });
       expect(node("pd").flexChild).toBeUndefined();
-      expect(notice()).toBe(stylePastedWithSkipsNotice(["Flex child settings"]));
+      expect(notice()).toBe(stylePastedWithSkipsNotice(["Flex item"]));
       select(["gc"]);
       run(() => store().copyStyle());
       select(["gd"]);

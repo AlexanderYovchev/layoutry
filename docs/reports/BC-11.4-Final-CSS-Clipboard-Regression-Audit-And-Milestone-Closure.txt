@@ -1,0 +1,418 @@
+BC-11.4 — Final CSS Clipboard Regression Audit & Milestone Closure
+=================================================================
+Date: 2026-11-20
+Base: HEAD a226b7d (BC-11.3, committed). BC-11.4 changes are uncommitted.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+The audit exercised global and section-level Copy/Paste CSS together with
+the other systems they touch:
+- multi-selection, style locks, validation and Undo/Redo;
+- layout CSS, Flow/Free;
+- the element clipboard, keyboard and menus;
+- complex values and images;
+- Canvas, Preview, Export and Save/Reopen.
+
+It found and fixed two genuine BC-11 issues:
+
+R1 (Medium) — global Copy CSS copied groups the source no longer offers.
+  captureStyleSnapshot ran without the "offered" filter, so a stale stored
+  value the source's own Inspector hides travelled with Copy CSS and was
+  pasted invisibly. Examples: a Flex item setting left over after the
+  element moved out of a Flex row; Position on a Free child.
+  Fix: global copyStyle uses the same { onlyOffered: true } rule BC-11.3
+  section copy already used. Regression test added.
+
+R2 (Low, UX) — inconsistent display names. The same group was named three
+  ways:
+  - the single-selection header said "Visual Effects";
+  - the multi-selection header's menu said "Copy Filters CSS";
+  - the notice said "Filters".
+  Fix: the registry label is the one display name, using the
+  single-selection Inspector's header names ("Visual Effects", "Display &
+  Visibility", "Border Radius", "Box Shadow", "Media", "Content Layout",
+  "Flex item", "Grid item", "SVG Fill & Stroke"). The section menu uses it
+  in every mode. Internal group ids are unchanged; component test added.
+
+No High or Critical defect was found. Every focused test passes:
+- Vitest: 257 tests in 12 files;
+- Chromium: 10 tests in 3 BC-11 specs;
+- Firefox + WebKit: 6 tests.
+
+Recommendation: CLOSE BC-11, pending ChatGPT's approval.
+
+
+2. TEST-IMPACT MATRIX
+---------------------
+Production files changed in BC-11.4:
+  - styleClipboardCommands.ts (labels);
+  - useEditorStore.ts (copyStyle filter);
+  - InspectorSectionCssMenu.tsx (label from the registry);
+  - InspectorSection.tsx (prop pass-through).
+Direct dependents, the tests run for them, and whether a browser was needed:
+  - Snapshot/registry/paste: styleClipboard (19), styleClipboardSection
+    (11), bc11Audit (5, new); Chromium.
+  - Section menu UI: InspectorSectionCssMenu (6, one new), InspectorSection,
+    InspectorNodeSummary, InspectorMultiNodeSummary (+ sharedControls);
+    Chromium (sections spec, narrow width).
+  - Keyboard/menu: useEditorKeyboardShortcuts, AppHeader; Chromium,
+    Firefox and WebKit (css-clipboard.spec; the Ctrl/Cmd+Alt matching uses
+    event.code and getModifierState, which are browser-dependent).
+  - Element clipboard: multiClipboard, bc11Audit workflow 5; Chromium
+    (css-clipboard.spec independence test).
+  - Persistence: the persistence classification test; Chromium
+    (bc11-final-audit workflow 6).
+  - Export: bc11Audit (exportHtmlCss); Chromium (export dialog, workflows
+    1 and 4).
+Electron: not justified. There is no desktop code and no desktop menu; the
+renderer keyboard handler is the one tested.
+Missing coverage, added in BC-11.4:
+  - invisible-group copy (R1);
+  - label consistency across modes (R2);
+  - identity/structure integrity on Navbar, Pagination, form and link;
+  - Flow/Free skip together with other groups and Undo/Redo;
+  - parent + child Free containment;
+  - workflow 5 (two clipboards with Undo ×2 and Redo ×2);
+  - multi-destination image export;
+  - layout geometry in Canvas and Preview;
+  - Mixed after Undo;
+  - the session-only clipboard after a reload.
+
+
+3. D1–D8 COMPLIANCE AUDIT
+-------------------------
+D1 Merge             OK  Destination fields absent from the source are kept:
+                         bold kept, a shadow kept, a transform merged
+                         per field, own margin kept (store and Chromium).
+                         No Reset of absent fields. A repeated paste is a
+                         no-op with no history.
+D2 All eligible      OK  After R1: every group the source OFFERS. Tested
+                         across typography, background, border, radius,
+                         shadow, filters, transform, transition, display,
+                         position, spacing, size, layout and Flex/Grid item.
+D3 Primary source    OK  With several elements selected, only the primary
+                         is read; the selection is unchanged; no Mixed values.
+D4 All compatible    OK  Section 8: layout groups are verified one by one,
+                         not narrowed to decorative CSS.
+D5 Skip unsupported  OK  Per destination, with one notice. Flow↔Free is a
+                         SKIP, not a failure (section 8). Genuine validation
+                         failures refuse the whole paste (section 7).
+D6 Ctrl/Cmd+Alt+C/V  OK  Chromium, Firefox and WebKit; Cmd+Option via
+                         event.code; AltGr safe; exact modifiers (section 10).
+D7 Brief notice      OK  "CSS pasted. Skipped: Typography." One notice,
+                         de-duplicated, in registry order, using display
+                         names (R2).
+D8 Deferred          OK  No computed-appearance mode exists.
+
+
+4. GLOBAL CSS CLIPBOARD RESULTS
+-------------------------------
+- Authored only, units kept (rem, em, px), complex values deep-cloned.
+- Deleting or editing the source after copying doesn't change the snapshot.
+- An empty source clears the CSS clipboard.
+- No history entry.
+- Editor-only and session-only: the persistence classification test, and
+  in Chromium "Copy CSS from an element first." after a reload (workflow 6).
+- A stale primary or nothing selected fails safely with a notice.
+- R1: stale, non-offered groups are no longer copied.
+
+
+5. SECTION-LEVEL CLIPBOARD RESULTS
+----------------------------------
+Ownership is the registry, one group per section, with no overlap:
+- Typography → typography only;
+- Background → background (incl. gradient and image), never border;
+- Border → sides only, never shadows;
+- Flex item → flexChild only, never the parent's container;
+- SVG → fill / stroke / stroke-width.
+
+SVG coverage is complete. The current SVG Inspector section edits:
+- Primitive and ViewBox: vector content, deliberately not style-guarded,
+  not CSS;
+- Fill, Stroke and Stroke Width: presentation, exactly the svgPaint group.
+Correct coverage; no change needed.
+
+The four workflows, plus two related checks:
+- A global → global: the BC-11.2 tests.
+- B global → section: Paste Background only (store and Chromium).
+- C section → global: Box Shadow or Spacing only (store and Chromium).
+- D section → section: the Typography merge (store and Chromium).
+- Copy Typography → Paste Background: no mutation, and the menu item is
+  disabled.
+- An empty section clears the clipboard. There is one shared
+  styleClipboard field and no per-section copies.
+
+
+6. INSPECTOR UI AND ACCESSIBILITY
+---------------------------------
+- CSS sections show the "<Group> CSS actions" menu. Non-CSS sections
+  (Identity, Interactions) don't.
+- Enablement is computed on open.
+- Collapsed sections work and stay collapsed.
+- It works in the full, bulk and Mixed-panel modes.
+- At the minimum Inspector width the menu stays inside the panel, with no
+  sideways scroll (Chromium).
+- Keyboard: Enter or Space open; arrows move; Enter or Space run the item;
+  Escape closes and returns focus; Tab and outside clicks close it.
+- Reduced motion: the menu's fade/slide is covered by the global
+  @media (prefers-reduced-motion: reduce) rule in src/app/globals.css.
+- Reset controls: the header Reset buttons render before the menu, and the
+  Inspector tests that exercise them pass.
+- Labels: one display name per group in every mode (R2), and the same name
+  in the notices.
+
+
+7. MULTI-SELECTION AND ATOMICITY
+--------------------------------
+Multi-selection:
+- cross-container, cross-tag;
+- a parent and child each once;
+- no cap;
+- the selection is unchanged (asserted).
+
+Style lock on any destination: nothing changes, no history, and the lock
+notice is shown (global and section).
+
+Validation failures, each refused whole with no partial write:
+- an invalid authored value (schema check before commit);
+- a Free size that doesn't fit;
+- a parent + child pair where the parent's new size would no longer
+  contain the child (a new audit case: refused, containment wins);
+- the project size limit (the save-limit guard).
+
+Skipping is distinct from failure: an unsupported group is skipped (D5),
+and the rest of the paste still applies in the same step (the audit test
+pastes background + size while Content Layout is skipped).
+
+Undo/Redo:
+- one entry per paste (global or section);
+- Undo restores each destination's own values; Redo reapplies;
+- no-ops and copies add nothing;
+- Mixed returns after Undo (Chromium: h2 40px vs p 20px → Paste
+  Typography → 40 → Undo → "Mixed").
+
+
+8. LAYOUT CSS COVERAGE (D4=B), verified property by property
+-------------------------------------------------------------
+Flex container   direction (column), wrap, justify-content, align-items,
+                 row/column gap. Chromium: a section becomes a column with
+                 a measured 24px gap between children, on the Canvas and in
+                 Preview; export row-gap 24px; Undo/Redo. A Grid container
+                 also becomes Flex (store).
+Grid container   columns / rows / gaps, through the same command (BC-11.2
+                 store test).
+Flex item        grow / shrink / basis / align-self, only under a Flex
+                 parent (store, section).
+Grid item        start / span, clamped exactly like the single-element
+                 clamp (store).
+Width/height     Flow preferred W/H with the destination's own offsets;
+                 Free child box at its own x/y (store, audit). Chromium
+                 width 320px.
+Min/max          merged per field (store).
+Aspect ratio     copied (store).
+Display          display / visibility / overflow / cursor, merged per field.
+Position         position + offsets + z-index on Flow elements; skipped on
+                 Free children and containers (store).
+Flow↔Free        never converted, and SKIPPED (D5), not failed:
+                 - the notice names "Content Layout";
+                 - the same paste's other groups apply;
+                 - the Free container stays Free with no flowLayout;
+                 - Undo/Redo valid.
+Free geometry    valid applied at the same x/y; oversized refused whole;
+                 the parent never changes (findParentId asserted).
+                 Approximate-bounds limitation documented (section 17).
+
+
+9. CLIPBOARD INDEPENDENCE
+-------------------------
+Workflow 5 (store): copy element → copy CSS → paste element → paste CSS
+→ Undo → Undo → Redo → Redo.
+- Both clipboards are unchanged.
+- The pasted element has its unique "go-copy" HTML id, a valid
+  interaction target, and its own (non-aliased) shadow.
+- All element ids are unique; the selection is stable.
+Chromium: the independence test in css-clipboard.spec.
+
+
+10. SHORTCUT SAFETY
+-------------------
+- Plain Ctrl/Cmd+C/X/V/D: element operations.
+- Ctrl/Cmd+Alt+C/V: CSS.
+- Ctrl+Shift+C/V/X/D and Ctrl+Alt+X/D: nothing.
+- macOS Cmd+Option uses event.code. AltGr is never the CSS chord.
+- Text fields keep their native behaviour.
+Unit-tested, and the CSS chords were verified in real Chromium, Firefox and
+WebKit (css-clipboard.spec). The Edit menu calls the same store actions
+(AppHeader test).
+
+
+11. COMPLEX CSS AND ASSET INTEGRITY
+-----------------------------------
+- Gradients, 2-layer shadows, filters (blur with unit), transforms,
+  transitions, border sides, radius corners, rem/em units and Flex/Grid
+  objects are copied by value.
+- Each destination gets its own copy (no aliasing).
+- Shadow and gradient-stop ids stay unique per element.
+- Background image: embedded PNG data pasted onto two elements is kept;
+  the export is valid with 3 background-image url() declarations; the
+  save-limit preflight refuses the whole paste (BC-11.2 test).
+- Integrity (audit): pasting onto Navbar links, Pagination pages, an input,
+  a link and the nav itself changes ONLY the copied CSS groups. Unchanged:
+  ids, text, href, htmlId, className, value/name/placeholder, interactions,
+  aria-current (still one current page), and children order.
+
+
+12. CANVAS/PREVIEW/EXPORT PARITY
+--------------------------------
+Complex case: a gradient Background section paste onto two elements
+(BC-11.3 spec). Layout case: Flex + size (workflow 4). The button example:
+BC-11.2 spec. Canvas, Preview and Export agree in each. The export contains
+no clipboard metadata.
+
+
+13. PROJECT v3 PERSISTENCE
+--------------------------
+Workflow 6 (Chromium):
+- a global paste and a section paste;
+- Save, reload, reopen;
+- the pasted styles and the text are present;
+- the CSS clipboard is empty after the reload (session-only).
+The serialization test shows no clipboard keys. No schema or migration
+change.
+
+
+14. INTEGRATED WORKFLOW RESULTS
+-------------------------------
+1 Button A → B, merge, content and interaction, Undo/Redo, Preview/Export
+                                         css-clipboard.spec               pass
+2 Heading → Paragraph Typography only; Mixed after Undo
+                                         bc11-final-audit                 pass
+3 Cross-type multi-selection, skips, one Undo
+                                         css-clipboard.spec + store tests pass
+4 Layout transfer, geometry, Undo/Redo, Preview/Export
+                                         bc11-final-audit                 pass
+5 Clipboard coexistence chain            bc11Audit (store) + css-clipboard.spec pass
+6 Persistence                            bc11-final-audit                 pass
+
+
+15. DEFECTS DISCOVERED AND CORRECTED
+------------------------------------
+R1 Medium, global copy of non-offered stale groups.
+   - Reproduced: the clipboard held ["flexChild", "typography"].
+   - Cause: copyStyle didn't filter by the source's own Inspector rules.
+   - Fix: { onlyOffered: true } (one line).
+   - Test: bc11Audit "repro" (now passes).
+R2 Low, inconsistent group names.
+   - Cause: the menu used each header's local label; the notices used
+     terse registry labels.
+   - Fix: registry labels = the Inspector's single-selection header names,
+     and the menu uses the registry label.
+   - Test: InspectorSectionCssMenu "one display name…". Three existing
+     notice expectations were updated to the new names ("Content Layout",
+     "Flex item"); the behaviour asserted is unchanged.
+No other defects.
+
+
+16. EXACT FOCUSED TEST COMMANDS AND RESULTS
+-------------------------------------------
+npx vitest run src/features/editor/stores/useEditorStore.bc11Audit.test.ts
+  -> R1 repro: 1 failed, as expected. After the fix: 1 passed.
+npx vitest run <bc11Audit, styleClipboard, styleClipboardSection>
+  -> 31 passed after R1
+  -> 36 passed with the menu test, after R2
+npx vitest run src/features/editor/stores/useEditorStore.bc11Audit.test.ts (5 tests)
+  -> first run 4 passed, 1 failed. My scenario selected a Free container
+     AND its child: the container's pasted 120×60 size made the child no
+     longer fit, so the whole paste was correctly refused. The test was
+     changed to assert that refusal and to use a separate empty Free
+     container for the skip case. Then 5 passed.
+npx vitest run src/features/inspector/components/InspectorSectionCssMenu.test.tsx -> 6 passed
+npx vitest run <12 files: styleClipboard, styleClipboardSection,
+  bc11Audit, persistence, useEditorKeyboardShortcuts, AppHeader,
+  InspectorSectionCssMenu, InspectorSection, InspectorMultiNodeSummary
+  (+ sharedControls), InspectorNodeSummary, multiClipboard>
+  -> 12 files, 257 tests passed
+npx playwright test e2e/bc11-final-audit.spec.ts --project=chromium
+  -> The first attempt was interrupted when the session ended (no result).
+  -> Rerun: 2 passed, 1 failed. Workflow 4 asserted "not display:flex"
+     after Undo, but a Layoutry "block" container renders as a flex column
+     by design (resolveFlowLayoutStyle). The Undo check now asserts the row
+     gap, width and measured gap the paste changed.
+  -> The export count of "flex-direction: column" was 3, not 2, for the
+     same reason; it now counts "row-gap: 24px" (2).
+  -> Final: 3 passed.
+  -> After removing an unused import: 3 passed.
+npx playwright test e2e/css-clipboard.spec.ts e2e/css-clipboard-sections.spec.ts --project=chromium -> 7 passed
+npx playwright test -c <temporary Firefox+WebKit config, deleted after the run> e2e/css-clipboard.spec.ts
+  -> 6 passed (3 × 2 browsers)
+npx tsc --noEmit -p . -> 0 errors
+npx eslint <changed/new files> -> clean (one unused-import warning in the
+  new spec, fixed)
+Prettier: no changed file was Prettier-clean at HEAD, so nothing was
+reformatted.
+Not run (policy): the full Vitest/browser/Electron suites, BC-01–BC-10
+suites, a build (no integration boundary changed).
+
+
+17. KNOWN NONBLOCKING LIMITATIONS (intentional)
+-----------------------------------------------
+- Flow↔Free structural conversion is excluded: skipped and named.
+- Free-container bounds are the existing approximate one-shot bounds
+  (stored size, else 400 × 300). An oversize is refused, never shrunk.
+- SVG coverage is fill / stroke / stroke-width: complete for the current
+  SVG section (section 5).
+- Labels are now consistent (R2). The multi-selection headers themselves
+  still read "Filters" / "Display" (BC-10.4 wording, not changed here); the
+  menu and notices use the full names.
+- No section-level keyboard shortcuts (menu-only, as allowed).
+- No exact computed-appearance copying (D8).
+- Class names are excluded: they are HTML attributes, not CSS declarations.
+- Pasting onto Pagination links changes their look (their own CSS), never
+  their current-page state.
+
+
+18. OPEN HIGH/CRITICAL DEFECTS
+------------------------------
+None.
+
+
+19. FILES CHANGED
+-----------------
+Modified:
+  src/features/editor/commands/styleClipboardCommands.ts (display labels, R2)
+  src/features/editor/stores/useEditorStore.ts (copyStyle onlyOffered, R1)
+  src/features/inspector/components/InspectorSectionCssMenu.tsx (registry label)
+  src/features/inspector/components/InspectorSection.tsx (prop pass-through)
+  src/features/inspector/components/InspectorSectionCssMenu.test.tsx (+1 test)
+  src/features/editor/stores/useEditorStore.styleClipboard.test.ts (label expectations)
+  src/features/editor/stores/useEditorStore.styleClipboardSection.test.ts (label expectation)
+New:
+  src/features/editor/stores/useEditorStore.bc11Audit.test.ts (5 tests)
+  e2e/bc11-final-audit.spec.ts (3 tests)
+
+
+20. GIT WORKING-TREE STATUS
+---------------------------
+ M src/features/editor/commands/styleClipboardCommands.ts
+ M src/features/editor/stores/useEditorStore.styleClipboard.test.ts
+ M src/features/editor/stores/useEditorStore.styleClipboardSection.test.ts
+ M src/features/editor/stores/useEditorStore.ts
+ M src/features/inspector/components/InspectorSection.tsx
+ M src/features/inspector/components/InspectorSectionCssMenu.test.tsx
+ M src/features/inspector/components/InspectorSectionCssMenu.tsx
+?? e2e/bc11-final-audit.spec.ts
+?? src/features/editor/stores/useEditorStore.bc11Audit.test.ts
+Plus this report and the changelog, which are not to be staged. No commit,
+no push. BC-12 not started.
+
+
+21. RECOMMENDATION
+------------------
+CLOSE BC-11, pending ChatGPT's approval.
+- D1–D8 are verified with evidence (section 3).
+- The six integrated workflows pass in Chromium.
+- Keyboard chords pass in Firefox and WebKit.
+- The two genuine issues found (R1 Medium, R2 Low) are fixed and tested.
+- No High or Critical defect remains.
+- The remaining limitations are intentional and documented (section 17).

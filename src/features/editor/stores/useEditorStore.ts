@@ -2266,7 +2266,11 @@ export const useEditorStore = create<EditorState>()((set) => ({
       const source = eligibleSelectedNode(state);
       if (!source) return nextEditorNoticeState(state, STYLE_COPY_NO_SOURCE_NOTICE);
       const name = getReadableNodeName(source);
-      const groups = captureStyleSnapshot(state.document, source);
+      // BC-11.4: only groups the source offers in its own Inspector — never a
+      // stale value it no longer shows (a Flex item setting left from an
+      // earlier Flex parent, Position on a Free child), which would paste
+      // styles the user can't see on the source.
+      const groups = captureStyleSnapshot(state.document, source, STYLE_GROUP_KEYS, { onlyOffered: true });
       if (isEmptyStyleSnapshot(groups)) return { ...nextEditorNoticeState(state, styleCopyEmptyNotice(name)), styleClipboard: null };
       return { ...nextEditorNoticeState(state, styleCopiedNotice(name)), styleClipboard: { version: 1, sourceName: name, groups } };
     }),

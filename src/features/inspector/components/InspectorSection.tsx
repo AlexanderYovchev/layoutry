@@ -93,7 +93,7 @@ export function InspectorSection({
         {(actions || (cssGroup && !disabled)) && (
           <div onClick={stopActionsToggle} className="flex shrink-0 items-center gap-1 pr-2">
             {actions}
-            {cssGroup && !disabled && <InspectorSectionCssMenu group={cssGroup} sectionLabel={label} />}
+            {cssGroup && !disabled && <InspectorSectionCssMenu group={cssGroup} />}
           </div>
         )}
       </h3>

@@ -105,6 +105,22 @@ describe("Inspector section CSS menu (BC-11.3)", () => {
     expect(screen.queryByRole("menu", { name: "Box Shadow CSS" })).toBeNull();
   });
 
+  it("BC-11.4: one display name per group in every mode — the multi-selection 'Filters' and 'Display' headers offer 'Visual Effects' / 'Display & Visibility' CSS, like the single sections and the notices", async () => {
+    const user = userEvent.setup();
+    show(
+      [
+        { id: "h", tag: "h1", text: "H", filters: { opacity: 0.5 } },
+        { id: "p", tag: "p", text: "P", filters: { opacity: 0.8 } },
+      ],
+      ["h", "p"],
+    );
+    expect(screen.getAllByRole("button", { name: "Filters" }).some((button) => button.hasAttribute("aria-expanded"))).toBe(true);
+    await user.click(trigger("Visual Effects"));
+    await user.click(screen.getByRole("menuitem", { name: "Copy Visual Effects CSS" }));
+    expect(store().editorNotice?.message).toBe("Visual Effects CSS copied from Paragraph.");
+    expect(trigger("Display & Visibility")).toBeInTheDocument();
+  });
+
   it("multi-selection: mixed tags (bulk Typography), a Mixed panel (Box Shadow), Copy from the primary, Paste onto all", async () => {
     const user = userEvent.setup();
     show(

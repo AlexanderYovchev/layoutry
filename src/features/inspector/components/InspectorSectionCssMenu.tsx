@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { MenuDropdown } from "@/components/ui/menu/MenuDropdown";
 import type { MenuItem } from "@/components/ui/menu/types";
 import { useDismissableTransition } from "@/components/ui/motion/useDismissableTransition";
+import { styleGroupLabel } from "@/features/editor/commands/styleClipboardCommands";
 import { canCopyStyleSection, canPasteStyleSection, useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { StyleGroupKey } from "@/features/editor/types/styleClipboard";
 import { cn } from "@/lib/utils";
@@ -14,8 +15,6 @@ const MENU_EXIT_DURATION_MS = 200;
 interface InspectorSectionCssMenuProps {
   /** The CSS group this Inspector section owns (BC-11.2 registry key). */
   group: StyleGroupKey;
-  /** The section's own header label, used in the menu's item names ("Copy Typography CSS"). */
-  sectionLabel: string;
 }
 
 /**
@@ -28,7 +27,10 @@ interface InspectorSectionCssMenuProps {
  * primary element; Paste needs this section's group in the CSS clipboard
  * and a selected element that supports it.
  */
-export function InspectorSectionCssMenu({ group, sectionLabel }: InspectorSectionCssMenuProps) {
+export function InspectorSectionCssMenu({ group }: InspectorSectionCssMenuProps) {
+  // BC-11.4: one display name per CSS group (the registry's), the same in every
+  // Inspector mode (single, bulk, Mixed panel) and in the notices.
+  const sectionLabel = styleGroupLabel(group);
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
