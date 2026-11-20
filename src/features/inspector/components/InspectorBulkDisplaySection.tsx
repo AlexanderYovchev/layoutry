@@ -47,7 +47,7 @@ export function InspectorBulkDisplaySection({ nodes }: InspectorBulkDisplaySecti
   );
 
   return (
-    <InspectorSection label="Display">
+    <InspectorSection cssGroup="display" label="Display">
       <InspectorPropertyRow label="Display" state={effectiveRowState(display, settings.some((value) => value.display !== undefined))} reset={<InspectorResetButton onReset={() => setElementsDisplayField(ids, "display", undefined)} disabled={!(settings.some((value) => value.display !== undefined))} label="Reset display on all selected elements" />}>
         <InspectorSegmentedRow
           label="Display"

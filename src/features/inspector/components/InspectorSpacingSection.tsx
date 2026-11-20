@@ -249,7 +249,7 @@ export function InspectorSpacingSection({ node }: InspectorSpacingSectionProps) 
   const padding = displayedEdges(spacing.padding, renderedPadding);
 
   return (
-    <InspectorSection label="Spacing" defaultOpen>
+    <InspectorSection cssGroup="spacing" label="Spacing" defaultOpen>
       <BoxModelDiagram margin={margin} padding={padding} />
       <EdgeGroup
         label="Margin"

@@ -21,7 +21,7 @@ export function InspectorBulkShapeSection({ nodes }: InspectorBulkShapeSectionPr
   const hasShape = shape.kind === "same" && shape.value !== "none";
 
   return (
-    <InspectorSection label="Shape">
+    <InspectorSection cssGroup="shape" label="Shape">
       <InspectorShapeGrid
         activePreset={activePreset}
         state={shape.kind === "mixed" ? "mixed" : hasShape ? "set" : "unset"}

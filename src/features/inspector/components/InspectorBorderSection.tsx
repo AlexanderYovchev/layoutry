@@ -152,7 +152,7 @@ export function InspectorBorderSection({ node }: InspectorBorderSectionProps) {
   }
 
   return (
-    <InspectorSection label="Border" defaultOpen>
+    <InspectorSection cssGroup="border" label="Border" defaultOpen>
       <InspectorPropertyRow
         label="Border width"
         variant="stack"

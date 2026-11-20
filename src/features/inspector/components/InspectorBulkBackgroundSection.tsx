@@ -46,7 +46,7 @@ export function InspectorBulkBackgroundSection({ nodes }: InspectorBulkBackgroun
   const anyAuthored = nodes.some((node) => getBackgroundSettings(node).color !== undefined);
 
   return (
-    <InspectorSection label="Background">
+    <InspectorSection cssGroup="background" label="Background">
       <InspectorPropertyRow label="Color" state={effectiveRowState(color, anyAuthored)} reset={<InspectorResetButton onReset={() => setElementsBackgroundField(ids, "color", undefined)} disabled={!(anyAuthored)} label="Reset background color on all selected elements" />}>
         <InspectorBulkTextField
           ariaLabel="Background color"

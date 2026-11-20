@@ -194,7 +194,7 @@ export function InspectorFiltersSection({ node }: InspectorFiltersSectionProps) 
   const hasAnyFilter = Object.keys(filters).length > 0;
 
   return (
-    <InspectorSection
+    <InspectorSection cssGroup="filters"
       label="Visual Effects"
       defaultOpen
       actions={<InspectorResetButton onReset={handleResetEffects} disabled={!hasAnyFilter} label="Reset effects" />}

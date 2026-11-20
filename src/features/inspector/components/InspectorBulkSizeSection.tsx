@@ -36,7 +36,7 @@ export function InspectorBulkSizeSection({ nodes }: InspectorBulkSizeSectionProp
   const maxHeight = resolveSharedValue(nodes, (node) => getSizeConstraints(node).maxHeight);
 
   return (
-    <InspectorSection label="Size">
+    <InspectorSection cssGroup="size" label="Size">
       <InspectorPropertyRow label="Min width" state={minWidth.kind === "mixed" ? "mixed" : minWidth.value !== undefined ? "set" : "unset"} reset={<InspectorResetButton onReset={() => setElementsSizeConstraintField(ids, "minWidth", undefined)} disabled={!(nodes.some((node) => getSizeConstraints(node).minWidth !== undefined))} label="Reset min width on all selected elements" />}>
         <InspectorBulkNumberField
           ariaLabel="Min width"

@@ -438,7 +438,7 @@ export function InspectorPositionSection({ node }: InspectorPositionSectionProps
   }
 
   return (
-    <InspectorSection label="Position" defaultOpen>
+    <InspectorSection cssGroup="position" label="Position" defaultOpen>
       <InspectorSegmentedRow
         label="Position"
         options={POSITION_OPTIONS}

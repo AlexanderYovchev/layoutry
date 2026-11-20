@@ -60,7 +60,7 @@ export function InspectorBulkSvgSection({ nodes, protections }: InspectorBulkSvg
   const strokeWidth = resolveSharedValue(nodes, (node) => node.svgStrokeWidth);
 
   return (
-    <InspectorSection label="SVG">
+    <InspectorSection cssGroup="svgPaint" label="SVG">
       <InspectorSegmentedRow
         label="Primitive"
         options={PRIMITIVE_OPTIONS}

@@ -43,7 +43,7 @@ export function InspectorBulkBorderRadiusSection({ nodes }: InspectorBulkBorderR
   const anyAuthored = settings.some((value) => value.topLeft !== undefined || value.topRight !== undefined || value.bottomRight !== undefined || value.bottomLeft !== undefined);
 
   return (
-    <InspectorSection label="Border Radius">
+    <InspectorSection cssGroup="borderRadius" label="Border Radius">
       <InspectorPropertyRow label="Radius" variant="stack" state={effectiveRowState(radius, anyAuthored)} reset={<InspectorResetButton onReset={() => setElementsBorderRadiusAllCorners(ids, undefined)} disabled={!(anyAuthored)} label="Reset border radius on all selected elements" />}>
         <InspectorBulkNumberField
           ariaLabel="Border radius"

@@ -168,6 +168,7 @@ export function InspectorMultiNodeSummary({ nodes }: InspectorMultiNodeSummaryPr
         <InspectorMixedSectionPanel
           key="boxShadow"
           label="Box Shadow"
+          cssGroup="boxShadow"
           description="The selected elements have different box shadows."
           actions={[
             { label: `Use ${primaryName}'s shadows on all`, onSelect: () => setElementsSettings(ids, "boxShadow", primary.boxShadow) },
@@ -200,6 +201,7 @@ export function InspectorMultiNodeSummary({ nodes }: InspectorMultiNodeSummaryPr
         <InspectorMixedSectionPanel
           key="flexChild"
           label="Flex Child"
+          cssGroup="flexChild"
           description="The selected elements have different Flex child settings, or sit in differently laid out containers."
           actions={[
             { label: `Use ${primaryName}'s Flex child settings on all`, onSelect: () => setElementsSettings(ids, "flexChild", primary.flexChild) },
@@ -215,6 +217,7 @@ export function InspectorMultiNodeSummary({ nodes }: InspectorMultiNodeSummaryPr
         <InspectorMixedSectionPanel
           key="gridChild"
           label="Grid Child"
+          cssGroup="gridChild"
           description="The selected elements have different Grid placement, or sit in differently laid out grids."
           actions={[
             { label: `Use ${primaryName}'s Grid placement on all`, onSelect: () => setElementsSettings(ids, "gridChild", primary.gridChild) },
@@ -233,6 +236,7 @@ export function InspectorMultiNodeSummary({ nodes }: InspectorMultiNodeSummaryPr
     <InspectorMixedSectionPanel
       key="layout"
       label="Content Layout"
+      cssGroup="layout"
       description="The selected containers lay out their content differently."
       actions={[
         {

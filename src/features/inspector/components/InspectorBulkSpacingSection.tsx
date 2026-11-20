@@ -78,7 +78,7 @@ export function InspectorBulkSpacingSection({ nodes }: InspectorBulkSpacingSecti
   const padding = sharedEffectiveValue(paddings, (index) => rendered?.get(nodes[index].id) ?? BASELINE);
 
   return (
-    <InspectorSection label="Spacing">
+    <InspectorSection cssGroup="spacing" label="Spacing">
       <InspectorPropertyRow label="Margin" state={rowState(margin, margins)} reset={<InspectorResetButton onReset={() => setElementsSettings(ids, "margin", undefined)} disabled={!(margins.some((box) => Object.keys(box ?? {}).length > 0))} label="Reset margin on all selected elements" />}>
         <InspectorBulkNumberField ariaLabel="Margin" shared={margin} onCommit={(value) => setElementsSpacingAllSides(ids, "margin", value)} />
       </InspectorPropertyRow>

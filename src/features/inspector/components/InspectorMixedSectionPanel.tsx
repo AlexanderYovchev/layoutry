@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import type { StyleGroupKey } from "@/features/editor/types/styleClipboard";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 
 const ACTION_CLASS_NAME =
@@ -19,6 +20,8 @@ interface InspectorMixedSectionPanelProps {
   actions: readonly MixedSectionAction[];
   /** Extra explanation (why an action is unavailable, what Reset does). */
   note?: ReactNode;
+  /** BC-11.3: the CSS group the section owns, for its Copy/Paste CSS menu. */
+  cssGroup?: StyleGroupKey;
 }
 
 /**
@@ -30,9 +33,9 @@ interface InspectorMixedSectionPanelProps {
  * starting point ("Use … on all") or resets. Each action is one Undo
  * step; after it the elements agree, and the real editor appears.
  */
-export function InspectorMixedSectionPanel({ label, description, actions, note }: InspectorMixedSectionPanelProps) {
+export function InspectorMixedSectionPanel({ label, description, actions, note, cssGroup }: InspectorMixedSectionPanelProps) {
   return (
-    <InspectorSection label={label}>
+    <InspectorSection label={label} cssGroup={cssGroup}>
       <div className="flex flex-col gap-1.5">
         <p className="px-0.5 text-[11px] text-fg-secondary">
           <span className="font-medium text-fg-primary">Mixed.</span> {description}

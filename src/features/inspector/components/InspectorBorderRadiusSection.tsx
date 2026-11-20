@@ -105,7 +105,7 @@ export function InspectorBorderRadiusSection({ node }: InspectorBorderRadiusSect
   }
 
   return (
-    <InspectorSection label="Border Radius" defaultOpen>
+    <InspectorSection cssGroup="borderRadius" label="Border Radius" defaultOpen>
       <InspectorPropertyRow
         label="Radius"
         variant="stack"

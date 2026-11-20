@@ -115,7 +115,7 @@ export function InspectorLayoutSection({ node }: InspectorLayoutSectionProps) {
   }
 
   return (
-    <InspectorSection label="Content Layout" defaultOpen>
+    <InspectorSection cssGroup="layout" label="Content Layout" defaultOpen>
       <InspectorSegmentedRow
         label="Layout mode"
         help="Flow keeps elements in reading order and respects this checkpoint's own child-containment rules. Free lets you position elements freely, like on a canvas — overlap becomes possible here, deliberately."

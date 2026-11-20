@@ -302,9 +302,12 @@ export function styleGroupLabel(key: StyleGroupKey): string {
   return GROUPS[key].label;
 }
 
-function captureInto<K extends StyleGroupKey>(snapshot: StyleSnapshot, key: K, document: EditorElementNode, node: EditorElementNode): void {
+function captureInto<K extends StyleGroupKey>(snapshot: StyleSnapshot, key: K, document: EditorElementNode, node: EditorElementNode, onlyOffered: boolean): void {
   const value = GROUPS[key].capture(document, node);
-  if (value !== undefined) snapshot[key] = value;
+  if (value === undefined || value === null) return;
+  // BC-11.3 section copy: only a group the source itself shows in its Inspector.
+  if (onlyOffered && !GROUPS[key].supports(resolveDestination(document, node), value)) return;
+  snapshot[key] = value;
 }
 
 /**
@@ -312,9 +315,15 @@ function captureInto<K extends StyleGroupKey>(snapshot: StyleSnapshot, key: K, d
  * for a future section-level copy). Deep-cloned: the source can change or
  * be deleted afterwards without affecting it.
  */
-export function captureStyleSnapshot(document: EditorElementNode, node: EditorElementNode, groups: readonly StyleGroupKey[] = STYLE_GROUP_KEYS): StyleSnapshot {
+export function captureStyleSnapshot(
+  document: EditorElementNode,
+  node: EditorElementNode,
+  groups: readonly StyleGroupKey[] = STYLE_GROUP_KEYS,
+  /** BC-11.3 (section copy): leave out a group the source doesn't offer in its own Inspector, even if a stale value is stored. */
+  options: { onlyOffered?: boolean } = {},
+): StyleSnapshot {
   const snapshot: StyleSnapshot = {};
-  for (const key of groups) captureInto(snapshot, key, document, node);
+  for (const key of groups) captureInto(snapshot, key, document, node, options.onlyOffered ?? false);
   return snapshot;
 }
 

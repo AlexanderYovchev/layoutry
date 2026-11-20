@@ -149,7 +149,7 @@ export function InspectorBulkTypographySection({ nodes }: InspectorBulkTypograph
   const valueOf = <V,>(options: readonly { value: V; label: string }[], label: string) => options.find((candidate) => candidate.label === label)?.value;
 
   return (
-    <InspectorSection label="Typography">
+    <InspectorSection cssGroup="typography" label="Typography">
       <InspectorPropertyRow label="Font family" state={effectiveRowState(fontFamily, isAuthored("fontFamily"))} reset={reset("fontFamily", "font family")}>
         <InspectorBulkTextField
           ariaLabel="Font family"

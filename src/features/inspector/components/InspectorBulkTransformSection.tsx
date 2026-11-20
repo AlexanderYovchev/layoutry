@@ -43,7 +43,7 @@ export function InspectorBulkTransformSection({ nodes }: InspectorBulkTransformS
   const hasAnyTransform = nodes.some((node) => getTransformSettings(node) !== undefined);
 
   return (
-    <InspectorSection
+    <InspectorSection cssGroup="transform"
       label="Transform"
       actions={<InspectorResetButton onReset={() => setElementsTransform(ids, undefined)} disabled={!hasAnyTransform} label="Reset transform" />}
     >

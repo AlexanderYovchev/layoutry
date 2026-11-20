@@ -197,7 +197,7 @@ export function InspectorTypographySection({ node }: InspectorTypographySectionP
   }
 
   return (
-    <InspectorSection label="Typography" defaultOpen>
+    <InspectorSection cssGroup="typography" label="Typography" defaultOpen>
       <InspectorPropertyRow
         label="Font"
         labelHtmlFor="typography-font-family"

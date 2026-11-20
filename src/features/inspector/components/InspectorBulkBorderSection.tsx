@@ -119,7 +119,7 @@ export function InspectorBulkBorderSection({ nodes }: InspectorBulkBorderSection
   };
 
   return (
-    <InspectorSection label="Border">
+    <InspectorSection cssGroup="border" label="Border">
       <InspectorPropertyRow label="Width" variant="stack" state={effectiveRowState(width, authored.width)} reset={<InspectorResetButton onReset={() => setElementsBorderAllSidesField(ids, "width", undefined)} disabled={!(authored.width)} label="Reset border width on all selected elements" />}>
         <InspectorBulkNumberField
           ariaLabel="Border width"

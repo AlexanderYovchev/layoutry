@@ -77,7 +77,7 @@ export function InspectorBulkTransitionSection({ nodes }: InspectorBulkTransitio
   }
 
   return (
-    <InspectorSection
+    <InspectorSection cssGroup="transition"
       label="Transition"
       actions={<InspectorResetButton onReset={() => setElementsTransition(ids, undefined)} disabled={!hasAnyTransition} label="Reset transition" />}
     >

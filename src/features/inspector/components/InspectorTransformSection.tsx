@@ -65,7 +65,7 @@ export function InspectorTransformSection({ node }: InspectorTransformSectionPro
   const showAncestorHint = hasChildren && hasBlockingRotateOrScale;
 
   return (
-    <InspectorSection
+    <InspectorSection cssGroup="transform"
       label="Transform"
       actions={<InspectorResetButton onReset={() => setElementTransform(node.id, undefined)} disabled={!transform} label="Reset transform" />}
     >

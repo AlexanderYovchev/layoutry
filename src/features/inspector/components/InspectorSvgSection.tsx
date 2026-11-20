@@ -84,7 +84,7 @@ export function InspectorSvgSection({ node, protection }: InspectorSvgSectionPro
   }
 
   return (
-    <InspectorSection
+    <InspectorSection cssGroup="svgPaint"
       label="SVG"
       actions={
         // Checkpoint 1.15.6 — the entry point into SVG Drawing Mode

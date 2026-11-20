@@ -248,7 +248,7 @@ export function InspectorBoxShadowSection({ node }: InspectorBoxShadowSectionPro
   );
 
   return (
-    <InspectorSection label="Box Shadow" defaultOpen>
+    <InspectorSection cssGroup="boxShadow" label="Box Shadow" defaultOpen>
       {layers.length === 0 ? (
         <button
           type="button"

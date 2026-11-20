@@ -26,7 +26,7 @@ export function InspectorShapeSection({ node }: InspectorShapeSectionProps) {
   const preset = getShapePreset(node);
 
   return (
-    <InspectorSection label="Shape">
+    <InspectorSection cssGroup="shape" label="Shape">
       <InspectorShapeGrid
         activePreset={preset}
         state={preset === "none" ? "unset" : "set"}

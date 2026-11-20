@@ -278,7 +278,7 @@ export function InspectorDisplaySection({ node }: InspectorDisplaySectionProps) 
   const hasAnySetting = Object.keys(display).length > 0;
 
   return (
-    <InspectorSection
+    <InspectorSection cssGroup="display"
       label="Display & Visibility"
       defaultOpen
       actions={<InspectorResetButton onReset={handleResetAll} disabled={!hasAnySetting} label="Reset display settings" />}

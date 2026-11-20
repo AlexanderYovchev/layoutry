@@ -98,7 +98,7 @@ export function InspectorMediaSection({ node }: InspectorMediaSectionProps) {
   }
 
   return (
-    <InspectorSection label="Media" defaultOpen>
+    <InspectorSection cssGroup="mediaFit" label="Media" defaultOpen>
       <InspectorSegmentedRow
         label="Fit"
         help="Controls how the media fills its box: keep its shape, crop to fill, stretch, or stay at its natural size."

@@ -79,7 +79,7 @@ export function InspectorGridChildSection({ node }: InspectorGridChildSectionPro
   );
 
   return (
-    <InspectorSection
+    <InspectorSection cssGroup="gridChild"
       label="Grid item"
       defaultOpen
       actions={<InspectorResetButton onReset={resetAll} disabled={node.gridChild === undefined} label="Reset grid item" />}

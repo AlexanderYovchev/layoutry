@@ -1,0 +1,361 @@
+BC-11.3 — Inspector Section-Level Copy/Paste CSS
+================================================
+Date: 2026-11-19
+Base: HEAD 6a65495 (BC-11.2, committed). All BC-11.3 work is uncommitted.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Every CSS section of the Inspector now has a compact "⋯" button in its
+header ("<Section> CSS actions"). It opens a menu with "Copy <Section> CSS"
+and "Paste <Section> CSS".
+- It covers the single-selection sections, the multi-selection bulk
+  sections and the BC-10.4 Mixed panels.
+- The actions are two new store commands, copyStyleSection(group) and
+  pasteStyleSection(group). They reuse BC-11.2's ONE CSS clipboard, its
+  group registry, and its atomic merge paste (now one shared helper, with
+  an explicit group filter).
+- No parallel clipboard and no new paste logic. The global Copy/Paste CSS
+  commands and shortcuts behave exactly as in BC-11.2 (their 19 tests pass
+  unchanged).
+
+
+2. INSPECTOR UI CHANGES
+-----------------------
+InspectorSection gained one optional prop, `cssGroup`. When it is set, the
+header's trailing action area renders InspectorSectionCssMenu after any
+existing actions (e.g. the Reset buttons). Clicks there never toggle the
+section, as for every header action.
+The menu:
+- the trigger is a size-6 icon button (Ellipsis icon), styled like the
+  existing header Reset button: muted, hover background, accent focus
+  ring;
+- the menu body is the application menu bar's own MenuDropdown, so it has
+  the same look, motion, keyboard model and focus return.
+MenuDropdown gained an optional `className`, used here for `w-52` (208px)
+instead of the menu bar's 256px, so it fits the Inspector at its 260px
+minimum. No new visual tokens.
+
+
+3. SECTION REGISTRY INTEGRATION
+-------------------------------
+Each section names its BC-11.2 registry group explicitly (no label or
+object-shape matching):
+
+Section (header label)          cssGroup       Single  Bulk (multi)  Mixed panel
+Typography                      typography     yes     yes           -
+Background                      background     yes     yes           -
+Border                          border         yes     yes           -
+Border Radius                   borderRadius   yes     yes           -
+Shape                           shape          yes     yes           -
+Box Shadow                      boxShadow      yes     -             yes
+Visual Effects                  filters        yes     yes (Filters) -
+Transition                      transition     yes     yes           -
+Transform                       transform      yes     yes           -
+Display & Visibility            display        yes     yes (Display) -
+Position                        position       yes     yes           -
+Spacing                         spacing        yes     yes           -
+Size                            size           yes     yes           -
+Media                           mediaFit       yes     yes           -
+SVG                             svgPaint       yes     yes           -
+Content Layout                  layout         yes     -             yes
+Flex item / Flex Child          flexChild      yes     -             yes
+Grid item / Grid Child          gridChild      yes     -             yes
+
+When the selected elements agree (BC-10.4), the uniform multi-selection
+editors ARE the single sections, so they have the menu too. Sections with
+no multi-selection presentation get no new section (as instructed).
+Non-CSS sections (Identity, Protection, Interactions, Link, Heading Level,
+Form Control, List, Table, Pagination, Navigation links, media sources)
+have no menu.
+Ownership is the BC-11.2 registry's, so sections never overlap:
+- Typography never carries spacing;
+- Background never carries border;
+- Border never carries shadows;
+- Flex item never carries the parent's container settings (tested).
+- The SVG section's menu copies only fill/stroke/stroke-width, never the
+  primitive, viewBox or drawing.
+
+
+4. SECTION COPY CSS COMMAND
+---------------------------
+copyStyleSection(group):
+- reads the PRIMARY element (not the page root);
+- calls captureStyleSnapshot(document, source, [group], { onlyOffered: true }),
+  so a group the source doesn't offer in its own Inspector is never
+  captured, even if a stale value is stored (tested on a div with stored
+  typography);
+- stores { version: 1, sourceName, groups } in the shared styleClipboard;
+- makes no document or history change and leaves the selection as it is.
+An empty section CLEARS the CSS clipboard (no stale paste): "<name> has no
+<Label> CSS of its own, so nothing was copied." Success: "<Label> CSS copied
+from <name>."
+
+
+5. SECTION PASTE CSS COMMAND
+----------------------------
+pasteStyleSection(group):
+- An empty CSS clipboard: the BC-11.2 notice.
+- A clipboard WITHOUT this group: "The copied CSS has no <Label> settings to
+  paste." No change.
+- Otherwise it runs pasteStyleIntoSelection(state, clipboard, [group]),
+  BC-11.2's paste body moved into one helper that both commands use:
+  - valid destinations only;
+  - a lock on any destination blocks all;
+  - applyStyleSnapshot filtered to the group;
+  - invalid writes and the save limit refuse all (the image check only
+    when the background group is pasted);
+  - one history entry, none for a no-op;
+  - skips named in one notice.
+
+
+6. GLOBAL/SECTION CLIPBOARD INTEROPERABILITY
+--------------------------------------------
+One clipboard; the group filter decides (all tested):
+- Global Copy CSS → Paste Background CSS: only background, the gradient
+  included. Typography, shadow and spacing are untouched.
+- Copy Box Shadow (or Spacing) CSS → global Paste CSS: only that group,
+  because the clipboard holds only it.
+- Copy Typography → Paste Typography: that group, merged.
+- Copy Typography → Paste Background: nothing is reinterpreted. No change,
+  no history, a notice, and the menu item is disabled.
+- A section copy replaces the CSS clipboard (one clipboard, as specified).
+  The element clipboard is never touched (tested).
+
+
+7. SINGLE-SELECTION BEHAVIOR
+----------------------------
+The menu is on every CSS section of the full Inspector. Availability is
+computed when the menu opens (canCopyStyleSection / canPasteStyleSection,
+exported pure checks), so a dead control is never offered:
+- Copy needs a primary element that offers the section and has authored
+  values in it.
+- Paste needs the group in the CSS clipboard and at least one selected
+  element where it would apply (a dry run reports anything other than
+  "nothing compatible").
+Locks and invalid values are still handled when the command runs.
+
+
+8. MULTI-SELECTION BEHAVIOR
+---------------------------
+Supported with every BC-10 Inspector mode:
+- single selection;
+- identical tags (the fanned-out single sections);
+- mixed tags (bulk sections);
+- the Mixed panels;
+- parent + child;
+- cross-container.
+Copy always uses the primary, and Paste applies to every selected element
+where compatible. Tested: h1 + p, primary p. Copy Typography takes p's
+values, Paste writes both in one step, and the selection is unchanged. The
+Mixed Box Shadow panel shows the menu. Mixed displays are never replaced by
+a copy; copying changes nothing in the document.
+
+
+9. COMPATIBILITY FILTERING
+--------------------------
+The BC-11.2 rules apply unchanged (capability flags plus per-node rules).
+- Only a div selected for Paste Typography: nothing compatible. No change,
+  and the menu item is disabled.
+- div + two paragraphs: applied to the paragraphs in one step, with
+  "CSS pasted. Skipped: Typography."
+
+
+10. MERGE SEMANTICS
+-------------------
+BC-11.2 merge, per field. The brief's example is tested exactly: copied
+24px + red onto 16px + bold gives 24px, red, bold. Background, spacing,
+shadows and the HTML id are untouched.
+
+
+11. COMPLEX CSS SUPPORT
+-----------------------
+Through BC-11.2's deep-cloned typed values. Tested at section level:
+- a gradient Background;
+- a 2-layer Box Shadow (equal value, a different object from the
+  source's);
+- Content Layout Flex settings;
+- Flex item settings.
+Every other complex group (border sides, radius corners, filters,
+transforms, transitions, position, size) uses the same registry entries
+BC-11.2 tested.
+
+
+12. LAYOUT CSS SUPPORT
+----------------------
+- Content Layout: Flex settings applied to a Grid container (it becomes
+  Flex, as authored).
+- A Free container is skipped and named ("Content layout"), never
+  converted Flow ↔ Free. This is BC-11.2's structural restriction,
+  unchanged.
+- Flex/Grid item, Size and Position follow BC-11.2's rules:
+  - grid placement clamped per destination;
+  - a Free child's size must fit its container;
+  - Position is skipped on Free children and containers.
+
+
+13. ATOMIC TRANSACTIONS
+-----------------------
+The single shared helper is described in section 5. Tested:
+- a style lock on one of two destinations: no change, no history;
+- multi-destination: one entry.
+Each refusal (lock, invalid value, size limit, missing group, nothing
+compatible) leaves the document and history unchanged.
+
+
+14. UNDO/REDO
+-------------
+One paste is one entry. Undo restores each destination's previous authored
+values, and the computed and Mixed states follow from the document, so the
+BC-10.3 display updates as usual. Redo reapplies. Repeating the paste is a
+no-op with no entry. Copy never adds an entry. Tested in the store and in
+Chromium (multi-selection Background paste, Undo, Redo).
+
+
+15. ACCESSIBILITY
+-----------------
+The trigger has:
+- an accessible name "<Section> CSS actions", plus a title tooltip;
+- aria-haspopup="menu";
+- aria-expanded, and aria-controls while open.
+It is a native button, so Enter and Space open it, and it sits in the tab
+order after the header toggle and any Reset button. The menu (role=menu,
+named "<Section> CSS") focuses its first item. The keyboard model is the
+menu bar's:
+- arrows, Home and End move;
+- Enter or Space run the item;
+- Escape closes and returns focus to the trigger;
+- Tab closes;
+- an outside pointer press closes it.
+Disabled items are real disabled menu items. Tested with the keyboard:
+Enter open, Enter copy, Space open, ArrowDown, Escape, Space paste.
+
+
+16. RESPONSIVE INSPECTOR BEHAVIOR
+---------------------------------
+- At the Inspector's narrowest width (Chromium, dragged to the handle's
+  aria-valuemin): the menu lies fully inside the panel horizontally, and no
+  Inspector scroll container scrolls sideways, before or after opening.
+- The trigger is a fixed 24px; the header label truncates as before.
+- It works on collapsed sections (tested: the section stays collapsed).
+- An expanded or scrolling Inspector is unaffected: the menu is absolutely
+  positioned under its trigger.
+
+
+17. CANVAS/PREVIEW/EXPORT PARITY
+--------------------------------
+In Chromium, Paste Background CSS of a linear gradient onto two
+paragraphs: the gradient renders on the Canvas and in Preview, and the
+export contains three `linear-gradient(90deg` declarations (the source
+plus two copies). Undo and Redo are reflected on the Canvas. No runtime
+script and no export change.
+
+
+18. PROJECT v3 COMPATIBILITY
+----------------------------
+No schema, serialization or migration change. The CSS clipboard (including
+section snapshots), notices and computed caches are editor-only, as
+BC-11.2 established and tested. Pasted values are ordinary authored
+settings, so a save/reopen keeps them; BC-11.2 evidence is reused.
+
+
+19. FILES CHANGED
+-----------------
+New:
+  src/features/inspector/components/InspectorSectionCssMenu.tsx
+  src/features/inspector/components/InspectorSectionCssMenu.test.tsx (5 tests)
+  src/features/editor/stores/useEditorStore.styleClipboardSection.test.ts (11 tests)
+  e2e/css-clipboard-sections.spec.ts (4 tests)
+Modified:
+  src/features/editor/commands/styleClipboardCommands.ts
+    captureStyleSnapshot option onlyOffered
+  src/features/editor/stores/useEditorStore.ts
+    - copyStyleSection/pasteStyleSection;
+    - the shared pasteStyleIntoSelection;
+    - the canCopyStyleSection/canPasteStyleSection checks;
+    - three notices.
+  src/components/ui/menu/MenuDropdown.tsx
+    an optional className prop
+  src/features/inspector/components/InspectorSection.tsx
+    the cssGroup prop and menu
+  src/features/inspector/components/InspectorMixedSectionPanel.tsx
+    passes cssGroup through
+  src/features/inspector/components/InspectorMultiNodeSummary.tsx
+    cssGroup on the 4 Mixed panels
+  18 single-selection section files and 14 bulk section files
+    one `cssGroup="<group>"` attribute each, added by a script that
+    required exactly one <InspectorSection> tag per file
+
+
+20. FOCUSED TEST COMMANDS AND RESULTS
+-------------------------------------
+npx vitest run src/features/editor/stores/useEditorStore.styleClipboard.test.ts
+  -> 19 passed (the BC-11.2 behaviour, unchanged after the refactor)
+npx vitest run src/features/editor/stores/useEditorStore.styleClipboardSection.test.ts
+  -> first run 9 passed, 2 failed. Both were invalid fixture values that
+     the pre-commit validation correctly refused: justifyContent "between"
+     (should be "space-between"), and a radial gradient given an angle.
+     Fixed, then 11 passed.
+npx vitest run src/features/inspector/components/InspectorSectionCssMenu.test.tsx -> 5 passed
+npx vitest run src/features/inspector src/features/editor/stores/useEditorStore.styleClipboard.test.ts
+  (why: every CSS section header changed)
+  -> 94 files, 1281 passed, 1 failed:
+     InspectorPaginationSection "toggles controls…". That file is
+     untouched, and the section has no CSS menu. It passed 14/14 alone and
+     again in the rerun below, so it was a timing failure under the
+     94-file parallel load.
+npx vitest run src/components/ui src/components/layout <the 3 new/changed
+  store and menu test files> src/features/inspector/components/InspectorPaginationSection.test.tsx
+  -> 20 files, 186 passed
+After Prettier on MenuDropdown: src/components/ui + AppHeader → 55 passed
+npx playwright test e2e/css-clipboard-sections.spec.ts --project=chromium
+  -> first run 3 passed, 1 failed. The narrow-width check counted every
+     truncated label as horizontal overflow (a test-script mistake). It now
+     checks real sideways scroll containers (overflow-x auto/scroll),
+     before and after opening, then 1 passed.
+npx playwright test e2e/css-clipboard.spec.ts e2e/css-clipboard-sections.spec.ts e2e/multi-selection-shared-controls.spec.ts e2e/bc10-final-audit.spec.ts --project=chromium
+  -> 13 passed. These cover the BC-11.2 global behaviour, the BC-10.4
+     Inspector sections and the BC-10 audit workflows, all affected by the
+     new header buttons.
+npx tsc --noEmit -p . -> 0 errors
+npx eslint <all changed/new .ts/.tsx> -> clean
+npx prettier --write src/components/ui/menu/MenuDropdown.tsx (the only
+  changed file that was Prettier-clean at HEAD; the diff is 4 added lines)
+Not run (policy): the full Vitest/browser/Electron suites, a build. No
+desktop-specific path changed.
+
+
+21. KNOWN LIMITATIONS
+---------------------
+- Menu items use the section's header label ("Copy Visual Effects CSS").
+  Notices use the registry label ("Filters CSS copied from …"). Both refer
+  to the same group.
+- A section copy replaces the whole CSS clipboard (one shared clipboard, by
+  design). A later global Paste CSS therefore applies only that section.
+- The SVG section's menu covers fill/stroke only, not the SVG's
+  primitive, viewBox or drawn content (not CSS).
+- Availability is computed when the menu opens and updates while it is
+  open. It is not shown on the closed trigger.
+- The BC-11.2 limitations still apply (Flow/Free conversion skipped,
+  approximate Free bounds, className not copied).
+- No section-level shortcuts (menu-only, as allowed).
+
+
+22. GIT WORKING-TREE STATUS
+---------------------------
+42 tracked files modified:
+  - MenuDropdown;
+  - styleClipboardCommands and useEditorStore;
+  - InspectorSection, InspectorMixedSectionPanel and InspectorMultiNodeSummary;
+  - 32 section files;
+  - the rest as listed in section 19.
+4 new files (section 19), plus this report and the changelog, which are not
+to be staged. No commit, no push. BC-11.4 not started.
+
+
+23. QA RECOMMENDATION
+---------------------
+Ready for ChatGPT QA. Suggested focus:
+- the header-menu interaction on narrow Inspectors;
+- the one-clipboard semantics (a section copy replaces the global copy);
+- the section-to-group table in section 3.

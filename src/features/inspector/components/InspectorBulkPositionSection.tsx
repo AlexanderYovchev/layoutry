@@ -45,7 +45,7 @@ export function InspectorBulkPositionSection({ nodes }: InspectorBulkPositionSec
   const position = resolveSharedValue(nodes, (node) => getPositionSettings(node).position);
 
   return (
-    <InspectorSection label="Position">
+    <InspectorSection cssGroup="position" label="Position">
       <InspectorPropertyRow label="Position" state={position.kind === "mixed" ? "mixed" : position.value ? "set" : "unset"} reset={<InspectorResetButton onReset={() => setElementsPositionField(ids, "position", undefined)} disabled={!(nodes.some((node) => getPositionSettings(node).position !== undefined))} label="Reset position on all selected elements" />}>
         <InspectorSegmentedRow
           label="Position"

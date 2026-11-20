@@ -80,7 +80,7 @@ export function InspectorBackgroundSection({ node }: InspectorBackgroundSectionP
   }
 
   return (
-    <InspectorSection label="Background" defaultOpen>
+    <InspectorSection cssGroup="background" label="Background" defaultOpen>
       <InspectorPropertyRow
         label="Color"
         state={colorError ? "invalid" : background.color ? "set" : "unset"}

@@ -31,7 +31,7 @@ export function InspectorBulkMediaFitSection({ nodes }: InspectorBulkMediaFitSec
   const objectFit = resolveSharedValue(nodes, (node) => getMediaFitSettings(node).objectFit);
 
   return (
-    <InspectorSection label="Media">
+    <InspectorSection cssGroup="mediaFit" label="Media">
       <InspectorPropertyRow label="Object Fit" state={objectFit.kind === "mixed" ? "mixed" : objectFit.value ? "set" : "unset"}>
         <InspectorSegmentedRow
           label="Object Fit"

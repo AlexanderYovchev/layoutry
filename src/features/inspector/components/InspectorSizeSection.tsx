@@ -176,7 +176,7 @@ export function InspectorSizeSection({ node, isFreeChild }: InspectorSizeSection
   if (isFreeChild && !freeGeometry) return null;
 
   return (
-    <InspectorSection label="Size" defaultOpen>
+    <InspectorSection cssGroup="size" label="Size" defaultOpen>
       {/* One reset scope for the pair: "Reset size" covers both fields (an open edit in either is discarded, and a keyboard reset lands on Width). */}
       <div {...resetScopeProps} className="flex flex-col gap-1.5">
       {!isFreeChild && (

@@ -29,6 +29,8 @@ interface MenuDropdownProps {
   isOpen?: boolean;
   onRequestClose: (returnFocus: boolean) => void;
   onMoveToAdjacentMenu?: (direction: 1 | -1) => void;
+  /** Extra classes for the menu surface (e.g. a narrower width where the menu-bar default is too wide). */
+  className?: string;
 }
 
 function isSelectable(item: MenuItem) {
@@ -82,6 +84,7 @@ export function MenuDropdown({
   isOpen = true,
   onRequestClose,
   onMoveToAdjacentMenu,
+  className,
 }: MenuDropdownProps) {
   const selectableIndexes = items
     .map((item, index) => (isSelectable(item) ? index : -1))
@@ -213,6 +216,7 @@ export function MenuDropdown({
         variant === "top" && "mt-1.5",
         variant === "top" && (align === "left" ? "left-0" : "right-0"),
         variant === "submenu" && "-top-1 left-full ml-1.5",
+        className,
       )}
     >
       {items.map((item, index) => (

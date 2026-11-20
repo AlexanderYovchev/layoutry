@@ -86,7 +86,7 @@ export function InspectorFlexChildSection({ node }: InspectorFlexChildSectionPro
   );
 
   return (
-    <InspectorSection
+    <InspectorSection cssGroup="flexChild"
       label="Flex item"
       defaultOpen
       actions={<InspectorResetButton onReset={resetAll} disabled={node.flexChild === undefined} label="Reset flex item" />}

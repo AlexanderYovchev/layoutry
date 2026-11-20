@@ -22,7 +22,7 @@ export function InspectorBulkFiltersSection({ nodes }: InspectorBulkFiltersSecti
   const blur = resolveSharedValue(nodes, (node) => getFilterSettings(node).blur?.value);
 
   return (
-    <InspectorSection label="Filters">
+    <InspectorSection cssGroup="filters" label="Filters">
       <InspectorPropertyRow label="Opacity" state={opacity.kind === "mixed" ? "mixed" : opacity.value !== undefined ? "set" : "unset"} reset={<InspectorResetButton onReset={() => setElementsFilterField(ids, "opacity", undefined)} disabled={!(nodes.some((node) => getFilterSettings(node).opacity !== undefined))} label="Reset opacity on all selected elements" />}>
         <InspectorBulkNumberField
           ariaLabel="Opacity"

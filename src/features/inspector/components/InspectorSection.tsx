@@ -4,6 +4,8 @@ import { ChevronDown } from "lucide-react";
 import { useId, useState, type MouseEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { resetScopeProps } from "@/features/inspector/utils/inspectorResetScope";
+import { InspectorSectionCssMenu } from "@/features/inspector/components/InspectorSectionCssMenu";
+import type { StyleGroupKey } from "@/features/editor/types/styleClipboard";
 
 interface InspectorSectionProps {
   label: string;
@@ -11,6 +13,8 @@ interface InspectorSectionProps {
   icon?: ReactNode;
   /** Section-level controls (e.g. a "reset all" button) rendered at the header's trailing edge. Clicks inside never toggle the section. */
   actions?: ReactNode;
+  /** BC-11.3: the CSS group this section owns — adds the header's Copy/Paste <section> CSS menu after any actions. */
+  cssGroup?: StyleGroupKey;
   /** Disables toggling and dims the header; children are not rendered. */
   disabled?: boolean;
   /**
@@ -31,6 +35,7 @@ export function InspectorSection({
   label,
   icon,
   actions,
+  cssGroup,
   disabled = false,
   defaultOpen = true,
   isOpen: controlledOpen,
@@ -85,9 +90,10 @@ export function InspectorSection({
             )}
           />
         </button>
-        {actions && (
+        {(actions || (cssGroup && !disabled)) && (
           <div onClick={stopActionsToggle} className="flex shrink-0 items-center gap-1 pr-2">
             {actions}
+            {cssGroup && !disabled && <InspectorSectionCssMenu group={cssGroup} sectionLabel={label} />}
           </div>
         )}
       </h3>
