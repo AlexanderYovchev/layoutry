@@ -17,7 +17,6 @@ import {
 } from "@/features/editor/commands/paginationCommands";
 import {
   insertNode,
-  moveNode,
   removeNode,
   resizeNode,
   setAspectRatioLocked as setAspectRatioLockedCommand,
@@ -173,6 +172,8 @@ import { isStructurallyEqual } from "@/features/editor/utils/isStructurallyEqual
 import { collectNodeIds } from "@/features/editor/utils/collectNodeIds";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
 import { resolveFreeDestinationPlacement } from "@/features/editor/utils/resolveFreeDestinationPlacement";
+import { moveRejectedMessage, planMove, type MoveOutcome } from "@/features/editor/commands/moveCommands";
+import { getElementDisplayName } from "@/features/editor/utils/elementDisplayName";
 import { resolveDeletionFallbackSelection } from "@/features/editor/utils/resolveDeletionFallbackSelection";
 import { resolveDestinationParent } from "@/features/editor/utils/resolveDestinationParent";
 import { getGridContainerSettings } from "@/features/editor/types/flowLayout";
@@ -350,7 +351,14 @@ interface EditorState {
     node: EditorElementNode,
     position?: InsertPosition,
   ) => void;
-  moveElement: (nodeId: string, targetId: string, zone: DropZone) => void;
+  /**
+   * Moves one element before/after a sibling or into a container (Canvas
+   * drag, Structure keyboard reorder). BC-12.2: validated by planMove (the
+   * shared rules); a move to where it already is changes nothing and
+   * records no history; a refused move changes nothing and shows a notice
+   * with the reason. One history entry; the moved element is selected.
+   */
+  moveElement: (nodeId: string, targetId: string, zone: DropZone) => MoveOutcome;
   resizeElement: (nodeId: string, dimensions: ElementDimensions) => void;
   beginResizeTransaction: () => void;
   commitResizeTransaction: () => void;
@@ -1080,6 +1088,11 @@ export const MULTI_DUPLICATE_REJECTED_NOTICE = "These elements can't all be dupl
 /** BC-10.5.1: copies going into a Free container whose arrangement doesn't fit there at their sizes. */
 export const FREE_GROUP_PASTE_REJECTED_NOTICE = "These elements don't fit in this container at their size and arrangement, so nothing was pasted.";
 export const FREE_GROUP_DUPLICATE_REJECTED_NOTICE = "The copies don't fit in their container at their size and arrangement, so nothing was duplicated.";
+/** BC-12.2: a form control moved out of the Label that names it (allowed, D9; the label no longer names it). */
+export function movedOutOfLabelNotice(name: string): string {
+  return `${name} moved out of its label, so that label no longer names it.`;
+}
+
 /** BC-10.5.1: a paste or duplicate that would give a navigation bar more than MAX_NAVIGATION_LINKS links (BC-06). */
 export const NAVIGATION_LINK_LIMIT_PASTE_NOTICE = `A navigation bar can have at most ${MAX_NAVIGATION_LINKS} links, so nothing was pasted.`;
 export const NAVIGATION_LINK_LIMIT_DUPLICATE_NOTICE = `A navigation bar can have at most ${MAX_NAVIGATION_LINKS} links, so nothing was duplicated.`;
@@ -1353,15 +1366,21 @@ export const useEditorStore = create<EditorState>()((set) => ({
       return { ...pushHistory(state), document, selection: selectionFromSingle(node.id) };
     }),
 
-  // Same shape as insertElement, and the same no-op guard: moveNode
-  // already gates through isValidMoveTarget (which useMoveElement also
-  // checks before ever calling this action), but this action must not
-  // trust that double-gating alone — a rejected move must not push a
-  // spurious no-diff history entry either.
-  moveElement: (nodeId, targetId, zone) =>
+  // BC-12.2: planMove (commands/moveCommands.ts) is the one rule set for
+  // every move (Canvas drag, Structure keyboard): structural and component
+  // rules, no-op detection, Free/Grid geometry on entry. The store only adds
+  // the Pagination invariants and the single history entry.
+  moveElement: (nodeId, targetId, zone) => {
+    let outcome: MoveOutcome = { status: "unchanged" };
     set((state) => {
-      const moved = moveNode(state.document, nodeId, targetId, zone);
-      if (moved === state.document) return {};
+      const plan = planMove(state.document, nodeId, targetId, zone);
+      if (plan.status === "unchanged") return {};
+      if (plan.status === "rejected") {
+        outcome = plan;
+        const node = findNodeById(state.document, nodeId);
+        return nextEditorNoticeState(state, moveRejectedMessage(node ? getElementDisplayName(node) : "The element", plan.reason));
+      }
+      const moved = plan.document;
       // BC-09.5: a current page dragged out of its Pagination is no longer
       // its current page (exactly like a pasted copy), so it can never
       // replace another Pagination's current page; it takes that
@@ -1370,8 +1389,13 @@ export const useEditorStore = create<EditorState>()((set) => ({
       const document = leftItsParent
         ? withPaginationInvariants(state.document, setElementAriaCurrentRemoved(moved, nodeId), { ordinaryLookIds: new Set([nodeId]) })
         : withPaginationInvariants(state.document, moved);
-      return { ...pushHistory(state), document, selection: selectionFromSingle(nodeId) };
-    }),
+      outcome = { status: "moved", leftLabel: plan.leftLabel };
+      const movedNode = findNodeById(document, nodeId);
+      const notice = plan.leftLabel && movedNode ? nextEditorNoticeState(state, movedOutOfLabelNotice(getElementDisplayName(movedNode))) : {};
+      return { ...pushHistory(state), ...notice, document, selection: selectionFromSingle(nodeId) };
+    });
+    return outcome;
+  },
 
   // Resizing never changes selection — the resized node was already
   // selected (handles only render for the current selection) and stays

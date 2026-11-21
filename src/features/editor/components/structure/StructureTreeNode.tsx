@@ -13,6 +13,7 @@ import {
   shouldShowTagBadge,
 } from "@/features/editor/utils/elementDisplayName";
 import type { EditorElementNode } from "@/features/editor/types/document";
+import type { StructureMoveDirection } from "@/features/editor/components/structure/structureKeyboardMove";
 import { isVideoEmbedNode } from "@/features/editor/types/videoEmbed";
 
 // Bounded lookup so indentation stays on the canonical Tailwind spacing
@@ -38,6 +39,13 @@ const guideClassesByDepth = [
   "before:left-23.5",
 ] as const;
 
+const REORDER_KEYS: Readonly<Partial<Record<string, StructureMoveDirection>>> = {
+  ArrowUp: "up",
+  ArrowDown: "down",
+  ArrowRight: "into",
+  ArrowLeft: "out",
+};
+
 function indentClassName(depth: number) {
   return indentClassesByDepth[Math.min(depth, indentClassesByDepth.length - 1)];
 }
@@ -60,6 +68,10 @@ interface StructureTreeNodeProps {
   onFocusRow: (id: string) => void;
   onMoveFocus: (fromId: string, direction: 1 | -1) => void;
   onMoveToEdge: (edge: "first" | "last") => void;
+  /** BC-12.2: Alt+Arrow keyboard reorder of this row. */
+  onReorder: (id: string, direction: StructureMoveDirection) => void;
+  /** BC-12.2: plain Left/Right (expand/collapse, parent/child). */
+  onHorizontalKey: (id: string, key: "ArrowLeft" | "ArrowRight") => void;
   registerRowRef: (id: string, el: HTMLDivElement | null) => void;
 }
 
@@ -75,6 +87,8 @@ export function StructureTreeNode({
   onFocusRow,
   onMoveFocus,
   onMoveToEdge,
+  onReorder,
+  onHorizontalKey,
   registerRowRef,
 }: StructureTreeNodeProps) {
   const children = node.children ?? [];
@@ -86,6 +100,16 @@ export function StructureTreeNode({
   const Icon = isVideoEmbedNode(node) ? VIDEO_EMBED_ICON : (TAG_ICONS[node.tag] ?? FALLBACK_ELEMENT_ICON);
 
   function handleRowKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    // BC-12.2: Alt+Arrow (Option+Arrow) and nothing else reorders. Any
+    // other combination with Alt (AltGr, Ctrl+Alt, Alt+Shift) is left alone.
+    if (event.altKey) {
+      const direction = REORDER_KEYS[event.key];
+      if (direction && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.getModifierState?.("AltGraph")) {
+        event.preventDefault();
+        onReorder(node.id, direction);
+      }
+      return;
+    }
     switch (event.key) {
       case "Enter":
       case " ":
@@ -99,6 +123,12 @@ export function StructureTreeNode({
       case "ArrowUp":
         event.preventDefault();
         onMoveFocus(node.id, -1);
+        break;
+      case "ArrowLeft":
+      case "ArrowRight":
+        if (event.ctrlKey || event.metaKey || event.shiftKey) break;
+        event.preventDefault();
+        onHorizontalKey(node.id, event.key);
         break;
       case "Home":
         event.preventDefault();
@@ -222,6 +252,8 @@ export function StructureTreeNode({
                   onFocusRow={onFocusRow}
                   onMoveFocus={onMoveFocus}
                   onMoveToEdge={onMoveToEdge}
+                  onReorder={onReorder}
+                  onHorizontalKey={onHorizontalKey}
                   registerRowRef={registerRowRef}
                 />
               ))}

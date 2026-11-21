@@ -8,6 +8,9 @@ import type { DropZone } from "@/features/editor/utils/resolveDropZone";
  * just inside moveNode) so a rejected move never even reaches the store,
  * keeping this hook's contract explicit: calling it with an invalid
  * request is always a safe no-op, never a silent partial mutation.
+ * BC-12.2: only the structural rules are pre-checked here (silent, as
+ * before); a component rule (Navbar or Pagination limit, Free bounds)
+ * reaches the store's moveElement, which refuses it with a notice.
  */
 export function useMoveElement() {
   const documentModel = useEditorStore((state) => state.document);

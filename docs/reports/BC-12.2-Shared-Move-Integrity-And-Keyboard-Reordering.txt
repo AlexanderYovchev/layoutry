@@ -1,0 +1,474 @@
+BC-12.2 — Shared Move Integrity & Structure Panel Keyboard Reordering
+=====================================================================
+Date: 2026-11-21
+Milestone: BC-12 (Structure Panel Drag-and-Drop Ordering)
+Status: implemented, focused validation passed, NOT committed (waiting for ChatGPT QA)
+Pointer drag-and-drop (BC-12.3) and multi-element drag were NOT started.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+- One movement system now serves the Canvas drag and the new Structure
+  keyboard reorder:
+  commands/moveCommands.ts — planMove / validateMove;
+  store moveElement — Pagination invariants + one history entry.
+- All four BC-12.1 gaps are fixed or settled:
+  G1 a no-op move changes nothing (no history, not dirty, selection kept);
+  G2 an element entering a Free container gets a position inside the bounds;
+  G3 the Navbar 12-link limit is enforced on moves;
+  G4 Flex/Grid item settings are kept but inert under a non-matching parent
+     (already safe); a Grid placement is clamped when it enters a grid.
+- New component rules on moves:
+  - Pagination: controls keep their place; pages stay between
+    Previous/Next; the 12-page limit applies.
+  - Form: a control moved out of its label is allowed, with a notice (D9).
+- Structure panel (D11):
+  - Alt+ArrowUp / Down / Right / Left move the focused row;
+  - announcements in a polite live region;
+  - plain Left/Right now expand/collapse (WAI-ARIA tree);
+  - the Help → Keyboard Shortcuts list shows the new keys.
+- Focused tests:
+  - 46 new unit/component tests;
+  - 1 new Canvas indicator test;
+  - 6 new Chromium tests;
+  - 2 tests also in Firefox + WebKit (Alt+Arrow and the Alt+Left Back
+    shortcut).
+- Typecheck and targeted ESLint are clean.
+- Recommendation: APPROVE BC-12.2 and proceed to BC-12.3.
+
+
+2. FILES CHANGED
+----------------
+Created:
+- src/features/editor/commands/moveCommands.ts (planMove, validateMove,
+  resolveMoveDestination, MoveOutcome, moveRejectedMessage)
+- src/features/editor/components/structure/structureKeyboardMove.ts
+  (resolveKeyboardMove, describeMovedPosition)
+- src/features/editor/stores/useEditorStore.moveIntegrity.test.ts (36 tests)
+- src/features/editor/components/structure/StructureTree.keyboardReorder.test.tsx (10 tests)
+- e2e/structure-keyboard-reorder.spec.ts (6 Chromium tests)
+- docs/reports/BC-12.2-Shared-Move-Integrity-And-Keyboard-Reordering.txt
+- changelogs/2026-11-21-shared-move-integrity-and-keyboard-reordering-BC-12.2.txt
+  (gitignored)
+Modified:
+- src/features/editor/rules/moveValidationRules.ts:
+  getMoveTargetRejection (a reason code); isValidMoveTarget now wraps it,
+  with the same results as before.
+- src/features/editor/stores/useEditorStore.ts:
+  - moveElement uses planMove and returns a MoveOutcome;
+  - a notice on refusal and on leaving a label;
+  - movedOutOfLabelNotice; the unused moveNode import was removed.
+- src/features/editor/hooks/useMoveElement.ts: comment only.
+- src/features/canvas/utils/resolveActiveDropIndicator.ts: validateMove
+  instead of isValidMoveTarget.
+- src/features/canvas/utils/resolveActiveDropIndicator.test.ts: 1 test.
+- src/features/editor/components/structure/StructureTree.tsx:
+  - handleReorder, handleHorizontalKey;
+  - the announcement live region;
+  - focus-after-move.
+- src/features/editor/components/structure/StructureTreeNode.tsx:
+  Alt+Arrow and plain Left/Right key handling.
+- src/components/layout/HelpDialogs.tsx: two keyboard-shortcut rows.
+No project schema, migration, factory or export change.
+
+
+3. SHARED MOVE COMMAND CHANGES
+------------------------------
+Single source of truth. The existing moveNode (documentCommands.ts) is
+still the only tree mutation. It removes the node and re-inserts the SAME
+object, so the id never changes. planMove wraps it:
+  1. structural rules: getMoveTargetRejection
+     - self, page, beside-page, descendant, not-found, incompatible-parent;
+     - the old isValidMoveTarget logic, now with a reason;
+  2. destination: resolveMoveDestination
+     - before/after a sibling, or appended inside;
+     - the parent plus the index once the element is taken out;
+  3. no-op check (section 4);
+  4. component rules (sections 6 and 9);
+  5. geometry for a new parent (sections 5 and 7), written to the node
+     BEFORE moveNode, in the same document;
+  6. moveNode.
+validateMove is the same rule set without the mutation.
+Consumers:
+- Canvas drop indicator (resolveActiveDropIndicator) → validateMove, so a
+  refused move never shows an indicator.
+- Canvas drop (useMoveElement) → the structural pre-check (silent, as
+  before), then store.moveElement. A component refusal reaches the store,
+  which shows a notice.
+- Structure keyboard (StructureTree.handleReorder) → store.moveElement.
+- store.moveElement:
+  - planMove;
+  - then the existing BC-09.5 current-page handling and
+    withPaginationInvariants;
+  - then pushHistory once, with the moved element selected.
+  It returns {moved, leftLabel} | {unchanged} | {rejected, reason}. The
+  return type changed from void; existing callers ignore it.
+
+
+4. NO-OP DETECTION (G1)
+-----------------------
+- The destination index is normalized to the children list WITHOUT the
+  moved element.
+- A move is a no-op when the parent and that index equal the element's
+  current parent and index.
+- This is checked before any mutation. The store returns {} (same document,
+  no history, not dirty, selection unchanged, no notice) and reports
+  {status: "unchanged"}.
+Tested:
+- A before B when already before;
+- B after A;
+- C inside its own parent when already last;
+- B before C;
+- a real same-parent reorder still moves;
+- moving the first child "inside" its own parent appends it.
+
+
+5. FREE-CONTAINER POSITIONING (G2, D8)
+--------------------------------------
+Entering a Free parent (a different parent):
+- Size: the element's existing freeLayout size (e.g. from another Free
+  container, or an inert one from earlier), otherwise its tag default
+  (getDefaultFreeElementSizeForNode). This is the same rule as
+  insert/paste/duplicate.
+- Bounds: if that size exceeds approximateFreeContainerSize(destination),
+  the move is refused ("free-bounds"). The element is never shrunk or
+  distorted, matching BC-10.5.1's group rule. Atomic: no change, no history,
+  a notice with the reason.
+- Position: resolveFreeDestinationPlacement, the existing one-shot helper.
+  It takes the first free slot (never exactly on top of an existing child)
+  and normalizes into the bounds.
+Same Free container: coordinates are untouched; only the DOM / paint order
+changes. Verified on the Canvas: the element on top changes, and both boxes
+measure identically before and after.
+Flow sibling reorders never add geometry.
+Free → Flow: freeLayout is kept (inert in Flow, as paste already does), so
+moving back restores the size.
+Undo restores the element without the position.
+
+
+6. NAVBAR CAPACITY (G3)
+-----------------------
+- A link entering a nav (a different parent) uses the existing BC-06
+  contract, canAddNavigationLink with MAX_NAVIGATION_LINKS. No second
+  constant.
+- Full nav: refused ("navigation-link-limit"), atomically, with a notice
+  "… a navigation bar can have at most 12 links".
+- Reordering inside the full nav is allowed. Moving a link out is allowed.
+- The link object is unchanged (identity, styling, interactions).
+- Paginations are not navbars (isNavigationLinkContainer excludes them).
+
+
+7. FLEX/GRID CHILD SETTING BEHAVIOR (G4)
+----------------------------------------
+Finding:
+- resolveFlexOrGridChildStyle (shared by Canvas, Preview and Export) applies
+  flexChild/gridChild only when the immediate parent is Flex/Grid.
+- The Flex item / Grid item Inspector sections show only under such a parent.
+- Copy CSS uses onlyOffered (BC-11.4).
+- So stale settings are already inert everywhere and are deliberately KEPT:
+  no data loss, and they apply again if the element moves back.
+Real risk found and fixed:
+- A Grid placement entering a SMALLER grid, e.g. column 4 in a 2-column
+  grid, would create an implicit track (visible overflow).
+- On entering a Flow Grid parent, gridChild is clamped by the existing
+  clampGridChildPlacement, the same rule used when a grid's track count
+  shrinks.
+- Tested: column 4 span 3, row 2 → column 2 span 2, row 1 in a 2×1 grid.
+No migration.
+
+
+8. STRUCTURAL VALIDATION
+------------------------
+Supported: before/after a sibling, inside a compatible container,
+cross-parent, out of a nested container, same-parent reorder.
+Refused before any mutation, each with a reason code and message:
+  self                 an element onto itself
+  page                 the page root itself
+  beside-page          before/after the page root
+  descendant           into its own subtree (cycle)
+  not-found            stale ids
+  incompatible-parent  the canParentAcceptChild allowlists (li only in
+                       ul/ol, cells in rows, rows in sections, option in
+                       select, nothing inside leaves)
+All seven cases are tested (no history, same document).
+
+
+9. SPECIALIZED COMPONENT SAFEGUARDS
+-----------------------------------
+- Pagination (BC-09):
+  - First / Previous / Next / Last and the ellipsis can't be moved
+    ("pagination-control"), including the BC-09.2 positional fallback
+    roles;
+  - a page may not land before First/Previous or after Next/Last
+    ("pagination-order");
+  - a link entering a Pagination becomes a page and respects
+    MAX_PAGINATION_PAGES (12, "pagination-page-limit");
+  - withPaginationInvariants still keeps exactly one current page, and the
+    BC-09.5 rule for a current page leaving its Pagination still applies;
+  - component identity is unchanged.
+- Navbar: section 6.
+- Tables, lists, select: the existing tag allowlists (section 8).
+- Forms / labels:
+  - the model has no `for` attribute; a label names the control it
+    contains;
+  - moving a form control (input/select/textarea, or a subtree containing
+    one) out of its nearest label is allowed, with a notice ("Email Input
+    moved out of its label, so that label no longer names it."), per the
+    approved D9 option A;
+  - a reorder inside the same label is silent.
+- Interactive elements and media: no special rule. A leaf can't contain
+  children, and interaction targets are ids, which never change.
+- Element identity: a move keeps the id, HTML id, class, text, styles,
+  children, interactions and component metadata (deep-equal before/after in
+  tests). No clone, no new id.
+
+
+10. KEYBOARD REORDER BEHAVIOR (D11)
+-----------------------------------
+Each key moves the FOCUSED row:
+  Alt+ArrowUp     before the previous sibling
+  Alt+ArrowDown   after the next sibling
+  Alt+ArrowRight  inside the immediately preceding sibling, as its last
+                  child (refused with the reason if it can't contain it)
+  Alt+ArrowLeft   right after the current parent
+- "Preceding compatible element" is read as the immediately preceding
+  sibling. Searching further back would also jump over the skipped
+  elements, which is not what an outliner indent does. If that sibling
+  can't contain the element, the move is refused and announced.
+- Unavailable (no mutation, announced):
+  - first/last child;
+  - no previous sibling;
+  - already at the top level;
+  - the page row.
+- Exact modifiers: Alt alone (Option on macOS). Ctrl+Alt, AltGr, Alt+Shift
+  and Alt+Meta are ignored.
+- The handler is on tree rows only, so Inspector fields and the rest of the
+  app are unaffected.
+- preventDefault stops the browser's Alt+Left/Right Back/Forward while a
+  row has focus (verified in Chromium, Firefox and WebKit with a real
+  history entry).
+- Plain Up/Down/Home/End are unchanged.
+- New plain Left/Right (WAI-ARIA tree):
+  - Right opens a closed branch, or steps to the first child;
+  - Left closes an open branch, or steps to the parent.
+- Clipboard and selection shortcuts (Ctrl/Cmd+C/V/X/D, Ctrl/Cmd+Alt+C/V,
+  Ctrl/Cmd/Shift+click) don't use the arrows. Untouched.
+
+
+11. FOCUS AND SELECTION
+-----------------------
+- Only the focused row moves. With a multi-selection, the other selected
+  elements stay put (tested).
+- The moved element becomes the sole selection (the existing moveElement
+  contract, D14).
+- Focus returns to the moved row after the re-render. A row moved to
+  another parent is a new DOM element, so a pending-focus effect focuses it
+  and scrolls it into view.
+- The destination's ancestors are expanded, so a move into a collapsed
+  container opens it (tested).
+- Unrelated branches keep their state. Hidden descendants never become
+  targets: moves are computed from document siblings, and focus only lands
+  on the moved row.
+- No Shift-range is triggered. selectionAnchorId follows the existing
+  selectionFromSingle.
+
+
+12. ACCESSIBILITY ANNOUNCEMENTS
+-------------------------------
+- A polite live region (role=status, sr-only) in the Structure panel,
+  separate from the selection-count region.
+- Messages are read from the document AFTER the move:
+  - "Moved Para A after Para B, position 2 of 2 in First section."
+  - "Moved Para B to the start of First section, position 1 of 2."
+  - Refused: "First section wasn't moved: that place can't contain this
+    kind of element."
+  - Unavailable: "Title is already first in Page." / "… is already last
+    in …" / "… is already at the top level." / "There is no element before
+    … to move it into."
+  - No-op (only reachable by a stale request): "… is already there."
+- Identical consecutive messages are re-announced (an alternating trailing
+  no-break space).
+- Refusals also show the shared notice banner (itself a polite status). A
+  screen reader may hear a refusal twice; see limitations.
+
+
+13. UNDO/REDO
+-------------
+- One move = one history entry (a whole-document snapshot).
+- Undo restores the parent, the order and (after Free entry) the
+  position-less element. Redo restores the destination.
+- Geometry (Free position, Grid clamp) is written in the same document as
+  the move, so there is no extra entry.
+- Refused and no-op moves create no history.
+- Selection after Undo/Redo follows the existing snapshot contract. No
+  selection is persisted (no new store field; the persistence
+  classification test passes).
+
+
+14. CANVAS REGRESSION RESULTS
+-----------------------------
+Canvas moves go through the same planMove, so the Canvas now also gets:
+- no-op drops with no history;
+- Free entry placement;
+- the Navbar/Pagination limits;
+- the Grid clamp.
+Evidence:
+- Unit: 486 tests across the 16 move-related files, including the existing
+  documentCommands moveNode, moveValidationRules, useMoveElement,
+  CanvasInteractionBoundary, store moveElement (tables, lists, invalid
+  moves) and Pagination management moves.
+- New indicator test: no indicator for a link over a full nav; a reorder
+  inside it still shows one.
+- Chromium test 5: a real dnd-kit pointer drag of a Flow button into a
+  Free container lands inside it (position:absolute, box inside the
+  container); one Undo restores it.
+Behaviour changes, intended:
+- a no-op drop no longer enables Undo;
+- a drop that would exceed a limit is refused with a notice;
+- an element entering Free is positioned.
+Free children on the Canvas still move by geometry (useFreeChildMoveSession),
+not tree moves. That path is unchanged.
+
+
+15. PREVIEW/EXPORT PARITY
+-------------------------
+The children array stays the only order. After an Alt+ArrowDown (Chromium
+test 4):
+- the Canvas and Preview show Beta above Alpha;
+- the exported HTML has ">Beta<" before ">Alpha<".
+In the Free container, reordering Back card after Front card:
+- elementFromPoint in the overlap changes from Front card to Back card on
+  the Canvas and in Preview;
+- both bounding boxes are identical before and after;
+- the export lists Front before Back.
+Ids and interactions are unchanged (unit-tested).
+
+
+16. SAVE/REOPEN
+---------------
+- Chromium test 6: after Alt+ArrowLeft takes Gamma out of Section Two, the
+  order survives Save → reload → Open.
+- No schema or factory change, so the project format stays v3 and there is
+  no migration.
+- No selection or announcement state is persisted.
+
+
+17. PERFORMANCE CONSIDERATIONS
+------------------------------
+Cost per move:
+- a few O(n) lookups (findNodeById/findParentId), no full-tree clone;
+- moveNode/insertNode keep structural sharing;
+- exceedsNavigationLinkLimit's full scan is NOT used; the Navbar check is
+  O(children).
+Indicator validation (validateMove) runs per drag-over. That is a handful
+of O(n) lookups, unchanged in complexity from isValidMoveTarget.
+Tested: a 40-level-deep subtree plus a 1,000-child container. Two moves
+finish well under 1s (assertion < 1000 ms) with two history entries. No
+element-count cap. No virtualization.
+Not done (deferred to BC-12.3, where drag hover makes it matter): memoizing
+Structure rows (React.memo with stable callbacks). Rows still re-render on
+each document change, as before.
+
+
+18. EXACT FOCUSED TEST COMMANDS/RESULTS
+---------------------------------------
+Impact map:
+- moveCommands/store moveElement → every move consumer
+  (documentCommands, moveValidationRules, useMoveElement, Canvas indicator,
+  CanvasInteractionBoundary, store moveElement suites, Pagination
+  management, clipboard integrity, which shares the Navbar/Free helpers);
+- Structure tree → the structure component suites;
+- the store interface → the persistence classification;
+- HelpDialogs → AppHeader.test.
+Commands:
+1. npx vitest run src/features/canvas/components/CanvasInteractionBoundary.test.tsx
+   src/features/canvas/utils/resolveActiveDropIndicator.test.ts
+   src/features/editor/components/structure src/features/editor/hooks/useMoveElement.test.ts
+   src/features/editor/rules/moveValidationRules.test.ts
+   src/features/editor/stores/useEditorStore.moveIntegrity.test.ts
+   src/features/editor/stores/useEditorStore.paginationManagement.test.ts
+   src/features/editor/stores/useEditorStore.test.ts
+   src/features/editor/commands/documentCommands.test.ts
+   src/features/editor/stores/useEditorStore.persistence.test.ts
+   src/features/editor/stores/useEditorStore.clipboardIntegrity.test.ts
+   → 16 files, 486 tests passed (includes the 36 + 10 new tests and 1 new
+     indicator test)
+2. npx vitest run src/components/layout/AppHeader.test.tsx → 36 passed
+3. npx playwright test e2e/structure-keyboard-reorder.spec.ts --project=chromium
+   → 6 passed
+4. npx playwright test -c <temporary Firefox+WebKit(+Chromium) config,
+   deleted after the run> e2e/structure-keyboard-reorder.spec.ts
+   -g "Alt\+ArrowDown reorders|Alt\+ArrowLeft moves out"
+   → Firefox 2 + WebKit 2 passed; test 2 rerun with a prior history entry
+     in Chromium/Firefox/WebKit → 3 passed.
+   Why: Alt+Left/Right is a browser Back/Forward shortcut, and Option+Arrow
+   differs on macOS WebKit.
+5. npx tsc --noEmit -p . → 0 errors
+6. npx eslint <the 12 changed/new source and test files> → clean
+7. npx prettier --write on the three changed files that were Prettier-clean
+   at HEAD (useMoveElement.ts, resolveActiveDropIndicator.ts/.test.ts);
+   HelpDialogs.tsx checked clean.
+Not run, per the change-focused policy: the full Vitest suite, the full
+Playwright suite, Electron/desktop/packaged suites and a build. No
+integration boundary (routes, config, desktop) changed.
+Validation fixes along the way (test mistakes, not app bugs):
+- the expected label name was "Email Input", not "Input";
+- an expected order assertion was wrong;
+- grid presets are 1–4;
+- the e2e fixture shadowed `document` inside page.evaluate;
+- the Canvas-drag fixture sat below the viewport (moved the Flow box up);
+- an unused eslint-disable was removed.
+
+
+19. REMAINING LIMITATIONS
+-------------------------
+- Pointer drag in Structure (D1–D4, D10, D12, D13) and multi-element drag
+  (D5/D6) are not implemented (BC-12.3 / later).
+- Free bounds use approximateFreeContainerSize (the known BC-10.5.1/BC-11
+  approximation).
+- Paste/duplicate into a Pagination still don't enforce the 12-page limit
+  (pre-existing; moves do now). Raised, not changed.
+- A refusal is announced both by the Structure live region and by the
+  notice banner (both polite). Possible double speech; low impact.
+- The Canvas still gives no notice for a STRUCTURAL invalid drop (no
+  indicator, silent, unchanged).
+- Alt+Left Back prevention was checked with Playwright's synthesized keys.
+  The Electron desktop shell was not run (no desktop code changed; it has
+  no Alt+Arrow accelerators).
+- Structure rows are not memoized (section 17).
+- Style protection (Lock child styles) does not block structural moves.
+  Geometry written on Free/Grid entry follows the same rule as paste
+  (pre-existing behaviour).
+
+
+20. GIT WORKING-TREE STATUS
+---------------------------
+ M src/components/layout/HelpDialogs.tsx
+ M src/features/canvas/utils/resolveActiveDropIndicator.test.ts
+ M src/features/canvas/utils/resolveActiveDropIndicator.ts
+ M src/features/editor/components/structure/StructureTree.tsx
+ M src/features/editor/components/structure/StructureTreeNode.tsx
+ M src/features/editor/hooks/useMoveElement.ts
+ M src/features/editor/rules/moveValidationRules.ts
+ M src/features/editor/stores/useEditorStore.ts
+?? docs/reports/BC-12.1-Structure-Panel-Drag-Drop-Architecture-Investigation.txt
+?? docs/reports/BC-12.2-Shared-Move-Integrity-And-Keyboard-Reordering.txt
+?? e2e/structure-keyboard-reorder.spec.ts
+?? src/features/editor/commands/moveCommands.ts
+?? src/features/editor/components/structure/StructureTree.keyboardReorder.test.tsx
+?? src/features/editor/components/structure/structureKeyboardMove.ts
+?? src/features/editor/stores/useEditorStore.moveIntegrity.test.ts
+The changelog is gitignored. Nothing committed or pushed.
+
+
+21. QA RECOMMENDATION
+---------------------
+APPROVE BC-12.2:
+- G1–G4 are resolved in the shared command, so the Canvas benefits too;
+- D11 keyboard reorder is accessible and announced;
+- the specialized-component rules hold;
+- all focused checks pass.
+Proceed to BC-12.3 (handle-based single-element Structure pointer drag on
+validateMove / moveElement, with "structure:" droppable ids, a
+drag-source-aware auto-scroll, auto-expand, the invalid indicator and the
+drag preview), after ChatGPT QA approval.

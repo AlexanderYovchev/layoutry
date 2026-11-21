@@ -1,5 +1,5 @@
 import { canContainChildren } from "@/features/editor/rules/insertionRules";
-import { isValidMoveTarget } from "@/features/editor/rules/moveValidationRules";
+import { validateMove } from "@/features/editor/commands/moveCommands";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
 import {
   computeDraggedCenterY,
@@ -33,7 +33,8 @@ interface OverLike {
  * now" is decided — a pure function wrapped by useActiveDropIndicator so
  * this logic is unit-testable without a real drag. Used for both catalog
  * inserts and existing-node moves; for moves specifically, the result is
- * also checked against isValidMoveTarget so an indicator never appears
+ * also checked against validateMove (BC-12.2: the structural AND the
+ * component rules, e.g. the Navbar link limit) so an indicator never appears
  * for a target that would just be rejected on drop (self-descendant,
  * the document root, "inside" a leaf).
  */
@@ -56,7 +57,7 @@ export function resolveActiveDropIndicator(
 
   const dragData = active.data.current;
   if (dragData?.kind === "move" && typeof dragData.nodeId === "string") {
-    if (!isValidMoveTarget(documentModel, dragData.nodeId, targetId, zone)) {
+    if (validateMove(documentModel, dragData.nodeId, targetId, zone) !== null) {
       return null;
     }
   }

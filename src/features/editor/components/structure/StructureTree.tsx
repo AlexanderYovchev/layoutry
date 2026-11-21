@@ -8,6 +8,14 @@ import {
 } from "@/features/editor/components/structure/documentTreeUtils";
 import { StructureTreeNode } from "@/features/editor/components/structure/StructureTreeNode";
 import { collectNodeIds } from "@/features/editor/utils/collectNodeIds";
+import {
+  describeMovedPosition,
+  resolveKeyboardMove,
+  type StructureMoveDirection,
+} from "@/features/editor/components/structure/structureKeyboardMove";
+import { moveRejectedMessage } from "@/features/editor/commands/moveCommands";
+import { getElementDisplayName } from "@/features/editor/utils/elementDisplayName";
+import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
 
 export function StructureTree() {
   const documentTree = useEditorStore((state) => state.document);
@@ -17,6 +25,7 @@ export function StructureTree() {
   const toggleSelection = useEditorStore((state) => state.toggleSelection);
   const addToSelection = useEditorStore((state) => state.addToSelection);
   const selectRange = useEditorStore((state) => state.selectRange);
+  const moveElement = useEditorStore((state) => state.moveElement);
   // BC-10.2: the count shown for a multi-selection (stale ids never count).
   const existingIds = useMemo(() => collectNodeIds(documentTree), [documentTree]);
   const selectedCount = selection.ids.filter((id) => existingIds.has(id)).length;
@@ -37,6 +46,26 @@ export function StructureTree() {
   const [currentNodeId, setCurrentNodeId] = useState(documentTree.id);
 
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
+
+  // BC-12.2: what the last keyboard move did, for screen readers. A
+  // trailing no-break space alternates so an identical message (e.g. two
+  // refused moves in a row) is still announced again.
+  const [announcement, setAnnouncement] = useState("");
+  function announce(message: string) {
+    setAnnouncement((current) => (current.endsWith("\u00A0") ? message : `${message}\u00A0`));
+  }
+
+  // BC-12.2: the row to focus once a keyboard move has re-rendered the tree
+  // (a row moved to another parent is a new element).
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pendingFocusId) return;
+    const row = rowRefs.current.get(pendingFocusId);
+    if (!row) return;
+    row.focus();
+    row.scrollIntoView({ block: "nearest" });
+    setPendingFocusId(null);
+  }, [pendingFocusId, documentTree, openNodeIds]);
 
   function registerRowRef(id: string, el: HTMLDivElement | null) {
     if (el) {
@@ -70,6 +99,60 @@ export function StructureTree() {
     );
     const nextId = visibleIds[nextIndex];
     rowRefs.current.get(nextId)?.focus();
+  }
+
+  // BC-12.2 (D11): Alt+Arrow moves the focused row (only that row, never
+  // the rest of a multi-selection) through the store's shared moveElement.
+  // The moved element is selected, its new parent is expanded, focus stays
+  // on its row, and the result is announced from the document itself.
+  function handleReorder(id: string, direction: StructureMoveDirection) {
+    const request = resolveKeyboardMove(documentTree, id, direction);
+    if (request.kind === "unavailable") {
+      announce(request.message);
+      return;
+    }
+    const node = findNodeById(documentTree, id);
+    const name = node ? getElementDisplayName(node) : "The element";
+    const outcome = moveElement(id, request.targetId, request.zone);
+    if (outcome.status === "rejected") {
+      announce(moveRejectedMessage(name, outcome.reason));
+      return;
+    }
+    if (outcome.status === "unchanged") {
+      announce(`${name} is already there.`);
+      return;
+    }
+    const after = useEditorStore.getState().document;
+    const ancestorIds = findAncestorIds(after, id);
+    setOpenNodeIds((current) => {
+      const missing = ancestorIds.filter((ancestorId) => !current.has(ancestorId));
+      return missing.length === 0 ? current : new Set([...current, ...missing]);
+    });
+    setCurrentNodeId(id);
+    setPendingFocusId(id);
+    announce(describeMovedPosition(after, id));
+  }
+
+  // BC-12.2: WAI-ARIA tree Left/Right. Right opens a closed branch, or
+  // moves to its first child when open; Left closes an open branch, or
+  // moves to the parent.
+  function handleHorizontalKey(id: string, key: "ArrowLeft" | "ArrowRight") {
+    const node = findNodeById(documentTree, id);
+    if (!node) return;
+    const children = node.children ?? [];
+    const isOpen = openNodeIds.has(id);
+    if (key === "ArrowRight") {
+      if (children.length === 0) return;
+      if (!isOpen) handleToggle(id);
+      else rowRefs.current.get(children[0].id)?.focus();
+      return;
+    }
+    if (children.length > 0 && isOpen) {
+      handleToggle(id);
+      return;
+    }
+    const parentId = findParentId(documentTree, id);
+    if (parentId) rowRefs.current.get(parentId)?.focus();
   }
 
   function handleSelect(id: string, event: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) {
@@ -141,6 +224,10 @@ export function StructureTree() {
       >
         {selectedCount >= 2 ? `${selectedCount} selected` : ""}
       </p>
+      {/* BC-12.2: the result of an Alt+Arrow move (D11). */}
+      <p role="status" aria-live="polite" data-structure-move-announcement="" className="sr-only">
+        {announcement}
+      </p>
     <div role="tree" aria-label="Page structure" aria-multiselectable="true">
       <StructureTreeNode
         node={documentTree}
@@ -154,6 +241,8 @@ export function StructureTree() {
         onFocusRow={setCurrentNodeId}
         onMoveFocus={handleMoveFocus}
         onMoveToEdge={handleMoveToEdge}
+        onReorder={handleReorder}
+        onHorizontalKey={handleHorizontalKey}
         registerRowRef={registerRowRef}
       />
     </div>

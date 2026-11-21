@@ -1,0 +1,514 @@
+BC-12.1 — Structure Panel Drag-and-Drop Ordering — Architecture Investigation
+============================================================================
+Date: 2026-11-21
+Base: HEAD e3e7e5d (BC-11.4). Investigation only: no production code was
+changed and no dependency was installed. One throwaway exploratory test was
+run and deleted (section 4).
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Structure panel today: rows support selection and keyboard focus, but no
+drag and no reorder controls.
+
+Element moving already exists, for Canvas drags:
+  - dnd-kit (@dnd-kit/core 6, @dnd-kit/sortable 10), with ONE DndContext in
+    EditorApp;
+  - the pipeline: resolveDragEndMove → useMoveElement → isValidMoveTarget →
+    store.moveElement → moveNode;
+  - moves are before / after / inside, with tag-nesting and cycle checks, the
+    BC-09.5 Pagination handling, and one Undo step;
+  - the element keeps its id (so interaction references survive), and order is
+    plain child-array position, which Canvas, Preview, Export and the saved file
+    all follow.
+So Structure-panel drag-and-drop is mostly a new INPUT for an existing,
+tested command.
+
+The exploratory probe found four gaps in that SHARED move pipeline. They
+affect Canvas drags today and must be fixed before Structure drag is built
+on it:
+  G1 A move that leaves the order unchanged still records an Undo step.
+  G2 An element moved INTO a Free container gets no Free position (no
+     freeLayout). It renders unpositioned inside an absolute-layout box.
+  G3 A move can push a Navbar to 13 links, bypassing the BC-06 / BC-10.5.1
+     limit.
+  G4 Flex/Grid item settings move unchanged into a parent of another
+     layout. This is harmless (hidden and no longer copied since BC-11.4) but
+     stale.
+
+Recommendation (owner decisions in section 17):
+  BC-12.2  Harden the shared move command (G1–G3, plus validation shared by
+           every caller) and add keyboard Move Up / Down / Into / Out on Structure
+           rows. This is the accessible base.
+  BC-12.3  Single-element pointer drag on Structure rows through a drag handle:
+           before/after/inside indicators, auto-expand on hover, auto-scroll
+           limited to Structure drags.
+  BC-12.4  Optional multi-element drag, if approved, reusing BC-10.5's
+           selection-root logic.
+  BC-12.5  Final audit.
+
+
+2. STRUCTURE PANEL ARCHITECTURE
+-------------------------------
+Files (src/features/editor/components/structure/):
+- StructurePanel.tsx: wrapper; shows the tree or an empty state.
+- StructureTree.tsx:
+  - selection wiring: plain / Ctrl+Cmd / Shift range from BC-10.2, via
+    selectOnly, toggleSelection, selectRange;
+  - local open/closed state (openNodeIds) and a roving tab stop
+    (currentNodeId);
+  - auto-expands the ancestors of a newly selected node and scrolls it into
+    view.
+- StructureTreeNode.tsx:
+  - a RECURSIVE component: each row renders its children inline;
+  - role=treeitem, aria-level/expanded/selected, indentation by depth (a
+    bounded class table), and an expand/collapse chevron button;
+  - keys: Enter/Space select, Up/Down/Home/End move focus. Left/Right to
+    collapse/expand are not implemented.
+- documentTreeUtils.ts:
+  - findAncestorIds;
+  - getVisibleNodeIds, the flattened visible row order (collapsed branches
+    skipped), used for focus and range selection;
+  - no flattened row model is stored.
+Placement:
+- The panel sits in the left Resource panel (AppShell → ResourceContextPanel →
+  ResourceScrollRegion), INSIDE EditorApp's DndContext.
+- ResourceScrollRegion sets data-no-drag-autoscroll, so dnd-kit auto-scroll is
+  deliberately OFF for it (BC-03.2: dragging a tile out of a list must not
+  scroll it).
+- A Structure drag would therefore get no edge auto-scroll unless the opt-out is
+  narrowed to non-Structure drags.
+No virtualization: every visible row is a mounted React element, and the whole
+tree re-renders on every document change.
+
+
+3. DOCUMENT TREE MODEL
+----------------------
+- EditorElementNode { id, tag, children?: EditorElementNode[] }.
+- No parentId field and no order field. Parent = containment; order = child
+  array index.
+- Layout lives on the PARENT: layoutMode "flow" | "free", and flowLayout.display
+  block / flex / grid.
+- A child's own geometry:
+  - dimensions in Flow;
+  - freeLayout { x, y, width, height } in Free;
+  - flexChild / gridChild settings, meaningful only under a matching parent.
+Consequences:
+- Canvas: renders children in array order (DocumentNodeRenderer); a Flow reorder
+  changes visual order immediately.
+- Preview: the same renderer.
+- Export: buildExportDocument walks children in order.
+- Saved file: v3 serializes the same arrays.
+No path reorders elements independently. In Free containers, DOM order is
+also the paint (stacking) order for overlapping, absolutely positioned
+siblings without a z-index.
+
+
+4. EXISTING MOVE COMMANDS
+-------------------------
+documentCommands.moveNode(root, nodeId, targetId, zone):
+- isValidMoveTarget first;
+- removeNode, then insertNode (inside: append to the end of target; before/after:
+  next to the reference sibling);
+- returns the same root if rejected.
+rules/moveValidationRules.isValidMoveTarget rejects:
+- moving the page root;
+- self or descendant targets (cycle prevention);
+- before/after the root;
+- a tag the destination parent can't accept (canParentAcceptChild).
+store.moveElement:
+- moveNode, then withPaginationInvariants;
+- BC-09.5: a current page dragged out of its Pagination loses current state;
+- one pushHistory;
+- selects the moved node (selectionFromSingle).
+Canvas:
+- utils/resolveDragEndMove: the zone by vertical position (resolveDropZone:
+  25/50/25% for containers, 50/50 for leaves);
+- hooks/useMoveElement (validates again);
+- canvas/hooks/useNodeDragSource and useNodeDropRegistration (droppable id =
+  node id);
+- useActiveDropIndicator for live feedback.
+Free children on the Canvas never use tree moves (useFreeChildMoveSession
+repositions them in place).
+Other relevant commands:
+- insertNode's position { referenceId, placement };
+- BC-10.5 orderedSelectionRoots, existingSelectedIds and insertCopies (the
+  per-parent Free group placement, Navbar limit and uniqueness checks);
+- navigationLinkCommands.moveNavigationLink (BC-06 link Move up/down);
+- Pagination management (BC-09.3).
+
+Exploratory probe (store, deleted after the run). It was needed to settle
+whether the shared command can be reused as-is; it can't:
+  - moveElement("a", "b", "before") with a already before b: past +1 (G1).
+  - moveElement into a Free container: freeLayout null (G2).
+  - moveElement a link "inside" a 12-link nav: 13 children (G3).
+  - moveElement a Flex item into a Free container: flexChild kept (G4).
+  - The id is always kept.
+Reuse verdict: reuse moveNode / moveElement and the Canvas zone resolution;
+add G1–G3 to the shared command so the Canvas benefits too. Don't write a
+Structure-only mutation.
+
+
+5. COMPATIBILITY AND VALIDATION RULES
+-------------------------------------
+Containers (canContainChildren):
+- page, body, div, section, form, label, ul, ol, header, footer, main,
+  article, aside, nav;
+- table / thead / tbody / tfoot / tr / th / td, select, dialog, fieldset,
+  figure.
+Closed allowlists (ALLOWED_CHILD_TAGS):
+- ul / ol → li;
+- select → option;
+- table → caption / thead / tbody / tfoot;
+- thead / tbody / tfoot → tr;
+- tr → th / td.
+Constrained children: li, option, thead, tbody, tfoot, tr, th, td, legend
+(fieldset only), figcaption (figure only), caption. They are rejected
+anywhere else.
+Leaves (h1–h6, p, a, button, img, video, input, …) can't contain anything.
+That rules out nesting interactive elements inside a button or link.
+Rules NOT enforced by moves today, and needed:
+- Navbar ≤ 12 direct links (G3). Reuse multiClipboardCommands
+  exceedsNavigationLinkLimit, which already implements "new or grown nav
+  over 12 is refused".
+- Pagination: inside one Pagination, normalizePagination fixes current
+  page and boundary controls after any edit (withPaginationInvariants). It
+  is unclear whether moving Previous/Next/First/Last or the ellipsis into an
+  arbitrary position (or out) is acceptable; recommend forbidding moves that
+  change a marked Pagination's control structure (decision D9).
+- Tables: tag rules keep cells in rows and rows in sections. Moving the last
+  cell out leaves an empty row (allowed today by Delete too).
+- Lists: li only under ul/ol.
+- Forms: label → input association is by containment (no `for` in the
+  model). Moving an input out of its label breaks the implicit
+  association. Warn, don't block (D9).
+- Dialog: its content is free to move. Moving the dialog itself is fine.
+Integrity guarantees already provided:
+- no cycles (isDescendant);
+- no duplicates or orphans (remove-then-insert of the same object; insert
+  rejection returns the original root);
+- ids are never regenerated by a move.
+Shared validation recommendation: a single validateMove(document, ids,
+target, zone) used by the Canvas, Structure pointer drag and the keyboard
+commands, and the store re-checking it (same "never trust the caller"
+pattern).
+
+
+6. DRAG-AND-DROP IMPLEMENTATION OPTIONS
+---------------------------------------
+Library:
+- @dnd-kit/core + @dnd-kit/sortable are already installed and drive the Canvas
+  and catalog drags.
+- Same DndContext, so a Canvas element could even be dropped onto a Structure
+  row later.
+- Droppable ids must not collide with the Canvas's node-id droppables: use
+  "structure:<id>" ids and a { kind: "structure-move" } payload.
+Initiation:
+- A Full-row drag: discoverable, but it conflicts with click/Shift/Ctrl
+  selection and with text selection, and accidental drags happen at a narrow
+  width.
+- B Handle (a grip icon on hover/focus): explicit, keeps click selection
+  untouched, touch-friendly (touch-action:none on the handle only), and
+  costs ~20px.
+- C Both. Recommended: B. A 4px activation distance (already
+  POINTER_SENSOR_OPTIONS) applies.
+
+
+7. DROP-ZONE UX
+---------------
+- Reuse resolveDropZone semantics on the ROW rect: before / after (a
+  horizontal insertion line at the row edge, indented to the target's depth)
+  and inside (a container row highlight).
+- Inside is offered only where canParentAcceptChild allows.
+- Invalid: no indicator, a not-allowed cursor, and on drop nothing happens with
+  a brief notice (decision D10).
+- A collapsed container: inside appends as its last child. Optionally
+  auto-expand after hover (section 9).
+- The page root accepts "inside" only.
+
+
+8. SELECTION AND MULTI-DRAG IMPLICATIONS
+----------------------------------------
+Single drag:
+- dragging an unselected row moves only that row;
+- after the drop it becomes the sole selection (existing moveElement
+  behaviour).
+Dragging a row that is part of a multi-selection:
+- (a) move just that row, or (b) move the whole selection.
+Multi-drag needs a NEW command, moveNodesByIds:
+- orderedSelectionRoots (minimal roots, document order, parent and child
+  deduplicated);
+- validate every root at the destination (cycles: the target must not be
+  inside any moved root);
+- remove all, then insert in order at the destination index;
+- the Free group placement (BC-10.5.1 placeFreeGroup), the Navbar limit and
+  Pagination invariants;
+- one history entry.
+This is feasible and follows the BC-10.5 patterns, but it is a separate
+product decision. BC-10 deferred CANVAS multi-drag only. Recommend:
+- single drag first (BC-12.3);
+- multi-drag in BC-12.4 if approved;
+- until then, dragging a row of a multi-selection moves only that row and
+  selects it.
+
+
+9. FLOW/FREE LAYOUT BEHAVIOR
+----------------------------
+Flow → Flow (block / Flex / Grid):
+- The order changes the visual order immediately.
+- The authored CSS is untouched.
+- Grid item placement should be clamped to the new grid (the
+  clampGridChildPlacement rule) or kept; stale Flex/Grid item settings are
+  hidden (G4).
+- Recommend: clamp grid placement on entry and leave others as is
+  (decision D8).
+Within a Free container (reorder):
+- It changes DOM order = paint order for overlaps; the coordinates stay the
+  same.
+- Options: A DOM order only (what the tree command does); B also change
+  z-index (none); C coordinates (no).
+- Recommend A, and say so in the UI ("Order in a Free container sets which
+  element is drawn on top").
+Flow → Free (move inside a Free container):
+- It needs geometry (G2).
+- Recommend the existing one-shot rule: resolveFreeDestinationPlacement
+  (default size or existing freeLayout, the first free slot inside the
+  bounds), already used by insert, paste and duplicate.
+Free → Flow:
+- freeLayout becomes inert, and the element follows flow with its
+  dimensions.
+- Recommend keeping freeLayout (harmless, restores on a move back), as paste
+  does today.
+Free → Free:
+- keep the size and re-place it by the same rule (positions in the old
+  container are not meaningful in the new one).
+Flex ↔ Grid: a child's own settings stay; the grid clamp applies.
+
+
+10. SPECIALIZED COMPONENT INTEGRITY
+-----------------------------------
+- Interactions target ids; the move keeps the id, so references stay valid.
+- Anchor links (#htmlId) are unaffected.
+- No reference depends on ancestry, except the implicit label → input
+  containment and Pagination roles.
+- Navbar: add the limit (G3). Link order within a nav is a plain reorder,
+  the same as BC-06 Move up/down.
+- Pagination:
+  - BC-09.5 already handles a current page leaving its Pagination;
+  - reordering pages inside is normalized;
+  - moving controls (Prev/Next/First/Last/ellipsis) needs a rule (D9).
+- Tables, lists, select: tag allowlists are enforced.
+
+
+11. UNDO/REDO
+-------------
+- moveElement: one history entry; Undo restores the parent and order (a
+  whole-document snapshot) and the prior selection; Redo reapplies.
+- Required fix G1: a move whose result equals the current tree position (the
+  same parent and index) returns {} and adds no history.
+- Multi-move: one entry for the group.
+- A keyboard Move Up/Down/Into/Out: each press is one entry (D15).
+
+
+12. KEYBOARD AND ACCESSIBILITY
+------------------------------
+Current state:
+- The tree follows the WAI-ARIA tree pattern: roving tab stop and
+  Up/Down/Home/End.
+- Missing: Left/Right collapse/expand. Recommend adding it with BC-12.2, a
+  small change.
+- dnd-kit's DndContext uses no custom `accessibility.announcements`, so the
+  default announcements would read raw ids. Structure drags need named
+  announcements.
+Recommended simplest robust approach: explicit commands on the focused row,
+reusing the move command:
+- Alt+ArrowUp / Alt+ArrowDown: move before the previous / after the next
+  sibling;
+- Alt+ArrowRight: into the previous sibling, as its last child, if it
+  accepts the element;
+- Alt+ArrowLeft: out, after the current parent;
+- each announced in a polite live region ("Moved Hero below Intro");
+- optionally the same commands in a row menu.
+This is the WCAG 2.5.7 (Dragging Movements) single-pointer / keyboard
+alternative. dnd-kit's KeyboardSensor is the alternative, but its
+pick-up/move/drop mode is harder to discover; recommend explicit commands
+(D11).
+
+
+13. TOUCH/POINTER SUPPORT
+-------------------------
+- dnd-kit's PointerSensor already covers mouse, pen and touch pointer events.
+- On touch, row dragging fights panel scrolling: the handle (D1=B) with
+  touch-action:none, plus a TouchSensor delay (e.g. 200ms) if touch is in
+  scope (D12).
+- Browser native HTML5 DnD: not recommended (poor touch, no keyboard,
+  inconsistent previews). dnd-kit is pointer based and already used.
+- Pointer capture is handled by dnd-kit.
+
+
+14. DEPENDENCY RECOMMENDATION
+-----------------------------
+- A: reuse @dnd-kit/core (+ sortable utilities if useful). Recommended: no
+  new bundle cost, a known pattern, the shared DndContext, accessibility
+  hooks (announcements, KeyboardSensor) available.
+- B: another library (e.g. a dedicated tree-dnd). A new dependency and a
+  second drag system next to dnd-kit; not justified.
+- C: a hand-rolled pointer system. Duplicates dnd-kit, and accessibility
+  would need to be rebuilt.
+No dependency change.
+
+
+15. PERFORMANCE CONSIDERATIONS
+------------------------------
+- Recursive rows without memoization: every document change re-renders the
+  whole tree. Fine at 100, likely fine at 500, worth measuring at 1,000+.
+- During a drag, dnd-kit keeps state in its context. Rows that call
+  useDroppable re-render on every drag-over change.
+- Mitigations:
+  - one droppable per visible row (collapsed children are not mounted);
+  - DragOverlay for the ghost (already used);
+  - compute the drop indicator in one place (as useActiveDropIndicator does)
+    and pass it as a cheap id/zone prop;
+  - React.memo on StructureTreeNode keyed by (node object, selected, open,
+    indicator);
+  - no Canvas update until the drop (the Canvas renders from the document,
+    which doesn't change until drop).
+- Virtualization is not needed for BC-12; revisit if 1,000+ row profiling
+  shows a problem.
+- No element-count cap.
+- Auto-expand: a timer per hovered collapsed row, cleared on leave (no
+  global polling).
+
+
+16. FOCUSED FUTURE TEST PLAN
+----------------------------
+Unit (command and validation):
+- Sibling reorder; cross-container; inside; out.
+- Invalid targets: tag rules, root, self/descendant (cycle).
+- No-op = no history (G1).
+- Free entry placement inside the bounds (G2).
+- Navbar 12 (G3).
+- Grid clamp; Pagination current-page and control moves (D9); ids kept;
+  interactions valid.
+- Undo/Redo; multi-move roots, dedup and order (if D5).
+Store / component:
+- Keyboard Alt+Arrow commands and announcements.
+- Selection after the drop.
+- Left/Right expand/collapse.
+- The drop-indicator computation; auto-expand timer (fake timers).
+Chromium (small):
+- Handle drag before/after/inside with Canvas order updated.
+- An invalid drop is refused.
+- A collapsed target, plus auto-expand.
+- Auto-scroll in a long tree (Structure only; Resource tiles still don't
+  auto-scroll).
+- Preview/Export order; Save/Reopen order.
+- Narrow panel.
+Performance: a 1,000-node fixture; measure the drag-over render count (a
+React profiler or a render-counter in the test).
+Electron: not needed unless desktop code changes.
+Exploratory evidence from BC-12.1: the probe in section 4.
+
+
+17. PRODUCT DECISIONS WITH OPTIONS (recommendations marked ★)
+------------------------------------------------------------
+D1  Drag initiation:
+    - A full row;
+    - B handle ★;
+    - C both.
+D2  Drop targets:
+    - before / after / inside, inside only on compatible containers ★;
+    - before / after only.
+D3  Auto-expand of a collapsed container on hover:
+    - yes, after ~600ms, never collapsing back automatically ★;
+    - no.
+D4  Edge auto-scroll:
+    - enable for Structure drags only, keeping the Resource-tile opt-out ★;
+    - none.
+D5  Multi-element drag:
+    - single only in BC-12, multi later;
+    - single in BC-12.3 and multi in BC-12.4 ★;
+    - multi now.
+D6  Parent+child selected and dragged (if multi): move the parent subtree once
+    (minimal roots) ★.
+D7  Cross-container moves:
+    - allowed within tag rules ★;
+    - same parent only.
+D8  Flow/Free semantics:
+    - Free reorder = DOM / stacking order only;
+    - entering Free gets one-shot placement;
+    - leaving Free keeps freeLayout inert;
+    - grid placement clamped ★.
+D9  Specialized components:
+    - Navbar ≤ 12 enforced ★;
+    - Pagination: page reorder allowed, control moves blocked ★;
+    - a form input leaving its label: allowed with a notice ★, or blocked.
+D10 Invalid-drop feedback:
+    - no indicator plus a not-allowed cursor, and a short notice on drop ★;
+    - silent.
+D11 Keyboard reorder:
+    - Alt+Arrow Up/Down/Left/Right commands with announcements ★;
+    - dnd-kit KeyboardSensor;
+    - menu only.
+D12 Touch:
+    - supported via the handle + PointerSensor, with a TouchSensor delay ★;
+    - desktop pointer only.
+D13 Drag preview:
+    - a DragOverlay chip with icon + name (+ "and N more" if multi) ★;
+    - a translucent row.
+D14 Selection after drop:
+    - the moved element(s) become the selection ★ (matches Canvas);
+    - keep the prior selection.
+D15 Undo granularity:
+    - one step per drop or keyboard press ★;
+    - merge consecutive key presses.
+D16 Large trees:
+    - memoized rows + a single indicator source, no virtualization now,
+      profile at 1,000 ★;
+    - virtualize now.
+
+
+18. RECOMMENDED CHECKPOINT BREAKDOWN
+------------------------------------
+BC-12.2 Shared move hardening + keyboard reorder:
+- G1 no-op detection, G2 Free entry placement, G3 Navbar limit, the grid
+  clamp and the Pagination control rule;
+- one validateMove shared by the Canvas, keyboard and drag;
+- Alt+Arrow commands, Left/Right expand/collapse, live announcements;
+- unit, store and component tests, plus a small Chromium set (the Canvas
+  drag regression).
+BC-12.3 Structure pointer drag (single):
+- the handle, "structure:" droppables and a payload kind;
+- the indicator (line / indent / highlight) and invalid feedback;
+- auto-expand, Structure-only auto-scroll, the DragOverlay chip, named
+  announcements, memoized rows;
+- Chromium tests.
+BC-12.4 Multi-element drag (if D5 approves): moveNodesByIds on BC-10.5
+selection roots.
+BC-12.5 Final audit and closure.
+
+
+19. KNOWN RISKS
+---------------
+- G1–G3 already affect Canvas moves. Fixing them changes Canvas behaviour
+  slightly: no history for no-ops, refusals at the Navbar limit, and
+  positioned Free entries. This is desired, but needs regression tests.
+- Shared DndContext: Structure droppables must not interfere with Canvas
+  collision (pointerWithin), and ids must be prefixed.
+- The auto-scroll opt-out is global per region: it needs a drag-source-aware
+  canScroll.
+- A DOM reorder inside Free changes overlap stacking. The visible effect may
+  surprise users; explain it in the UI.
+- Moving an input out of its label silently breaks the association (D9).
+- The non-memoized recursive tree may re-render heavily during drag-over on
+  big documents; mitigated by memoization and a single indicator source.
+- Pagination control moves: normalizePagination behaviour for arbitrary
+  control positions is untested.
+
+
+20. GIT WORKING-TREE STATUS
+---------------------------
+Clean at HEAD e3e7e5d before this report. The exploratory probe test was
+created and deleted, so no residue. New: this report and the changelog
+handoff (not to be staged). No production code, no dependency changes, no
+commit, no push. BC-12.2 not started.

@@ -92,4 +92,44 @@ describe("resolveActiveDropIndicator", () => {
       zone: "inside",
     });
   });
+  it("BC-12.2: suppresses the indicator for a move the component rules refuse (a link into a full navigation bar)", () => {
+    const links = Array.from({ length: 12 }, (_, index) => ({
+      id: `link-${index}`,
+      tag: "a",
+      text: `L${index}`,
+      href: "#",
+    }));
+    const withNav: EditorElementNode = {
+      id: "root",
+      tag: "page",
+      children: [
+        { id: "nav", tag: "nav", children: links },
+        { id: "extra", tag: "a", text: "Extra", href: "#" },
+      ],
+    };
+    const active = {
+      data: { current: { kind: "move", nodeId: "extra" } },
+      rect: { current: { translated: { top: 140, height: 20 } } }, // center 150 = inside band
+    };
+    expect(
+      resolveActiveDropIndicator(
+        active,
+        { id: "nav", rect: { top: 100, height: 100 } },
+        withNav,
+      ),
+    ).toBeNull();
+    // Reordering a link already inside the full nav still shows its indicator.
+    const reorder = {
+      ...active,
+      data: { current: { kind: "move", nodeId: "link-0" } },
+      rect: { current: { translated: { top: 180, height: 20 } } },
+    };
+    expect(
+      resolveActiveDropIndicator(
+        reorder,
+        { id: "link-11", rect: { top: 100, height: 100 } },
+        withNav,
+      ),
+    ).toEqual({ targetId: "link-11", zone: "after" });
+  });
 });
