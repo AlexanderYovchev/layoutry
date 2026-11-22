@@ -1,6 +1,6 @@
 "use client";
 
-import { useDndContext, useDroppable } from "@dnd-kit/core";
+import { useDroppable } from "@dnd-kit/core";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
 /**
@@ -9,15 +9,16 @@ import type { EditorElementNode } from "@/features/editor/types/document";
  * dnd-kit drop target, using the node's own id as the droppable id.
  * Deliberately does nothing else: zone computation and validity live in
  * useActiveDropIndicator (Canvas) and the insert/move pipelines (editor),
- * not duplicated here per-node. Disabled while the node itself is the
- * one being dragged, so a node never registers as its own drop target.
+ * not duplicated here per-node.
+ *
+ * BC-12.3: a node is never its own drop target, but that is now enforced
+ * by the editor's collision detection (EditorApp: the dragged node's own
+ * droppable is skipped), not by reading the active drag here. Reading it
+ * here used dnd-kit's public context, which changes on every pointer move,
+ * so EVERY Canvas node re-rendered on every move of any drag (measured:
+ * ~100 ms per move with 1,000 elements).
  */
 export function useNodeDropRegistration(node: EditorElementNode) {
-  const { active } = useDndContext();
-  const { setNodeRef } = useDroppable({
-    id: node.id,
-    disabled: active?.id === node.id,
-  });
-
+  const { setNodeRef } = useDroppable({ id: node.id });
   return setNodeRef;
 }

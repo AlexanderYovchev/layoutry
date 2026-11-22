@@ -1,3 +1,4 @@
+import { DndContext } from "@dnd-kit/core";
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
@@ -11,7 +12,7 @@ describe("StructureTree — lock badge (Checkpoint 1.15.3, section 42)", () => {
   });
 
   it("shows no lock badge by default", () => {
-    render(<StructureTree />);
+    render(<StructureTree />, { wrapper: DndContext });
     expect(screen.queryByLabelText("Lock child styles is on")).not.toBeInTheDocument();
   });
 
@@ -22,7 +23,7 @@ describe("StructureTree — lock badge (Checkpoint 1.15.3, section 42)", () => {
         children: state.document.children!.map((child, index) => (index === 0 ? { ...child, lockChildStyles: true } : child)),
       },
     }));
-    render(<StructureTree />);
+    render(<StructureTree />, { wrapper: DndContext });
     expect(screen.getByLabelText("Lock child styles is on")).toBeInTheDocument();
   });
 });

@@ -1,3 +1,4 @@
+import { DndContext } from "@dnd-kit/core";
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
@@ -11,7 +12,7 @@ describe("StructurePanel", () => {
   });
 
   it("shows the supporting text and the tree when the document has elements", () => {
-    render(<StructurePanel />);
+    render(<StructurePanel />, { wrapper: DndContext });
 
     expect(
       screen.getByText("View and select elements on the canvas."),
@@ -26,7 +27,7 @@ describe("StructurePanel", () => {
       document: { id: "root", tag: "page", children: [] },
     });
 
-    render(<StructurePanel />);
+    render(<StructurePanel />, { wrapper: DndContext });
 
     expect(screen.getByText("No elements yet")).toBeInTheDocument();
     expect(

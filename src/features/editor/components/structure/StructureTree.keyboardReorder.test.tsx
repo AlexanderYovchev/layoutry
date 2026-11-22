@@ -1,3 +1,4 @@
+import { DndContext } from "@dnd-kit/core";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
@@ -47,7 +48,7 @@ describe("Structure keyboard reorder (BC-12.2)", () => {
   beforeEach(() => {
     useEditorStore.setState(initialState, true);
     store().replaceDocument(tree);
-    render(<StructureTree />);
+    render(<StructureTree />, { wrapper: DndContext });
   });
   afterEach(() => useEditorStore.setState(initialState, true));
 

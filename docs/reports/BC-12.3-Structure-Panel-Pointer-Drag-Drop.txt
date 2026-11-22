@@ -1,0 +1,479 @@
+BC-12.3 — Structure Panel Pointer Drag-and-Drop
+================================================
+Date: 2026-11-21
+Milestone: BC-12 (Structure Panel Drag-and-Drop Ordering)
+Status: implemented, focused validation passed, NOT committed (waiting for ChatGPT QA)
+Multi-element drag (BC-12.4) was NOT started.
+Baseline: BC-12.2 is committed (5d86a74).
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+- Structure rows can now be dragged from a dedicated grip handle with a
+  mouse, touch or a pen.
+- Drops go before, after or inside a row through the BC-12.2 shared move
+  (validateMove while hovering, store.moveElement / planMove on drop), so
+  every rule, the no-op detection and one Undo step per move are the same
+  as for the Canvas and Alt+Arrow.
+- Feedback while dragging:
+  - insertion lines and an "inside" highlight;
+  - a dashed red indicator with the shared validator's reason for refused
+    targets;
+  - collapsed containers auto-open after 600 ms;
+  - the Structure list scrolls at its edges (only that list);
+  - a compact "grip + icon + name" chip follows the pointer;
+  - drag start, drop and cancel are announced.
+- Two real defects were found and fixed while verifying live:
+  (a) A Canvas performance problem that predates this checkpoint: every
+      Canvas element re-rendered on every pointer move of ANY drag. With
+      1,000 elements that was a ~100 ms long task per move. Fixed in the
+      shared drag setup; ordinary Canvas drags benefit too.
+  (b) dnd-kit's drop animation overlay covered the panel for ~250 ms after
+      a drop and swallowed the next handle press. It is off for Structure
+      drags.
+- Tests:
+  - 18 new unit/component tests;
+  - 8 new Chromium tests, plus the 6 BC-12.2 keyboard tests (all run twice,
+    28/28);
+  - the BC-03 resource-scrolling spec (23/23) for the auto-scroll change;
+  - typecheck and ESLint clean.
+- Recommendation: APPROVE BC-12.3.
+
+
+2. FILES CHANGED
+----------------
+Created:
+- src/features/editor/components/structure/structureDragDrop.ts (payload,
+  constants, resolveStructureDropTarget, shouldAutoExpand)
+- src/features/editor/components/structure/StructureDragHandle.tsx
+- src/features/editor/components/structure/StructureDragPreview.tsx
+- src/features/editor/components/structure/StructureDropIndicator.tsx
+- src/features/editor/hooks/useStructureDragDrop.ts
+- src/features/editor/utils/editorDragSensors.ts
+- src/features/editor/components/structure/structureDragDrop.test.ts (9 tests)
+- src/features/editor/components/structure/StructureTree.dragHandle.test.tsx (9 tests)
+- e2e/structure-pointer-drag.spec.ts (8 Chromium tests)
+- docs/reports/BC-12.3-Structure-Panel-Pointer-Drag-Drop.txt
+- changelogs/2026-11-21-structure-panel-pointer-drag-drop-BC-12.3.txt (gitignored)
+Modified:
+- src/features/editor/components/EditorApp.tsx:
+  - the sensor;
+  - collision detection;
+  - drag-aware auto-scroll;
+  - announcements;
+  - the Structure drag preview;
+  - no drop animation for Structure drags.
+- src/features/editor/components/structure/StructureTree.tsx:
+  - stable callbacks;
+  - the drag hook;
+  - the indicator wrapper;
+  - a shared revealMoved for keyboard and pointer.
+- src/features/editor/components/structure/StructureTreeNode.tsx:
+  - memo;
+  - the row-id attribute;
+  - the handle;
+  - dimming the drag source;
+  - motion-reduce.
+- src/features/editor/commands/moveCommands.ts: moveRejectionReasonText
+  (the same reasons as a short phrase).
+- src/features/canvas/hooks/useNodeDropRegistration.ts: no longer reads the
+  active drag (defect a).
+- Test harness only (render inside a DndContext, as in the app; no
+  assertion changed): StructurePanel.test, StructureTree.test,
+  .rangeSelection, .styleProtection, .keyboardReorder,
+  CanvasInteractionBoundary.test.
+No project schema, migration, factory, export or dependency change.
+
+
+3. DRAG HANDLE IMPLEMENTATION
+-----------------------------
+StructureDragHandle (D1) is a 20px button with a GripVertical icon at the
+row's right end (after the tag badge). It is on every row except the page
+root.
+- aria-label "Drag <element name>"; title "Drag to move (or Alt+Arrow
+  keys)".
+- tabIndex -1: the rows stay the tree's single roving tab stop.
+- Shown on row hover/focus and on the selected row; always visible on
+  devices without hover. The space is always reserved, so labels never
+  shift.
+- touch-action:none, select-none, no iOS callout.
+- It is its own memoized component, so dnd-kit context updates re-render
+  only handles, not rows.
+- Clicking the row (or the handle, without dragging) still selects.
+  Ctrl/Cmd+click toggles, Shift+click makes ranges, and the chevron only
+  toggles (tested). The row is not draggable.
+- The row's right padding went from pr-2 to pr-1 so the handle fits at the
+  minimum panel width. Labels truncate as before.
+
+
+4. DND-KIT INTEGRATION
+----------------------
+- The same single DndContext (EditorApp). No new library.
+- The handle is a useDraggable with id "structure:<nodeId>" (no clash with
+  Canvas node ids) and payload {kind: "structure-move", nodeId, label, tag,
+  count: 1}.
+- The drop target is NOT a dnd-kit droppable. While a Structure drag is
+  active, the shared collision detection returns no collisions, so the
+  Canvas never shows an indicator or accepts the drop.
+- useStructureDragDrop (useDndMonitor) hit-tests the row under the real
+  pointer (document.elementsFromPoint plus the row's data-structure-row-id)
+  on every pointer move and on every dnd-kit move event (which also fires
+  during auto-scroll).
+- Why: rows revealed by auto-expand, or scrolled into view, are
+  immediately targetable with no droppable re-measuring. Hidden
+  (collapsed) rows can never be hit, because hit-testing respects the
+  overflow clip. And there are no 1,000 per-row droppables to re-render.
+- EditorApp.handleDragEnd ignores Structure drags; the Structure panel
+  commits them.
+
+
+5. ACTIVATION CONSTRAINTS
+-------------------------
+One sensor class, EditorPointerSensor (PointerSensor). dnd-kit binds one
+listener per event name, so a second sensor would silently replace the
+first. This was found live: it broke every drag until fixed. The rule is
+chosen from the pointerdown:
+- Mouse and pen, and every Canvas or catalog drag: the existing 4px
+  distance, unchanged.
+- Touch on a Structure handle: a 200 ms press with an 8px tolerance
+  (STRUCTURE_TOUCH_ACTIVATION). A quick swipe on the handle doesn't drag
+  (tested); touch scrolling elsewhere in the tree is untouched.
+- Only the primary button (dnd-kit's check): right-click never drags
+  (tested).
+- A press with less than 4px of movement starts nothing; past it, the drag
+  starts (tested with the real sensor in jsdom).
+
+
+6. BEFORE/AFTER/INSIDE TARGETING
+--------------------------------
+resolveStructureDropTarget uses the Canvas's resolveDropZone on the
+hovered row's rect and the pointer Y:
+- containers: 25% before / 50% inside / 25% after;
+- leaves: 50% before / 50% after;
+- the page row: inside only;
+- no target over the dragged row itself.
+The indicator is the exact target the drop will use (the drop re-runs the
+same hit-test at the release point).
+- Before / after: a 2px line at the row's top / bottom edge, starting at
+  the label indent.
+- Inside: the whole row highlighted.
+There is no flicker: the indicator state changes only when target, zone,
+verdict or geometry change.
+
+
+7. SHARED VALIDATION
+--------------------
+- Hover: validateMove (BC-12.2) — structural rules, Navbar 12-link limit,
+  Pagination controls/order/12 pages, list/table/select nesting, Free
+  bounds, cycles, self.
+- Drop: store.moveElement → planMove. The same rules plus one history
+  entry, Pagination invariants, Free placement and the Grid clamp.
+- Hover never writes to the document: Undo stays disabled while hovering
+  (tested in Chromium).
+- Cost per move: elementsFromPoint plus O(n) lookups. No full-tree clone,
+  no React work unless the target changed.
+
+
+8. INVALID-DROP FEEDBACK
+------------------------
+- While hovering a refused target: a dashed red line or box, and a reason
+  tag under the row.
+- The reason text is the shared validator's own phrase
+  (moveRejectionReasonText). Examples:
+  - "That place can't contain this kind of element";
+  - "An element can't be moved into its own contents";
+  - "A navigation bar can have at most 12 links";
+  - "It is larger than the free-layout container it would move into".
+- The tag is limited to the panel width and truncates.
+- Dropping on it changes nothing, records no history and doesn't mark the
+  project as changed. The shared notice banner shows "<name> wasn't moved:
+  <reason>." The banner is itself a polite status, so the Structure live
+  region stays silent for that case (no duplicate speech).
+
+
+9. NO-OP BEHAVIOR
+-----------------
+A drop at the element's current position (e.g. Beta "after" Alpha when it
+already follows Alpha):
+- the indicator is valid;
+- planMove returns "unchanged": same document, no Undo, not dirty;
+- the overlay and indicator clear;
+- announced as "Beta was not moved: it is already there." (tested).
+
+
+10. AUTO-EXPAND
+---------------
+- A valid "inside" on a collapsed container with children starts a
+  STRUCTURE_AUTO_EXPAND_DELAY_MS = 600 ms timer. Moving to another target
+  or zone cancels it.
+- Invalid or empty containers never open. A quick crossing doesn't open
+  (tested).
+- It opens through the tree's own open-branch state only. Selection,
+  document, history and other branches are untouched (tested). It is
+  re-hit-tested 250 ms later, so the revealed rows become targets (tested:
+  "before Deep" right after opening).
+
+
+11. EDGE AUTO-SCROLL
+--------------------
+- dnd-kit's own auto-scroller (pointer-based), with canScroll now
+  drag-aware. During a Structure drag only the scroll region that contains
+  [data-structure-tree] may scroll. Otherwise the BC-03 rule is unchanged:
+  resource lists don't scroll during tile drags.
+- Same threshold (20% of the region height) and acceleration. Scrolling
+  stops when leaving the edge band or when the drag ends (dnd-kit).
+- Real geometry, so it keeps working after the panel is resized.
+- Tested on a 1,002-row tree:
+  - scrolls down past 400px at the bottom edge;
+  - stops in the middle (drift under 40px in 400 ms);
+  - scrolls back up at the top edge;
+  - the Canvas and Inspector are not scrolled;
+  - the drop then lands correctly.
+- The BC-03 resource-panel-scrolling spec still passes (23/23).
+
+
+12. DRAG OVERLAY
+----------------
+- StructureDragPreview (D13): grip, the element's Structure icon and its
+  name in a compact chip.
+- Up to 224px wide, then truncated.
+- pointer-events:none.
+- No animation, and no drop animation (defect b).
+- A count badge is shown only for count > 1 (ready for BC-12.4; tested).
+- It is rendered by the shared DragOverlay, so the tree doesn't re-render
+  per move.
+
+
+13. SELECTION/FOCUS BEHAVIOR
+----------------------------
+- Pick-up: an unselected row becomes the only selection (no document
+  change). A row of a multi-selection leaves the selection as it is during
+  the drag (tested).
+- Drop (D14):
+  - store.moveElement selects the moved element only. That is the existing
+    explicit store contract, shared with the Canvas and Alt+Arrow. The
+    other selected rows are not moved (tested) and are deselected.
+  - Its ancestors are opened, focus moves to its row and the row is
+    scrolled into view (the shared revealMoved, as for Alt+Arrow).
+  - The position is announced.
+- Cancel (Escape, or a drop outside any row): no change; focus returns to
+  the dragged row; transient state is cleared; "Move cancelled. <name> was
+  not moved."
+- Nothing about selection or drag state is persisted.
+
+
+14. MOUSE/TOUCH/PEN SUPPORT
+---------------------------
+- Mouse:
+  - left drag;
+  - a click without dragging;
+  - under-threshold movement;
+  - Escape;
+  - a drop outside the tree;
+  - an invalid drop;
+  - right-click: no drag.
+  All tested.
+- Touch, Chromium CDP Input.dispatchTouchEvent in a hasTouch context:
+  - press-and-hold then move → moved;
+  - quick swipe → no drag;
+  - no stuck overlay.
+- Pen, CDP Input.dispatchMouseEvent with pointerType "pen": a direct drag
+  with no hold → moved.
+No real touch or pen hardware was used (see limitations).
+
+
+15. ACCESSIBILITY
+-----------------
+- The polite live region (BC-12.2) announces:
+  - drag start: "Dragging Alpha. Move over another row to place it before,
+    after or inside it, or press Escape to cancel.";
+  - drop: "Moved Gamma to the start of Section One, position 1 of 3.";
+  - no-op;
+  - cancel.
+  Hover positions are not announced.
+- dnd-kit's default announcements (raw ids) are silenced for Structure
+  drags. Other drags keep them.
+- The keyboard path is BC-12.2's Alt+Arrow, unchanged and re-tested (6/6).
+  There is no second keyboard-drag model: dnd-kit's KeyboardSensor and the
+  handle's dnd attributes are not used.
+
+
+16. REDUCED-MOTION SUPPORT
+--------------------------
+- motion-reduce:transition-none on the branch expand/collapse and the
+  chevron. The app's global reduced-motion rule also shortens transitions
+  to about 0.
+- The indicator and preview never animate, and there is no drop animation.
+- Chromium under reduced motion: the transition is under 10 ms, and
+  auto-expand and the drop still work.
+
+
+17. SPECIALIZED COMPONENT INTEGRITY
+-----------------------------------
+Pointer drops call the same planMove as BC-12.2, whose 36 store tests
+(re-run) cover:
+- Navbar 12-link refusal, reorder and move-out;
+- Pagination: controls fixed, pages between Previous and Next, the
+  12-page limit, one current page;
+- tables, lists and select by tag rules;
+- the label/input notice;
+- ids, HTML ids, classes, interactions and children kept.
+Hover uses validateMove (the same rules), so the indicator agrees with the
+drop. Live checks: list nesting refused (paragraph into ul), a descendant
+cycle refused. The Navbar-limit verdict is covered in the unit tests
+(resolveStructureDropTarget).
+
+
+18. UNDO/REDO
+-------------
+- One drop = one moveElement = one history entry. Selection isn't a
+  history entry.
+- Tested in Chromium: three drops, Undo ×2, Redo, with the exact orders.
+- Refused, no-op and cancelled drags record nothing.
+
+
+19. CANVAS/PREVIEW/EXPORT PARITY
+--------------------------------
+- After pointer drops (Flow → Free → Flow), Preview shows the dropped
+  order, and the exported HTML has ">Alpha<", ">Gamma<", ">Beta<" in
+  order.
+- Entering the Free box gives a position inside it; leaving it returns
+  the element to Flow.
+- Canvas drag regression: BC-12.2 test 5 (a real dnd-kit Canvas drag into
+  a Free container) still passes after the collision change.
+- The resolveActiveDropIndicator and useMoveElement unit tests pass.
+
+
+20. LARGE-TREE PERFORMANCE FINDINGS
+-----------------------------------
+Measured in Chromium dev mode with a temporary spec (deleted).
+Each test: 40 pointer moves while dragging over the tree, compared with the
+same 40 moves without a drag. Includes Playwright round trips.
+Before the fix (useNodeDropRegistration read dnd-kit's public context):
+  100 rows   1030 ms vs 654 idle   0 long tasks
+  500 rows   2387 ms vs 654 idle   1 long task (74 ms)
+  1000 rows  3995 ms vs 708 idle   40 long tasks (max 129 ms) — one per move
+After:
+  100 rows   680 ms vs 663 idle    0 long tasks
+  500 rows   683 ms vs 666 idle    0 long tasks
+  1000 rows  912 ms vs 687 idle    0 long tasks
+Cause:
+- Every Canvas node called useDndContext() to disable itself as its own
+  drop target. That context changes on every move, so all Canvas nodes
+  re-rendered per move, for Canvas drags too.
+- The self-target rule now lives in the shared collision detection
+  (skipping the dragged node's droppable). Behaviour is the same.
+Structure rows are memoized with stable callbacks, so a hover re-renders
+only the indicator.
+Remaining cost: picking up and dropping/cancelling at 1,000 elements takes
+about 0.7–0.9 s, including Playwright overhead (measured cancel: 131 / 464 /
+906 ms at 100 / 500 / 1,000). Cause: dnd-kit's internal context changes
+when a drag starts or ends, which re-renders every draggable and droppable
+(Canvas nodes and handles). A committed drop also re-renders the moved
+branch. This is a one-off per drag, not per move.
+No virtualization and no element cap.
+
+
+21. EXACT FOCUSED TEST COMMANDS/RESULTS
+---------------------------------------
+Impact map:
+- the Structure tree/row/handle/hook → the structure component suites;
+- EditorApp drag config (sensor, collisions, auto-scroll, announcements,
+  overlay) → EditorApp.test, CanvasInteractionBoundary,
+  resolveActiveDropIndicator, useMoveElement, and the BC-03 scrolling and
+  BC-12.2 Canvas-drag browser tests;
+- useNodeDropRegistration → its own test plus the Canvas drag e2e;
+- moveCommands (an added export only) → the moveIntegrity store suite.
+Commands:
+1. npx vitest run src/features/editor/components/structure
+   src/features/canvas/hooks/useNodeDropRegistration.test.tsx
+   src/features/canvas/components/CanvasInteractionBoundary.test.tsx
+   src/features/canvas/utils/resolveActiveDropIndicator.test.ts
+   src/features/editor/hooks/useMoveElement.test.ts
+   src/features/editor/stores/useEditorStore.moveIntegrity.test.ts
+   src/features/editor/components/EditorApp.test.tsx
+   → 14 files, 148 tests passed (18 new)
+2. npx playwright test e2e/structure-pointer-drag.spec.ts
+   e2e/structure-keyboard-reorder.spec.ts --project=chromium --repeat-each=2
+   → 28 passed (8 new + 6 BC-12.2, twice)
+3. npx playwright test e2e/structure-pointer-drag.spec.ts --project=chromium
+   -g "5:" --repeat-each=6 → 6 passed (after the drop-animation fix; it
+   failed 1–3 of 3–6 runs before)
+4. npx playwright test e2e/resource-panel-scrolling.spec.ts --project=chromium
+   → 23 passed
+5. The temporary perf spec (100/500/1000 rows), deleted → numbers above
+6. npx tsc --noEmit -p . → 0 errors
+7. npx eslint <all changed and new .ts/.tsx files> → clean
+8. npx prettier --write on the 3 changed files that were Prettier-clean at
+   HEAD (useNodeDropRegistration.ts, StructurePanel.test.tsx,
+   StructureTree.test.tsx)
+Not run, per policy: the full Vitest suite, the full Playwright suite,
+Firefox/WebKit, Electron/desktop/packaged, and a build (no route, config or
+desktop change).
+Issues found during validation:
+- the two-sensor listener overwrite (fixed: one sensor);
+- jsdom has no elementsFromPoint (guarded);
+- the drop-animation overlay (fixed);
+- the global reduced-motion duration is 0.00001s, not 0 (assertion
+  adjusted);
+- an empty stray file "0" from a shell redirect was deleted.
+
+
+22. KNOWN LIMITATIONS
+---------------------
+- Multi-element drag is BC-12.4. After a drop, the other selected
+  elements are deselected (the existing moveElement contract); BC-12.4 can
+  revisit this.
+- Touch and pen were verified with Chromium's CDP input only, not real
+  devices, and not in Firefox/WebKit.
+- Drag start/end costs about 0.7–0.9 s at 1,000 elements (section 20).
+- The indicator geometry is taken at hover time. During auto-scroll it is
+  recomputed on each dnd-kit move event, which fires on scroll.
+- No drop target exists in the empty space below the last row, or between
+  the root's last child and the panel bottom. Drop on a row instead
+  ("after" the last row, or "inside" the page row).
+- Keyboard refusals (BC-12.2) are still announced both by the Structure
+  region and by the notice banner. Pointer refusals use the banner only.
+- The Canvas still gives no notice for a structurally invalid Canvas drop
+  (unchanged).
+
+
+23. GIT WORKING-TREE STATUS
+---------------------------
+ M src/features/canvas/components/CanvasInteractionBoundary.test.tsx
+ M src/features/canvas/hooks/useNodeDropRegistration.ts
+ M src/features/editor/commands/moveCommands.ts
+ M src/features/editor/components/EditorApp.tsx
+ M src/features/editor/components/structure/StructurePanel.test.tsx
+ M src/features/editor/components/structure/StructureTree.keyboardReorder.test.tsx
+ M src/features/editor/components/structure/StructureTree.rangeSelection.test.tsx
+ M src/features/editor/components/structure/StructureTree.styleProtection.test.tsx
+ M src/features/editor/components/structure/StructureTree.test.tsx
+ M src/features/editor/components/structure/StructureTree.tsx
+ M src/features/editor/components/structure/StructureTreeNode.tsx
+?? docs/reports/BC-12.3-Structure-Panel-Pointer-Drag-Drop.txt
+?? e2e/structure-pointer-drag.spec.ts
+?? src/features/editor/components/structure/StructureDragHandle.tsx
+?? src/features/editor/components/structure/StructureDragPreview.tsx
+?? src/features/editor/components/structure/StructureDropIndicator.tsx
+?? src/features/editor/components/structure/StructureTree.dragHandle.test.tsx
+?? src/features/editor/components/structure/structureDragDrop.test.ts
+?? src/features/editor/components/structure/structureDragDrop.ts
+?? src/features/editor/hooks/useStructureDragDrop.ts
+?? src/features/editor/utils/editorDragSensors.ts
+The changelog is gitignored. Nothing committed or pushed.
+
+
+24. QA RECOMMENDATION
+---------------------
+APPROVE BC-12.3:
+- handle-only single-element pointer drag for mouse, touch and pen;
+- exact before/after/inside indicators driven by the shared validator, with
+  refusal reasons;
+- auto-expand and Structure-only auto-scroll;
+- one atomic move per drop;
+- keyboard parity kept;
+- two real defects fixed (Canvas re-render per move; the drop-animation
+  overlay).
+Proceed to BC-12.4 (multi-element drag on BC-10.5's orderedSelectionRoots
+and a new shared multi-move command) after ChatGPT QA approval.

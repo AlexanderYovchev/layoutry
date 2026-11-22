@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronRight, Lock } from "lucide-react";
-import type { KeyboardEvent, MouseEvent } from "react";
+import { memo, type KeyboardEvent, type MouseEvent } from "react";
 import { cn } from "@/lib/utils";
 import {
   FALLBACK_ELEMENT_ICON,
@@ -14,6 +14,8 @@ import {
 } from "@/features/editor/utils/elementDisplayName";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { StructureMoveDirection } from "@/features/editor/components/structure/structureKeyboardMove";
+import { StructureDragHandle } from "@/features/editor/components/structure/StructureDragHandle";
+import { STRUCTURE_ROW_ID_ATTRIBUTE } from "@/features/editor/components/structure/structureDragDrop";
 import { isVideoEmbedNode } from "@/features/editor/types/videoEmbed";
 
 // Bounded lookup so indentation stays on the canonical Tailwind spacing
@@ -75,7 +77,12 @@ interface StructureTreeNodeProps {
   registerRowRef: (id: string, el: HTMLDivElement | null) => void;
 }
 
-export function StructureTreeNode({
+/**
+ * BC-12.3: memoized. Its callbacks are stable (StructureTree), and an
+ * unchanged subtree keeps its node object, so only rows whose props
+ * changed re-render (never on drag hover).
+ */
+export const StructureTreeNode = memo(function StructureTreeNode({
   node,
   depth,
   selectedIds,
@@ -161,8 +168,11 @@ export function StructureTreeNode({
         }
         onFocus={() => onFocusRow(node.id)}
         onKeyDown={handleRowKeyDown}
+        {...{ [STRUCTURE_ROW_ID_ATTRIBUTE]: node.id }}
         className={cn(
-          "relative flex h-8 cursor-default items-center gap-1.5 rounded-control pr-2 text-[13px] transition-colors duration-150 ease-studio focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent active:bg-surface-selected",
+          "group/row relative flex h-8 cursor-default items-center gap-1.5 rounded-control pr-1 text-[13px] transition-colors duration-150 ease-studio focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent active:bg-surface-selected motion-reduce:transition-none",
+          // BC-12.3: the drag source row is dimmed while it is dragged.
+          "has-[[data-dragging=true]]:opacity-50",
           indentClassName(depth),
           isPrimary
             ? "bg-surface-selected text-fg-primary"
@@ -181,7 +191,7 @@ export function StructureTreeNode({
             <ChevronRight
               aria-hidden="true"
               className={cn(
-                "size-3.5 transition-transform duration-200 ease-out",
+                "size-3.5 transition-transform duration-200 ease-out motion-reduce:transition-none",
                 isOpen && "rotate-90",
               )}
             />
@@ -220,12 +230,15 @@ export function StructureTreeNode({
             {node.tag}
           </span>
         )}
+
+        {/* BC-12.3 (D1): drag starts only here. The page itself can't be moved. */}
+        {depth > 0 && <StructureDragHandle nodeId={node.id} tag={node.tag} label={displayName} />}
       </div>
 
       {hasChildren && (
         <div
           className={cn(
-            "grid transition-[grid-template-rows] duration-200 ease-out",
+            "grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none",
             isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
           )}
         >
@@ -263,4 +276,4 @@ export function StructureTreeNode({
       )}
     </>
   );
-}
+});

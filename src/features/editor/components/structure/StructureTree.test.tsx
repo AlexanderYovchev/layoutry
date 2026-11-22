@@ -1,4 +1,5 @@
-﻿import { act, fireEvent, render, screen } from "@testing-library/react";
+import { DndContext } from "@dnd-kit/core";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
@@ -12,7 +13,7 @@ describe("StructureTree", () => {
   });
 
   it("renders the page root and nested child nodes", () => {
-    render(<StructureTree />);
+    render(<StructureTree />, { wrapper: DndContext });
 
     expect(screen.getByText("Page")).toBeInTheDocument();
     expect(screen.getAllByText("Section")).toHaveLength(2);
@@ -27,7 +28,7 @@ describe("StructureTree", () => {
     // become inert — removed from focus and the accessibility tree —
     // rather than being removed from the DOM outright.
     const user = userEvent.setup();
-    render(<StructureTree />);
+    render(<StructureTree />, { wrapper: DndContext });
 
     const [firstSectionToggle] = screen.getAllByRole("button", {
       name: "Collapse Section",
@@ -52,7 +53,7 @@ describe("StructureTree", () => {
 
   it("selects the corresponding element when a row is clicked", async () => {
     const user = userEvent.setup();
-    render(<StructureTree />);
+    render(<StructureTree />, { wrapper: DndContext });
 
     await user.click(screen.getByText("Heading"));
 
@@ -60,7 +61,7 @@ describe("StructureTree", () => {
   });
 
   it("marks the matching row selected when the store's selection changes externally", () => {
-    render(<StructureTree />);
+    render(<StructureTree />, { wrapper: DndContext });
 
     act(() => {
       useEditorStore.getState().selectElement("image-1");
@@ -73,7 +74,7 @@ describe("StructureTree", () => {
 
   it("expands a collapsed ancestor when a nested element is selected externally", async () => {
     const user = userEvent.setup();
-    render(<StructureTree />);
+    render(<StructureTree />, { wrapper: DndContext });
 
     const sectionToggles = screen.getAllByRole("button", {
       name: "Collapse Section",
@@ -96,14 +97,14 @@ describe("StructureTree", () => {
   });
 
   it("does not expose expandable semantics on leaf nodes", () => {
-    render(<StructureTree />);
+    render(<StructureTree />, { wrapper: DndContext });
 
     const headingRow = screen.getByText("Heading").closest('[role="treeitem"]');
     expect(headingRow).not.toHaveAttribute("aria-expanded");
   });
 
   it("selects the focused row on Enter", () => {
-    render(<StructureTree />);
+    render(<StructureTree />, { wrapper: DndContext });
 
     const paragraphRow = screen
       .getByText("Paragraph")
@@ -115,7 +116,7 @@ describe("StructureTree", () => {
   });
 
   it("keeps only one row in the tab sequence at a time (roving tabindex)", () => {
-    render(<StructureTree />);
+    render(<StructureTree />, { wrapper: DndContext });
 
     const pageRow = screen.getByText("Page").closest('[role="treeitem"]');
     const headingRow = screen.getByText("Heading").closest('[role="treeitem"]');
@@ -129,7 +130,7 @@ describe("StructureTree", () => {
   });
 
   it("moves focus to the next and previous visible row with ArrowDown/ArrowUp", () => {
-    render(<StructureTree />);
+    render(<StructureTree />, { wrapper: DndContext });
 
     const pageRow = screen
       .getByText("Page")
@@ -147,7 +148,7 @@ describe("StructureTree", () => {
   });
 
   it("does not move focus past the first row on ArrowUp", () => {
-    render(<StructureTree />);
+    render(<StructureTree />, { wrapper: DndContext });
 
     const pageRow = screen
       .getByText("Page")
@@ -160,7 +161,7 @@ describe("StructureTree", () => {
   });
 
   it("moves focus to the first and last visible row with Home/End", () => {
-    render(<StructureTree />);
+    render(<StructureTree />, { wrapper: DndContext });
 
     const pageRow = screen
       .getByText("Page")
@@ -179,7 +180,7 @@ describe("StructureTree", () => {
 
   it("skips a collapsed branch's children when moving focus with ArrowDown", async () => {
     const user = userEvent.setup();
-    render(<StructureTree />);
+    render(<StructureTree />, { wrapper: DndContext });
 
     const [firstSectionToggle] = screen.getAllByRole("button", {
       name: "Collapse Section",
@@ -211,7 +212,7 @@ describe("StructureTree", () => {
       },
     });
 
-    render(<StructureTree />);
+    render(<StructureTree />, { wrapper: DndContext });
 
     const row = screen.getByText(longName).closest('[role="treeitem"]');
     expect(row).toHaveAttribute("title", longName);

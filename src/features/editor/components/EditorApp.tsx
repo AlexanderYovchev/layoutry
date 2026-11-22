@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  defaultAnnouncements,
   pointerWithin,
   useSensor,
   useSensors,
+  type Announcements,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
@@ -27,9 +29,44 @@ import { useInsertElement } from "@/features/editor/hooks/useInsertElement";
 import { useMoveElement } from "@/features/editor/hooks/useMoveElement";
 import { resolveDragEndInsertion } from "@/features/editor/utils/resolveDragEndInsertion";
 import { resolveDragEndMove } from "@/features/editor/utils/resolveDragEndMove";
+import { EditorPointerSensor } from "@/features/editor/utils/editorDragSensors";
+import { isStructureDragData, STRUCTURE_TREE_ATTRIBUTE } from "@/features/editor/components/structure/structureDragDrop";
+import { StructureDragPreview } from "@/features/editor/components/structure/StructureDragPreview";
 
 interface ActiveDragPreview {
   label: string;
+  /** BC-12.3: a Structure row drag shows its own compact chip. */
+  structure?: { tag: string; count: number };
+}
+
+/**
+ * BC-12.3: a Structure row drag hit-tests rows itself (useStructureDragDrop),
+ * so it has no dnd-kit collisions at all — the Canvas never shows an
+ * indicator or accepts a drop for it. Every other drag is unchanged.
+ */
+const collisionDetection: CollisionDetection = (args) => {
+  if (isStructureDragData(args.active.data.current)) return [];
+  // A Canvas node is never its own drop target (this replaced a per-node
+  // `disabled` that re-rendered every node on every move — see
+  // useNodeDropRegistration).
+  return pointerWithin({ ...args, droppableContainers: args.droppableContainers.filter((container) => container.id !== args.active.id) });
+};
+
+/**
+ * dnd-kit's default screen-reader announcements read raw ids. A Structure
+ * drag announces itself in the Structure panel's live region instead, so
+ * these stay silent for it (no duplicate speech); other drags keep the
+ * defaults.
+ */
+const ANNOUNCEMENTS: Announcements = {
+  onDragStart: (args) => (isStructureDragData(args.active.data.current) ? undefined : defaultAnnouncements.onDragStart(args)),
+  onDragOver: (args) => (isStructureDragData(args.active.data.current) ? undefined : defaultAnnouncements.onDragOver(args)),
+  onDragEnd: (args) => (isStructureDragData(args.active.data.current) ? undefined : defaultAnnouncements.onDragEnd(args)),
+  onDragCancel: (args) => (isStructureDragData(args.active.data.current) ? undefined : defaultAnnouncements.onDragCancel(args)),
+};
+
+function isStructureScrollRegion(element: Element): boolean {
+  return element instanceof HTMLElement && element.dataset.noDragAutoscroll !== undefined && element.querySelector(`[${STRUCTURE_TREE_ATTRIBUTE}]`) !== null;
 }
 
 /**
@@ -51,12 +88,13 @@ const POINTER_SENSOR_OPTIONS = { activationConstraint: { distance: 4 } };
  * then made the next drag start on the search field). Nothing is ever
  * dropped into these lists, so auto-scrolling them has no use. The
  * threshold and acceleration are unchanged.
+ *
+ * BC-12.3 (D4): the one exception is a Structure row drag, which scrolls
+ * only the scroll region holding the Structure tree (never the Canvas, the
+ * Inspector or the page), and only while that drag is active.
  */
-const AUTO_SCROLL_OPTIONS = {
-  threshold: { x: 0, y: 0.2 },
-  acceleration: 10,
-  canScroll: (element: Element) => !(element instanceof HTMLElement && element.dataset.noDragAutoscroll !== undefined),
-};
+const AUTO_SCROLL_THRESHOLD = { x: 0, y: 0.2 };
+const AUTO_SCROLL_ACCELERATION = 10;
 
 interface EditorAppProps {
   /**
@@ -97,6 +135,23 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
   const insert = useInsertElement();
   const move = useMoveElement();
   const [activeDrag, setActiveDrag] = useState<ActiveDragPreview | null>(null);
+  const structureDragActive = useRef(false);
+  // BC-12.3: a Structure drag has no drop animation. Kept after the drop on
+  // purpose — the animation runs after onDragEnd, and for ~250 ms its overlay
+  // covered the Structure panel and swallowed the next press on a handle.
+  const [lastDragWasStructure, setLastDragWasStructure] = useState(false);
+  // One object for the component's lifetime (see POINTER_SENSOR_OPTIONS); canScroll reads the ref only while dragging.
+  const autoScrollOptions = useMemo(
+    () => ({
+      threshold: AUTO_SCROLL_THRESHOLD,
+      acceleration: AUTO_SCROLL_ACCELERATION,
+      canScroll: (element: Element) =>
+        structureDragActive.current
+          ? isStructureScrollRegion(element)
+          : !(element instanceof HTMLElement && element.dataset.noDragAutoscroll !== undefined),
+    }),
+    [],
+  );
 
   useEditorKeyboardShortcuts();
 
@@ -108,7 +163,7 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
   const inspectorContent = useMemo(() => <InspectorContent selectedElement={null} />, []);
   const structureContent = useMemo(() => <StructurePanel />, []);
 
-  const sensors = useSensors(useSensor(PointerSensor, POINTER_SENSOR_OPTIONS));
+  const sensors = useSensors(useSensor(EditorPointerSensor, POINTER_SENSOR_OPTIONS));
 
   // Cut/Copy/Duplicate act on the whole selection since BC-10.5 (one
   // element exactly as before; two or more as their selected subtrees), so
@@ -151,12 +206,26 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
   };
 
   function handleDragStart(event: DragStartEvent) {
-    const label = event.active.data.current?.label;
+    const data = event.active.data.current;
+    structureDragActive.current = isStructureDragData(data);
+    setLastDragWasStructure(isStructureDragData(data));
+    if (isStructureDragData(data)) {
+      setActiveDrag({ label: data.label, structure: { tag: data.tag, count: data.count } });
+      return;
+    }
+    const label = data?.label;
     setActiveDrag(typeof label === "string" ? { label } : null);
   }
 
-  function handleDragEnd(event: DragEndEvent) {
+  function endDrag() {
+    structureDragActive.current = false;
     setActiveDrag(null);
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    endDrag();
+    // BC-12.3: a Structure drop is committed by the Structure panel itself.
+    if (isStructureDragData(event.active.data.current)) return;
 
     const moveRequest = resolveDragEndMove(event, documentModel);
     if (moveRequest) {
@@ -184,11 +253,12 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={pointerWithin}
-      autoScroll={AUTO_SCROLL_OPTIONS}
+      collisionDetection={collisionDetection}
+      autoScroll={autoScrollOptions}
+      accessibility={{ announcements: ANNOUNCEMENTS }}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
-      onDragCancel={() => setActiveDrag(null)}
+      onDragCancel={endDrag}
     >
       <AppShell
         workspaceContent={workspaceContent}
@@ -203,8 +273,10 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
       <EditorNoticeBanner />
       <MultiDeleteConfirmDialog />
       {overlays}
-      <DragOverlay>
-        {activeDrag && (
+      <DragOverlay dropAnimation={lastDragWasStructure ? null : undefined}>
+        {activeDrag?.structure ? (
+          <StructureDragPreview label={activeDrag.label} tag={activeDrag.structure.tag} count={activeDrag.structure.count} />
+        ) : activeDrag && (
           <div className="rounded-control border-accent/40 bg-surface-panel text-fg-primary shadow-elevated pointer-events-none flex items-center gap-2 border px-3 py-2 text-sm font-medium">
             {activeDrag.label}
           </div>

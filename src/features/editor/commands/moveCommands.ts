@@ -241,3 +241,9 @@ const REJECTION_REASONS: Readonly<Record<MoveRejectionReason, string>> = {
 export function moveRejectedMessage(elementName: string, reason: MoveRejectionReason): string {
   return `${elementName} wasn't moved: ${REJECTION_REASONS[reason]}.`;
 }
+
+/** BC-12.3: the same reason as a short standalone phrase ("A navigation bar can have at most 12 links"), for the Structure drop indicator. */
+export function moveRejectionReasonText(reason: MoveRejectionReason): string {
+  const text = REJECTION_REASONS[reason];
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}

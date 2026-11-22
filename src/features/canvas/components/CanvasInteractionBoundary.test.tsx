@@ -1,3 +1,4 @@
+import { DndContext } from "@dnd-kit/core";
 ﻿import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createDropdownButtonNode } from "@/features/editor/factories/buttonCompositions";
@@ -198,7 +199,7 @@ describe("CanvasInteractionBoundary", () => {
         <DocumentCanvas />
       </main>,
     );
-    const { container: structureContainer } = render(<StructureTree />);
+    const { container: structureContainer } = render(<StructureTree />, { wrapper: DndContext });
 
     fireEvent.click(screen.getByRole("heading", { name: "Title" }));
 
