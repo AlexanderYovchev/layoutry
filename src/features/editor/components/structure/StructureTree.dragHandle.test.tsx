@@ -114,11 +114,12 @@ describe("StructureDragPreview", () => {
 describe("StructureDropIndicator", () => {
   const base = { targetId: "a", rejection: null, reasonText: null, top: 40, left: 30, width: 150, height: 32 } as const;
 
-  it("draws a line at the row's top edge for before, bottom edge for after, and the row box for inside", () => {
-    const { rerender } = render(<StructureDropIndicator indicator={{ ...base, zone: "before" }} />);
+  it("draws a line at its own y for before/after (BC-12.3.1: the hook resolves the edge and level), and the row box for inside", () => {
+    const { rerender } = render(<StructureDropIndicator indicator={{ ...base, zone: "before", height: 0 }} />);
     const shape = () => document.querySelector<HTMLElement>("[data-structure-drop-indicator] > div")!;
     expect(shape().style.top).toBe("39px");
-    rerender(<StructureDropIndicator indicator={{ ...base, zone: "after" }} />);
+    expect(shape().style.left).toBe("30px");
+    rerender(<StructureDropIndicator indicator={{ ...base, zone: "after", top: 72, height: 0 }} />);
     expect(shape().style.top).toBe("71px");
     rerender(<StructureDropIndicator indicator={{ ...base, zone: "inside" }} />);
     expect(shape().style.height).toBe("32px");

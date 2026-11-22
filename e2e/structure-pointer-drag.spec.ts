@@ -103,7 +103,7 @@ test("1: before/after/inside drops reorder through the shared move; one Undo eac
   await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-a", "d-b", "d-c"]);
 });
 
-test("2: clicking a row (or its handle) still only selects; a drag of an unselected row selects it; multi-selection drags only that row", async ({ page }) => {
+test("2: clicking a row (or its handle) still only selects; a drag of an unselected row selects it; multi-selection drags only that row and keeps the selection", async ({ page }) => {
   await open(page);
   await rowById(page, "d-a").click();
   await rowById(page, "d-h").click({ modifiers: ["ControlOrMeta"] });
@@ -122,6 +122,9 @@ test("2: clicking a row (or its handle) still only selects; a drag of an unselec
   await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-b", "d-c", "d-a"]);
   await expect.poll(() => childIds(page, "page-root")).toEqual(["d-h", "d-s1", "d-s2", "d-list", "d-free"]);
   await expect(rowById(page, "d-a")).toHaveAttribute("aria-selected", "true");
+  // BC-12.3.1: the rest of the selection survives the drop.
+  await expect(rowById(page, "d-h")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("[data-structure-selection-count]")).toHaveText("2 selected");
 });
 
 test("3: a refused target shows the blocked indicator and the shared reason; dropping changes nothing, no Undo, and shows the notice", async ({ page }) => {
@@ -313,4 +316,147 @@ test("8: with reduced motion, auto-expand opens without animation and the drag s
   await expect(rowById(page, "d-inner")).toHaveAttribute("aria-expanded", "true", { timeout: 2000 });
   await page.mouse.up();
   await expect.poll(() => childIds(page, "d-inner")).toEqual(["d-deep", "d-b"]);
+});
+
+/* ---------------- BC-12.3.1 ---------------- */
+
+const selectionCount = (page: Page) => page.locator("[data-structure-selection-count]");
+
+test("9 (BC-12.3.1): dragging one row of a multi-selection moves only it and keeps A, B and C selected — on drop, cancel, refusal and Undo/Redo", async ({ page }) => {
+  await open(page);
+  await rowById(page, "d-a").click();
+  await rowById(page, "d-c").click({ modifiers: ["Shift"] });
+  await expect(selectionCount(page)).toHaveText("3 selected");
+
+  await drag(page, "d-b", "d-a", "before");
+  await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-b", "d-a", "d-c"]);
+  await expect(selectionCount(page)).toHaveText("3 selected");
+  for (const id of ["d-a", "d-b", "d-c"]) await expect(rowById(page, id)).toHaveAttribute("aria-selected", "true");
+  await expect(rowById(page, "d-b")).toBeFocused();
+
+  await button(page, "Undo").click();
+  await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-a", "d-b", "d-c"]);
+  await expect(selectionCount(page)).toHaveText("3 selected");
+  await button(page, "Redo").click();
+  await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-b", "d-a", "d-c"]);
+  await expect(selectionCount(page)).toHaveText("3 selected");
+
+  // Cancel (Escape) and a refused drop leave the selection and the document alone.
+  await pickUp(page, "d-c");
+  await hoverZone(page, "d-h", "before");
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(selectionCount(page)).toHaveText("3 selected");
+  await pickUp(page, "d-c");
+  await hoverZone(page, "d-list", "inside");
+  await expect(indicator(page)).toHaveAttribute("data-refused", "true");
+  await page.mouse.up();
+  await expect(selectionCount(page)).toHaveText("3 selected");
+  await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-b", "d-a", "d-c"]);
+
+  // An unselected row follows plain selection: it becomes the only selection.
+  await drag(page, "d-h", "d-free", "before");
+  await expect.poll(() => childIds(page, "page-root")).toEqual(["d-s1", "d-s2", "d-list", "d-h", "d-free"]);
+  await expect(rowById(page, "d-h")).toHaveAttribute("aria-selected", "true");
+  await expect(rowById(page, "d-a")).toHaveAttribute("aria-selected", "false");
+});
+
+const trailingFixture: EditorElementNode = {
+  id: "page-root",
+  tag: "page",
+  children: [
+    { id: "t-s1", tag: "section", displayName: "Section A", children: [p("t-a", "Alpha"), p("t-b", "Beta")] },
+    { id: "t-s2", tag: "section", displayName: "Section B", children: [{ id: "t-inner", tag: "div", displayName: "Inner", children: [p("t-deep", "Deep")] }] },
+    { id: "t-list", tag: "ul", displayName: "List", children: [{ id: "t-li", tag: "li", text: "Item", displayName: "Item" }] },
+    { id: "t-empty", tag: "div", displayName: "Empty box", children: [] },
+    p("t-last", "Last"),
+  ],
+};
+
+/** A point in the gap under `rowId`, at the indentation of `levelId`'s row (where its label starts). */
+async function levelPoint(page: Page, rowId: string, levelId: string) {
+  const row = (await rowById(page, rowId).boundingBox())!;
+  const levelX = await rowById(page, levelId).evaluate((el) => el.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(el).paddingLeft));
+  return { x: levelX + 6, y: row.y + row.height * 0.9 };
+}
+
+test("10 (BC-12.3.1): end-of-container drops — after the final child at a chosen level, into an empty container, at the end of the page; refused and no-op appends; Undo/Redo; Preview/Export order", async ({ page }) => {
+  await open(page, trailingFixture, "t-last");
+  await rowById(page, "t-inner").getByRole("button", { name: "Expand Inner" }).click();
+  await expect(rowById(page, "t-inner")).toHaveAttribute("aria-expanded", "true");
+
+  // 1. Under "Deep" (the last row of Inner, itself the last of Section B), at Inner's
+  //    indentation: the end of Section B — not the end of Inner, not after Section B.
+  await pickUp(page, "t-a");
+  let point = await levelPoint(page, "t-deep", "t-inner");
+  await page.mouse.move(point.x, point.y, { steps: 6 });
+  await expect(indicator(page)).toHaveAttribute("data-structure-drop-indicator", "after");
+  const line = (await indicator(page).locator("div").first().boundingBox())!;
+  const innerLabel = await rowById(page, "t-inner").evaluate((el) => el.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(el).paddingLeft) + 20);
+  expect(Math.abs(line.x - innerLabel)).toBeLessThan(2); // the line starts at the level it lands at
+  await page.mouse.up();
+  await expect.poll(() => childIds(page, "t-s2")).toEqual(["t-inner", "t-a"]);
+  await expect.poll(() => childIds(page, "t-inner")).toEqual(["t-deep"]);
+
+  // The same gap at Deep's own indentation: the end of Inner.
+  await pickUp(page, "t-b");
+  point = await levelPoint(page, "t-deep", "t-deep");
+  await page.mouse.move(point.x + 40, point.y, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(() => childIds(page, "t-inner")).toEqual(["t-deep", "t-b"]);
+
+  // 2. Into an empty container.
+  await drag(page, "t-b", "t-empty", "inside");
+  await expect.poll(() => childIds(page, "t-empty")).toEqual(["t-b"]);
+
+  // 3. The end of the page: the drop area under the last row (shown only while dragging).
+  const pageEnd = page.locator("[data-structure-page-end-drop]");
+  await expect(pageEnd).toHaveCount(0);
+  await pickUp(page, "t-a");
+  await expect(pageEnd).toBeVisible();
+  let area = (await pageEnd.boundingBox())!;
+  await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2, { steps: 6 });
+  await expect(indicator(page)).toHaveAttribute("data-structure-drop-indicator", "inside");
+  await expect(indicator(page)).not.toHaveAttribute("data-refused", "true");
+  await page.mouse.up();
+  await expect.poll(() => childIds(page, "page-root").then((ids) => ids.at(-1))).toBe("t-a");
+  await expect(pageEnd).toHaveCount(0);
+
+  // 4. Refused: a list item can't go to the page itself.
+  const before = await childIds(page, "page-root");
+  await pickUp(page, "t-li");
+  area = (await pageEnd.boundingBox())!;
+  await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2, { steps: 6 });
+  await expect(indicator(page)).toHaveAttribute("data-refused", "true");
+  await expect(page.locator("[data-structure-drop-reason]")).toHaveText("That place can't contain this kind of element");
+  await page.mouse.up();
+  expect(await childIds(page, "page-root")).toEqual(before);
+
+  // 6. Undo/Redo of the page-end append.
+  await button(page, "Undo").click();
+  await expect.poll(() => childIds(page, "t-s2")).toEqual(["t-inner", "t-a"]);
+  await button(page, "Redo").click();
+  await expect.poll(() => childIds(page, "page-root").then((ids) => ids.at(-1))).toBe("t-a");
+
+  // 5. No-op: the page's last child appended to the page again — no history.
+  await pickUp(page, "t-a");
+  area = (await pageEnd.boundingBox())!;
+  await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await expect(announcement(page)).toHaveText(/^Alpha was not moved: it is already there\.\s*$/);
+  // No history entry: the next Undo still undoes the page-end append itself.
+  await button(page, "Undo").click();
+  await expect.poll(() => childIds(page, "t-s2")).toEqual(["t-inner", "t-a"]);
+  await button(page, "Redo").click();
+
+  // 7. Canvas / Preview / Export order.
+  await button(page, "Enter Preview").click();
+  const lastY = (await element(page, "t-last").boundingBox())!.y;
+  expect((await element(page, "t-a").boundingBox())!.y).toBeGreaterThan(lastY);
+  await button(page, "Exit Preview").click();
+  await page.getByRole("button", { name: "Export Code" }).click();
+  const code = (await page.getByRole("dialog", { name: "Export Code" }).getByTestId("export-code").textContent()) ?? "";
+  await page.keyboard.press("Escape");
+  expect(code.indexOf(">Last<")).toBeLessThan(code.indexOf(">Alpha<"));
+  expect(code.indexOf(">Deep<")).toBeLessThan(code.indexOf(">Last<"));
 });

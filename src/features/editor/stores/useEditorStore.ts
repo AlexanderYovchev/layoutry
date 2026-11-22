@@ -357,8 +357,12 @@ interface EditorState {
    * shared rules); a move to where it already is changes nothing and
    * records no history; a refused move changes nothing and shows a notice
    * with the reason. One history entry; the moved element is selected.
+   * BC-12.3.1: `keepSelection` (the Structure pointer drag) keeps every
+   * other selected element selected and makes the moved one primary;
+   * otherwise (Canvas drag, Alt+Arrow) the moved element is the only
+   * selection, as before.
    */
-  moveElement: (nodeId: string, targetId: string, zone: DropZone) => MoveOutcome;
+  moveElement: (nodeId: string, targetId: string, zone: DropZone, options?: { keepSelection?: boolean }) => MoveOutcome;
   resizeElement: (nodeId: string, dimensions: ElementDimensions) => void;
   beginResizeTransaction: () => void;
   commitResizeTransaction: () => void;
@@ -1370,7 +1374,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   // every move (Canvas drag, Structure keyboard): structural and component
   // rules, no-op detection, Free/Grid geometry on entry. The store only adds
   // the Pagination invariants and the single history entry.
-  moveElement: (nodeId, targetId, zone) => {
+  moveElement: (nodeId, targetId, zone, options) => {
     let outcome: MoveOutcome = { status: "unchanged" };
     set((state) => {
       const plan = planMove(state.document, nodeId, targetId, zone);
@@ -1392,7 +1396,10 @@ export const useEditorStore = create<EditorState>()((set) => ({
       outcome = { status: "moved", leftLabel: plan.leftLabel };
       const movedNode = findNodeById(document, nodeId);
       const notice = plan.leftLabel && movedNode ? nextEditorNoticeState(state, movedOutOfLabelNotice(getElementDisplayName(movedNode))) : {};
-      return { ...pushHistory(state), ...notice, document, selection: selectionFromSingle(nodeId) };
+      const selection = options?.keepSelection
+        ? createSelection([...state.selection.ids, nodeId].filter((id) => findNodeById(document, id) !== undefined), nodeId)
+        : selectionFromSingle(nodeId);
+      return { ...pushHistory(state), ...notice, document, selection };
     });
     return outcome;
   },

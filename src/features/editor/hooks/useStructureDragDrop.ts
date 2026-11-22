@@ -5,9 +5,11 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { moveRejectedMessage, moveRejectionReasonText, type MoveRejectionReason } from "@/features/editor/commands/moveCommands";
 import {
   isStructureDragData,
+  resolvePageEndTarget,
   resolveStructureDropTarget,
   shouldAutoExpand,
   STRUCTURE_AUTO_EXPAND_DELAY_MS,
+  STRUCTURE_PAGE_END_ATTRIBUTE,
   STRUCTURE_ROW_ID_ATTRIBUTE,
   type StructureDropTarget,
 } from "@/features/editor/components/structure/structureDragDrop";
@@ -15,7 +17,12 @@ import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { DropZone } from "@/features/editor/utils/resolveDropZone";
 
-/** What the Structure panel draws for the current hover target, in px relative to the tree wrapper. */
+/**
+ * What the Structure panel draws for the current hover target, in px
+ * relative to the tree wrapper. "inside": the box of the target row (top,
+ * height). "before" / "after": a line at y = top (height 0), starting at
+ * the indentation of the level the element will land at.
+ */
 export interface StructureDropIndicatorState {
   targetId: string;
   zone: DropZone;
@@ -25,6 +32,12 @@ export interface StructureDropIndicatorState {
   left: number;
   width: number;
   height: number;
+}
+
+export interface StructureDragState {
+  indicator: StructureDropIndicatorState | null;
+  /** A Structure drag is in progress (shows the page-end drop area). */
+  dragging: boolean;
 }
 
 interface StructureDragOptions {
@@ -40,6 +53,8 @@ interface StructureDragOptions {
 }
 
 const CHEVRON_WIDTH_PX = 20;
+/** One indentation level in the tree (StructureTreeNode's indent scale). */
+const LEVEL_STEP_PX = 16;
 
 function sameIndicator(a: StructureDropIndicatorState | null, b: StructureDropIndicatorState | null): boolean {
   if (a === null || b === null) return a === b;
@@ -52,6 +67,17 @@ function sameIndicator(a: StructureDropIndicatorState | null, b: StructureDropIn
     a.width === b.width &&
     a.height === b.height
   );
+}
+
+/**
+ * BC-12.3.1: Escape during a Structure drag only cancels the drag (dnd-kit's
+ * own listener). Marked as handled first (capture phase), so the Canvas's
+ * Escape-clears-the-selection shortcut (CanvasInteractionBoundary skips a
+ * defaultPrevented Escape) keeps the selection. Module-level, so the same
+ * function is added and removed.
+ */
+function claimEscape(event: KeyboardEvent) {
+  if (event.key === "Escape") event.preventDefault();
 }
 
 function pointerOf(event: Event | null): { x: number; y: number } | null {
@@ -77,8 +103,9 @@ function pointerOf(event: Event | null): { x: number; y: number } | null {
  *   shows the shared notice (which is itself announced, so the Structure
  *   live region does not repeat it). No target / Escape: cancelled.
  */
-export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, rowRefs, expand, onMoved, announce }: StructureDragOptions): StructureDropIndicatorState | null {
+export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, rowRefs, expand, onMoved, announce }: StructureDragOptions): StructureDragState {
   const [indicator, setIndicator] = useState<StructureDropIndicatorState | null>(null);
+  const [dragging, setDragging] = useState(false);
   const drag = useRef<{ nodeId: string; label: string } | null>(null);
   const pointer = useRef<{ x: number; y: number } | null>(null);
   const target = useRef<StructureDropTarget | null>(null);
@@ -100,25 +127,46 @@ export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, ro
     setIndicator(next);
   }
 
-  function rowUnderPointer(): HTMLElement | null {
+  /** The row (or the page-end drop area) under the pointer, inside this tree. */
+  function hitTest(): { kind: "row" | "page-end"; element: HTMLElement } | null {
     const wrapper = wrapperRef.current;
     if (!pointer.current || !wrapper || typeof document.elementsFromPoint !== "function") return null;
     for (const element of document.elementsFromPoint(pointer.current.x, pointer.current.y)) {
       const row = element.closest<HTMLElement>(`[${STRUCTURE_ROW_ID_ATTRIBUTE}]`);
-      if (row && wrapper.contains(row)) return row;
+      if (row && wrapper.contains(row)) return { kind: "row", element: row };
+      const pageEnd = element.closest<HTMLElement>(`[${STRUCTURE_PAGE_END_ATTRIBUTE}]`);
+      if (pageEnd && wrapper.contains(pageEnd)) return { kind: "page-end", element: pageEnd };
     }
     return null;
+  }
+
+  /** Where a row's indentation starts (its left edge + padding), relative to the wrapper. */
+  function indentStartOf(id: string): number | null {
+    const row = rowRefs.current?.get(id);
+    const wrapper = wrapperRef.current;
+    if (!row || !wrapper) return null;
+    return row.getBoundingClientRect().left - wrapper.getBoundingClientRect().left + (Number.parseFloat(getComputedStyle(row).paddingLeft) || 0);
   }
 
   function compute() {
     const active = drag.current;
     const wrapper = wrapperRef.current;
     if (!active || !wrapper || !pointer.current) return;
-    const row = rowUnderPointer();
-    const rowId = row?.getAttribute(STRUCTURE_ROW_ID_ATTRIBUTE);
+    const hit = hitTest();
     const { documentTree: doc, openNodeIds: open } = latest.current;
-    const rowRect = row?.getBoundingClientRect();
-    const next = row && rowId && rowRect ? resolveStructureDropTarget(doc, active.nodeId, rowId, rowRect, pointer.current.y) : null;
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const hitRect = hit?.element.getBoundingClientRect();
+    const rowId = hit?.kind === "row" ? hit.element.getAttribute(STRUCTURE_ROW_ID_ATTRIBUTE) : null;
+    const next =
+      hit?.kind === "page-end"
+        ? resolvePageEndTarget(doc, active.nodeId)
+        : rowId && hitRect
+          ? resolveStructureDropTarget(doc, active.nodeId, rowId, hitRect, pointer.current.y, {
+              openNodeIds: open,
+              pointerX: pointer.current.x - wrapperRect.left,
+              indentStartOf,
+            })
+          : null;
     target.current = next;
 
     if (shouldAutoExpand(doc, next, open) && next) {
@@ -141,24 +189,27 @@ export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, ro
       clearExpandTimer();
     }
 
-    if (!next || !row || !rowRect) {
+    if (!next || !hit || !hitRect) {
       show(null);
       return;
     }
-    const wrapperRect = wrapper.getBoundingClientRect();
-    const indent = Number.parseFloat(getComputedStyle(row).paddingLeft) || 0;
-    const rowLeft = rowRect.left - wrapperRect.left;
-    const lineLeft = next.zone === "inside" ? rowLeft : rowLeft + indent + CHEVRON_WIDTH_PX;
-    show({
-      targetId: next.targetId,
-      zone: next.zone,
-      rejection: next.rejection,
-      reasonText: next.rejection ? moveRejectionReasonText(next.rejection) : null,
-      top: Math.round(rowRect.top - wrapperRect.top),
-      left: Math.round(lineLeft),
-      width: Math.round(rowRect.right - wrapperRect.left - lineLeft),
-      height: Math.round(rowRect.height),
-    });
+    const hitTop = hitRect.top - wrapperRect.top;
+    const right = hitRect.right - wrapperRect.left;
+    const common = { targetId: next.targetId, zone: next.zone, rejection: next.rejection, reasonText: next.rejection ? moveRejectionReasonText(next.rejection) : null };
+    if (next.zone === "inside" && hit.kind === "row") {
+      const left = hitRect.left - wrapperRect.left;
+      show({ ...common, top: Math.round(hitTop), left: Math.round(left), width: Math.round(right - left), height: Math.round(hitRect.height) });
+      return;
+    }
+    // A line: at the top of the hovered row for "before", at its bottom for
+    // every "after" meaning (incl. "before the first child" of an open
+    // container), at the top of the page-end area. It starts at the label
+    // indentation of the level the element lands at.
+    const upperHalf = hit.kind === "row" && pointer.current.y < hitRect.top + hitRect.height / 2;
+    const lineY = hit.kind === "page-end" || upperHalf ? hitTop : hitTop + hitRect.height;
+    const levelIndent = next.levelId === doc.id ? (indentStartOf(doc.id) ?? 0) + LEVEL_STEP_PX : (indentStartOf(next.levelId) ?? hitRect.left - wrapperRect.left);
+    const left = levelIndent + CHEVRON_WIDTH_PX;
+    show({ ...common, top: Math.round(lineY), left: Math.round(left), width: Math.round(Math.max(0, right - left)), height: 0 });
   }
 
   // The listener added at drag start is kept, so the same function is removed at the end.
@@ -166,9 +217,12 @@ export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, ro
   function stopTrackingPointer() {
     if (pointerListener.current) window.removeEventListener("pointermove", pointerListener.current, true);
     pointerListener.current = null;
+    window.removeEventListener("keydown", claimEscape, true);
   }
 
+
   function finish() {
+    setDragging(false);
     drag.current = null;
     target.current = null;
     clearExpandTimer();
@@ -185,6 +239,7 @@ export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, ro
       const data = event.active.data.current;
       if (!isStructureDragData(data)) return;
       drag.current = { nodeId: data.nodeId, label: data.label };
+      setDragging(true);
       pointer.current = pointerOf(event.activatorEvent);
       stopTrackingPointer();
       pointerListener.current = (pointerEvent: PointerEvent) => {
@@ -192,8 +247,10 @@ export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, ro
         compute();
       };
       window.addEventListener("pointermove", pointerListener.current, true);
-      // Dragging an unselected row selects it (no document change); a row of
-      // a multi-selection keeps the selection until the drop.
+      window.addEventListener("keydown", claimEscape, true);
+      // Dragging an unselected row selects it (plain selection, no document
+      // change); a row of a multi-selection keeps the whole selection, also
+      // after the drop (BC-12.3.1: moveElement keepSelection).
       const store = useEditorStore.getState();
       if (!store.selection.ids.includes(data.nodeId)) store.selectOnly(data.nodeId);
       latest.current.announce(`Dragging ${data.label}. Move over another row to place it before, after or inside it, or press Escape to cancel.`);
@@ -219,7 +276,7 @@ export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, ro
         focusRow(active.nodeId);
         return;
       }
-      const outcome = useEditorStore.getState().moveElement(active.nodeId, dropTarget.targetId, dropTarget.zone);
+      const outcome = useEditorStore.getState().moveElement(active.nodeId, dropTarget.targetId, dropTarget.zone, { keepSelection: true });
       if (outcome.status === "moved") {
         latest.current.onMoved(active.nodeId);
         return;
@@ -244,5 +301,5 @@ export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, ro
     [],
   );
 
-  return indicator;
+  return { indicator, dragging };
 }

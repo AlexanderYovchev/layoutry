@@ -350,4 +350,42 @@ describe("shared move integrity (BC-12.2)", () => {
     expect(childIds("wide").slice(-3)).toEqual(["w999", "w0", "leaf"]);
     expect(store().past).toHaveLength(2);
   });
+
+  describe("keepSelection (BC-12.3.1, Structure pointer drag)", () => {
+    beforeEach(() => {
+      load([{ id: "box", tag: "div", children: [p("a"), p("b"), p("c")] }, { id: "other", tag: "div", children: [] }]);
+      run(() => store().setSelection(["a", "b", "c"], "c"));
+    });
+
+    it("only the dragged element moves; every selected element stays selected and the moved one becomes primary", () => {
+      expect(run(() => store().moveElement("b", "other", "inside", { keepSelection: true }))).toEqual({ status: "moved", leftLabel: false });
+      expect(childIds("box")).toEqual(["a", "c"]);
+      expect(childIds("other")).toEqual(["b"]);
+      expect(store().selection).toEqual({ ids: ["a", "b", "c"], primaryId: "b" });
+      expect(store().past).toHaveLength(1);
+    });
+
+    it("Undo/Redo restore the order; the selection stays valid", () => {
+      run(() => store().moveElement("b", "other", "inside", { keepSelection: true }));
+      run(() => store().undo());
+      expect(childIds("box")).toEqual(["a", "b", "c"]);
+      expect(store().selection.ids).toEqual(["a", "b", "c"]);
+      run(() => store().redo());
+      expect(childIds("other")).toEqual(["b"]);
+      expect(store().selection.ids.every((id) => node(id) !== undefined)).toBe(true);
+    });
+
+    it("a refused or no-op move leaves the selection untouched", () => {
+      const before = store().selection;
+      run(() => store().moveElement("box", "a", "inside", { keepSelection: true }));
+      run(() => store().moveElement("a", "b", "before", { keepSelection: true }));
+      expect(store().selection).toBe(before);
+      expect(store().past).toHaveLength(0);
+    });
+
+    it("without the option (Canvas drag, Alt+Arrow) the moved element is the only selection, as before", () => {
+      run(() => store().moveElement("b", "other", "inside"));
+      expect(store().selection).toEqual({ ids: ["b"], primaryId: "b" });
+    });
+  });
 });

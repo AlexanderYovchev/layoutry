@@ -5,8 +5,9 @@ import type { StructureDropIndicatorState } from "@/features/editor/hooks/useStr
 /**
  * BC-12.3 (D2, D10): one absolutely positioned overlay in the tree wrapper
  * (never inside the rows, so hovering never re-renders the tree):
- * - before / after: a horizontal line at the row's top / bottom edge,
- *   starting at the row's label indent;
+ * - before / after: a horizontal line between rows, starting at the label
+ *   indent of the level the element will land at (BC-12.3.1: an ancestor's
+ *   level when appending to the end of a container);
  * - inside: the whole row highlighted;
  * - refused: the same shape, dashed red, plus the shared validator's
  *   reason under the row (truncated to the panel width).
@@ -15,7 +16,9 @@ import type { StructureDropIndicatorState } from "@/features/editor/hooks/useStr
  */
 export function StructureDropIndicator({ indicator }: { indicator: StructureDropIndicatorState }) {
   const refused = indicator.rejection !== null;
-  const lineTop = indicator.zone === "before" ? indicator.top - 1 : indicator.top + indicator.height - 1;
+  // BC-12.3.1: for a line, `top` is the line's own y (the level and edge are resolved by useStructureDragDrop).
+  const lineTop = indicator.top - 1;
+  const reasonTop = indicator.zone === "inside" ? indicator.top + indicator.height + 2 : indicator.top + 4;
 
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0" data-structure-drop-indicator={indicator.zone} data-refused={refused ? "true" : undefined}>
@@ -37,7 +40,7 @@ export function StructureDropIndicator({ indicator }: { indicator: StructureDrop
         <p
           data-structure-drop-reason=""
           className="rounded-control-sm bg-surface-panel absolute flex items-center gap-1 border border-red-500/40 px-1.5 py-0.5 text-[11px] text-red-700 shadow-sm dark:text-red-400"
-          style={{ top: indicator.top + indicator.height + 2, left: indicator.left, maxWidth: indicator.width }}
+          style={{ top: reasonTop, left: indicator.left, maxWidth: indicator.width }}
         >
           <Ban className="size-3 shrink-0" />
           <span className="min-w-0 truncate">{indicator.reasonText}</span>

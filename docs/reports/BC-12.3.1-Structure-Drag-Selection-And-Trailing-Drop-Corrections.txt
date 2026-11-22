@@ -1,0 +1,270 @@
+BC-12.3.1 — Structure Drag Selection & End-of-Container Drop Corrections
+=========================================================================
+Date: 2026-11-22
+Milestone: BC-12 (Structure Panel Drag-and-Drop Ordering)
+Status: implemented, focused validation passed, NOT committed (waiting for ChatGPT QA)
+Baseline: BC-12.3 is committed (5f6c309). BC-12.4 was not started.
+
+
+1. SUMMARY
+----------
+Correction A — multi-selection is preserved:
+- Dragging one row of a multi-selection moves only that element.
+- Every selected element stays selected, and the moved one becomes
+  primary.
+- Cancel and refused drops keep the selection too.
+- While verifying, a related real bug was found and fixed: Escape (to
+  cancel a Structure drag) also triggered the Canvas's "Escape clears the
+  selection" shortcut.
+Correction B — explicit end-of-container drops:
+- The gap under a container's last row now resolves by the pointer's
+  indentation, like an outliner: the end of that container, or the end of
+  an ancestor.
+- The gap under an OPEN container's row now means "before its first child"
+  (before, it meant "after the whole subtree", a different place from
+  where the line was drawn).
+- While a row is dragged, a "Drop here to move to the end of the page" area
+  appears under the last row.
+Everything goes through the same validateMove / moveElement, so the rules,
+no-op handling and one Undo step per move are unchanged.
+Recommendation: APPROVE BC-12.3.1 and close BC-12.3.
+
+
+2. ROOT CAUSES
+--------------
+A1. The store's moveElement always set selection = [moved element], the
+    contract shared with Canvas drags and Alt+Arrow. The Structure drag
+    used that contract unchanged.
+A2. (Found live) The Canvas's window-level Escape handler
+    (CanvasInteractionBoundary) clears the selection unless the event is
+    already defaultPrevented. dnd-kit's PointerSensor cancels a drag on
+    Escape without marking the event, so Escape-cancel also cleared the
+    selection.
+B1. The drop target came only from the hovered row:
+    - the gap under a last child could only mean "after that row";
+    - there was nothing under the final row of the tree.
+B2. Under an open container's row, the "after" band meant "after the
+    container", i.e. after its whole subtree. But the line was drawn
+    directly above the container's first child: the indicator and the
+    result disagreed.
+
+
+3. CORRECTIONS
+--------------
+A. Selection:
+   - moveElement(nodeId, targetId, zone, { keepSelection: true }), used only
+     by the Structure pointer drag: the selection becomes
+     createSelection(previous ids + moved id, filtered to existing ids),
+     with the moved id as primary.
+   - Without the option (Canvas drag, Alt+Arrow), the moved element is the
+     only selection, unchanged.
+   - Pick-up:
+     - an unselected row becomes the plain selection (unchanged
+       BC-10/BC-12.3 rule);
+     - a selected row leaves the selection as it is.
+   - Escape: while a Structure drag is active, a capture-phase window
+     keydown listener marks Escape as handled (preventDefault). dnd-kit
+     still cancels the drag, and the Canvas shortcut skips it. The listener
+     exists only during the drag and is module-level, so the same function
+     is added and removed.
+B. Targets (structureDragDrop.ts):
+   - trailingLevelCandidates(doc, rowId, draggedId): [row, parent if row is
+     its last child, grandparent if the parent is ITS last child, …], up to
+     the page's own children. The dragged element doesn't count when
+     deciding "last", unless it is the row itself. "After candidate X" is
+     exactly "append to the end of X's parent".
+   - resolveStructureDropTarget, "after" band:
+     - an open container with children → before its first child;
+     - otherwise the candidate whose row indentation starts at or left of
+       the pointer, deepest first (left of everything: the shallowest).
+   - The target carries levelId, the row whose indentation the line starts
+     at, so the drawn line shows the level it lands at.
+   - resolvePageEndTarget: the page-end area → inside the page root
+     (appended last).
+   - Indicator: a line is drawn at the gap's y (the top or bottom of the
+     hovered row, or the top of the page-end area), starting at that
+     level's label indent. The "inside" box is unchanged.
+
+
+4. FILES CHANGED
+----------------
+Modified:
+- src/features/editor/stores/useEditorStore.ts: the moveElement
+  keepSelection option.
+- src/features/editor/hooks/useStructureDragDrop.ts:
+  - hit-testing of rows and the page-end area;
+  - pointer X and row indentation;
+  - the line geometry;
+  - a `dragging` flag;
+  - keepSelection on drop;
+  - the Escape claim.
+- src/features/editor/components/structure/structureDragDrop.ts:
+  - levelId;
+  - trailingLevelCandidates;
+  - the "after" band resolution;
+  - resolvePageEndTarget;
+  - STRUCTURE_PAGE_END_ATTRIBUTE.
+- src/features/editor/components/structure/StructureTree.tsx: the page-end
+  drop area (only while dragging).
+- src/features/editor/components/structure/StructureDropIndicator.tsx: the
+  line uses `top` as its own y; the reason position.
+- Tests:
+  - structureDragDrop.test.ts (+7);
+  - StructureTree.dragHandle.test.tsx (the indicator test follows the new
+    contract);
+  - useEditorStore.moveIntegrity.test.ts (+4);
+  - e2e/structure-pointer-drag.spec.ts (test 2 extended, tests 9–10 added).
+Created:
+- this report, and changelogs/2026-11-22-structure-drag-selection-and-trailing-drop-BC-12.3.1.txt
+  (gitignored)
+No schema, migration, dependency, Canvas, export or Electron change.
+
+
+5. SELECTION BEHAVIOR
+---------------------
+Each case below is verified in Chromium (test 9) and/or the store tests.
+- A, B, C selected; drag B before A:
+  - only B moves;
+  - A, B and C stay selected ("3 selected");
+  - B is primary and its row is focused.
+- Undo / Redo restore the order. The selection stays A, B, C (history
+  snapshots hold the selection, as before) and never points at a missing
+  element.
+- Escape mid-drag: no change, "3 selected" kept (was cleared before the
+  fix).
+- A refused drop (into a List): no change, "3 selected" kept.
+- A drag of an unselected row (the Title): it becomes the only selection
+  (plain selection), and then moves.
+- A refused or no-op move with keepSelection leaves the selection object
+  untouched, and records no history.
+- Canvas and Alt+Arrow moves still select only the moved element.
+- BC-10 multi-selection semantics (Ctrl/Cmd toggle, Shift range, count)
+  are unchanged.
+
+
+6. END-OF-CONTAINER TARGETING
+-----------------------------
+Example tree: Section B > Inner > Deep, followed by List. In the gap under
+"Deep":
+- at Deep's indentation (or to the right) → after Deep = the end of Inner;
+- at Inner's indentation → after Inner = the end of Section B;
+- at Section B's indentation or further left → after Section B (page
+  level, before List).
+Destination ownership comes from the real hierarchy and the rows' actual
+padding, so it also holds for depths past the 6-level indent cap. A
+candidate appears only where its row is visually the last one in that
+spot, so a trailing target can never append to the wrong ancestor.
+An open container's own row: its "after" band is "before its first child".
+"After the container itself" is reached from the gap under its last
+descendant at the container's indentation. There is no ambiguity between
+"append to the parent" and "insert after the parent".
+Collapsed containers: their rows have no visible children, so the "after"
+band means after the container, as before. "Inside" still appends to the
+end (and auto-expands after 600 ms).
+Empty containers: "inside" (the middle band) appends; tested with an empty
+Flow box.
+Page end: the dashed area (40px, full tree width, inside the Structure
+panel only) appears only while a row is dragged. It appends to the page
+root.
+
+
+7. STRUCTURAL VALIDATION
+------------------------
+Every resolved target, including ancestor levels and the page end, is
+validated by validateMove on hover and applied by moveElement → planMove on
+drop. Tested:
+- invalid nesting, a list item at an ancestor level or at the page end:
+  "That place can't contain this kind of element";
+- cycles: Section B at the level of its own Inner → "descendant";
+- Navbar / Pagination / Free-bounds rules: the same validator (BC-12.2's 36
+  store tests, re-run).
+A refused drop changes nothing and shows the shared notice.
+
+
+8. UNDO/REDO
+------------
+- One drop = one history entry: three trailing drops plus the page-end
+  append, with Undo/Redo checked in Chromium.
+- A no-op append (the page's last child dropped on the page end again) is
+  announced "Alpha was not moved: it is already there." and records
+  nothing: the next Undo still undoes the earlier page-end append.
+- Refused drops record nothing.
+
+
+9. FOCUSED TESTS
+----------------
+Impact map:
+- moveElement option → the moveIntegrity store suite, useEditorStore.test
+  (move cases) and useMoveElement;
+- the drag hook, target resolution and indicator → the structure
+  component suites;
+- the Escape claim → CanvasInteractionBoundary (Escape clears selection)
+  and the e2e cancel paths;
+- EditorApp is unchanged, but its test was run as the drag host.
+Commands:
+1. npx vitest run src/features/editor/components/structure
+   src/features/editor/stores/useEditorStore.moveIntegrity.test.ts
+   src/features/editor/stores/useEditorStore.test.ts
+   src/features/canvas/components/CanvasInteractionBoundary.test.tsx
+   src/features/editor/components/EditorApp.test.tsx
+   src/features/editor/hooks/useMoveElement.test.ts
+   → 13 files, 294 tests passed (11 new: +7 targeting, +4 keepSelection)
+2. npx playwright test e2e/structure-pointer-drag.spec.ts
+   e2e/structure-keyboard-reorder.spec.ts --project=chromium --repeat-each=2
+   → 32 passed (10 pointer-drag tests, 2 new, plus 6 keyboard tests, twice).
+   Covers handles, before/after/inside, auto-expand, Escape, edge
+   auto-scroll and the 1,000-row tree, touch and pen (CDP), reduced
+   motion, Preview/Export, and keyboard parity.
+3. npx tsc --noEmit -p . → 0 errors
+4. npx eslint <the 9 changed files> → clean
+Not run, per policy: full suites, Firefox/WebKit, Electron, build.
+Found during validation:
+- the Escape-clears-selection bug (fixed, section 2 A2);
+- one test assumption corrected: "after" an open List now correctly means
+  "before its first item", so the unselected-row step drops before the
+  Free box instead;
+- a candidate rule fix: the dragged row itself counts when it is the
+  hovered row (outdenting the dragged last child).
+
+
+10. REMAINING LIMITATIONS
+-------------------------
+- The level under a last child depends on the pointer's horizontal
+  position. Since the grip is on the right of the row, reaching an
+  ancestor level means moving the pointer left over the indentation. This
+  is standard outliner behaviour; the line shows the level.
+- The page-end area adds 44px under the tree only while dragging (a
+  reflow at drag start, below all rows).
+- Escape during a CANVAS dnd-kit move drag still clears the selection.
+  That predates this checkpoint and is outside the Structure scope; raised,
+  not changed.
+- Touch and pen: Chromium CDP input only, as in BC-12.3.
+- Keyboard refusals are still announced by both the Structure region and
+  the notice banner (BC-12.2).
+
+
+11. GIT WORKING-TREE STATUS
+---------------------------
+ M e2e/structure-pointer-drag.spec.ts
+ M src/features/editor/components/structure/StructureDropIndicator.tsx
+ M src/features/editor/components/structure/StructureTree.dragHandle.test.tsx
+ M src/features/editor/components/structure/StructureTree.tsx
+ M src/features/editor/components/structure/structureDragDrop.test.ts
+ M src/features/editor/components/structure/structureDragDrop.ts
+ M src/features/editor/hooks/useStructureDragDrop.ts
+ M src/features/editor/stores/useEditorStore.moveIntegrity.test.ts
+ M src/features/editor/stores/useEditorStore.ts
+?? docs/reports/BC-12.3.1-Structure-Drag-Selection-And-Trailing-Drop-Corrections.txt
+The changelog is gitignored. Nothing committed or pushed.
+
+
+12. QA RECOMMENDATION
+---------------------
+APPROVE BC-12.3.1:
+- the multi-selection survives single-element drags, cancels and
+  refusals, plus the Escape bug fix;
+- explicit, hierarchy-correct end-of-container and end-of-page drops on
+  the shared validator, with one Undo step;
+- every BC-12.3 behaviour re-verified.
+Close BC-12.3, then proceed to BC-12.4 (multi-element drag) after ChatGPT
+QA approval.

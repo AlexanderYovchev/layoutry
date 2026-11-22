@@ -8,7 +8,7 @@ import {
 } from "@/features/editor/components/structure/documentTreeUtils";
 import { StructureTreeNode } from "@/features/editor/components/structure/StructureTreeNode";
 import { StructureDropIndicator } from "@/features/editor/components/structure/StructureDropIndicator";
-import { STRUCTURE_TREE_ATTRIBUTE } from "@/features/editor/components/structure/structureDragDrop";
+import { STRUCTURE_PAGE_END_ATTRIBUTE, STRUCTURE_TREE_ATTRIBUTE } from "@/features/editor/components/structure/structureDragDrop";
 import { collectNodeIds } from "@/features/editor/utils/collectNodeIds";
 import {
   describeMovedPosition,
@@ -217,7 +217,7 @@ export function StructureTree() {
   );
 
   // BC-12.3: pointer drag from the row handles (one element at a time).
-  const dropIndicator = useStructureDragDrop({
+  const { indicator: dropIndicator, dragging } = useStructureDragDrop({
     documentTree,
     openNodeIds,
     wrapperRef,
@@ -293,6 +293,16 @@ export function StructureTree() {
             registerRowRef={registerRowRef}
           />
         </div>
+        {/* BC-12.3.1: while a row is dragged, a drop area under the last row appends it to the end of the page. */}
+        {dragging && (
+          <div
+            aria-hidden="true"
+            {...{ [STRUCTURE_PAGE_END_ATTRIBUTE]: "" }}
+            className="rounded-control border-line text-fg-muted mt-1 flex h-10 items-center border border-dashed px-3 text-[11px]"
+          >
+            <span className="min-w-0 truncate">Drop here to move to the end of the page</span>
+          </div>
+        )}
         {dropIndicator && <StructureDropIndicator indicator={dropIndicator} />}
       </div>
     </>
