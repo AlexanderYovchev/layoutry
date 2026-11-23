@@ -3,7 +3,10 @@ import { MAX_NAVIGATION_LINKS } from "@/features/editor/commands/navigationLinkC
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { isTouchOnStructureHandle } from "@/features/editor/utils/editorDragSensors";
 import {
+  describeMovedGroup,
+  describeStructureDragSet,
   isStructureDragData,
+  resolveStructureDragSet,
   resolvePageEndTarget,
   resolveStructureDropTarget,
   shouldAutoExpand,
@@ -112,6 +115,38 @@ describe("end-of-container levels (BC-12.3.1)", () => {
 
   it("an empty container takes the element inside", () => {
     expect(resolveStructureDropTarget(doc, "a", "empty", row, at(0.5), levels(200))).toMatchObject({ targetId: "empty", zone: "inside", rejection: null });
+  });
+});
+
+describe("multi-drag set and targets (BC-12.4)", () => {
+  it("the drag set: an unselected or only-selected row alone; with 2+ selected including it, the minimal roots in document order", () => {
+    expect(resolveStructureDragSet(doc, [], "a")).toEqual(["a"]);
+    expect(resolveStructureDragSet(doc, ["a"], "a")).toEqual(["a"]);
+    expect(resolveStructureDragSet(doc, ["b", "deep"], "a")).toEqual(["a"]); // not selected: just this row
+    expect(resolveStructureDragSet(doc, ["deep", "b", "a"], "b")).toEqual(["a", "b", "deep"]);
+    expect(resolveStructureDragSet(doc, ["s2", "deep", "b"], "deep")).toEqual(["b", "s2"]); // deep travels inside s2
+    expect(resolveStructureDragSet(doc, ["page-root", "a"], "a")).toEqual(["a"]);
+  });
+
+  it("the chip: the dragged label with the root count; the moving ancestor's label when the dragged row travels inside it", () => {
+    expect(describeStructureDragSet(doc, ["a", "b", "deep"], "b", "Para B")).toEqual({ label: "Para B", count: 3 });
+    expect(describeStructureDragSet(doc, ["s2"], "deep", "Deep")).toEqual({ label: "Section", count: 1 });
+  });
+
+  it("the group announcement reads the document", () => {
+    expect(describeMovedGroup(doc, ["a", "b"])).toBe("Moved 2 elements to Section, positions 1–2 of 2.");
+  });
+
+  it("targets for a moved set: inside a moved root shows nothing, before/after a moved root is the gap it leaves, a moved root's descendant is refused", () => {
+    expect(resolveStructureDropTarget(doc, ["a", "s2"], "s2", row, at(0.5))).toBeNull();
+    expect(resolveStructureDropTarget(doc, ["a", "b"], "b", row, at(0.4))).toMatchObject({ targetId: "b", zone: "before", rejection: null });
+    expect(resolveStructureDropTarget(doc, ["a", "s2"], "inner", row, at(0.5))?.rejection).toBe("descendant");
+    expect(resolveStructureDropTarget(doc, ["a", "li"], "s2", row, at(0.5))?.rejection).toBe("incompatible-parent");
+    expect(resolvePageEndTarget(doc, ["a", "b"])).toMatchObject({ targetId: "page-root", rejection: null });
+  });
+
+  it("the moved set is skipped when deciding a container's last row (end-of-container levels)", () => {
+    expect(trailingLevelCandidates(doc, "a", ["b"])).toEqual(["a", "s1"]);
   });
 });
 

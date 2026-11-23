@@ -388,4 +388,56 @@ describe("shared move integrity (BC-12.2)", () => {
       expect(store().selection).toEqual({ ids: ["b"], primaryId: "b" });
     });
   });
+
+  describe("moveElements (BC-12.4, Structure multi-drag)", () => {
+    beforeEach(() => {
+      load([
+        { id: "box", tag: "div", children: [p("a"), p("b"), p("c")] },
+        { id: "other", tag: "div", children: [p("x")] },
+        { id: "list", tag: "ul", children: [{ id: "li", tag: "li", text: "Item" }] },
+      ]);
+      run(() => store().setSelection(["c", "a", "x"], "c"));
+    });
+
+    it("moves the minimal roots in document order as ONE history step; every selected element stays selected, the dragged one primary", () => {
+      expect(run(() => store().moveElements(["c", "a", "x"], "b", "after", "a"))).toEqual({ status: "moved", leftLabel: false });
+      expect(childIds("box")).toEqual(["b", "a", "c", "x"]);
+      expect(childIds("other")).toEqual([]);
+      expect(store().past).toHaveLength(1);
+      expect(store().selection.primaryId).toBe("a");
+      expect([...store().selection.ids].sort()).toEqual(["a", "c", "x"]);
+      run(() => store().undo());
+      expect(childIds("box")).toEqual(["a", "b", "c"]);
+      expect(childIds("other")).toEqual(["x"]);
+      run(() => store().redo());
+      expect(childIds("box")).toEqual(["b", "a", "c", "x"]);
+    });
+
+    it("a refused batch changes nothing (no history, not dirty, selection kept) and gives one batch-level reason", () => {
+      run(() => store().setSelection(["a", "li"], "a"));
+      const before = { document: store().document, selection: store().selection };
+      expect(run(() => store().moveElements(["a", "li"], "other", "inside", "a"))).toEqual({ status: "rejected", reason: "incompatible-parent" });
+      expect(store().document).toBe(before.document);
+      expect(store().selection).toBe(before.selection);
+      expect(store().past).toHaveLength(0);
+      expect(selectHasUnsavedChanges(store())).toBe(false);
+      expect(store().editorNotice?.message).toBe("The 2 elements weren't moved: that place can't contain this kind of element.");
+    });
+
+    it("a no-op batch records nothing and keeps the selection", () => {
+      run(() => store().setSelection(["a", "b"], "a"));
+      const before = store().selection;
+      expect(run(() => store().moveElements(["a", "b"], "c", "before", "a"))).toEqual({ status: "unchanged" });
+      expect(store().past).toHaveLength(0);
+      expect(store().selection).toBe(before);
+    });
+
+    it("one root (a parent + its child selected) is a single move that keeps the selection, with the dragged child primary", () => {
+      run(() => store().setSelection(["box", "b"], "box"));
+      expect(run(() => store().moveElements(["box", "b"], "list", "after", "b")).status).toBe("moved");
+      expect(childIds("page-root")).toEqual(["other", "list", "box"]);
+      expect(childIds("box")).toEqual(["a", "b", "c"]);
+      expect(store().selection).toEqual({ ids: ["box", "b"], primaryId: "b" });
+    });
+  });
 });

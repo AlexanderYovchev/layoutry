@@ -1,7 +1,7 @@
 import { DndContext, useSensor, useSensors } from "@dnd-kit/core";
 import type { ReactNode } from "react";
 import { EditorPointerSensor } from "@/features/editor/utils/editorDragSensors";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
@@ -81,6 +81,24 @@ describe("Structure drag handle (BC-12.3)", () => {
     expect(store().past).toHaveLength(0);
   });
 
+  it("BC-12.4: picking up a row of a multi-selection announces the group and keeps the selection; Escape cancels and keeps it", () => {
+    // Set directly: dnd-kit swallows the first click after the previous test's drag (its post-drag click guard).
+    act(() => store().setSelection(["a", "z"], "z"));
+    expect(store().selection.ids).toEqual(["a", "z"]);
+    const before = store().document;
+    const handle = screen.getByRole("button", { name: "Drag Para A" });
+    fireEvent.pointerDown(handle, { button: 0, isPrimary: true, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(document, { button: 0, isPrimary: true, clientX: 10, clientY: 30 });
+    expect(handle).toHaveAttribute("data-dragging", "true");
+    expect(document.querySelector("[data-structure-move-announcement]")?.textContent).toMatch(/^Dragging Para A and 1 other element \(2 in all\)\./);
+    expect(store().selection.ids).toEqual(["a", "z"]);
+    fireEvent.keyDown(document, { key: "Escape", code: "Escape" });
+    expect(document.querySelector("[data-structure-move-announcement]")?.textContent).toMatch(/^Move cancelled\. The 2 elements were not moved\./);
+    expect(store().selection.ids).toEqual(["a", "z"]);
+    expect(store().document).toBe(before);
+    expect(store().past).toHaveLength(0);
+  });
+
   it("a right-button press never drags", () => {
     const handle = screen.getByRole("button", { name: "Drag Para A" });
     fireEvent.pointerDown(handle, { button: 2, isPrimary: true, clientX: 10, clientY: 10 });
@@ -105,9 +123,17 @@ describe("StructureDragPreview", () => {
     expect(chip).not.toHaveTextContent(/\d/);
   });
 
-  it("is ready for a multi-drag count (BC-12.4)", () => {
-    render(<StructureDragPreview label="Para" tag="p" count={3} />);
-    expect(document.querySelector("[data-structure-drag-preview]")).toHaveTextContent("Para3");
+  it("BC-12.4: shows the dragged label plus the other moved roots, with an accessible description", () => {
+    render(<StructureDragPreview label="Button" tag="button" count={4} />);
+    const chip = document.querySelector("[data-structure-drag-preview]")!;
+    expect(chip).toHaveTextContent("Button+ 3 elements");
+    expect(chip).toHaveAttribute("aria-label", "Moving Button and 3 other elements");
+    expect(chip.querySelector("[data-structure-drag-count]")).toHaveAttribute("data-structure-drag-count", "4");
+  });
+
+  it("two moved roots: singular wording", () => {
+    render(<StructureDragPreview label="Para" tag="p" count={2} />);
+    expect(document.querySelector("[data-structure-drag-preview]")).toHaveTextContent("Para+ 1 element");
   });
 });
 

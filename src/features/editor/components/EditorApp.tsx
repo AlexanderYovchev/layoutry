@@ -30,7 +30,13 @@ import { useMoveElement } from "@/features/editor/hooks/useMoveElement";
 import { resolveDragEndInsertion } from "@/features/editor/utils/resolveDragEndInsertion";
 import { resolveDragEndMove } from "@/features/editor/utils/resolveDragEndMove";
 import { EditorPointerSensor } from "@/features/editor/utils/editorDragSensors";
-import { isStructureDragData, STRUCTURE_TREE_ATTRIBUTE } from "@/features/editor/components/structure/structureDragDrop";
+import {
+  describeStructureDragSet,
+  isStructureDragData,
+  resolveStructureDragSet,
+  STRUCTURE_TREE_ATTRIBUTE,
+} from "@/features/editor/components/structure/structureDragDrop";
+import { findNodeById } from "@/features/editor/utils/findNodeById";
 import { StructureDragPreview } from "@/features/editor/components/structure/StructureDragPreview";
 
 interface ActiveDragPreview {
@@ -210,7 +216,12 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
     structureDragActive.current = isStructureDragData(data);
     setLastDragWasStructure(isStructureDragData(data));
     if (isStructureDragData(data)) {
-      setActiveDrag({ label: data.label, structure: { tag: data.tag, count: data.count } });
+      // BC-12.4: the chip shows what this drag moves (resolved like the Structure panel does).
+      const store = useEditorStore.getState();
+      const moved = resolveStructureDragSet(store.document, store.selection.ids, data.nodeId);
+      const { label, count } = describeStructureDragSet(store.document, moved, data.nodeId, data.label);
+      const tag = moved.length === 1 && moved[0] !== data.nodeId ? (findNodeById(store.document, moved[0])?.tag ?? data.tag) : data.tag;
+      setActiveDrag({ label, structure: { tag, count } });
       return;
     }
     const label = data?.label;

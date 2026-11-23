@@ -111,7 +111,7 @@ const FREE_GROUP_GAP_PX = 16;
  * own geometry inside each copy. `sourceKeys[index]` names each copy's
  * source container (undefined: all one sub-group).
  */
-function placeFreeGroup(
+export function placeFreeGroup(
   parent: EditorElementNode,
   nodes: readonly EditorElementNode[],
   sourceKeys: readonly (string | null | undefined)[],

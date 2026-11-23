@@ -2,16 +2,21 @@
 
 import { useDndMonitor, type DragStartEvent } from "@dnd-kit/core";
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { moveRejectedMessage, moveRejectionReasonText, type MoveRejectionReason } from "@/features/editor/commands/moveCommands";
+import { moveBatchRejectedMessage, moveRejectedMessage, moveRejectionReasonText, type MoveRejectionReason } from "@/features/editor/commands/moveCommands";
 import {
+  describeMovedGroup,
+  describeStructureDragSet,
   isStructureDragData,
   resolvePageEndTarget,
+  resolveStructureDragSet,
+  structureMoveValidator,
   resolveStructureDropTarget,
   shouldAutoExpand,
   STRUCTURE_AUTO_EXPAND_DELAY_MS,
   STRUCTURE_PAGE_END_ATTRIBUTE,
   STRUCTURE_ROW_ID_ATTRIBUTE,
   type StructureDropTarget,
+  type StructureMoveValidator,
 } from "@/features/editor/components/structure/structureDragDrop";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
@@ -48,7 +53,7 @@ interface StructureDragOptions {
   rowRefs: RefObject<Map<string, HTMLDivElement>>;
   expand: (ids: readonly string[]) => void;
   /** A successful drop: reveal, focus and announce the moved row. */
-  onMoved: (id: string) => void;
+  onMoved: (id: string, message?: string) => void;
   announce: (message: string) => void;
 }
 
@@ -80,6 +85,19 @@ function claimEscape(event: KeyboardEvent) {
   if (event.key === "Escape") event.preventDefault();
 }
 
+/** BC-12.4: the shared validator for one drag, cached per target + zone (the document doesn't change while dragging). */
+function cachedValidator(validate: StructureMoveValidator): StructureMoveValidator {
+  const cache = new Map<string, MoveRejectionReason | null>();
+  return (targetId, zone) => {
+    const key = `${targetId}\u0000${zone}`;
+    const known = cache.get(key);
+    if (known !== undefined) return known;
+    const verdict = validate(targetId, zone);
+    cache.set(key, verdict);
+    return verdict;
+  };
+}
+
 function pointerOf(event: Event | null): { x: number; y: number } | null {
   if (event && "clientX" in event && "clientY" in event && typeof event.clientX === "number" && typeof event.clientY === "number") {
     return { x: event.clientX, y: event.clientY };
@@ -106,7 +124,12 @@ function pointerOf(event: Event | null): { x: number; y: number } | null {
 export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, rowRefs, expand, onMoved, announce }: StructureDragOptions): StructureDragState {
   const [indicator, setIndicator] = useState<StructureDropIndicatorState | null>(null);
   const [dragging, setDragging] = useState(false);
-  const drag = useRef<{ nodeId: string; label: string } | null>(null);
+  /**
+   * The drag session, fixed at pick-up (BC-12.4): the dragged row, what it
+   * moves (one element, or the minimal selected roots in document order),
+   * its label and one cached validator.
+   */
+  const drag = useRef<{ nodeId: string; label: string; moved: string[]; validate: StructureMoveValidator } | null>(null);
   const pointer = useRef<{ x: number; y: number } | null>(null);
   const target = useRef<StructureDropTarget | null>(null);
   const indicatorRef = useRef<StructureDropIndicatorState | null>(null);
@@ -159,13 +182,17 @@ export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, ro
     const rowId = hit?.kind === "row" ? hit.element.getAttribute(STRUCTURE_ROW_ID_ATTRIBUTE) : null;
     const next =
       hit?.kind === "page-end"
-        ? resolvePageEndTarget(doc, active.nodeId)
+        ? resolvePageEndTarget(doc, active.moved, active.validate)
         : rowId && hitRect
-          ? resolveStructureDropTarget(doc, active.nodeId, rowId, hitRect, pointer.current.y, {
-              openNodeIds: open,
-              pointerX: pointer.current.x - wrapperRect.left,
-              indentStartOf,
-            })
+          ? resolveStructureDropTarget(
+              doc,
+              active.moved,
+              rowId,
+              hitRect,
+              pointer.current.y,
+              { openNodeIds: open, pointerX: pointer.current.x - wrapperRect.left, indentStartOf },
+              active.validate,
+            )
           : null;
     target.current = next;
 
@@ -238,7 +265,12 @@ export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, ro
     onDragStart(event: DragStartEvent) {
       const data = event.active.data.current;
       if (!isStructureDragData(data)) return;
-      drag.current = { nodeId: data.nodeId, label: data.label };
+      const store = useEditorStore.getState();
+      // BC-12.4: with several selected elements including this row, the whole
+      // selection (as minimal roots) moves; otherwise just this row.
+      const moved = resolveStructureDragSet(store.document, store.selection.ids, data.nodeId);
+      const { label, count } = describeStructureDragSet(store.document, moved, data.nodeId, data.label);
+      drag.current = { nodeId: data.nodeId, label, moved, validate: cachedValidator(structureMoveValidator(store.document, moved)) };
       setDragging(true);
       pointer.current = pointerOf(event.activatorEvent);
       stopTrackingPointer();
@@ -251,9 +283,9 @@ export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, ro
       // Dragging an unselected row selects it (plain selection, no document
       // change); a row of a multi-selection keeps the whole selection, also
       // after the drop (BC-12.3.1: moveElement keepSelection).
-      const store = useEditorStore.getState();
       if (!store.selection.ids.includes(data.nodeId)) store.selectOnly(data.nodeId);
-      latest.current.announce(`Dragging ${data.label}. Move over another row to place it before, after or inside it, or press Escape to cancel.`);
+      const what = count > 1 ? `${label} and ${count - 1} other ${count === 2 ? "element" : "elements"} (${count} in all)` : label;
+      latest.current.announce(`Dragging ${what}. Move over another row to place ${count > 1 ? "them" : "it"} before, after or inside it, or press Escape to cancel.`);
       compute();
     },
     // Fires on pointer moves and on auto-scroll (the rows move under a still pointer).
@@ -266,29 +298,38 @@ export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, ro
       compute();
       const dropTarget = target.current;
       finish();
+      const group = active.moved.length > 1;
+      const subject = group ? `The ${active.moved.length} elements` : active.label;
       if (!dropTarget) {
-        latest.current.announce(`Move cancelled. ${active.label} was not moved.`);
+        latest.current.announce(`Move cancelled. ${subject} ${group ? "were" : "was"} not moved.`);
         focusRow(active.nodeId);
         return;
       }
       if (dropTarget.rejection) {
-        useEditorStore.getState().showEditorNotice(moveRejectedMessage(active.label, dropTarget.rejection));
+        useEditorStore
+          .getState()
+          .showEditorNotice(group ? moveBatchRejectedMessage(active.moved.length, dropTarget.rejection) : moveRejectedMessage(active.label, dropTarget.rejection));
         focusRow(active.nodeId);
         return;
       }
-      const outcome = useEditorStore.getState().moveElement(active.nodeId, dropTarget.targetId, dropTarget.zone, { keepSelection: true });
+      const store = useEditorStore.getState();
+      const single = !group && active.moved[0] === active.nodeId;
+      const outcome = single
+        ? store.moveElement(active.nodeId, dropTarget.targetId, dropTarget.zone, { keepSelection: true })
+        : store.moveElements(active.moved, dropTarget.targetId, dropTarget.zone, active.nodeId);
       if (outcome.status === "moved") {
-        latest.current.onMoved(active.nodeId);
+        latest.current.onMoved(active.nodeId, group ? describeMovedGroup(useEditorStore.getState().document, active.moved) : undefined);
         return;
       }
-      if (outcome.status === "unchanged") latest.current.announce(`${active.label} was not moved: it is already there.`);
+      if (outcome.status === "unchanged") latest.current.announce(`${subject} ${group ? "were" : "was"} not moved: ${group ? "they are" : "it is"} already there.`);
       focusRow(active.nodeId);
     },
     onDragCancel() {
       const active = drag.current;
       if (!active) return;
       finish();
-      latest.current.announce(`Move cancelled. ${active.label} was not moved.`);
+      const group = active.moved.length > 1;
+      latest.current.announce(`Move cancelled. ${group ? `The ${active.moved.length} elements were` : `${active.label} was`} not moved.`);
       focusRow(active.nodeId);
     },
   });

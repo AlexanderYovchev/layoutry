@@ -122,12 +122,13 @@ export function StructureTree() {
   // After a successful move (keyboard or pointer): open the new ancestors,
   // keep focus on the moved row, and announce where it now is.
   const revealMoved = useCallback(
-    (id: string) => {
+    (id: string, message?: string) => {
       const after = useEditorStore.getState().document;
       expand(findAncestorIds(after, id));
       setCurrentNodeId(id);
       setPendingFocusId(id);
-      announce(describeMovedPosition(after, id));
+      // BC-12.4: a multi-drag passes its own group description.
+      announce(message ?? describeMovedPosition(after, id));
     },
     [announce, expand],
   );

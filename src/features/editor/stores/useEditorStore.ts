@@ -172,7 +172,8 @@ import { isStructurallyEqual } from "@/features/editor/utils/isStructurallyEqual
 import { collectNodeIds } from "@/features/editor/utils/collectNodeIds";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
 import { resolveFreeDestinationPlacement } from "@/features/editor/utils/resolveFreeDestinationPlacement";
-import { moveRejectedMessage, planMove, type MoveOutcome } from "@/features/editor/commands/moveCommands";
+import { moveBatchRejectedMessage, moveRejectedMessage, planMove, type MoveOutcome } from "@/features/editor/commands/moveCommands";
+import { planMultiMove } from "@/features/editor/commands/multiMoveCommands";
 import { getElementDisplayName } from "@/features/editor/utils/elementDisplayName";
 import { resolveDeletionFallbackSelection } from "@/features/editor/utils/resolveDeletionFallbackSelection";
 import { resolveDestinationParent } from "@/features/editor/utils/resolveDestinationParent";
@@ -362,7 +363,16 @@ interface EditorState {
    * otherwise (Canvas drag, Alt+Arrow) the moved element is the only
    * selection, as before.
    */
-  moveElement: (nodeId: string, targetId: string, zone: DropZone, options?: { keepSelection?: boolean }) => MoveOutcome;
+  moveElement: (nodeId: string, targetId: string, zone: DropZone, options?: { keepSelection?: boolean; primaryId?: string }) => MoveOutcome;
+  /**
+   * BC-12.4: moves the minimal roots of `ids` (document order) together to
+   * one destination — the Structure multi-drag. All or nothing through
+   * planMultiMove (one history entry; a refusal changes nothing and shows a
+   * notice; an identical result records nothing). Every selected element
+   * stays selected; `primaryId` (the dragged row) becomes primary. One
+   * root is exactly moveElement with keepSelection.
+   */
+  moveElements: (ids: readonly string[], targetId: string, zone: DropZone, primaryId: string) => MoveOutcome;
   resizeElement: (nodeId: string, dimensions: ElementDimensions) => void;
   beginResizeTransaction: () => void;
   commitResizeTransaction: () => void;
@@ -1092,6 +1102,9 @@ export const MULTI_DUPLICATE_REJECTED_NOTICE = "These elements can't all be dupl
 /** BC-10.5.1: copies going into a Free container whose arrangement doesn't fit there at their sizes. */
 export const FREE_GROUP_PASTE_REJECTED_NOTICE = "These elements don't fit in this container at their size and arrangement, so nothing was pasted.";
 export const FREE_GROUP_DUPLICATE_REJECTED_NOTICE = "The copies don't fit in their container at their size and arrangement, so nothing was duplicated.";
+/** BC-12.4: a multi-move took a form control out of the Label that names it (allowed, D9). */
+export const MOVED_GROUP_OUT_OF_LABEL_NOTICE = "A moved form control left its label, so that label no longer names it.";
+
 /** BC-12.2: a form control moved out of the Label that names it (allowed, D9; the label no longer names it). */
 export function movedOutOfLabelNotice(name: string): string {
   return `${name} moved out of its label, so that label no longer names it.`;
@@ -1311,7 +1324,7 @@ function eligibleSelectedNode(state: EditorState): EditorElementNode | undefined
  * frame. Move is already a single onDragEnd call with no live document
  * mutation mid-drag, so it needs no transaction of its own.
  */
-export const useEditorStore = create<EditorState>()((set) => ({
+export const useEditorStore = create<EditorState>()((set, get) => ({
   document: fixtureDocument,
   selection: EMPTY_SELECTION,
   selectionAnchorId: null,
@@ -1396,9 +1409,30 @@ export const useEditorStore = create<EditorState>()((set) => ({
       outcome = { status: "moved", leftLabel: plan.leftLabel };
       const movedNode = findNodeById(document, nodeId);
       const notice = plan.leftLabel && movedNode ? nextEditorNoticeState(state, movedOutOfLabelNotice(getElementDisplayName(movedNode))) : {};
+      const primaryId = options?.primaryId ?? nodeId;
       const selection = options?.keepSelection
-        ? createSelection([...state.selection.ids, nodeId].filter((id) => findNodeById(document, id) !== undefined), nodeId)
+        ? createSelection([...state.selection.ids, nodeId].filter((id) => findNodeById(document, id) !== undefined), primaryId)
         : selectionFromSingle(nodeId);
+      return { ...pushHistory(state), ...notice, document, selection };
+    });
+    return outcome;
+  },
+
+  moveElements: (ids, targetId, zone, primaryId) => {
+    const roots = orderedSelectionRoots(get().document, ids);
+    if (roots.length === 1) return get().moveElement(roots[0].id, targetId, zone, { keepSelection: true, primaryId });
+    let outcome: MoveOutcome = { status: "unchanged" };
+    set((state) => {
+      const plan = planMultiMove(state.document, ids, targetId, zone);
+      if (plan.status === "unchanged") return {};
+      if (plan.status === "rejected") {
+        outcome = plan;
+        return nextEditorNoticeState(state, moveBatchRejectedMessage(roots.length, plan.reason));
+      }
+      const document = withPaginationInvariants(state.document, plan.document, { ordinaryLookIds: plan.formerCurrentPageIds });
+      outcome = { status: "moved", leftLabel: plan.leftLabel };
+      const notice = plan.leftLabel ? nextEditorNoticeState(state, MOVED_GROUP_OUT_OF_LABEL_NOTICE) : {};
+      const selection = createSelection([...state.selection.ids, ...plan.rootIds].filter((id) => findNodeById(document, id) !== undefined), primaryId);
       return { ...pushHistory(state), ...notice, document, selection };
     });
     return outcome;

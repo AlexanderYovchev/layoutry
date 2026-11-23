@@ -1,0 +1,401 @@
+BC-12.4 — Multi-Element Structure Dragging
+==========================================
+Date: 2026-11-22
+Milestone: BC-12 (Structure Panel Drag-and-Drop Ordering)
+Status: implemented, focused validation passed, NOT committed (waiting for ChatGPT QA)
+Baseline: BC-12.3.1 is committed (03134d8). BC-12.5 was not started.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+Dragging the handle of a row that is part of a multi-selection now moves
+the whole selection as ONE operation.
+- It moves the minimal selected roots: a selected child travels inside its
+  selected parent.
+- They move in document order, to one destination (before, after, inside,
+  the end of a container or the end of the page).
+- All or nothing, one Undo step.
+- Every selected element stays selected, and the dragged one is primary.
+A new pure planner, commands/multiMoveCommands.ts → planMultiMove:
+- builds the final tree in one pass (each root removed once, inserted
+  together, the same objects and ids);
+- validates THAT tree: tags, cycles, Pagination controls/order/page limit,
+  the Navbar limit after removals and insertions, and Free bounds for the
+  whole group via the BC-10.5.1 group placement;
+- returns moved / unchanged / rejected.
+The store adds the Pagination invariants and history. One moved root is
+exactly the existing single move (planMove), so single-element behaviour is
+unchanged. Alt+Arrow stays single-element.
+The drag chip shows "<dragged label> + N element(s)", and announcements
+give the count.
+Tests:
+- 39 new unit/component tests;
+- 2 new Chromium tests;
+- 36/36 browser runs (the Structure drag + keyboard specs, twice).
+Two older browser tests were updated, because they pinned the superseded
+"multi-selection drags only that row" rule (section 18).
+Recommendation: APPROVE BC-12.4.
+
+
+2. FILES CHANGED
+----------------
+Created:
+- src/features/editor/commands/multiMoveCommands.ts (planMultiMove,
+  validateMultiMove)
+- src/features/editor/commands/multiMoveCommands.test.ts (16 tests)
+- docs/reports/BC-12.4-Multi-Element-Structure-Dragging.txt
+- changelogs/2026-11-22-multi-element-structure-dragging-BC-12.4.txt (gitignored)
+Modified:
+- src/features/editor/stores/useEditorStore.ts:
+  - moveElements;
+  - a moveElement primaryId option;
+  - the store creator takes `get` (avoids a self-referencing type);
+  - MOVED_GROUP_OUT_OF_LABEL_NOTICE.
+- src/features/editor/commands/moveCommands.ts: moveBatchRejectedMessage;
+  leavesItsLabel exported.
+- src/features/editor/commands/multiClipboardCommands.ts: placeFreeGroup
+  exported (reused, unchanged).
+- src/features/editor/components/structure/structureDragDrop.ts:
+  - resolveStructureDragSet, describeStructureDragSet, describeMovedGroup;
+  - structureMoveValidator;
+  - the targeting functions accept a moved set and a validator.
+- src/features/editor/hooks/useStructureDragDrop.ts:
+  - a drag session (moved set, label, cached validator);
+  - commit through moveElements;
+  - group announcements.
+- src/features/editor/components/structure/StructureTree.tsx: revealMoved
+  takes the group message.
+- src/features/editor/components/structure/StructureDragPreview.tsx:
+  "+ N element(s)" and an accessible label.
+- src/features/editor/components/EditorApp.tsx: the chip label and count
+  resolved at drag start.
+- Tests:
+  - structureDragDrop.test.ts (+5);
+  - StructureTree.dragHandle.test.tsx (preview tests for the new contract,
+    plus the multi pick-up/Escape test);
+  - useEditorStore.moveIntegrity.test.ts (+4);
+  - e2e/structure-pointer-drag.spec.ts (tests 11–12 added; tests 2 and 9
+    updated, see section 18).
+No schema, migration, factory, export, Canvas or dependency change.
+
+
+3. MULTI-DRAG ACTIVATION
+------------------------
+resolveStructureDragSet(document, selection ids, dragged id) runs ONCE at
+pick-up:
+- the dragged row is selected and 2 or more elements are selected → the
+  minimal selected roots;
+- otherwise → just the dragged row: an unselected row (which becomes the
+  plain selection, as before), or the only selected one.
+Pick-up changes neither the selection (except the unselected-row case) nor
+the document.
+Ctrl/Cmd toggle, Shift ranges, parent+child and cross-container selections
+are the BC-10 model, unchanged. There is no count cap.
+
+
+4. MINIMAL-ROOT NORMALIZATION
+-----------------------------
+- It uses BC-10.5's orderedSelectionRoots: existing ids only (never the
+  page root), with descendants of a selected element dropped.
+- Example: Section A + its Button + Heading B → roots [Section A,
+  Heading B]. The Button moves inside Section A (tested: its subtree is
+  intact, nothing is duplicated, no unselected sibling is moved).
+- All selected ids stay selected afterwards, including the descendant.
+
+
+5. STABLE DOCUMENT ORDERING
+---------------------------
+- Roots are taken in a depth-first document walk, never in click,
+  selection or Set order. Tested: selection ["c", "a"] lands as a, c.
+- Cross-container roots: in the same document walk (e.g. Alpha in Section
+  One before Inner box in Section Two).
+- The roots are inserted contiguously in that order.
+
+
+6. ATOMIC BATCH PLANNING
+------------------------
+planMultiMove(document, ids, targetId, zone):
+1. Roots. The target must not be inside a moved root ("descendant"), and
+   "inside" a moved root is "self". The page and "beside the page" are
+   refused.
+2. The destination gap is counted among the parent's children that STAY.
+   Before or after a moved root means the gap that root leaves (so it is
+   never invalid merely because it is in the selection).
+3. Every root must be allowed in the destination (canParentAcceptChild).
+   Pagination controls can't move.
+4. No-op: the same parent and an identical child order → "unchanged" (no
+   history, not dirty, selection untouched).
+5. Geometry for ENTERING roots: Free group placement (section 8), the Grid
+   clamp, and a current page leaving its Pagination becomes ordinary
+   (BC-09.5).
+6. One document: removeNodesByIds(roots), then one insertion of all roots
+   at the gap.
+7. Final-tree rules: the Pagination page limit and order, and the Navbar
+   limit (exceedsNavigationLinkLimit(before, after), which counts removals
+   and insertions).
+Any failure → { rejected, reason }, with the document, selection and
+history untouched. There is no partial move.
+store.moveElements:
+- one root → moveElement(keepSelection, primaryId), the unchanged single
+  path;
+- otherwise planMultiMove → withPaginationInvariants → one pushHistory;
+- a refusal → one batch-level notice ("The N elements weren't moved:
+  <reason>.").
+validateMultiMove (for the indicator) is the same planner without
+committing.
+
+
+7. CROSS-CONTAINER BEHAVIOR
+---------------------------
+Same parent, different parents, nested containers and Flow/Free/Flex/Grid
+destinations all go through steps 1–7.
+- Each root is removed exactly once and keeps its id and subtree.
+- Destination rules apply per destination:
+  - Free placement for entering roots;
+  - the Grid clamp;
+  - Flex/Grid item settings kept as authored (inactive under a
+    non-matching parent, applied by the shared resolvers — unchanged
+    BC-12.2 contract).
+
+
+8. FREE-LAYOUT PLACEMENT STRATEGY
+---------------------------------
+Deterministic, reusing BC-10.5.1's placeFreeGroup (exported, unchanged)
+for the roots ENTERING a Free container:
+- roots from the same Free container keep their offsets from one another
+  (tested: dx 60, dy 80 preserved);
+- roots from different containers are separate sub-groups, stacked 16px
+  apart in document order;
+- roots from Flow containers are stacked below them at their default Free
+  size;
+- the whole group goes to the first free slot (resolveFreeInsertionPosition),
+  avoiding the destination's existing children and same-parent roots;
+- a group larger than the container's bounds is refused as a whole
+  ("free-bounds"), never shrunk.
+Roots already in that Free container keep their coordinates (a reorder only
+changes paint order; tested). No new layout engine.
+
+
+9. NAVBAR/PAGINATION SAFEGUARDS
+-------------------------------
+Navbar (12 links), checked on the final tree:
+- 10 + 2 accepted;
+- 11 + 2 refused;
+- a reorder inside a full nav is allowed, and moving links out is allowed;
+- one link out plus one in nets +1, so 11 → 12 is allowed (all tested);
+- in Chromium, 11 + 2 is refused with "A navigation bar can have at most
+  12 links" and nothing changes.
+Pagination:
+- controls can't move;
+- pages must stay between Previous and Next;
+- the page limit counts the whole batch (3 + 10 refused);
+- reorders inside are allowed;
+- a current page leaving becomes ordinary;
+- withPaginationInvariants keeps exactly one current page (tested).
+
+
+10. SPECIALIZED COMPONENT VALIDATION
+------------------------------------
+- Tables, lists and select: tag allowlists apply to every root (e.g. Alpha
+  + a List item into a Section → refused whole).
+- Forms: a control leaving its label is allowed, with a notice (the BC-12.2
+  rule, batch wording).
+- Identity: the same objects are moved, so ids, HTML ids, classes, text,
+  styles, children, interactions and metadata are unchanged (tested by
+  object identity). Interaction targets stay valid.
+
+
+11. DRAG PREVIEW
+----------------
+- One root: the label, as before.
+- Several roots: "<dragged label> + N element(s)", where N = roots − 1.
+  Descendants of a moved root are never counted. There is also an
+  aria-label "Moving X and N other elements".
+- The dragged row only travels inside its selected parent (one root): the
+  chip names the parent, because that is what moves.
+- The label and count come from the same drag set as the Structure panel,
+  computed at drag start.
+
+
+12. DROP INDICATORS
+-------------------
+All BC-12.3/12.3.1 targets work for batches: before, after, inside, first
+child of an open container, end of a container by indentation, and end of
+the page.
+- The verdict is the batch planner's: no valid indicator is shown for a
+  batch that would fail.
+- "Inside" a moved root shows nothing (like "onto itself").
+- A moved root's descendants show the refused indicator with the reason.
+- Moved rows are skipped when deciding a container's last row.
+- One concise batch-level reason is given.
+
+
+13. SELECTION/FOCUS BEHAVIOR
+----------------------------
+- After a successful multi-move: every surviving selected id stays
+  selected, including descendants, and the dragged element is primary.
+  Its ancestors are opened, its row is focused and scrolled into view.
+  Unrelated branches and selection are untouched.
+- After an invalid drop or a cancellation: the selection and the document
+  are unchanged, and the drag state is cleared.
+- Escape: the BC-12.3.1 capture-phase claim also covers multi-drags, so
+  the selection is kept (tested in jsdom and in Chromium).
+- Keyboard: Alt+Arrow still moves only the focused row with a
+  multi-selection (tested in Chromium).
+
+
+14. ACCESSIBILITY
+-----------------
+Announcements in the Structure live region:
+- start: "Dragging Gamma and 1 other element (2 in all). …";
+- drop: "Moved 2 elements to Section One, positions 2–3 of 3." (read from
+  the document);
+- no-op: "The N elements were not moved: they are already there.";
+- cancel: "Move cancelled. The 2 elements were not moved.";
+- a refusal goes to the shared notice only (no duplicate speech, as in
+  BC-12.3).
+There are no hover announcements. Reduced motion is unchanged: the drop
+animation stays off and nothing new animates.
+
+
+15. UNDO/REDO
+-------------
+One multi-move = one history entry.
+- Undo restores every original parent and position, Free coordinates (the
+  whole-document snapshot) and the Pagination structure.
+- Redo restores the full destination arrangement.
+- Tested in the store and in Chromium: Undo after a batch leaves Undo
+  disabled, so there was exactly one step.
+- Refused and no-op batches record nothing.
+
+
+16. SAVE/REOPEN AND PREVIEW/EXPORT
+----------------------------------
+Chromium test 12:
+- two Flow paragraphs multi-dragged into a Free box are both absolutely
+  positioned inside it, one below the other;
+- Save → reload → Open keeps them there, in order;
+- Preview renders them;
+- the export lists First before Second.
+No format change or migration. Selection and drag state are transient.
+
+
+17. PERFORMANCE FINDINGS
+------------------------
+Measured in Chromium dev mode with a temporary spec (deleted). The tree is
+a 1,000-row section plus a target; the first N rows are selected with
+Shift+click; then 40 hover moves over another section and a drop:
+  selected  pick-up   40 hover moves  drop+render  long tasks
+  1         774 ms    894 ms          794 ms       2 (max 708)
+  2         1052 ms   766 ms          847 ms       3 (max 810)
+  10        1061 ms   892 ms          774 ms       3 (max 735)
+  50        1031 ms   1006 ms         761 ms       3 (max 712)
+  100       1032 ms   1104 ms         764 ms       3 (max 735)
+Notes:
+- The moved set is resolved once per drag. Hover verdicts are cached per
+  target and zone, so a still target costs no re-validation.
+- Hover stays close to the single-drag cost even at 100 roots (no per-move
+  long tasks). The BC-12.3 Canvas re-render fix is intact.
+- The remaining cost is the known one-off per drag (BC-12.3): dnd-kit
+  re-renders every draggable and droppable when a drag starts and ends
+  (~0.7–1.0 s at 1,000 elements), plus the document re-render on drop.
+  It doesn't grow with the selection size.
+- Playwright round trips are included in all figures.
+
+
+18. EXACT FOCUSED TEST COMMANDS/RESULTS
+---------------------------------------
+Impact map:
+- the planner and store → the move suites, the BC-10.5 clipboard suites
+  (placeFreeGroup is now exported) and the persistence classification;
+- targeting, the hook and the preview → the structure component suites;
+- EditorApp → its test and CanvasInteractionBoundary;
+- browser: the Structure drag and keyboard specs.
+Commands:
+1. npx vitest run src/features/editor/components/structure
+   src/features/editor/stores/useEditorStore.moveIntegrity.test.ts
+   src/features/editor/stores/useEditorStore.test.ts
+   src/features/editor/commands/multiMoveCommands.test.ts
+   src/features/editor/commands/multiClipboardCommands.test.ts
+   src/features/editor/stores/useEditorStore.multiClipboard.test.ts
+   src/features/editor/stores/useEditorStore.clipboardIntegrity.test.ts
+   src/features/editor/stores/useEditorStore.persistence.test.ts
+   src/features/editor/components/EditorApp.test.tsx
+   src/features/canvas/components/CanvasInteractionBoundary.test.tsx
+   → 17 files, 368 tests passed (39 new)
+2. npx playwright test e2e/structure-pointer-drag.spec.ts
+   e2e/structure-keyboard-reorder.spec.ts --project=chromium --repeat-each=2
+   → 36 passed (12 pointer-drag tests, 2 new, plus 6 keyboard tests, twice)
+3. The temporary perf spec (1/2/10/50/100 selected) → section 17; deleted
+4. npx tsc --noEmit -p . → 0 errors
+5. npx eslint <all changed and new .ts/.tsx files> → clean
+Not run, per policy: full suites, Firefox/WebKit, Electron, build.
+Contract updates to earlier tests, intended by this checkpoint (not
+weakening):
+- pointer-drag test 2 asserted that a selected row of a multi-selection
+  moves alone (the BC-12.3 rule this checkpoint replaces). It now asserts
+  the whole selection moves in document order and stays selected.
+- test 9 (the BC-12.3.1 selection test) does the same, still checking
+  selection preservation on drop, Undo/Redo, Escape and refusal, plus the
+  unselected-row rule.
+- the preview unit test now checks "+ N element(s)" instead of a bare
+  number.
+Validation-only issues:
+- dnd-kit swallows clicks for 50 ms after a drop (its own post-drag click
+  guard), so the test helper waits 80 ms before selecting. A user can't
+  click that fast.
+- In test 12 the target row sat in the list's bottom auto-scroll band, so
+  the list scrolled under the pointer. The test collapses the Navbar
+  first. That is correct app behaviour.
+- My first draft of the store action used useEditorStore inside its own
+  creator, which made the store type `any`; it now uses zustand's `get`.
+
+
+19. KNOWN LIMITATIONS
+---------------------
+- Alt+Arrow keyboard reorder stays single-element (by this brief). A
+  keyboard multi-move doesn't exist.
+- The pick-up/drop cost at 1,000 elements is ~1 s, once per drag
+  (dnd-kit; section 17).
+- Free group placement stacks groups from different containers
+  vertically. Their absolute positions from different containers aren't
+  comparable (the BC-10.6 rule).
+- A batch whose roots come from several Paginations is validated against
+  the destination's rules; source Paginations are re-normalized by the
+  existing invariants.
+- Touch and pen: as in BC-12.3 (Chromium CDP only). Multi-drag uses the
+  same sensor and payload path.
+- Escape during a CANVAS drag still clears the selection (pre-existing,
+  from BC-12.3.1's limitations).
+
+
+20. GIT WORKING-TREE STATUS
+---------------------------
+ M e2e/structure-pointer-drag.spec.ts
+ M src/features/editor/commands/moveCommands.ts
+ M src/features/editor/commands/multiClipboardCommands.ts
+ M src/features/editor/components/EditorApp.tsx
+ M src/features/editor/components/structure/StructureDragPreview.tsx
+ M src/features/editor/components/structure/StructureTree.dragHandle.test.tsx
+ M src/features/editor/components/structure/StructureTree.tsx
+ M src/features/editor/components/structure/structureDragDrop.test.ts
+ M src/features/editor/components/structure/structureDragDrop.ts
+ M src/features/editor/hooks/useStructureDragDrop.ts
+ M src/features/editor/stores/useEditorStore.moveIntegrity.test.ts
+ M src/features/editor/stores/useEditorStore.ts
+?? docs/reports/BC-12.4-Multi-Element-Structure-Dragging.txt
+?? src/features/editor/commands/multiMoveCommands.test.ts
+?? src/features/editor/commands/multiMoveCommands.ts
+The changelog is gitignored. Nothing committed or pushed.
+
+
+21. QA RECOMMENDATION
+---------------------
+APPROVE BC-12.4. The multi-element drag is:
+- atomic (all or nothing, one Undo step);
+- built on the minimal roots in document order;
+- validated on the final tree, with Navbar/Pagination/Free/structure rules
+  enforced as a batch;
+- selection-preserving.
+The single-element and keyboard paths are unchanged. Proceed to BC-12.5
+(final audit) after ChatGPT QA approval.

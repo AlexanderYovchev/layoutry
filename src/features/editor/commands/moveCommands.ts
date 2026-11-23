@@ -216,7 +216,7 @@ function nearestLabelId(root: EditorElementNode, nodeId: string): string | undef
  * contains, so leaving that label silently drops the association (D9:
  * allowed, with a notice).
  */
-function leavesItsLabel(before: EditorElementNode, after: EditorElementNode, nodeId: string): boolean {
+export function leavesItsLabel(before: EditorElementNode, after: EditorElementNode, nodeId: string): boolean {
   const node = findNodeById(before, nodeId);
   if (!node || !containsFormControl(node)) return false;
   const previousLabel = nearestLabelId(before, nodeId);
@@ -240,6 +240,11 @@ const REJECTION_REASONS: Readonly<Record<MoveRejectionReason, string>> = {
 /** One sentence for a refused move, used by the notice and the Structure announcement. */
 export function moveRejectedMessage(elementName: string, reason: MoveRejectionReason): string {
   return `${elementName} wasn't moved: ${REJECTION_REASONS[reason]}.`;
+}
+
+/** BC-12.4: a refused multi-move, one sentence for the whole batch. */
+export function moveBatchRejectedMessage(count: number, reason: MoveRejectionReason): string {
+  return `The ${count} elements weren't moved: ${REJECTION_REASONS[reason]}.`;
 }
 
 /** BC-12.3: the same reason as a short standalone phrase ("A navigation bar can have at most 12 links"), for the Structure drop indicator. */

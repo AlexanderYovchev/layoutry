@@ -103,7 +103,7 @@ test("1: before/after/inside drops reorder through the shared move; one Undo eac
   await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-a", "d-b", "d-c"]);
 });
 
-test("2: clicking a row (or its handle) still only selects; a drag of an unselected row selects it; multi-selection drags only that row and keeps the selection", async ({ page }) => {
+test("2: clicking a row (or its handle) still only selects; a drag of an unselected row selects it; BC-12.4: a selected row of a multi-selection drags the whole selection and keeps it", async ({ page }) => {
   await open(page);
   await rowById(page, "d-a").click();
   await rowById(page, "d-h").click({ modifiers: ["ControlOrMeta"] });
@@ -119,8 +119,9 @@ test("2: clicking a row (or its handle) still only selects; a drag of an unselec
   await expect(rowById(page, "d-h")).toHaveAttribute("aria-selected", "true"); // the selection is kept while dragging
   await hoverZone(page, "d-c", "after");
   await page.mouse.up();
-  await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-b", "d-c", "d-a"]);
-  await expect.poll(() => childIds(page, "page-root")).toEqual(["d-h", "d-s1", "d-s2", "d-list", "d-free"]);
+  // BC-12.4 (superseding BC-12.3's single-row rule): Title and Alpha move together, in document order.
+  await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-b", "d-c", "d-h", "d-a"]);
+  await expect.poll(() => childIds(page, "page-root")).toEqual(["d-s1", "d-s2", "d-list", "d-free"]);
   await expect(rowById(page, "d-a")).toHaveAttribute("aria-selected", "true");
   // BC-12.3.1: the rest of the selection survives the drop.
   await expect(rowById(page, "d-h")).toHaveAttribute("aria-selected", "true");
@@ -322,14 +323,15 @@ test("8: with reduced motion, auto-expand opens without animation and the drag s
 
 const selectionCount = (page: Page) => page.locator("[data-structure-selection-count]");
 
-test("9 (BC-12.3.1): dragging one row of a multi-selection moves only it and keeps A, B and C selected — on drop, cancel, refusal and Undo/Redo", async ({ page }) => {
+test("9 (BC-12.3.1, updated for BC-12.4): dragging a row of a multi-selection keeps A, B and C selected — on drop, cancel, refusal and Undo/Redo", async ({ page }) => {
   await open(page);
   await rowById(page, "d-a").click();
   await rowById(page, "d-c").click({ modifiers: ["Shift"] });
   await expect(selectionCount(page)).toHaveText("3 selected");
 
-  await drag(page, "d-b", "d-a", "before");
-  await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-b", "d-a", "d-c"]);
+  // BC-12.4: dragging B moves the whole selection (A, B, C) before the Title.
+  await drag(page, "d-b", "d-h", "before");
+  await expect.poll(() => childIds(page, "page-root")).toEqual(["d-a", "d-b", "d-c", "d-h", "d-s1", "d-s2", "d-list", "d-free"]);
   await expect(selectionCount(page)).toHaveText("3 selected");
   for (const id of ["d-a", "d-b", "d-c"]) await expect(rowById(page, id)).toHaveAttribute("aria-selected", "true");
   await expect(rowById(page, "d-b")).toBeFocused();
@@ -338,7 +340,7 @@ test("9 (BC-12.3.1): dragging one row of a multi-selection moves only it and kee
   await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-a", "d-b", "d-c"]);
   await expect(selectionCount(page)).toHaveText("3 selected");
   await button(page, "Redo").click();
-  await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-b", "d-a", "d-c"]);
+  await expect.poll(() => childIds(page, "d-s1")).toEqual([]);
   await expect(selectionCount(page)).toHaveText("3 selected");
 
   // Cancel (Escape) and a refused drop leave the selection and the document alone.
@@ -352,11 +354,11 @@ test("9 (BC-12.3.1): dragging one row of a multi-selection moves only it and kee
   await expect(indicator(page)).toHaveAttribute("data-refused", "true");
   await page.mouse.up();
   await expect(selectionCount(page)).toHaveText("3 selected");
-  await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-b", "d-a", "d-c"]);
+  await expect.poll(() => childIds(page, "page-root")).toEqual(["d-a", "d-b", "d-c", "d-h", "d-s1", "d-s2", "d-list", "d-free"]);
 
-  // An unselected row follows plain selection: it becomes the only selection.
+  // An unselected row follows plain selection: it becomes the only selection and moves alone.
   await drag(page, "d-h", "d-free", "before");
-  await expect.poll(() => childIds(page, "page-root")).toEqual(["d-s1", "d-s2", "d-list", "d-h", "d-free"]);
+  await expect.poll(() => childIds(page, "page-root")).toEqual(["d-a", "d-b", "d-c", "d-s1", "d-s2", "d-list", "d-h", "d-free"]);
   await expect(rowById(page, "d-h")).toHaveAttribute("aria-selected", "true");
   await expect(rowById(page, "d-a")).toHaveAttribute("aria-selected", "false");
 });
@@ -459,4 +461,160 @@ test("10 (BC-12.3.1): end-of-container drops — after the final child at a chos
   await page.keyboard.press("Escape");
   expect(code.indexOf(">Last<")).toBeLessThan(code.indexOf(">Alpha<"));
   expect(code.indexOf(">Deep<")).toBeLessThan(code.indexOf(">Last<"));
+});
+
+/* ---------------- BC-12.4: multi-element drag ---------------- */
+
+const chip = (page: Page) => page.locator("[data-structure-drag-preview]");
+
+async function selectRows(page: Page, ids: string[]) {
+  // dnd-kit swallows clicks for 50 ms after a drop (its post-drag click guard); a user never clicks that fast.
+  await page.waitForTimeout(80);
+  await rowById(page, ids[0]).click();
+  for (const id of ids.slice(1)) await rowById(page, id).click({ modifiers: ["ControlOrMeta"] });
+}
+
+test("11 (BC-12.4): multi-drag — siblings together, across containers, parent + child as one root, an invalid batch refused whole, Escape; one Undo step each", async ({ page }) => {
+  await open(page);
+
+  // Two siblings, dragged by the later one: both move, in document order, after Beta.
+  await selectRows(page, ["d-a", "d-c"]);
+  await pickUp(page, "d-c");
+  await expect(chip(page)).toHaveText(/Gamma\s*\+ 1 element/);
+  await expect(announcement(page)).toHaveText(/^Dragging Gamma and 1 other element \(2 in all\)\./);
+  await hoverZone(page, "d-b", "after");
+  await expect(indicator(page)).toHaveAttribute("data-structure-drop-indicator", "after");
+  await expect(indicator(page)).not.toHaveAttribute("data-refused", "true");
+  await page.mouse.up();
+  await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-b", "d-a", "d-c"]);
+  await expect(announcement(page)).toHaveText(/^Moved 2 elements to Section One, positions 2–3 of 3\.\s*$/);
+  await expect(selectionCount(page)).toHaveText("2 selected");
+  await expect(rowById(page, "d-c")).toBeFocused();
+  await button(page, "Undo").click();
+  await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-a", "d-b", "d-c"]);
+  await expect(button(page, "Undo")).toBeDisabled(); // exactly one history step
+
+  // Across containers: Alpha (Section One) + Inner box (Section Two) before the List.
+  await selectRows(page, ["d-inner", "d-a"]);
+  await drag(page, "d-a", "d-list", "before");
+  await expect.poll(() => childIds(page, "page-root")).toEqual(["d-h", "d-s1", "d-s2", "d-a", "d-inner", "d-list", "d-free"]);
+  await expect.poll(() => childIds(page, "d-s2")).toEqual([]);
+  await expect.poll(() => childIds(page, "d-inner")).toEqual(["d-deep"]); // the subtree travelled intact
+  await button(page, "Undo").click();
+  await expect.poll(() => childIds(page, "d-s2")).toEqual(["d-inner"]);
+
+  // Parent + child selected: the child travels inside its parent (one root), the chip names what moves.
+  await selectRows(page, ["d-s1", "d-b"]);
+  await pickUp(page, "d-b");
+  await expect(chip(page)).toHaveText(/^\s*Section One\s*$/);
+  await hoverZone(page, "d-list", "before");
+  await page.mouse.up();
+  await expect.poll(() => childIds(page, "page-root")).toEqual(["d-h", "d-s2", "d-s1", "d-list", "d-free"]);
+  await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-a", "d-b", "d-c"]);
+  await expect(selectionCount(page)).toHaveText("2 selected");
+  await button(page, "Undo").click();
+
+  // An invalid batch (a List item cannot go into a Section) is refused as a whole.
+  await selectRows(page, ["d-a", "d-li"]);
+  await pickUp(page, "d-a");
+  await hoverZone(page, "d-s2", "inside");
+  await expect(indicator(page)).toHaveAttribute("data-refused", "true");
+  await expect(page.locator("[data-structure-drop-reason]")).toHaveText("That place can't contain this kind of element");
+  await page.mouse.up();
+  await expect(page.locator("div[role=status]", { hasText: "The 2 elements weren't moved: that place can't contain this kind of element." })).toBeVisible();
+  await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-a", "d-b", "d-c"]);
+  await expect(selectionCount(page)).toHaveText("2 selected");
+  await expect(button(page, "Undo")).toBeDisabled();
+
+  // Escape cancels a multi-drag and keeps the selection.
+  await selectRows(page, ["d-a", "d-c"]);
+  await pickUp(page, "d-a");
+  await hoverZone(page, "d-h", "before");
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(announcement(page)).toHaveText(/^Move cancelled\. The 2 elements were not moved\.\s*$/);
+  await expect(selectionCount(page)).toHaveText("2 selected");
+  await expect(chip(page)).toHaveCount(0);
+  await expect(button(page, "Undo")).toBeDisabled();
+
+  // Alt+Arrow stays a single-element move even with a multi-selection.
+  await rowById(page, "d-a").focus();
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect.poll(() => childIds(page, "d-s1")).toEqual(["d-b", "d-a", "d-c"]);
+});
+
+const batchFixture: EditorElementNode = {
+  id: "page-root",
+  tag: "page",
+  children: [
+    { id: "m-nav", tag: "nav", displayName: "Navbar", children: Array.from({ length: 11 }, (_, index) => ({ id: `m-n${index}`, tag: "a", text: `Link ${index}`, href: "#", displayName: `Link ${index}` })) },
+    {
+      id: "m-box",
+      tag: "div",
+      displayName: "Spare links",
+      children: [
+        { id: "m-e0", tag: "a", text: "Extra 0", href: "#", displayName: "Extra 0" },
+        { id: "m-e1", tag: "a", text: "Extra 1", href: "#", displayName: "Extra 1" },
+      ],
+    },
+    { id: "m-flow", tag: "div", displayName: "Flow box", children: [p("m-p1", "First"), p("m-p2", "Second")] },
+    { id: "m-free", tag: "div", displayName: "Free box", layoutMode: "free", dimensions: { preferredWidth: 600, preferredHeight: 300, offsetX: 0, offsetY: 0 }, children: [] },
+  ],
+};
+
+test("12 (BC-12.4): Navbar final capacity, a batch into a Free container, Save/Reopen and Preview/Export order", async ({ page }) => {
+  await open(page, batchFixture, "m-free");
+
+  // 11 links + 2 = 13: refused as a batch.
+  await selectRows(page, ["m-e0", "m-e1"]);
+  await pickUp(page, "m-e0");
+  await hoverZone(page, "m-n5", "after");
+  await expect(page.locator("[data-structure-drop-reason]")).toHaveText("A navigation bar can have at most 12 links");
+  await page.mouse.up();
+  await expect.poll(() => childIds(page, "m-nav").then((ids) => ids.length)).toBe(11);
+  await expect(button(page, "Undo")).toBeDisabled();
+
+  // Two Flow paragraphs into the Free box: both positioned inside it, not on top of each other.
+  // (The Navbar is collapsed first so the Free box row is not in the list's bottom auto-scroll band.)
+  await rowById(page, "m-nav").getByRole("button", { name: "Collapse Navbar" }).click();
+  await selectRows(page, ["m-p1", "m-p2"]);
+  await drag(page, "m-p2", "m-free", "inside");
+  await expect.poll(() => childIds(page, "m-free")).toEqual(["m-p1", "m-p2"]);
+  const container = (await element(page, "m-free").boundingBox())!;
+  const [one, two] = await Promise.all([element(page, "m-p1").boundingBox(), element(page, "m-p2").boundingBox()]);
+  for (const box of [one!, two!]) {
+    expect(box.x).toBeGreaterThanOrEqual(container.x - 0.5);
+    expect(box.y).toBeGreaterThanOrEqual(container.y - 0.5);
+    expect(box.x + box.width).toBeLessThanOrEqual(container.x + container.width + 0.5);
+    expect(box.y + box.height).toBeLessThanOrEqual(container.y + container.height + 0.5);
+  }
+  expect(two!.y).toBeGreaterThan(one!.y);
+  await expect(element(page, "m-p1")).toHaveCSS("position", "absolute");
+
+  // Save, reload, reopen: the moved arrangement is kept.
+  await page.keyboard.press("ControlOrMeta+s");
+  const save = page.getByRole("dialog", { name: "Save Project" });
+  await expect(page.locator('[data-project-status="saved"]').or(save)).toBeVisible();
+  if (await save.isVisible()) {
+    await save.getByRole("textbox", { name: "Project name" }).fill("BC-12.4 multi-drag");
+    await save.getByRole("button", { name: "Save" }).click();
+  }
+  await expect(page.locator("[data-project-status]")).toHaveAttribute("data-project-status", "saved");
+  await page.reload();
+  await gotoApp(page);
+  await page.keyboard.press("ControlOrMeta+o");
+  const library = page.getByRole("dialog", { name: "Open Project" });
+  await library.getByRole("button", { name: /^Open (BC-02\.5 parity|BC-12\.4 multi-drag)$/ }).first().click();
+  await expect(library).toBeHidden();
+  await expect.poll(() => childIds(page, "m-free")).toEqual(["m-p1", "m-p2"]);
+  await expect.poll(() => childIds(page, "m-flow")).toEqual([]);
+
+  await button(page, "Enter Preview").click();
+  await expect(element(page, "m-p2")).toHaveCSS("position", "absolute");
+  await button(page, "Exit Preview").click();
+  await page.getByRole("button", { name: "Export Code" }).click();
+  const code = (await page.getByRole("dialog", { name: "Export Code" }).getByTestId("export-code").textContent()) ?? "";
+  await page.keyboard.press("Escape");
+  expect(code.indexOf(">First<")).toBeGreaterThan(-1);
+  expect(code.indexOf(">First<")).toBeLessThan(code.indexOf(">Second<"));
 });
