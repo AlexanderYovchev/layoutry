@@ -1,7 +1,7 @@
 "use client";
 
 import { useDndMonitor, type DragStartEvent } from "@dnd-kit/core";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { moveBatchRejectedMessage, moveRejectedMessage, moveRejectionReasonText, type MoveRejectionReason } from "@/features/editor/commands/moveCommands";
 import {
   describeMovedGroup,
@@ -13,6 +13,7 @@ import {
   resolveStructureDropTarget,
   shouldAutoExpand,
   STRUCTURE_AUTO_EXPAND_DELAY_MS,
+  STRUCTURE_DRAG_SOURCE_ATTRIBUTE,
   STRUCTURE_PAGE_END_ATTRIBUTE,
   STRUCTURE_ROW_ID_ATTRIBUTE,
   type StructureDropTarget,
@@ -20,6 +21,8 @@ import {
 } from "@/features/editor/components/structure/structureDragDrop";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
+import { getElementDisplayName } from "@/features/editor/utils/elementDisplayName";
+import { findNodeById } from "@/features/editor/utils/findNodeById";
 import type { DropZone } from "@/features/editor/utils/resolveDropZone";
 
 /**
@@ -43,6 +46,10 @@ export interface StructureDragState {
   indicator: StructureDropIndicatorState | null;
   /** A Structure drag is in progress (shows the page-end drop area). */
   dragging: boolean;
+  /** The drag chip's content (D13), fixed at pick-up. */
+  preview: { label: string; tag: string; count: number } | null;
+  /** BC-12.5: a handle was pressed (before dnd-kit activates): the row a drag would start from. */
+  press: (nodeId: string) => void;
 }
 
 interface StructureDragOptions {
@@ -124,6 +131,11 @@ function pointerOf(event: Event | null): { x: number; y: number } | null {
 export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, rowRefs, expand, onMoved, announce }: StructureDragOptions): StructureDragState {
   const [indicator, setIndicator] = useState<StructureDropIndicatorState | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [preview, setPreview] = useState<StructureDragState["preview"]>(null);
+  const pressed = useRef<string | null>(null);
+  const press = useCallback((nodeId: string) => {
+    pressed.current = nodeId;
+  }, []);
   /**
    * The drag session, fixed at pick-up (BC-12.4): the dragged row, what it
    * moves (one element, or the minimal selected roots in document order),
@@ -248,8 +260,20 @@ export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, ro
   }
 
 
+  function markDragSources(ids: readonly string[], on: boolean) {
+    for (const id of ids) {
+      const row = rowRefs.current?.get(id);
+      if (!row) continue;
+      if (on) row.setAttribute(STRUCTURE_DRAG_SOURCE_ATTRIBUTE, "true");
+      else row.removeAttribute(STRUCTURE_DRAG_SOURCE_ATTRIBUTE);
+    }
+  }
+
   function finish() {
+    if (drag.current) markDragSources(drag.current.moved, false);
     setDragging(false);
+    setPreview(null);
+    pressed.current = null;
     drag.current = null;
     target.current = null;
     clearExpandTimer();
@@ -264,14 +288,20 @@ export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, ro
   useDndMonitor({
     onDragStart(event: DragStartEvent) {
       const data = event.active.data.current;
-      if (!isStructureDragData(data)) return;
+      const nodeId = pressed.current;
+      if (!isStructureDragData(data) || nodeId === null) return;
       const store = useEditorStore.getState();
       // BC-12.4: with several selected elements including this row, the whole
       // selection (as minimal roots) moves; otherwise just this row.
-      const moved = resolveStructureDragSet(store.document, store.selection.ids, data.nodeId);
-      const { label, count } = describeStructureDragSet(store.document, moved, data.nodeId, data.label);
-      drag.current = { nodeId: data.nodeId, label, moved, validate: cachedValidator(structureMoveValidator(store.document, moved)) };
+      const pressedNode = findNodeById(store.document, nodeId);
+      if (!pressedNode) return;
+      const moved = resolveStructureDragSet(store.document, store.selection.ids, nodeId);
+      const { label, count } = describeStructureDragSet(store.document, moved, nodeId, getElementDisplayName(pressedNode));
+      const tag = moved.length === 1 && moved[0] !== nodeId ? (findNodeById(store.document, moved[0])?.tag ?? pressedNode.tag) : pressedNode.tag;
+      drag.current = { nodeId, label, moved, validate: cachedValidator(structureMoveValidator(store.document, moved)) };
       setDragging(true);
+      setPreview({ label, tag, count });
+      markDragSources(moved, true);
       pointer.current = pointerOf(event.activatorEvent);
       stopTrackingPointer();
       pointerListener.current = (pointerEvent: PointerEvent) => {
@@ -283,7 +313,7 @@ export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, ro
       // Dragging an unselected row selects it (plain selection, no document
       // change); a row of a multi-selection keeps the whole selection, also
       // after the drop (BC-12.3.1: moveElement keepSelection).
-      if (!store.selection.ids.includes(data.nodeId)) store.selectOnly(data.nodeId);
+      if (!store.selection.ids.includes(nodeId)) store.selectOnly(nodeId);
       const what = count > 1 ? `${label} and ${count - 1} other ${count === 2 ? "element" : "elements"} (${count} in all)` : label;
       latest.current.announce(`Dragging ${what}. Move over another row to place ${count > 1 ? "them" : "it"} before, after or inside it, or press Escape to cancel.`);
       compute();
@@ -342,5 +372,5 @@ export function useStructureDragDrop({ documentTree, openNodeIds, wrapperRef, ro
     [],
   );
 
-  return { indicator, dragging };
+  return { indicator, dragging, preview, press };
 }

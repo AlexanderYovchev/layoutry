@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronRight, Lock } from "lucide-react";
-import { memo, type KeyboardEvent, type MouseEvent } from "react";
+import { memo, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import { cn } from "@/lib/utils";
 import {
   FALLBACK_ELEMENT_ICON,
@@ -16,6 +16,8 @@ import type { EditorElementNode } from "@/features/editor/types/document";
 import type { StructureMoveDirection } from "@/features/editor/components/structure/structureKeyboardMove";
 import { StructureDragHandle } from "@/features/editor/components/structure/StructureDragHandle";
 import { STRUCTURE_ROW_ID_ATTRIBUTE } from "@/features/editor/components/structure/structureDragDrop";
+import { useIsRovingTabStop, type RovingFocusStore } from "@/features/editor/components/structure/structureRovingFocus";
+import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { isVideoEmbedNode } from "@/features/editor/types/videoEmbed";
 
 // Bounded lookup so indentation stays on the canonical Tailwind spacing
@@ -59,12 +61,9 @@ function guideClassName(depth: number) {
 interface StructureTreeNodeProps {
   node: EditorElementNode;
   depth: number;
-  /** Every currently-selected node's own editor id (Checkpoint 1.15.2) — a row highlights whenever its own id is a member, not just when it's the primary. */
-  selectedIds: readonly string[];
-  primarySelectedId: string | null;
   openNodeIds: Set<string>;
-  /** The tree's single roving tab stop (WAI-ARIA treeview pattern) — every other row is tabIndex=-1. */
-  currentNodeId: string;
+  /** The tree's single roving tab stop (WAI-ARIA treeview pattern) — every other row is tabIndex=-1. BC-12.5: a store each row subscribes to. */
+  rovingFocus: RovingFocusStore;
   onToggle: (id: string) => void;
   onSelect: (id: string, event: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) => void;
   onFocusRow: (id: string) => void;
@@ -74,21 +73,23 @@ interface StructureTreeNodeProps {
   onReorder: (id: string, direction: StructureMoveDirection) => void;
   /** BC-12.2: plain Left/Right (expand/collapse, parent/child). */
   onHorizontalKey: (id: string, key: "ArrowLeft" | "ArrowRight") => void;
+  /** BC-12.5: a press on this row's drag handle (the tree's shared drag source). */
+  onHandlePointerDown: (nodeId: string, event: PointerEvent<HTMLButtonElement>) => void;
   registerRowRef: (id: string, el: HTMLDivElement | null) => void;
 }
 
 /**
  * BC-12.3: memoized. Its callbacks are stable (StructureTree), and an
  * unchanged subtree keeps its node object, so only rows whose props
- * changed re-render (never on drag hover).
+ * changed re-render (never on drag hover). BC-12.5: selection and the tab
+ * stop are per-row subscriptions and the callbacks no longer change with
+ * the document, so a move re-renders the moved branch, not the whole tree.
  */
 export const StructureTreeNode = memo(function StructureTreeNode({
   node,
   depth,
-  selectedIds,
-  primarySelectedId,
   openNodeIds,
-  currentNodeId,
+  rovingFocus,
   onToggle,
   onSelect,
   onFocusRow,
@@ -96,13 +97,18 @@ export const StructureTreeNode = memo(function StructureTreeNode({
   onMoveToEdge,
   onReorder,
   onHorizontalKey,
+  onHandlePointerDown,
   registerRowRef,
 }: StructureTreeNodeProps) {
   const children = node.children ?? [];
   const hasChildren = children.length > 0;
   const isOpen = openNodeIds.has(node.id);
-  const isSelected = selectedIds.includes(node.id);
-  const isPrimary = node.id === primarySelectedId;
+  // BC-12.5: each row subscribes to its own selection state (a row highlights
+  // whenever its id is a member, Checkpoint 1.15.2), so a selection change
+  // re-renders only the rows whose state changed — not every row.
+  const isSelected = useEditorStore((state) => state.selection.ids.includes(node.id));
+  const isPrimary = useEditorStore((state) => state.selection.primaryId === node.id);
+  const isTabStop = useIsRovingTabStop(rovingFocus, node.id);
   const displayName = getElementDisplayName(node);
   const Icon = isVideoEmbedNode(node) ? VIDEO_EMBED_ICON : (TAG_ICONS[node.tag] ?? FALLBACK_ELEMENT_ICON);
 
@@ -161,7 +167,7 @@ export const StructureTreeNode = memo(function StructureTreeNode({
         aria-selected={isSelected}
         aria-expanded={hasChildren ? isOpen : undefined}
         aria-level={depth + 1}
-        tabIndex={node.id === currentNodeId ? 0 : -1}
+        tabIndex={isTabStop ? 0 : -1}
         title={displayName}
         onClick={(event: MouseEvent) =>
           onSelect(node.id, { ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey })
@@ -171,8 +177,8 @@ export const StructureTreeNode = memo(function StructureTreeNode({
         {...{ [STRUCTURE_ROW_ID_ATTRIBUTE]: node.id }}
         className={cn(
           "group/row relative flex h-8 cursor-default items-center gap-1.5 rounded-control pr-1 text-[13px] transition-colors duration-150 ease-studio focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent active:bg-surface-selected motion-reduce:transition-none",
-          // BC-12.3: the drag source row is dimmed while it is dragged.
-          "has-[[data-dragging=true]]:opacity-50",
+          // BC-12.3 / BC-12.5: the dragged rows are dimmed (data-drag-source, set during the drag).
+          "data-[drag-source=true]:opacity-50",
           indentClassName(depth),
           isPrimary
             ? "bg-surface-selected text-fg-primary"
@@ -232,7 +238,7 @@ export const StructureTreeNode = memo(function StructureTreeNode({
         )}
 
         {/* BC-12.3 (D1): drag starts only here. The page itself can't be moved. */}
-        {depth > 0 && <StructureDragHandle nodeId={node.id} tag={node.tag} label={displayName} />}
+        {depth > 0 && <StructureDragHandle nodeId={node.id} label={displayName} onPointerDown={onHandlePointerDown} />}
       </div>
 
       {hasChildren && (
@@ -256,10 +262,8 @@ export const StructureTreeNode = memo(function StructureTreeNode({
                   key={child.id}
                   node={child}
                   depth={depth + 1}
-                  selectedIds={selectedIds}
-                  primarySelectedId={primarySelectedId}
                   openNodeIds={openNodeIds}
-                  currentNodeId={currentNodeId}
+                  rovingFocus={rovingFocus}
                   onToggle={onToggle}
                   onSelect={onSelect}
                   onFocusRow={onFocusRow}
@@ -267,6 +271,7 @@ export const StructureTreeNode = memo(function StructureTreeNode({
                   onMoveToEdge={onMoveToEdge}
                   onReorder={onReorder}
                   onHorizontalKey={onHorizontalKey}
+                  onHandlePointerDown={onHandlePointerDown}
                   registerRowRef={registerRowRef}
                 />
               ))}

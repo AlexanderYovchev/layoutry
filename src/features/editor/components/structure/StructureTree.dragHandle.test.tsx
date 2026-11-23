@@ -65,17 +65,17 @@ describe("Structure drag handle (BC-12.3)", () => {
     const handle = screen.getByRole("button", { name: "Drag Para A" });
     fireEvent.pointerDown(handle, { button: 0, isPrimary: true, clientX: 10, clientY: 10 });
     fireEvent.pointerMove(document, { button: 0, isPrimary: true, clientX: 12, clientY: 11 });
-    expect(handle).not.toHaveAttribute("data-dragging");
+    expect(rowOf("a")).not.toHaveAttribute("data-drag-source");
     fireEvent.pointerUp(document, { button: 0, isPrimary: true, clientX: 12, clientY: 11 });
     expect(document.querySelector("[data-structure-move-announcement]")?.textContent).toBe("");
 
     fireEvent.pointerDown(handle, { button: 0, isPrimary: true, clientX: 10, clientY: 10 });
     fireEvent.pointerMove(document, { button: 0, isPrimary: true, clientX: 10, clientY: 20 });
-    expect(handle).toHaveAttribute("data-dragging", "true");
+    expect(rowOf("a")).toHaveAttribute("data-drag-source", "true"); // BC-12.5: the dragged row is marked (the handle is a plain button)
     expect(document.querySelector("[data-structure-move-announcement]")?.textContent).toMatch(/^Dragging Para A./);
     expect(store().selection.ids).toEqual(["a"]); // an unselected row becomes the selection when picked up
     fireEvent.keyDown(document, { key: "Escape", code: "Escape" });
-    expect(handle).not.toHaveAttribute("data-dragging");
+    expect(rowOf("a")).not.toHaveAttribute("data-drag-source");
     expect(document.querySelector("[data-structure-move-announcement]")?.textContent).toMatch(/^Move cancelled. Para A was not moved./);
     expect(store().document).toBe(before);
     expect(store().past).toHaveLength(0);
@@ -89,7 +89,7 @@ describe("Structure drag handle (BC-12.3)", () => {
     const handle = screen.getByRole("button", { name: "Drag Para A" });
     fireEvent.pointerDown(handle, { button: 0, isPrimary: true, clientX: 10, clientY: 10 });
     fireEvent.pointerMove(document, { button: 0, isPrimary: true, clientX: 10, clientY: 30 });
-    expect(handle).toHaveAttribute("data-dragging", "true");
+    expect(rowOf("a")).toHaveAttribute("data-drag-source", "true"); // BC-12.5: the dragged row is marked (the handle is a plain button)
     expect(document.querySelector("[data-structure-move-announcement]")?.textContent).toMatch(/^Dragging Para A and 1 other element \(2 in all\)\./);
     expect(store().selection.ids).toEqual(["a", "z"]);
     fireEvent.keyDown(document, { key: "Escape", code: "Escape" });
@@ -103,7 +103,7 @@ describe("Structure drag handle (BC-12.3)", () => {
     const handle = screen.getByRole("button", { name: "Drag Para A" });
     fireEvent.pointerDown(handle, { button: 2, isPrimary: true, clientX: 10, clientY: 10 });
     fireEvent.pointerMove(document, { button: 2, isPrimary: true, clientX: 10, clientY: 40 });
-    expect(handle).not.toHaveAttribute("data-dragging");
+    expect(rowOf("a")).not.toHaveAttribute("data-drag-source");
     fireEvent.pointerUp(document, { button: 2, isPrimary: true, clientX: 10, clientY: 40 });
   });
 

@@ -31,14 +31,26 @@ export const STRUCTURE_PAGE_END_ATTRIBUTE = "data-structure-page-end-drop";
 /** Marks the Structure tree; the Structure drag auto-scrolls only the scroll region containing it (D4). */
 export const STRUCTURE_TREE_ATTRIBUTE = "data-structure-tree";
 
+/**
+ * BC-12.5: the payload of the tree's ONE shared drag source (StructureTree).
+ * Which row was pressed is handed to useStructureDragDrop directly (press),
+ * so the payload is a constant.
+ */
 export interface StructureDragData {
   kind: typeof STRUCTURE_DRAG_KIND;
-  nodeId: string;
-  label: string;
-  tag: string;
-  /** Always 1 on the handle; the real count of a multi-drag is resolved at drag start (resolveStructureDragSet). */
-  count: number;
 }
+
+export const STRUCTURE_DRAG_DATA: StructureDragData = { kind: STRUCTURE_DRAG_KIND };
+
+/** The id of that shared drag source. */
+export const STRUCTURE_DRAG_SOURCE_ID = "structure:drag-source";
+
+export function isStructureDragData(data: unknown): data is StructureDragData {
+  return typeof data === "object" && data !== null && "kind" in data && data.kind === STRUCTURE_DRAG_KIND;
+}
+
+/** BC-12.5: marks the rows being dragged (set on the row element during the drag; the row dims itself). */
+export const STRUCTURE_DRAG_SOURCE_ATTRIBUTE = "data-drag-source";
 
 /**
  * BC-12.4 — what a drag from `nodeId`'s handle moves: with two or more
@@ -90,9 +102,7 @@ function asList(moved: string | readonly string[]): readonly string[] {
   return typeof moved === "string" ? [moved] : moved;
 }
 
-export function isStructureDragData(data: unknown): data is StructureDragData {
-  return typeof data === "object" && data !== null && "kind" in data && data.kind === STRUCTURE_DRAG_KIND && "nodeId" in data && typeof data.nodeId === "string";
-}
+
 
 export interface StructureDropTarget {
   targetId: string;

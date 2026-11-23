@@ -434,7 +434,8 @@ test("10 (BC-12.3.1): end-of-container drops — after the final child at a chos
   await page.mouse.up();
   expect(await childIds(page, "page-root")).toEqual(before);
 
-  // 6. Undo/Redo of the page-end append.
+  // 6. Undo/Redo of the page-end append. (dnd-kit swallows clicks for 50 ms after a drop; a user never clicks that fast.)
+  await page.waitForTimeout(80);
   await button(page, "Undo").click();
   await expect.poll(() => childIds(page, "t-s2")).toEqual(["t-inner", "t-a"]);
   await button(page, "Redo").click();
@@ -447,6 +448,7 @@ test("10 (BC-12.3.1): end-of-container drops — after the final child at a chos
   await page.mouse.up();
   await expect(announcement(page)).toHaveText(/^Alpha was not moved: it is already there\.\s*$/);
   // No history entry: the next Undo still undoes the page-end append itself.
+  await page.waitForTimeout(80); // past dnd-kit's 50 ms post-drop click guard
   await button(page, "Undo").click();
   await expect.poll(() => childIds(page, "t-s2")).toEqual(["t-inner", "t-a"]);
   await button(page, "Redo").click();

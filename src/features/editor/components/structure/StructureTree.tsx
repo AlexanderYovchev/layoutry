@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DragOverlay, useDraggable } from "@dnd-kit/core";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { createPortal } from "react-dom";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import {
   findAncestorIds,
@@ -8,7 +10,14 @@ import {
 } from "@/features/editor/components/structure/documentTreeUtils";
 import { StructureTreeNode } from "@/features/editor/components/structure/StructureTreeNode";
 import { StructureDropIndicator } from "@/features/editor/components/structure/StructureDropIndicator";
-import { STRUCTURE_PAGE_END_ATTRIBUTE, STRUCTURE_TREE_ATTRIBUTE } from "@/features/editor/components/structure/structureDragDrop";
+import {
+  STRUCTURE_DRAG_DATA,
+  STRUCTURE_DRAG_SOURCE_ID,
+  STRUCTURE_PAGE_END_ATTRIBUTE,
+  STRUCTURE_TREE_ATTRIBUTE,
+} from "@/features/editor/components/structure/structureDragDrop";
+import { StructureDragPreview } from "@/features/editor/components/structure/StructureDragPreview";
+import { createRovingFocusStore } from "@/features/editor/components/structure/structureRovingFocus";
 import { collectNodeIds } from "@/features/editor/utils/collectNodeIds";
 import {
   describeMovedPosition,
@@ -20,9 +29,11 @@ import { useStructureDragDrop } from "@/features/editor/hooks/useStructureDragDr
 import { getElementDisplayName } from "@/features/editor/utils/elementDisplayName";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
 
-// BC-12.3: every row callback below is stable while the document and the
-// open branches are unchanged (useCallback), and rows are memoized, so a
-// drag's hover indicator re-renders only the indicator, not every row.
+// BC-12.3: rows are memoized, so a drag's hover indicator re-renders only
+// the indicator, not every row. BC-12.5: the row callbacks are stable for
+// the tree's lifetime (they read `latest`), and selection and the tab stop
+// are per-row subscriptions, so a move or a selection change re-renders
+// only the rows it affects.
 export function StructureTree() {
   const documentTree = useEditorStore((state) => state.document);
   const selection = useEditorStore((state) => state.selection);
@@ -49,7 +60,16 @@ export function StructureTree() {
   // The tree's single roving tab stop (WAI-ARIA treeview pattern) — every
   // other row is tabIndex=-1. Defaults to the root until the user focuses
   // or selects something else.
-  const [currentNodeId, setCurrentNodeId] = useState(documentTree.id);
+  const [rovingFocus] = useState(() => createRovingFocusStore(documentTree.id));
+  const setCurrentNodeId = rovingFocus.set;
+
+  // BC-12.5: the row callbacks read the current document and open branches
+  // from here, so they stay the same function across moves and edits (a
+  // new callback re-rendered every memoized row).
+  const latest = useRef({ documentTree, openNodeIds });
+  useLayoutEffect(() => {
+    latest.current = { documentTree, openNodeIds };
+  });
 
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -104,7 +124,7 @@ export function StructureTree() {
 
   const handleMoveFocus = useCallback(
     (fromId: string, direction: 1 | -1) => {
-      const visibleIds = getVisibleNodeIds(documentTree, openNodeIds);
+      const visibleIds = getVisibleNodeIds(latest.current.documentTree, latest.current.openNodeIds);
       const index = visibleIds.indexOf(fromId);
       if (index === -1) return;
       // Tree navigation doesn't wrap at the ends (unlike a menubar/toolbar) —
@@ -116,7 +136,7 @@ export function StructureTree() {
       const nextId = visibleIds[nextIndex];
       rowRefs.current.get(nextId)?.focus();
     },
-    [documentTree, openNodeIds],
+    [],
   );
 
   // After a successful move (keyboard or pointer): open the new ancestors,
@@ -130,7 +150,7 @@ export function StructureTree() {
       // BC-12.4: a multi-drag passes its own group description.
       announce(message ?? describeMovedPosition(after, id));
     },
-    [announce, expand],
+    [announce, expand, setCurrentNodeId],
   );
 
   // BC-12.2 (D11): Alt+Arrow moves the focused row (only that row, never
@@ -139,6 +159,7 @@ export function StructureTree() {
   // on its row, and the result is announced from the document itself.
   const handleReorder = useCallback(
     (id: string, direction: StructureMoveDirection) => {
+      const { documentTree } = latest.current;
       const request = resolveKeyboardMove(documentTree, id, direction);
       if (request.kind === "unavailable") {
         announce(request.message);
@@ -157,7 +178,7 @@ export function StructureTree() {
       }
       revealMoved(id);
     },
-    [announce, documentTree, moveElement, revealMoved],
+    [announce, moveElement, revealMoved],
   );
 
   // BC-12.2: WAI-ARIA tree Left/Right. Right opens a closed branch, or
@@ -165,6 +186,7 @@ export function StructureTree() {
   // moves to the parent.
   const handleHorizontalKey = useCallback(
     (id: string, key: "ArrowLeft" | "ArrowRight") => {
+      const { documentTree, openNodeIds } = latest.current;
       const node = findNodeById(documentTree, id);
       if (!node) return;
       const children = node.children ?? [];
@@ -182,11 +204,12 @@ export function StructureTree() {
       const parentId = findParentId(documentTree, id);
       if (parentId) rowRefs.current.get(parentId)?.focus();
     },
-    [documentTree, handleToggle, openNodeIds],
+    [handleToggle],
   );
 
   const handleSelect = useCallback(
     (id: string, event: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) => {
+      const { documentTree, openNodeIds } = latest.current;
       if (event.shiftKey) {
         // BC-10.2: a contiguous range over the VISIBLE rows (collapsed
         // descendants are skipped, containers are crossed), from the anchor
@@ -203,22 +226,22 @@ export function StructureTree() {
         selectOnly(id);
       }
     },
-    [addToSelection, documentTree, openNodeIds, selectOnly, selectRange, toggleSelection],
+    [addToSelection, selectOnly, selectRange, toggleSelection],
   );
 
   const handleMoveToEdge = useCallback(
     (edge: "first" | "last") => {
-      const visibleIds = getVisibleNodeIds(documentTree, openNodeIds);
+      const visibleIds = getVisibleNodeIds(latest.current.documentTree, latest.current.openNodeIds);
       if (visibleIds.length === 0) return;
       const nextId =
         edge === "first" ? visibleIds[0] : visibleIds[visibleIds.length - 1];
       rowRefs.current.get(nextId)?.focus();
     },
-    [documentTree, openNodeIds],
+    [],
   );
 
   // BC-12.3: pointer drag from the row handles (one element at a time).
-  const { indicator: dropIndicator, dragging } = useStructureDragDrop({
+  const { indicator: dropIndicator, dragging, preview, press } = useStructureDragDrop({
     documentTree,
     openNodeIds,
     wrapperRef,
@@ -227,6 +250,20 @@ export function StructureTree() {
     onMoved: revealMoved,
     announce,
   });
+
+  // BC-12.5: ONE dnd-kit drag source for the whole tree. A handle press
+  // records its row (press), points the drag source at that handle (its
+  // rect and scroll container) and hands the event to dnd-kit's sensor.
+  const { setNodeRef: setDragSourceNode, listeners: dragSourceListeners } = useDraggable({ id: STRUCTURE_DRAG_SOURCE_ID, data: STRUCTURE_DRAG_DATA });
+  const handleHandlePointerDown = useCallback(
+    (nodeId: string, event: PointerEvent<HTMLButtonElement>) => {
+      press(nodeId);
+      setDragSourceNode(event.currentTarget);
+      const startSensor = dragSourceListeners?.onPointerDown;
+      if (typeof startSensor === "function") startSensor(event);
+    },
+    [dragSourceListeners, press, setDragSourceNode],
+  );
 
   // Synchronizes local expansion state with an external event (the
   // editor store's selection changing, whether from this tree or, once
@@ -280,10 +317,8 @@ export function StructureTree() {
           <StructureTreeNode
             node={documentTree}
             depth={0}
-            selectedIds={selection.ids}
-            primarySelectedId={selectedElementId}
             openNodeIds={openNodeIds}
-            currentNodeId={currentNodeId}
+            rovingFocus={rovingFocus}
             onToggle={handleToggle}
             onSelect={handleSelect}
             onFocusRow={setCurrentNodeId}
@@ -291,6 +326,7 @@ export function StructureTree() {
             onMoveToEdge={handleMoveToEdge}
             onReorder={handleReorder}
             onHorizontalKey={handleHorizontalKey}
+            onHandlePointerDown={handleHandlePointerDown}
             registerRowRef={registerRowRef}
           />
         </div>
@@ -306,6 +342,14 @@ export function StructureTree() {
         )}
         {dropIndicator && <StructureDropIndicator indicator={dropIndicator} />}
       </div>
+      {/* BC-12.3 (D13): the drag chip, portalled so no panel overflow can clip it; no drop animation (BC-12.3). */}
+      {dragging &&
+        createPortal(
+          <DragOverlay dropAnimation={null}>
+            {preview && <StructureDragPreview label={preview.label} tag={preview.tag} count={preview.count} />}
+          </DragOverlay>,
+          document.body,
+        )}
     </>
   );
 }
