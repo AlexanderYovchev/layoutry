@@ -15,8 +15,8 @@
 export interface ActiveSnapGuides {
   /** The Free container the currently-dragged child belongs to — lets the guide overlay find and measure the right container without threading extra props through CanvasOverlay. */
   containerId: string;
-  /** Present only when the x-axis actually snapped this frame — content-box-relative x position (same coordinate space as FreeLayoutGeometry.x) a vertical guide line should be drawn at. */
+  /** Present only when the x-axis actually snapped this frame — the x position in the container's local Free frame (origin = its padding-box corner, the same frame as FreeLayoutGeometry.x; BC-13.2) a vertical guide line is drawn at. */
   vertical?: number;
-  /** Present only when the y-axis actually snapped this frame — content-box-relative y position (same coordinate space as FreeLayoutGeometry.y) a horizontal guide line should be drawn at. */
+  /** Present only when the y-axis actually snapped this frame — the y position in the container's local Free frame (see vertical) a horizontal guide line is drawn at. */
   horizontal?: number;
 }

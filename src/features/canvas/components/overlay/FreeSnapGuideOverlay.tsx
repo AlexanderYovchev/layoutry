@@ -2,17 +2,22 @@
 
 import type { RefObject } from "react";
 import { useMeasuredNodeRect } from "@/features/canvas/hooks/useMeasuredNodeRect";
+import { localOriginInset } from "@/features/canvas/utils/freeLayoutFrame";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 
 interface FreeSnapGuideOverlayProps {
   canvasRootRef: RefObject<HTMLElement | null>;
 }
 
-function readPaddingInset(canvasRootRef: RefObject<HTMLElement | null>, containerId: string): { left: number; top: number } {
+/**
+ * BC-13.2: guide values are in the container's local Free frame, whose
+ * origin is the PADDING-box corner (inside the border; where its absolute
+ * children render) — not border + padding, which offset every guide by
+ * (padding − border) in padded or bordered containers.
+ */
+function readOriginInset(canvasRootRef: RefObject<HTMLElement | null>, containerId: string): { left: number; top: number } {
   const containerEl = canvasRootRef.current?.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(containerId)}"]`);
-  if (!containerEl) return { left: 0, top: 0 };
-  const style = getComputedStyle(containerEl);
-  return { left: parseFloat(style.paddingLeft) || 0, top: parseFloat(style.paddingTop) || 0 };
+  return containerEl ? localOriginInset(containerEl) : { left: 0, top: 0 };
 }
 
 /**
@@ -40,7 +45,7 @@ export function FreeSnapGuideOverlay({ canvasRootRef }: FreeSnapGuideOverlayProp
 
   if (!guides || !containerRect) return null;
 
-  const inset = readPaddingInset(canvasRootRef, guides.containerId);
+  const inset = readOriginInset(canvasRootRef, guides.containerId);
 
   return (
     <>

@@ -42,7 +42,10 @@ describe("FreeSnapGuideOverlay (Checkpoint 1.15.6.1.1)", () => {
     expect(container.querySelector('[data-canvas-overlay^="snap-guide"]')).not.toBeInTheDocument();
   });
 
-  it("renders a vertical guide line positioned at the container's left edge plus padding plus the guide's own content-box offset", () => {
+  // BC-13.2: guide values are in the local Free frame, whose origin is the
+  // container's padding-box corner (inside the border). Padding does not
+  // move it — the old rule (left + padding) put guides off by (padding − border).
+  it("renders a vertical guide line at the container's left edge plus its border (not its padding) plus the guide's local offset", () => {
     const { container } = render(
       <Harness>
         <div data-node-id="free-container-1" style={{ paddingLeft: "10px" }} />
@@ -50,6 +53,7 @@ describe("FreeSnapGuideOverlay (Checkpoint 1.15.6.1.1)", () => {
     );
     const containerEl = container.querySelector('[data-node-id="free-container-1"]') as HTMLElement;
     stubRect(containerEl, { left: 20, top: 0, right: 220, bottom: 200 });
+    Object.defineProperty(containerEl, "clientLeft", { value: 4, configurable: true });
 
     act(() => {
       useEditorStore.getState().setActiveSnapGuides({ containerId: "free-container-1", vertical: 50 });
@@ -57,8 +61,8 @@ describe("FreeSnapGuideOverlay (Checkpoint 1.15.6.1.1)", () => {
 
     const guide = container.querySelector('[data-canvas-overlay="snap-guide-vertical"]') as HTMLElement;
     expect(guide).toBeInTheDocument();
-    // left = containerRect.left(20) + paddingLeft(10) + guide.vertical(50) = 80
-    expect(guide.style.left).toBe("80px");
+    // left = containerRect.left(20) + borderLeft(4) + guide.vertical(50) = 74 (padding 10 ignored)
+    expect(guide.style.left).toBe("74px");
     expect(container.querySelector('[data-canvas-overlay="snap-guide-horizontal"]')).not.toBeInTheDocument();
   });
 
@@ -70,6 +74,7 @@ describe("FreeSnapGuideOverlay (Checkpoint 1.15.6.1.1)", () => {
     );
     const containerEl = container.querySelector('[data-node-id="free-container-1"]') as HTMLElement;
     stubRect(containerEl, { left: 0, top: 30, right: 200, bottom: 230 });
+    Object.defineProperty(containerEl, "clientTop", { value: 3, configurable: true });
 
     act(() => {
       useEditorStore.getState().setActiveSnapGuides({ containerId: "free-container-1", horizontal: 40 });
@@ -77,8 +82,8 @@ describe("FreeSnapGuideOverlay (Checkpoint 1.15.6.1.1)", () => {
 
     const guide = container.querySelector('[data-canvas-overlay="snap-guide-horizontal"]') as HTMLElement;
     expect(guide).toBeInTheDocument();
-    // top = containerRect.top(30) + paddingTop(5) + guide.horizontal(40) = 75
-    expect(guide.style.top).toBe("75px");
+    // top = containerRect.top(30) + borderTop(3) + guide.horizontal(40) = 73 (padding 5 ignored)
+    expect(guide.style.top).toBe("73px");
     expect(container.querySelector('[data-canvas-overlay="snap-guide-vertical"]')).not.toBeInTheDocument();
   });
 

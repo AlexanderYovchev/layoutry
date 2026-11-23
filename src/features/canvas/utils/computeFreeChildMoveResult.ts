@@ -14,6 +14,14 @@ export interface FreeChildMoveStart {
   containerId?: string | null;
   /** Every OTHER direct child's current geometry (never the moving node itself — see resolveFreeMoveSnap's own "moving-element exclusion" doc comment), captured once at pointer-down from the document (not re-measured mid-drag, matching every other Free session's "one measurement at drag-start" convention). Empty when Snap has nothing to offer (e.g. the only child, or Snap disabled) — harmless either way since resolveFreeMoveSnap tolerates an empty siblings array. */
   siblings?: FreeMoveSnapBox[];
+  /**
+   * BC-13.2: the parent's snapping boundaries — its PADDING box in the local
+   * Free frame (see freeLayoutFrame.ts). Distinct from parentBounds (the
+   * unchanged containment rule, content-box size). Omitted: parentBounds.
+   */
+  snapBounds?: FreeLayoutBounds;
+  /** BC-13.2: the moving node's own margin-left/top: its rendered border box is the stored position shifted by this (D25). */
+  margin?: { left: number; top: number };
 }
 
 export function clampFreeChildAxis(value: number, min: number, max: number): number {

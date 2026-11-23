@@ -1,0 +1,766 @@
+BC-13.1 — Alignment & Snapping Architecture Investigation
+==========================================================
+Date: 2026-11-23
+Milestone: BC-13 (Alignment & Snapping Guides)
+Type: investigation only. No production code was changed. Nothing was
+committed or pushed.
+Baseline: BC-12.5 committed (ba5133a).
+
+Legend:
+  [VERIFIED]   observed in the current code, or measured by the probe
+  [PROPOSED]   design recommendation
+  [ASSUMPTION] not verified; to confirm in the named checkpoint
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+- Layoutry already has a first-generation Free-layout snap (Checkpoint
+  1.15.6.1.1) [VERIFIED]:
+  - a pure engine, resolveFreeMoveSnap;
+  - live use in the Free-child MOVE session only;
+  - two simple guide lines;
+  - a session-only "Snap" toggle in the Inspector's Layout section.
+- It snaps one direct child to its parent's edges/center and to its direct
+  siblings' edges/centers, read from the DOCUMENT (freeLayout), with an
+  8px threshold.
+- It has NONE of:
+  - resize snapping;
+  - nested, transformed or clipped targets;
+  - equal spacing;
+  - distance labels;
+  - hysteresis;
+  - a modifier bypass;
+  - a Shift axis lock;
+  - auto-scroll;
+  - pointer-positioned insertion;
+  - a persistent preference.
+- The architecture is a good base, because every Free gesture already:
+  - is a rAF-throttled pointer session;
+  - writes px geometry live;
+  - commits one Undo transaction;
+  - restores the document on Escape.
+  So BC-13 is mostly an engine rewrite plus targeted session integration,
+  not a new interaction system.
+Facts that shape the plan [VERIFIED]:
+- There is NO Canvas zoom. The View-menu Zoom items are disabled
+  placeholders, and screen px = CSS px. The zoom aspects of D3, D17 and
+  D41 reduce to a scale seam of 1.
+- Free geometry is plain px numbers (x, y, width, height), and min/max
+  constraints are px numbers. The document model has NO calc(), min(),
+  max() or clamp() expressions. D35 and D48 are satisfied by construction.
+- There is no responsive viewport switching (D24 = the single Canvas
+  width).
+- A Free child's Canvas drag can't leave its parent. A Flow element
+  dropped into a Free container (dnd-kit) and a Resource Panel insertion
+  are both placed at the first free slot, NOT at the pointer. So D30 and
+  D44 need new infrastructure.
+- A pre-existing coordinate defect was found (probe, section 4.3). In a
+  Free container with padding or a border, the stored "content-box"
+  geometry, the rendered position and the guide position disagree:
+  guides are off by paddingLeft − borderLeft (14px in the probe).
+- pointercancel COMMITS the gesture in both Free sessions. D21 requires a
+  restore.
+Recommendation: READY WITH CONDITIONS — five owner questions (section 11).
+None blocks starting BC-13.2 (the engine foundation), which assumes the
+recommended answers.
+
+
+2. ACTUAL REPOSITORY ARCHITECTURE AND SOURCE-FILE MAP
+-----------------------------------------------------
+All paths are [VERIFIED].
+Document geometry:
+- src/features/editor/types/layout.ts:
+  - FreeLayoutGeometry {x, y, width, height} (px numbers);
+  - getLayoutMode;
+  - getResizeConstraintsForTag (minWidth/minHeight floors).
+- node.freeLayout: the authoritative position and size of a Free child,
+  relative to its parent.
+- src/features/editor/utils/normalizeFreeLayoutGeometry.ts: the containment
+  clamp (containment beats min size).
+- src/features/editor/utils/approximateFreeContainerSize.ts (document-side
+  bounds), resolveFreeDestinationPlacement.ts, resolveFreeInsertionPosition.ts
+  (first free slot).
+Rendering:
+- src/features/canvas/utils/elementDimensionsStyle.ts freeChildStyle →
+  position:absolute; left:x; top:y; width; height (px).
+- elementStyleRecipes.placementStyles: resolvePositionStyle first, then
+  freeChildStyle (Free wins). The Position section is not offered for Free
+  children (InspectorPositionSection doc).
+- Free container: position:relative (probe), overflow as authored
+  (Display section).
+- src/features/canvas/utils/resolveTransformStyle.ts: transform
+  {translateX, translateY, rotateDeg, scale}.
+Measurement:
+- src/features/canvas/utils/measureFreeContainerBounds.ts → content box
+  (clientWidth/Height − padding), measured at pointer-down.
+- src/features/canvas/hooks/useMeasuredNodeRect.ts → a node rect relative
+  to the Canvas root (getBoundingClientRect plus ResizeObserver).
+Gestures (all Canvas pointer sessions use pointer capture, rAF-throttled
+commit and begin/commitResizeTransaction):
+- src/features/canvas/hooks/useFreeChildMoveSession.ts: the Free-child
+  drag; calls resolveFreeMoveSnap; Escape restores (window keydown,
+  capture, stopPropagation).
+- src/features/canvas/hooks/useFreeChildResizeSession.ts +
+  utils/computeFreeChildResizeResult.ts: the 8 handles; corner
+  aspect-ratio lock (getEffectiveAspectRatioLocked); Free-container child
+  scaling (computeContainerChildScaling); no snapping.
+- src/features/canvas/components/overlay/FreeChildResizeHandles.tsx: the
+  handles; the start geometry comes from the document.
+- src/features/canvas/hooks/useResizeSession.ts (Flow resize),
+  useSvgObjectMoveSession / useSvgObjectResizeSession /
+  useSvgShapeDrawingSession (SVG; same lifecycle pattern; out of BC-13
+  scope).
+- src/features/canvas/hooks/useNodeDragSource.ts: a Free parent uses
+  useFreeChildMoveSession; others use the dnd-kit draggable (Flow reorder,
+  BC-12 shared move).
+- src/features/editor/rules/transformGeometrySafety.ts
+  getTransformBlockingAncestor: Free move/resize is BLOCKED under a
+  transformed ancestor.
+- src/features/editor/rules/styleProtection.ts: locked styles block
+  moves (notice).
+Snap (existing):
+- src/features/canvas/utils/resolveFreeMoveSnap.ts: pure, per-axis, 8px
+  SNAP_THRESHOLD_PX, parent then sibling then document-order tie-break,
+  no hysteresis.
+- src/features/editor/types/snap.ts: ActiveSnapGuides {containerId,
+  vertical?, horizontal?}.
+- Store (useEditorStore): snapEnabled (default true, session-only),
+  activeSnapGuides, setSnapEnabled, setActiveSnapGuides;
+  replaceDocument clears activeSnapGuides.
+- src/features/canvas/components/overlay/FreeSnapGuideOverlay.tsx (inside
+  CanvasOverlay): draws the lines at the container rect + padding + value.
+- src/features/inspector/components/InspectorLayoutSection.tsx: the "Snap"
+  boolean toggle for Free containers.
+- Tests: resolveFreeMoveSnap.test.ts (21), useEditorStore.snap.test.ts
+  (4), FreeSnapGuideOverlay.test.tsx (4), useFreeChildMoveSession.test.tsx,
+  useFreeChildResizeSession.test.tsx, computeFreeChildResizeResult.test.ts.
+History:
+- useEditorStore pushHistory / transactionSnapshot:
+  - beginResizeTransaction snapshots once;
+  - live writes (setFreeChildGeometryLive) push nothing;
+  - commitResizeTransaction pushes the snapshot;
+  - cancelResizeTransaction drops it (the caller restores the document);
+  - an outside mutation during an open transaction closes it first
+    (BC-01.6).
+Insertion and dnd-kit:
+- src/features/editor/components/EditorApp.tsx: one DndContext for catalog
+  inserts and Canvas Flow moves.
+- src/features/editor/hooks/useInsertElement.ts: inserts at the first free
+  slot (resolveFreeDestinationPlacement), ignoring the drop point.
+- BC-12.5: Structure drags use their own nested context
+  (StructureDragContext).
+Selection and keyboard:
+- src/features/canvas/components/CanvasInteractionBoundary.tsx:
+  - click → Ctrl/Cmd toggle, Shift additive, plain select;
+  - window keydown Escape (bubble, skips defaultPrevented) → clear
+    selection (or Preview dismissal/exit).
+- src/features/editor/hooks/useEditorKeyboardShortcuts.ts: Ctrl/Cmd
+  shortcuts; Ctrl/Cmd+Alt+C/V (CSS clipboard).
+Preferences:
+- localStorage with try/catch (useResizablePanelWidth panel widths). It
+  works in web and desktop (app:// origin). No editor-preference module
+  exists.
+Workspace scrolling:
+- src/components/layout/Workspace.tsx is overflow-y-auto (the Canvas
+  scroll container). Free sessions have no auto-scroll.
+Preview/Export:
+- Guides render in CanvasOverlay (editor chrome), outside
+  [data-document-surface]. Export builds from the document model
+  (src/features/export). Snap state is never part of the document, so it
+  is never exported.
+
+
+3. EXISTING DRAG / RESIZE / INSERTION LIFECYCLE
+-----------------------------------------------
+[VERIFIED] Free move (useFreeChildMoveSession):
+1. pointerdown:
+   - the protection and transform-ancestor checks run (on a refusal: a
+     notice, and the click still selects);
+   - stopPropagation and setPointerCapture;
+   - beginResizeTransaction;
+   - startX/Y/width/height are read from node.freeLayout;
+   - parentBounds = measureFreeContainerBounds(DOM parent);
+   - siblings are read once from the document.
+2. pointermove: the latest pointer is stored and a rAF commit scheduled.
+3. Commit per frame:
+   - raw = start + pointer delta;
+   - if snapEnabled → resolveFreeMoveSnap → guides;
+   - containment clamp;
+   - setActiveSnapGuides + setFreeChildGeometryLive (a live document
+     write).
+4. pointerup / pointercancel → endSession:
+   - cancel the pending rAF;
+   - if it moved: the final commit + commitResizeTransaction;
+   - otherwise cancelResizeTransaction;
+   - clear the guides and release capture.
+   pointercancel takes the same path, so it COMMITS.
+5. Escape (window keydown, capture): restore the snapshot document and
+   selection, cancel the transaction, clear the guides. stopPropagation in
+   the capture phase keeps the Canvas's Escape-deselect from running
+   (verified by reading the code; the BC-12 "Escape clears the selection"
+   defect is the dnd-kit Flow-drag path, not this one).
+[VERIFIED] Free resize (useFreeChildResizeSession): the same shape.
+- The 8 directions; side handles never lock.
+- Corner handles keep the start ratio when aspectRatioLocked.
+- Min floors, and the containment clamp per edge.
+- Resizing a Free CONTAINER also rescales its children (Scale/Clamp
+  policy, applyFreeContainerChildGeometriesLive).
+- No snap, no guides. pointercancel commits.
+[VERIFIED] Insertion:
+- catalog drag → dnd-kit (pointerWithin) → resolveDragEndInsertion →
+  useInsertElement;
+- into a Free container → first free slot (no pointer position, no
+  preview);
+- one insertElement = one history entry.
+[VERIFIED] Cross-container:
+- only via dnd-kit Flow moves (Canvas) or the Structure panel;
+- entering Free → the auto slot (BC-12.2 planMove);
+- a Free child can't be dragged out of its parent on the Canvas.
+
+
+4. GEOMETRY AND COORDINATE-SYSTEM FINDINGS
+------------------------------------------
+4.1 Authoritative geometry (Q1) [VERIFIED]: node.freeLayout px, relative to
+    the parent Free container.
+    - Rendered = left/top/width/height px. Transforms are visual only (the
+      document geometry ignores them).
+    - Flow/Flex/Grid children have no stored position; their geometry
+      exists only in the DOM.
+4.2 Pointer → local CSS (Q2) [VERIFIED]: delta-based.
+    - local = start freeLayout + (clientX − startClientX).
+    - There is no absolute pointer → local mapping today, so nothing breaks
+      when the Workspace scrolls. BUT scrolling during a drag (D41)
+      changes the element's screen position without a pointer delta. The
+      delta model would then drift: it needs a scroll-offset correction.
+4.3 Origin mismatch (pre-existing defect) [VERIFIED by probe]:
+    - Container: padding 20px, border 6px.
+    - A child at freeLayout x=0 renders at the container's PADDING edge
+      (6px from the outer edge): absolute positioning is relative to the
+      padding box.
+    - measureFreeContainerBounds returns the CONTENT box (clientWidth −
+      padding), so containment treats x as content-relative.
+    - FreeSnapGuideOverlay draws x=0 at outer edge + paddingLeft (20px),
+      so the guide is 14px right of the real edge.
+    - Effects in padded/bordered Free containers:
+      - guides are off;
+      - parent-center/right targets don't match the visual center/right;
+      - children can't use the right/bottom padding area, but do overlap
+        the left/top padding.
+    - No effect when padding and border are 0 (the default Free
+      container).
+4.4 Zoom (Q3) [VERIFIED]: none. The threshold, guides and hit-testing are
+    1:1. [PROPOSED] Carry a canvasScale = 1 factor in the engine API
+    (screen-px threshold ÷ scale), so that when zoom ships later, D3/D17/
+    D41 hold without a redesign.
+4.5 Nested / transformed / clipped targets (Q4):
+    - [VERIFIED] The document geometry can't express transformed or nested
+      VISUAL bounds.
+    - [VERIFIED] getBoundingClientRect gives transformed AABBs; the probe
+      checked this on a 15°, ×1.2 nested container.
+    - [VERIFIED] The moving element's own parent is never under a
+      transformed ancestor (transformGeometrySafety blocks those
+      gestures). So converting a target's screen AABB into the moving
+      element's parent frame is a pure translation: rect − parent padding
+      edge, at scale 1.
+    - [PROPOSED] Targets come from DOM measurement once per session (plus
+      targeted re-measurement); the moving element's own start geometry
+      stays from the document (the existing transform-immune rule).
+    - Clipping: intersect with every overflow-clipping ancestor's rect
+      (computed style overflow ≠ visible), up to the Free context root.
+      Fully clipped means excluded. New code.
+4.6 Hidden elements [VERIFIED]:
+    - isNodeAuthoredHidden (display none, or inherited visibility hidden)
+      exists;
+    - display:none elements have no box;
+    - visibility:hidden elements do have rects, so they must be excluded
+      explicitly.
+4.7 Border box (D25) [VERIFIED]: getBoundingClientRect is the border box
+    (margins excluded). freeLayout width/height is the border box
+    (box-sizing border-box is assumed by the existing containment). Margins
+    on Free children are composed by freeChildStyle; see risk R9.
+
+
+5. CSS-UNIT AND EXPRESSION COMPATIBILITY (Q5)
+---------------------------------------------
+[VERIFIED]
+- Free geometry: unitless px numbers, written by setFreeChildGeometry/Live.
+- Size constraints: px numbers.
+- CSS Position offsets (CssLengthValue, units px/%/rem/em/vw/vh) are not
+  offered for Free children and are overridden by freeChildStyle.
+- There is no calc(), min(), max() or clamp() anywhere in the model or
+  schema.
+So:
+- D35: snapping writes px numbers exactly as today, without rounding (the
+  existing commands don't round; keep that).
+- D48: nothing to preserve; snapping never parses or writes CSS strings.
+No conversion or parsing is needed. If a future checkpoint introduces
+units for Free geometry, D35/D48 must be revisited (recorded as a guard
+test idea).
+
+
+6. APPROVED-DECISION FEASIBILITY MATRIX (D1–D49)
+------------------------------------------------
+Legend:
+- EXT = extends existing code;
+- NEW = new infrastructure;
+- TRIV = already satisfied / trivial under the current architecture;
+- Q = needs an owner answer (section 11).
+
+D1  Free-only scope — EXT. Only the Free sessions call the engine.
+D2  edges, centers, parent bounds/center; no grid — EXT. The current engine
+    already covers these for direct siblings.
+D3  6 screen px with zoom — EXT. The constant goes 8 → 6. Zoom = seam
+    (scale 1); see Q1.
+D4  Alt bypass + persistent toggle — NEW (bypass; persistence; toolbar).
+    Alt conflicts in section 7 R7.
+D5  drag + 8 handles, active edges only, aspect ratio kept — NEW (resize
+    snap). computeFreeChildResizeResult has the edge model.
+D6  targets: visible elements in the same Free context, including nested —
+    NEW (DOM target collection).
+D7  guides, distance labels, equal-spacing indicators; never exported —
+    NEW (labels/spacing). Overlay placement is EXT (CanvasOverlay is
+    editor-only).
+D8  closest target with locking/hysteresis, independent axes — NEW
+    (lock state). Independent axes already exist.
+D9  future multi-drag group bbox — TRIV. The engine takes one moving box;
+    a group is its bbox. Not implemented now.
+D10 locked visible elements are targets; hidden excluded; parent eligible
+    — EXT. Style-locked nodes still render, so they are measured; hidden
+    via isNodeAuthoredHidden.
+D11 global persistent preference, not in project files — NEW (a small
+    localStorage-backed preference, following the panel-width pattern).
+    Q4 covers the existing Inspector toggle.
+D12 live; release commits one Undo — TRIV. Already the case.
+D13 equal spacing H and V with threshold and hysteresis — NEW.
+D14 overlap allowed; equal spacing only for real gaps — NEW (part of
+    D13).
+D15 reject candidates violating containment/constraints — EXT. Snap runs
+    before the clamp today; the change is to REJECT a snap the clamp
+    would move (keeps D46 honest).
+D16 mouse/touch/pen; keyboard deferred — TRIV. Pointer Events sessions
+    already serve all three.
+D17 fixed screen-size guides/labels; CSS-px measurements — TRIV at zoom
+    1, with a seam.
+D18 only the winning guide per axis + relevant spacing — NEW (selection
+    of the displayed set).
+D19 partially visible targets in scrolled containers; offscreen excluded;
+    clipping — NEW (clip intersection). Note: Free children are clamped
+    inside their container, so a Free container never scrolls its own
+    children. Nested scrolling arises from overflow-scroll Flow
+    descendants and the Workspace.
+D20 edge auto-scroll for the Canvas and nested scrollable Free containers
+    — NEW. No auto-scroll in the pointer sessions (dnd-kit's isn't used
+    there).
+D21 Escape/pointercancel restore; fix Canvas Escape-selection in the
+    affected workflow — EXT. Escape is already correct for Free sessions;
+    pointercancel must change from commit to restore. The dnd-kit Escape
+    defect affects catalog insertion (D30) → apply the BC-12.3.1
+    capture-claim there.
+D22 guides/measurements stay when snapping is disabled; Alt disables
+    positioning only — NEW. Today guides only exist when snapping, so
+    "detection" must be decoupled from "application".
+D23 transformed AABB targets; no angled snapping — EXT (DOM rects).
+D24 active viewport only — TRIV (no responsive modes).
+D25 border boxes, margins excluded — EXT (DOM rects are border boxes).
+    The parent frame is R1/Q5.
+D26 targeted invalidation, keeping locks — NEW (the cache plus a
+    ResizeObserver/document-change invalidation).
+D27 rAF with the latest pointer; final position processed; discard on
+    cancel — EXT. The pattern exists; the change is making the final
+    commit use the latest pointer (it already does) and the cancel path
+    discard.
+D28 Undo exact original, Redo exact snapped, no recalculation — TRIV.
+    Snapshots are whole documents.
+D29 a shared visual coordinate system for nested targets — NEW
+    (screen → parent frame translation; 4.5).
+D30 snap Resource Panel insertions into Free with live guides/preview —
+    NEW. Insertion has no pointer placement or preview today. Q3.
+D31 visual feedback only — TRIV.
+D32 aspect ratio kept; only proportional results that satisfy the
+    constraints — NEW (resize snap under the lock: snap the driving axis,
+    derive the other, accept only if the clamp doesn't alter it).
+D33 visible Flex/Grid children inside the Free context are targets; never
+    modified — EXT (measured only; never written).
+D34 merge identical coordinates into one guide, keeping metadata — NEW
+    (the target index dedupes per axis value).
+D35 px computation, units kept, no unnecessary rounding — TRIV (5).
+D36 Canvas toolbar toggle + popover; no other controls — NEW. There is no
+    Canvas toolbar today. Q4.
+D37 a target disappears → release the lock, re-evaluate, continue — NEW
+    (part of the cache invalidation).
+D38 editor-only, never in Preview/Export — EXT. The overlay is already
+    editor chrome; export builds from the document. Hide guides in
+    Preview (the sessions are already disabled there, BC-02.4).
+D39 optimize, no caps — NEW work (section 8.5).
+D40 overlaps allowed, no warnings — TRIV.
+D41 scroll/zoom during a drag with no drift — NEW (scroll-offset
+    correction; zoom seam).
+D42 Shift = dominant-axis constraint with snapping on that axis; keep the
+    resize modifiers — NEW. There are no resize modifiers today. The
+    conflict with Shift-click additive selection is R6.
+D43 snap to layout boundaries, never the viewport — TRIV (the engine only
+    knows the parent and the elements).
+D44 cross-container drag switches the snapping context — NEW and larger
+    than snapping: Canvas Free drags can't change parent today. Q2.
+D45 keep a valid lock on ties, else a documented deterministic order —
+    EXT (the tie-break order exists; add the lock rule).
+D46 reject snaps that can't be exact (min/max etc.); no false guides — EXT
+    (validate after the clamp; 6 D15). [ASSUMPTION] Whether Free children
+    can carry sizeConstraints that make the rendered size differ from
+    freeLayout is to be checked in BC-13.4.
+D47 the manipulated element is deleted → end safely, no extra drag
+    history — NEW. A deletion during an open transaction currently closes
+    it as its own entry (BC-01.6), creating a drag entry before the
+    delete. R10.
+D48 complex expressions — TRIV (5).
+D49 page/project switch cancels, restores, no Undo entry — NEW.
+    replaceDocument clears guides and transactions, but the hook's
+    session refs survive and would apply later pointer events to the new
+    document (R11).
+Summary:
+- TRIV (already satisfied or trivial): 14;
+- EXT (extends existing code): 15;
+- NEW (new infrastructure): 20.
+- Q-dependent: D3/D17/D41 (zoom), D30, D44, D11/D36, D25 (frame).
+
+
+7. CONFLICTS AND RISKS
+----------------------
+R1  HIGH — Free origin mismatch (4.3).
+    - In padded or bordered Free containers, the guides, parent targets and
+      containment disagree with the rendering.
+    - BC-13 can't be correct (D2, D25, D29, D46 "no false guides") without
+      one consistent frame.
+    - Options:
+      (a) Padding-box frame: x is relative to the padding edge (as
+          rendered today); bounds = clientWidth/clientHeight (padding
+          included); guides at the border inset. Existing children stay
+          where they are; containment loosens slightly (children may use
+          the padding area).
+      (b) Content-box frame: render left = paddingLeft + x. This VISUALLY
+          MOVES existing children in padded containers, Canvas and Export
+          (a project-visible change).
+    - Recommend (a). Q5.
+R2  HIGH — cross-container Canvas drag doesn't exist (D44).
+    - Building Free-child re-parenting on the Canvas is a feature beyond
+      snapping: drop validation, the BC-12 shared move, geometry
+      conversion and history.
+    - Q2.
+R3  HIGH — performance of live document writes.
+    - Every frame writes the document (setFreeChildGeometryLive).
+    - BC-12.5 showed that a change inside a container with ~1,000 children
+      re-renders those children (~45ms on the Canvas in dev mode). A drag
+      inside a large Free container may drop frames.
+    - Measure in BC-13.3. Options: memoized element components; or a
+      transient visual preview (a CSS transform on the moving node)
+      committed at release. The latter conflicts with live Inspector sync
+      and needs owner awareness.
+R4  MEDIUM — pointercancel commits (D21).
+    - Changing it to restore is a behaviour change (e.g. a touch gesture
+      interrupted by the OS will no longer keep the partial move).
+    - Implied by D21; no question.
+R5  MEDIUM — insertion at the pointer (D30).
+    - It changes today's behaviour (the first free slot) for catalog drops
+      into Free containers. A click-insert keeps the auto slot.
+    - Q3.
+R6  MEDIUM — Shift (D42) vs Shift-click additive selection.
+    - The click after a Shift-drag would also add to the selection
+      (CanvasInteractionBoundary click handler).
+    - Needs a post-drag click suppression (the dnd-kit pattern), only when
+      the pointer actually moved.
+R7  MEDIUM — Alt/Option bypass (D4).
+    - Firefox on Windows/Linux shows its menu bar on an Alt key release.
+      Needs keydown/keyup preventDefault while a session is active.
+    - Electron: no native menu (Menu.setApplicationMenu(null)), so no
+      conflict.
+    - Linux desktop window managers may take Alt+drag for window moves
+      (outside the browser's control; not a supported target per the
+      desktop memory).
+    - Ctrl/Cmd+Alt chords (CSS clipboard) need Ctrl/Cmd, so no conflict.
+    - Verify in Firefox/WebKit in BC-13.3.
+R8  MEDIUM — Workspace scroll during a drag (D20/D41).
+    - The delta model drifts when the scroll container moves; it needs
+      scroll-offset compensation and auto-scroll in the pointer sessions.
+R9  MEDIUM — margins on Free children.
+    - freeChildStyle composes spacing.margin into marginLeft/Top. The
+      rendered border box is then offset from freeLayout by the margin,
+      while D25 aligns border boxes. Snapping math must use the rendered
+      box (freeLayout + margin) and write back freeLayout.
+    - Verify with a probe in BC-13.2.
+R10 MEDIUM — deletion during a drag (D47). An open transaction closed by
+    the delete becomes its own history entry. The session must detect the
+    missing node and cancel its transaction (restore = drop) before or as
+    the deletion happens.
+R11 MEDIUM — project switch during a drag (D49). The session refs survive
+    replaceDocument. The sessions need a document-session check
+    (documentSessionId exists in the store) and must end themselves.
+R12 MEDIUM — container resizing with child scaling plus snapping (D5/D32).
+    - Snapping the container's edge changes the children's scaled
+      geometry.
+    - Acceptable: the children follow the existing policy, and only the
+      container edge snaps. Document it.
+R13 LOW — the threshold changes 8 → 6 (D3). An existing-behaviour change,
+    explicitly approved. Update resolveFreeMoveSnap tests.
+R14 LOW — commitResizeTransaction pushes history even if the final
+    geometry equals the start (moved and snapped back).
+    - Add an equality check (no-op = no history, BC-12 consistency).
+R15 LOW — the existing Inspector "Snap" toggle duplicates D36's control.
+    Q4.
+R16 LOW — transformed targets are AABBs (D23). Guides drawn at AABB edges
+    of rotated elements look "outside" the shape. Intended per D23.
+No BLOCKER: every conflict has a safe option.
+
+
+8. PROPOSED SNAPPING-ENGINE ARCHITECTURE [PROPOSED]
+---------------------------------------------------
+8.1 Placement (Q6): canvas feature, pure modules, with no React in the
+    engine.
+    - canvas/utils/snap/snapTargets.ts: collect and normalize targets
+      (DOM).
+    - snapIndex.ts: per-axis sorted, deduplicated coordinate index with
+      metadata (D34).
+    - resolveSnap.ts: the move/resize/insert resolver, locks, tie-breaks.
+    - resolveEqualSpacing.ts (D13/D14).
+    - The existing resolveFreeMoveSnap becomes a thin adapter or is
+      replaced. Tests migrate.
+    - The editor store keeps only the ephemeral guide state (the same
+      ownership split as today: editor owns the slot, canvas owns the
+      math).
+8.2 One engine for move, resize and insert (Q7):
+    - Input: the moving box in the parent frame, an "active edges" set
+      (move = all three per axis; resize = only the handle's edges;
+      insert = as move), a constraint callback (containment, min sizes,
+      aspect lock), the threshold in screen px, scale, the lock state and
+      modifiers.
+    - Output: the adjusted box, the winning guide per axis, spacing
+      indicators and the next lock state.
+    - Move, resize and insert differ only in which edges are active and
+      how a delta is applied.
+8.3 Locks and hysteresis (Q8): per axis {targetKey (axis coordinate +
+    source ids), edge}.
+    - A lock holds while the distance ≤ the release threshold (proposed
+      1.5× the snap threshold, i.e. 9px at scale 1).
+    - It is replaced only by a strictly closer candidate beyond a small
+      epsilon (D45 tie: keep the lock).
+    - It is dropped when its target becomes ineligible (D37).
+    - It lives in the session's ref (not the store), so it never renders.
+8.4 Equal spacing (Q9):
+    - At session start, for each axis, sort the eligible boxes that
+      overlap the moving box's perpendicular span (D14 "meaningful gaps":
+      gap > 0, non-overlapping neighbours).
+    - Compute the existing gaps between consecutive boxes.
+    - Candidates: positions where the moving box's gap to its nearest
+      left/right (top/bottom) neighbour equals an existing gap, or centers
+      it between two neighbours.
+    - Validate with the same threshold and hysteresis. The indicator shows
+      the equal gaps with CSS-px labels.
+8.5 Performance (Q14, D39):
+    - Measure the targets once at pointer-down: one layout read of N rects
+      (~1,000) — a few ms.
+    - Per frame: a binary search in the sorted per-axis index for values
+      within ±threshold (O(log N + k)), so no per-frame DOM reads.
+    - Invalidation: a ResizeObserver on the Free context root plus a
+      document change during the session (other than this session's own
+      writes) → re-measure only the affected subtree (D26).
+    - Guide state: write to the store only when the displayed guides
+      change (as BC-12 did for indicators).
+    - The likely bottleneck is R3 (live document writes re-rendering a
+      large container's children), not the snap math. BC-13.3 measures it
+      first; the BC-12.5 lesson is to profile before optimizing.
+8.6 Editor-only guides (Q10): extend CanvasOverlay (FreeSnapGuideOverlay →
+    lines, labels, spacing).
+    - Overlay elements are outside [data-document-surface] and never in
+      the document.
+    - Hidden in Preview.
+    - Fixed screen-size styles (1px lines, 11px labels).
+8.7 Cancellation and navigation (Q11): a shared session-lifecycle helper
+    for the Free move/resize/insert sessions.
+    - One "cancel" path (Escape, pointercancel, lost pointer capture, node
+      deleted, documentSessionId changed, Preview entered): restore the
+      snapshot, cancelResizeTransaction, clear guides and locks, release
+      capture, discard the pending rAF.
+    - One "commit" path: process the final pointer, then commit only if
+      the geometry changed (R14).
+8.8 Modifiers (Q12):
+    - Alt/Option: read per event (event.altKey); bypass application, keep
+      detection (D22).
+    - Shift: the dominant axis from the cumulative delta (|dx| vs |dy|,
+      with a small dead zone), locking the other axis to its start; snap
+      only on the free axis.
+    - Conflicts: R6 (Shift-click), R7 (Alt menu). Ctrl/Cmd chords are
+      unaffected. Resize has no modifiers today.
+8.9 Preference (Q13):
+    - A small editor preference module (localStorage key e.g.
+      "layoutry.editor.snapEnabled", try/catch, the default true) feeding
+      store.snapEnabled at start-up.
+    - Global across projects and restarts (web: per origin; desktop: the
+      app:// origin storage).
+    - Never in project files (persistence test classification).
+8.10 New infrastructure (Q15):
+    - the DOM target collector with clipping and hidden filtering;
+    - the coordinate frame (R1);
+    - the snap index, locks and hysteresis;
+    - equal spacing;
+    - resize snapping;
+    - distance labels;
+    - modifier handling;
+    - auto-scroll and scroll compensation in the pointer sessions;
+    - pointer-positioned insertion with a preview;
+    - the global preference and toolbar control;
+    - lifecycle cancellation (pointercancel, delete, project switch);
+    - (if Q2 = B) Canvas cross-container Free drag.
+
+
+9. PROPOSED IMPLEMENTATION CHECKPOINTS [PROPOSED]
+-------------------------------------------------
+BC-13.2 Geometry frame + snap engine foundation (pure)
+  Scope:
+  - the R1 frame fix (per Q5);
+  - target collection: DOM AABB, nested, transformed, clipped, hidden,
+    offscreen;
+  - margins (R9);
+  - the per-axis index with dedupe;
+  - the resolver with active edges, locks and hysteresis;
+  - threshold 6 and the scale seam;
+  - the equal-spacing resolver;
+  - constraint-validated rejection (D15/D46).
+  No UI changes beyond the existing guide lines.
+  Sources: canvas/utils/snap/*, measureFreeContainerBounds,
+  FreeSnapGuideOverlay (frame), resolveFreeMoveSnap (adapter).
+  Depends on: Q5.
+  Risk: R1, R9.
+  Accept: unit-tested engine; existing move snapping keeps working at 6px;
+  guides correct in padded/bordered containers (probe-backed e2e).
+  Verify: new engine unit tests, the migrated resolveFreeMoveSnap tests,
+  the useFreeChildMoveSession tests, a 1–2 Chromium geometry probe.
+BC-13.3 Drag integration + guides v2 + modifiers + toggle/preference
+  Scope:
+  - the move session on the new engine;
+  - the winning guide per axis, distance labels, equal-spacing indicators
+    (D7/D13/D17/D18/D22);
+  - the Alt bypass, the Shift axis lock, post-drag click suppression;
+  - the global preference and the Canvas toolbar toggle with popover
+    (per Q4);
+  - the R3 performance measurement, and the fix if needed.
+  Depends on: 13.2, Q4.
+  Risk: R3, R6, R7.
+  Accept: D1–D4, D6–D8, D10–D14, D17, D18, D22, D33, D34, D36, D42, D43,
+  D45 at 1,000 elements.
+  Verify: session tests, overlay tests, preference test, Chromium drag
+  e2e, a Firefox/WebKit modifier subset, the perf spec.
+BC-13.4 Resize integration
+  Scope:
+  - the 8 handles, active edges only, the aspect lock (D32);
+  - min sizes and containment (D46);
+  - Free-container child scaling (R12);
+  - sizeConstraints verification.
+  Depends on: 13.2/13.3.
+  Accept: D5, D32, D46.
+  Verify: computeFreeChildResizeResult/session unit tests and a Chromium
+  resize e2e.
+BC-13.5 Interaction lifecycle hardening + scrolling
+  Scope:
+  - one cancel/commit path (D21, D27, D28, D47, D49);
+  - pointercancel restore (R4);
+  - no-op history (R14);
+  - target invalidation (D26, D37);
+  - Workspace auto-scroll and scroll compensation (D20, D41, R8);
+  - nested clipping during scroll (D19).
+  Depends on: 13.3/13.4.
+  Accept: no drift, no stray history, a clean state on every exit path.
+  Verify: session unit tests and Chromium lifecycle e2e (Escape, cancel,
+  delete, project switch, scroll).
+BC-13.6 Insertion (+ cross-container per Q2)
+  Scope:
+  - Resource Panel drops into Free at the pointer with live preview
+    guides (D30);
+  - the dnd-kit Escape claim for catalog drags (D21);
+  - D44 per Q2.
+  Depends on: 13.3, 13.5, Q2, Q3.
+  Accept: D30 (and D44 per the answer); one Undo; cancel inserts nothing.
+  Verify: insert hook and EditorApp tests; a Chromium catalog-drag e2e;
+  resource-panel-scrolling (BC-03).
+BC-13.7 Final regression + performance audit
+  Scope: the D1–D49 matrix with evidence; 1,000-element measurements
+  (pick-up, per-frame, release); Firefox/WebKit subsets; Preview/Export
+  isolation (D38).
+  Verify: focused suites only; reuse prior evidence.
+(Grouping differs from the brief's suggestion:
+- CSS units need no checkpoint (5);
+- the preference goes with the toggle in 13.3;
+- nested/transform/scroll is split into the engine (13.2) and the
+  lifecycle (13.5), following where the code changes.)
+
+
+10. FOCUSED TESTING STRATEGY
+----------------------------
+This checkpoint (newly executed):
+- one temporary Chromium probe (e2e, deleted) measuring the Free child
+  origin with padding + border, plus a nested 15° ×1.2 transformed
+  container;
+- no unit/browser suites run, no production change.
+Historical evidence reused (not re-run):
+- the existing snap tests (resolveFreeMoveSnap 21, store snap 4, overlay
+  4);
+- the Free session tests;
+- BC-12.5 performance findings.
+Future checkpoints:
+- the pure engine first (unit, deterministic fixtures, including ties and
+  hysteresis);
+- the sessions with fake pointer events (existing hook test patterns);
+- one compact Chromium e2e per gesture with real geometry;
+- Firefox/WebKit only for modifier/keyboard behaviour;
+- an in-page performance spec at 1,000 elements (the BC-12.5 methodology:
+  an awaited setup evaluate, 5 samples, medians);
+- Preview/Export isolation via the existing export tests plus one check
+  that no guide DOM exists in Preview.
+- No full suites; report new vs reused evidence separately.
+
+
+11. QUESTIONS REQUIRING OWNER APPROVAL
+--------------------------------------
+Q1 Zoom (D3/D17/D41). Layoutry has no Canvas zoom.
+   Proposal: implement these decisions as a scale seam (= 1), verified at
+   100%. Zoom-specific behaviour is verified when a zoom feature ships.
+   Approve?
+Q2 Cross-container dragging (D44). Canvas Free children can't be dragged
+   to another container today.
+   (A) Defer D44 to the future Canvas cross-container/multi-drag work
+       (recommended; BC-13 stays a snapping milestone).
+   (B) Build Free-child re-parenting drag inside BC-13 (large: the BC-12
+       shared move, drop validation, geometry conversion, history).
+   (C) Apply D44 only to existing dnd-kit Flow-element drags into a Free
+       container, placing them at the snapped pointer position.
+Q3 Pointer-positioned insertion (D30). Catalog drops into a Free container
+   today land in the first free slot.
+   Proposal: a drop places the element at the (snapped) pointer position,
+   with a live preview; a click-insert keeps the auto slot.
+   Approve the behaviour change?
+Q4 The toggle's location (D36/D11). There is no Canvas toolbar.
+   Proposal: a compact Snap toggle and info popover at a fixed corner of
+   the Workspace (Canvas chrome, outside the document), backed by the
+   global preference. Remove the Inspector Layout "Snap" toggle, so there
+   is one control as D36 says.
+   Alternatives: the header GlobalActions; or keep the Inspector toggle as
+   a mirror.
+Q5 The Free-container coordinate frame (R1).
+   Recommend the padding-box frame:
+   - no visual change to existing children;
+   - bounds include the padding;
+   - guides corrected.
+   Alternative: the content-box frame (moves existing children in padded
+   containers).
+   Approve (a)?
+
+
+12. FINAL RECOMMENDATION
+------------------------
+READY WITH CONDITIONS.
+- No blocker.
+- BC-13.2 (engine foundation + coordinate frame) can start once Q5 is
+  answered. Q1–Q4 gate BC-13.3/13.6 scope.
+- The main technical risks: the pre-existing origin mismatch (R1), live
+  document-write performance on large Free containers (R3), and the
+  missing cross-container Canvas drag (R2).
+Git working tree: clean except this report (the temporary probe spec was
+created and deleted). Nothing committed or pushed.

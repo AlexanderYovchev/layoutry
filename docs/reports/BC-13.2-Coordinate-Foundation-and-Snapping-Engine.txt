@@ -1,0 +1,393 @@
+BC-13.2 — Coordinate Foundation & Reusable Snapping Engine
+===========================================================
+Date: 2026-11-23
+Milestone: BC-13 (Alignment & Snapping Guides)
+Status: implemented, focused validation passed, NOT committed (waiting for
+ChatGPT/owner QA)
+Baseline: ba5133a (BC-12.5). The BC-13.1 report is still untracked in the
+working tree.
+
+Legend:
+- [VERIFIED] executed test or browser measurement;
+- [DESIGN] the intended contract;
+- [ASSUMPTION] not verified.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+- The Free-container coordinate mismatch is fixed at its root (the frame
+  definitions), not with a snapping-only offset.
+  - Stored geometry and rendered positions are unchanged: rendering code
+    is untouched, and a Chromium/Firefox/WebKit test asserts the rendered
+    positions.
+  - Containment is unchanged.
+  - The existing drag snap's parent targets and guides now match the
+    rendered edges in padded and bordered containers, including
+    asymmetric padding and child margins.
+  - A snap that the containment clamp would move away no longer shows a
+    guide (no false guides).
+- A small coordinate foundation, freeLayoutFrame.ts, defines the client,
+  canvas-visual and local Free frame, the border/padding/content boxes,
+  scroll and a zoom seam (scale = 1).
+- A new pure, reusable snapping engine:
+  - snapEngine.ts: a deduplicated per-axis index, the 6 screen-px
+    scale-aware threshold, independent axes, deterministic ranking,
+    locks with hysteresis, caller-validated adjustments for move/resize/
+    insert, and a "matches reported when snapping is disabled" result for
+    D22;
+  - snapEqualSpacing.ts: an equal-spacing candidate generator feeding the
+    same engine;
+  - target eligibility is a separate pure step.
+- Which engine is ACTIVE: the existing resolveFreeMoveSnap (8px, Free drag
+  only) is still what users get. The new engine is ISOLATED (not wired to
+  any gesture) until BC-13.3, so users see no partial new behaviour.
+- Tests:
+  - 190 focused unit/component tests passed, 31 of them new;
+  - 4 new browser tests passed in Chromium (twice), Firefox and WebKit;
+  - typecheck and ESLint clean.
+- Recommendation: READY FOR QA, with one owner decision for later
+  checkpoints (section 12).
+
+
+2. FILES CHANGED AND WHY
+------------------------
+Created:
+- src/features/canvas/utils/freeLayoutFrame.ts: the coordinate spaces and
+  conversions (measureFreeContainerFrame, localOriginInset,
+  clientRectToLocal, localToClientX/Y, screenDistanceToLocal,
+  freeChildRenderedRect, renderedToStoredPosition).
+- src/features/canvas/utils/snapEngine.ts: the engine (buildSnapIndex,
+  resolveSnap, parentSnapTarget, selectSnapTargets, translateBox, the
+  types).
+- src/features/canvas/utils/snapEqualSpacing.ts:
+  computeEqualSpacingCandidates.
+- src/features/canvas/utils/freeLayoutFrame.test.ts (8 tests),
+  snapEngine.test.ts (23 tests, including a 1,000-target benchmark).
+- e2e/free-snap-coordinates.spec.ts (4 browser tests).
+- docs/reports/BC-13.2-Coordinate-Foundation-and-Snapping-Engine.txt;
+  changelogs/2026-11-23-coordinate-foundation-and-snapping-engine-BC-13.2.txt
+  (gitignored).
+Modified:
+- src/features/canvas/hooks/useFreeChildMoveSession.ts:
+  - one frame measurement: containment (unchanged) and the padding-box
+    snapping bounds;
+  - snapping on RENDERED boxes (stored + margin) for the mover and the
+    siblings, converted back to stored;
+  - no guide when the clamp moves the snapped position.
+- src/features/canvas/utils/computeFreeChildMoveResult.ts:
+  FreeChildMoveStart gains optional snapBounds and margin.
+- src/features/canvas/components/overlay/FreeSnapGuideOverlay.tsx: the
+  guide origin = border inset (clientLeft/Top − scroll), not padding.
+- src/features/canvas/components/overlay/FreeSnapGuideOverlay.test.tsx:
+  the two position tests now assert the corrected rule (left + border, with
+  padding present and ignored). They had pinned the defect.
+- src/features/editor/types/snap.ts: doc comments, guide values are in the
+  local Free frame.
+Not changed:
+- rendering (elementDimensionsStyle/freeChildStyle);
+- containment (measureFreeContainerBounds, normalizeFreeLayoutGeometry);
+- resize math and sessions;
+- the document schema and project format;
+- export;
+- the Inspector;
+- the store.
+
+
+3. ROOT CAUSE OF THE COORDINATE MISMATCH
+----------------------------------------
+[VERIFIED]
+- A Free child is position:absolute with left = freeLayout.x (+ its own
+  margin-left). The containing block of an absolutely positioned element
+  is the container's PADDING box, so x = 0 renders at the inner border
+  edge. The BC-13.1 probe measured this: a 6px border means the child is
+  6px from the outer edge, regardless of the 20px padding.
+- Three parts of the code assumed other origins:
+  1. FreeSnapGuideOverlay drew guide value v at outer edge + paddingLeft +
+     v, i.e. an origin at border + padding.
+  2. The drag snap's parent targets (edges/centre) were the CONTENT box
+     (measureFreeContainerBounds: clientWidth − padding), so the "centre"
+     target was the content centre measured from the padding edge.
+  3. Sibling targets and the moving box ignored the children's own margins,
+     which do shift the rendered box.
+- With zero padding, zero border and no margins all three coincide, which
+  is why the default Free container never showed the problem.
+
+
+4. COORDINATE-SYSTEM DEFINITIONS AND CONVERSIONS
+------------------------------------------------
+[DESIGN] Defined in freeLayoutFrame.ts:
+- CLIENT: viewport px (pointer events, getBoundingClientRect).
+- CANVAS VISUAL: client − the Canvas root's client origin (CanvasOverlay
+  space).
+- LOCAL FREE FRAME: the origin is the container's padding-box corner:
+  client origin = border-box left/top + clientLeft/Top − scrollLeft/Top.
+  freeLayout, guides and snap targets live here.
+- BORDER BOX: the visible box excluding margins. A target's
+  getBoundingClientRect is its border box (a transformed element's
+  axis-aligned bounds).
+- PADDING BOX: clientWidth × clientHeight at the local origin = the
+  parent's snapping boundaries and centre.
+- CONTENT BOX: the padding box minus padding. Its SIZE is the unchanged
+  containment rule, applied from the local origin.
+- RENDERED child box: freeLayout shifted by the child's own
+  margin-left/top. Snapping uses rendered boxes; results convert back with
+  renderedToStoredPosition.
+- Scale: screen px per local px; 1 today. clientRectToLocal and
+  localToClient divide/multiply by it; screenDistanceToLocal converts the
+  6px threshold.
+Conversion boundaries:
+- DOM → local happens in callers (the gesture sessions and the future
+  target collector) once per gesture;
+- the engine only ever sees local rects;
+- local → client happens only for drawing.
+Nested descendants: their client AABBs translate into the ancestor's local
+frame (verified: transformed probe value). Exact for any target, because
+the moving element's own parent is never under a transformed ancestor
+(transformGeometrySafety blocks such gestures).
+
+
+5. BEFORE/AFTER FOR PADDED AND BORDERED FREE CONTAINERS
+-------------------------------------------------------
+[VERIFIED] Chromium, Firefox, WebKit; e2e/free-snap-coordinates.spec.ts.
+The container: 6px border, padding L20 T10 R40 B30; a sibling with margin
+L8 T4.
+- Rendering, unchanged: a child at (0,0) sits at the inner border edge; a
+  sibling at (320,150) sits at border + 320 + 8 / border + 150 + 4.
+- The parent centre:
+  - before: the guide and target were at the content centre measured from
+    the padding edge, and the guide was drawn padding − border further
+    right;
+  - after: the element snaps to the padding-box centre, and the guide is
+    drawn exactly there.
+- A sibling with a margin: the alignment and the guide use its rendered
+  left edge (before: the stored x, 8px off).
+- The inner right edge: containment (content-box size from the padding
+  edge) stops the element 60px short of it (padding-left + padding-right).
+  The guide for the unreachable edge is suppressed (before: snap, clamp,
+  then a guide drawn where the element isn't).
+- Zero padding and border: identical to before (unit test; every frame
+  value equals the old one).
+
+
+6. SNAPPING-ENGINE ARCHITECTURE AND PUBLIC INTERFACES
+-----------------------------------------------------
+[DESIGN] snapEngine.ts is pure (no DOM, no React).
+- SnapTarget {id, kind: "parent" | "element", rect (local), rank: the
+  caller's stable order}.
+- parentSnapTarget(containerId, paddingBox): the parent's padding box,
+  rank −1.
+- selectSnapTargets(inputs, excludedIds): eligibility, separate from
+  evaluation:
+  - drops hidden targets and the excluded ids (the moving element and its
+    subtree, supplied by the caller);
+  - drops fully clipped targets (no intersection with visibleRegion) and
+    keeps partially visible ones;
+  - zero-area targets still count.
+- buildSnapIndex(targets) → {x: SnapLine[], y: SnapLine[]}: every target
+  contributes start/centre/end per axis, sorted, with identical
+  coordinates merged into one SnapLine whose references keep every source
+  (D34).
+- resolveSnap(request) → SnapResult.
+  The request:
+  - box: the proposed rendered geometry, local frame;
+  - edges: which moving edges participate per axis (ALL_EDGES for a move;
+    e.g. {x: ["end"], y: []} for the east handle);
+  - index;
+  - spacing?: equal-spacing candidates;
+  - enabled: automatic snapping on/off;
+  - lock?: from the previous frame;
+  - adjust(box, axis, edge, delta) → Rect | null: applies the delta under
+    the operation's constraints (move = translateBox; resize = move one
+    edge; aspect ratio = derive the other axis); null rejects the
+    candidate;
+  - scale? (default 1);
+  - thresholdScreenPx? (default SNAP_THRESHOLD_SCREEN_PX = 6).
+  The result:
+  - box;
+  - x and y: {match: SnapMatch | null, applied};
+  - lock.
+  SnapMatch: {axis, kind: alignment | spacing, edge, coordinate, delta,
+  distance, line? (references for guide metadata), spacing?}.
+- Disabled snapping: the matches are computed and returned, applied =
+  false, and the box is unchanged, so BC-13.3 can still draw guides (D22).
+- Reuse:
+  - move: ALL_EDGES + translateBox;
+  - resize: the handle's edges + a resize adjust;
+  - insertion: the same as move for the preview box;
+  - future multi-drag: the group's bounding box as the moving box (D9);
+  - future cross-container: a new index for the new context.
+
+
+7. CANDIDATE RANKING, LOCKING AND DEDUPLICATION RULES
+-----------------------------------------------------
+[DESIGN; VERIFIED by unit tests]
+- Candidates are lines within reach of each participating moving edge
+  (binary search in the sorted index). Reach = the threshold, or the
+  release distance while a lock is held.
+- A candidate is valid only when adjust accepts it AND the adjusted edge
+  lands on the coordinate within 1e-6. A clamp that lands elsewhere is not
+  an alignment, so there is no guide (D15/D46).
+- Ranking (no lock), first difference wins:
+  1. smaller distance;
+  2. alignment before spacing;
+  3. the line led by the parent before one led by an element;
+  4. the lower target rank;
+  5. the moving edge start < centre < end;
+  6. the lower coordinate.
+  Never input or DOM order (tested by reversing the input).
+- Lock and hysteresis:
+  - the per-axis lock {kind, edge, coordinate} is returned every frame and
+    passed back in (the gesture keeps it; never React or store state);
+  - a held lock stays valid up to 1.5 × the threshold (9 screen px);
+  - it is replaced only by a candidate closer by ≥ 1 screen px;
+  - an exact tie keeps the lock (D45);
+  - if the locked line no longer exists, the axis is simply re-evaluated
+    (D37).
+- Deduplication: coordinates within 1e-6 merge into one line. References
+  are sorted parent first, then rank, edge and id.
+- Axes are independent (D8): x is resolved on the proposed box; y on the
+  box after x was applied, so y's validation sees the real geometry.
+
+
+8. EQUAL-SPACING EXTENSION DESIGN
+---------------------------------
+[DESIGN; a pure generator implemented and tested]
+computeEqualSpacingCandidates(axis, movingBox, elementTargets):
+- Only targets overlapping the moving box on the PERPENDICULAR axis take
+  part (a row for x, a column for y).
+- Consecutive pairs (A, B) with a gap ≥ 0.5px. Overlapping or touching
+  boxes never define spacing (D14).
+- Three candidate modes, each fixing which moving edge lands where:
+  - repeat-after: the moving start = B.end + gap;
+  - repeat-before: the moving end = A.start − gap;
+  - center-between: the moving centre = the midpoint between A and B, when
+    the box fits with a positive gap each side.
+- The candidates go into resolveSnap's `spacing` input, so they share the
+  6px threshold, validation, lock and ranking with alignment.
+- Alignment wins exact ties.
+- BC-13.3 integration point:
+  - generate per gesture (cached by the moving box's perpendicular band);
+  - draw the spacing indicator from match.spacing (gap, referenceIds) plus
+    the moving box.
+- Not yet: multi-gap chains (more than two neighbours), and distance
+  labels.
+
+
+9. PERFORMANCE OBSERVATIONS
+---------------------------
+[VERIFIED] The pure engine with 1,001 targets (1,000 elements + parent):
+- index build plus 1,000 resolveSnap frames, each with all edges and the
+  lock passed back: the whole test takes 50–51 ms (vitest "tests" time,
+  three runs), i.e. ≈ 0.05 ms per frame;
+- the assertion bound is < 500 ms.
+- Per-frame work is O(edges × (log N + k)) by binary search, with no DOM
+  reads.
+[VERIFIED] The existing gesture still does one DOM frame measurement at
+pointer-down (unchanged count). Sibling rendered boxes come from the
+document (no new DOM reads).
+Not measured here (deferred to BC-13.3, by plan): the cost of live
+document writes per frame in large Free containers (BC-13.1 R3).
+
+
+10. FOCUSED TEST RESULTS WITH EXACT COMMANDS
+--------------------------------------------
+Impact map:
+- the move session and its start type → the session, move-result,
+  resolveFreeMoveSnap and store snap tests;
+- the overlay → the overlay tests (CanvasOverlay directory);
+- the frame/engine/spacing → new unit tests;
+- the containment/resize contract (unchanged; re-run as a guard) →
+  computeFreeChildResizeResult, measureFreeContainerBounds,
+  useFreeChildResizeSession;
+- the Inspector Snap toggle (unchanged, guard) → InspectorLayoutSection.
+Commands:
+1. npx vitest run src/features/canvas/utils/freeLayoutFrame.test.ts
+   src/features/canvas/utils/snapEngine.test.ts
+   src/features/canvas/utils/resolveFreeMoveSnap.test.ts
+   src/features/canvas/utils/computeFreeChildMoveResult.test.ts
+   src/features/canvas/utils/computeFreeChildResizeResult.test.ts
+   src/features/canvas/utils/measureFreeContainerBounds.test.ts
+   src/features/canvas/hooks/useFreeChildMoveSession.test.tsx
+   src/features/canvas/hooks/useFreeChildResizeSession.test.tsx
+   src/features/canvas/components/overlay
+   src/features/editor/stores/useEditorStore.snap.test.ts
+   src/features/inspector/components/InspectorLayoutSection.test.tsx
+   → 18 files, 190 tests passed (31 new: frame 8, engine 23)
+2. npx vitest run src/features/canvas/utils/snapEngine.test.ts -t "performance"
+   ×3 → passed (tests 50/51/51 ms)
+3. npx playwright test e2e/free-snap-coordinates.spec.ts --project=chromium
+   --repeat-each=2 → 8 passed
+4. npx playwright test -c <temporary Firefox+WebKit config, deleted>
+   e2e/free-snap-coordinates.spec.ts → 8 passed (4 × 2 browsers).
+   Justified: clientLeft/border/containing-block geometry is
+   browser-computed.
+5. npx tsc --noEmit -p . → 0 errors
+6. npx eslint <the 11 changed and new files> → clean
+7. Prettier: snap.ts was clean at HEAD and remains clean. The other
+   modified files weren't Prettier-clean at HEAD, so they weren't
+   reformatted (house rule).
+Validation-only issues:
+- three of my first engine test fixtures had a closer edge than the one
+  intended (the engine was right; fixtures rewritten);
+- one e2e fixture put the mover's edge exactly on the sibling (moved the
+  sibling).
+Not run (policy): full unit, browser and Electron suites; a build (no
+integration boundary changed).
+
+
+11. KNOWN LIMITATIONS AND DEFERRED FUNCTIONALITY
+------------------------------------------------
+- The new engine is not wired to any gesture. The active drag snap is
+  still the old 8px direct-sibling engine (now with corrected frames).
+  BC-13.3 switches drag to the new engine (6px, locks, nested targets,
+  spacing) and removes the old one.
+- Containment is deliberately unchanged. In a container with padding, an
+  element can't reach the right/bottom inner edge (it stops at the
+  content-box size from the padding edge) but can overlap the left/top
+  padding. This asymmetry predates BC-13.2. Section 12.
+- No DOM target collector yet (nested, Flex/Grid, clipping, offscreen
+  measurement): BC-13.3. The pure eligibility step and the client →
+  local conversion are ready.
+- Equal spacing: two-neighbour patterns only; no labels or indicator UI
+  yet.
+- Zoom: the seam only (scale = 1); verified by unit tests at scale 2.
+- Margins: rendered = stored + margin-left/top. Right/bottom margins don't
+  move a Free child (CSS), so they are correctly ignored.
+- [ASSUMPTION] Free children are box-sizing border-box (width/height = the
+  border box), as the existing containment already assumes.
+- The resize session wasn't changed (no snap yet, BC-13.4). Its parent
+  bounds are the unchanged containment.
+
+
+12. DISCOVERED CONFLICTS REQUIRING OWNER DECISIONS
+--------------------------------------------------
+C1 The Free containment frame (not blocking BC-13.3).
+   - The brief requires both "preserve rendered positions" and "preserve
+     containment". Both are kept.
+   - The consequence: in padded containers the parent's right/bottom
+     snapping edges (the padding box) are unreachable, so they show no
+     guide, while the left/top edges are reachable.
+   - Options for later:
+     (a) keep as is (current, documented);
+     (b) extend containment to the padding box (children may use all
+         padding; existing elements don't move, but the reachable area
+         grows);
+     (c) anchor containment at the content box (would move existing
+         elements; not recommended).
+   Recommend (a) for BC-13, revisiting (b) only if users ask.
+
+
+13. FINAL RECOMMENDATION
+------------------------
+READY FOR QA.
+- The coordinate mismatch is fixed without moving any element.
+- The reusable, zoom-ready, constraint-aware engine is built and tested.
+- Users still get the existing drag snap (with corrected guides).
+Do not proceed to BC-13.3 before QA.
+Git working tree:
+- M: FreeSnapGuideOverlay.tsx/.test.tsx, useFreeChildMoveSession.ts,
+  computeFreeChildMoveResult.ts, snap.ts;
+- ??: freeLayoutFrame.ts/.test.ts, snapEngine.ts/.test.ts,
+  snapEqualSpacing.ts, e2e/free-snap-coordinates.spec.ts, this report,
+  and the earlier BC-13.1 report.
+Nothing committed or pushed.

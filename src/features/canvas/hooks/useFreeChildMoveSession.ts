@@ -12,7 +12,8 @@ import {
   computeRawFreeChildMovePosition,
   type FreeChildMoveStart,
 } from "@/features/canvas/utils/computeFreeChildMoveResult";
-import { measureFreeContainerBounds } from "@/features/canvas/utils/measureFreeContainerBounds";
+import { freeChildRenderedRect, measureFreeContainerFrame } from "@/features/canvas/utils/freeLayoutFrame";
+import { getElementSpacing } from "@/features/editor/types/spacing";
 import { resolveFreeMoveSnap, SNAP_THRESHOLD_PX, type FreeMoveSnapBox } from "@/features/canvas/utils/resolveFreeMoveSnap";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { describeStyleLockNotice, getStyleProtection } from "@/features/editor/rules/styleProtection";
@@ -85,22 +86,36 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
     let y = raw.y;
     let guides: ActiveSnapGuides | null = null;
 
+    const marginLeft = start.margin?.left ?? 0;
+    const marginTop = start.margin?.top ?? 0;
+    let verticalGuide: number | undefined;
+    let horizontalGuide: number | undefined;
+
     if (useEditorStore.getState().snapEnabled && start.containerId) {
+      // BC-13.2: snapping compares RENDERED border boxes in the local Free
+      // frame (stored position + margin) against the parent's padding box
+      // and the siblings' rendered boxes, then converts back to stored.
       const snap = resolveFreeMoveSnap(
-        { x: raw.x, y: raw.y, width: start.width, height: start.height },
-        start.parentBounds,
+        { x: raw.x + marginLeft, y: raw.y + marginTop, width: start.width, height: start.height },
+        start.snapBounds ?? start.parentBounds,
         start.siblings ?? [],
         SNAP_THRESHOLD_PX,
       );
-      x = snap.x;
-      y = snap.y;
-      if (snap.verticalGuide !== undefined || snap.horizontalGuide !== undefined) {
-        guides = { containerId: start.containerId, vertical: snap.verticalGuide, horizontal: snap.horizontalGuide };
-      }
+      x = snap.x - marginLeft;
+      y = snap.y - marginTop;
+      verticalGuide = snap.verticalGuide;
+      horizontalGuide = snap.horizontalGuide;
     }
 
     const clampedX = clampFreeChildAxis(x, 0, Math.max(0, start.parentBounds.width - start.width));
     const clampedY = clampFreeChildAxis(y, 0, Math.max(0, start.parentBounds.height - start.height));
+    // BC-13.2: a snap the containment clamp moved away is not an alignment —
+    // no guide for it (never a false guide, D46).
+    if (verticalGuide !== undefined && Math.abs(clampedX - x) > 1e-6) verticalGuide = undefined;
+    if (horizontalGuide !== undefined && Math.abs(clampedY - y) > 1e-6) horizontalGuide = undefined;
+    if (start.containerId && (verticalGuide !== undefined || horizontalGuide !== undefined)) {
+      guides = { containerId: start.containerId, vertical: verticalGuide, horizontal: horizontalGuide };
+    }
 
     setActiveSnapGuides(guides);
     setFreeChildGeometryLive(nodeId, { x: clampedX, y: clampedY, width: start.width, height: start.height });
@@ -146,7 +161,10 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
 
       const targetEl = window.document.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(nodeId)}"]`);
       const containerEl = targetEl?.parentElement?.closest<HTMLElement>("[data-node-id]") ?? null;
-      const parentBounds = containerEl ? measureFreeContainerBounds(containerEl) : { width: Infinity, height: Infinity };
+      // BC-13.2: one frame measurement — containment (unchanged content-box
+      // rule) and the snapping boundaries (padding box) from the same element.
+      const frame = containerEl ? measureFreeContainerFrame(containerEl) : null;
+      const parentBounds = frame ? frame.containment : { width: Infinity, height: Infinity };
       const containerId = containerEl?.getAttribute("data-node-id") ?? null;
 
       // Checkpoint 1.15.6.14.3 geometry fix (approved by the 1.15.6.14.2.1
@@ -175,9 +193,11 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
       // construction (filtered out by id, never by position — see
       // resolveFreeMoveSnap's own "moving-element exclusion" comment).
       const containerNode = containerId ? findNodeById(store.document, containerId) : undefined;
-      const siblings: FreeMoveSnapBox[] = (containerNode?.children ?? [])
-        .filter((child) => child.id !== nodeId && child.freeLayout)
-        .map((child) => ({ x: child.freeLayout!.x, y: child.freeLayout!.y, width: child.freeLayout!.width, height: child.freeLayout!.height }));
+      // BC-13.2: each sibling's RENDERED border box (stored geometry + its own margin).
+      const siblings: FreeMoveSnapBox[] = (containerNode?.children ?? []).flatMap((child) =>
+        child.id !== nodeId && child.freeLayout ? [freeChildRenderedRect(child.freeLayout, getElementSpacing(child).margin)] : [],
+      );
+      const movingMargin = movingNode ? getElementSpacing(movingNode).margin : {};
 
       startRef.current = {
         startX,
@@ -189,6 +209,8 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
         parentBounds,
         containerId,
         siblings,
+        snapBounds: frame?.paddingBox,
+        margin: { left: movingMargin.left ?? 0, top: movingMargin.top ?? 0 },
       };
       latestPointerRef.current = { x: event.clientX, y: event.clientY };
       setIsDragging(true);
