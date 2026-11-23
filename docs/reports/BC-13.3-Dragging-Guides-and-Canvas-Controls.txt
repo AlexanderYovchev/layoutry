@@ -1,0 +1,434 @@
+BC-13.3 — Dragging Integration, Alignment Guides & Canvas Controls
+====================================================================
+Date: 2026-11-23
+Milestone: BC-13 (Alignment & Snapping Guides)
+Status: implemented, focused validation passed, NOT committed (waiting for
+ChatGPT/owner QA)
+Baseline: 719879a (BC-13.2).
+
+Legend:
+- [VERIFIED] executed test or measurement;
+- [DESIGN] the intended contract;
+- [ASSUMPTION] not verified.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+- The BC-13.2 engine is now the ONLY snapping evaluator for Free-element
+  dragging. The legacy resolveFreeMoveSnap (8px, direct siblings) and its
+  tests were deleted.
+- Dragging gets:
+  - the 6 screen-px threshold;
+  - parent padding-box edges and centre;
+  - every visible element inside the container (direct siblings, nested
+    descendants, Flow/Flex/Grid children as reference only, style-locked
+    elements), measured once at pointer-down as border boxes in the local
+    frame;
+  - hidden, fully clipped, offscreen and not-laid-out elements excluded;
+  - independent axes, locks with hysteresis, deterministic ties and
+    deduplication;
+  - containment-validated candidates;
+  - equal spacing.
+- New:
+  - Alt/Option bypass (positioning only; guides stay, as "nearby");
+  - Shift axis lock (dominant axis, no jump when pressed mid-drag, only
+    the free axis snaps);
+  - guides v2: the winning line per axis spanning the involved boxes, a
+    CSS-px distance label, equal-spacing gap indicators; solid = aligned,
+    dashed = a nearby alignment not applied;
+  - the Canvas control strip (Snap On/Off plus an info popover) over the
+    Workspace corner;
+  - the global persistent preference (localStorage); the Inspector Snap
+    toggle was removed.
+- One drag is still one Undo step; Escape restores; a click without a move
+  records nothing.
+- Tests:
+  - 262 focused unit/component tests passed (24 files);
+  - Chromium: 20/20 (the new drag spec + the BC-13.2 coordinate spec,
+    twice) and 33/33 with resource-panel scrolling;
+  - Firefox + WebKit: 12/12;
+  - typecheck and ESLint clean.
+- Performance (profiled): snapping costs ≈1 ms per frame at 1,000 targets.
+  The drag in a 1,000-child Free container is slow (≈150 ms per move in
+  dev mode) because every live geometry write re-renders the container's
+  1,000 children. That is the pre-existing BC-13.1 risk R3, out of this
+  checkpoint's scope ("do not optimize unrelated Canvas rendering").
+  Section 10 recommends a follow-up.
+- Recommendation: READY FOR QA, with one performance follow-up decision
+  (section 13).
+
+
+2. FILES CHANGED
+----------------
+Created:
+- src/features/canvas/utils/collectFreeSnapTargets.ts: the DOM target
+  collector (once per drag).
+- src/features/canvas/utils/buildFreeSnapGuides.ts: snap result → guide
+  state (pure).
+- src/features/canvas/components/CanvasControlStrip.tsx: the Snap toggle
+  and info popover.
+- src/features/editor/utils/snapPreference.ts: the global preference
+  (localStorage, guarded).
+- src/features/editor/hooks/useSnapPreferenceHydration.ts: applies it after
+  mount.
+- Tests:
+  - collectFreeSnapTargets.test.ts (4, including guide building);
+  - CanvasControlStrip.test.tsx (6, including preference/hydration);
+  - e2e/free-snap-dragging.spec.ts (6).
+- docs/reports/BC-13.3-Dragging-Guides-and-Canvas-Controls.txt;
+  changelogs/2026-11-23-dragging-guides-and-canvas-controls-BC-13.3.txt
+  (gitignored).
+Modified:
+- src/features/canvas/hooks/useFreeChildMoveSession.ts: on the engine;
+  targets, visual offset, Alt, Shift, guides, post-Shift-drag click.
+- src/features/canvas/components/overlay/FreeSnapGuideOverlay.tsx: lines
+  with extents, solid/dashed, labels, spacing indicators.
+- src/features/editor/types/snap.ts: the guide state shape (segments,
+  distances, spacing).
+- src/features/canvas/utils/computeFreeChildMoveResult.ts: FreeChildMoveStart
+  loses the legacy siblings/snapBounds/margin fields.
+- src/features/canvas/utils/snapEngine.ts: doc comment.
+- src/features/editor/stores/useEditorStore.ts: setSnapEnabled persists
+  the preference.
+- src/features/inspector/components/InspectorLayoutSection.tsx: Snap row
+  removed.
+- src/components/layout/Workspace.tsx: optional `controls` slot. With it, a
+  non-scrolling wrapper and a corner overlay; without it, the DOM is
+  unchanged.
+- src/components/layout/AppShell.tsx: the workspaceControls prop.
+- src/features/editor/components/EditorApp.tsx: supplies the strip;
+  preference hydration.
+- Tests updated to the new contracts:
+  - useFreeChildMoveSession.test.tsx: rewritten for the engine (21
+    tests). Also fixes the test rAF stub, which only ever ran the FIRST
+    frame of a drag;
+  - FreeSnapGuideOverlay.test.tsx (6);
+  - useEditorStore.snap.test.ts (+1 persistence);
+  - useEditorStore.persistence.test.ts (the guide shape);
+  - InspectorLayoutSection.test.tsx: Snap toggle absent.
+Deleted:
+- src/features/canvas/utils/resolveFreeMoveSnap.ts and its test (21
+  tests). Their behaviours are covered by snapEngine.test.ts (BC-13.2) and
+  the rewritten session tests.
+
+
+3. NEW SNAPPING-ENGINE INTEGRATION DETAILS
+------------------------------------------
+[DESIGN; VERIFIED by the session tests and the e2e]
+At pointer-down (once):
+- the frame (measureFreeContainerFrame);
+- the targets (collectFreeSnapTargets) → buildSnapIndex;
+- the dragged element's visual offset = its measured border box (local) −
+  its stored freeLayout. This covers its margin and, if it is
+  transformed, the axis-aligned-bounds difference (D23). A move only
+  translates, so it is constant.
+Per frame (rAF, the latest pointer):
+1. raw stored position = start + pointer delta;
+2. the Shift constraint (section 6);
+3. visual box = raw + offset;
+4. resolveSnap with:
+   - edges: all, or the free axis only under Shift;
+   - spacing: equal-spacing candidates among direct siblings;
+   - enabled = Snap on AND Alt not held;
+   - the lock from the previous frame;
+   - adjust = translate, rejecting any candidate whose implied stored
+     position leaves the containment range on that axis;
+5. stored = result − offset;
+6. the containment clamp (unchanged rule);
+7. guides from the final visual box (buildFreeSnapGuides), published only
+   when they change (string compare);
+8. the live geometry write (setFreeChildGeometryLive, unchanged).
+The lock and modifiers live in refs (no React state). The engine and the
+guide builder are pure; the store gets one guide update per change.
+Undo/Redo snapshots are whole documents, so Redo restores the exact
+snapped geometry without recalculation (tested).
+
+
+4. LEGACY SNAPPING REMOVAL/REPLACEMENT
+--------------------------------------
+- resolveFreeMoveSnap.ts and its tests were deleted (git shows them as
+  working-tree deletions, unstaged). No other caller existed (grep).
+- Behavioural parity:
+  - parent edges/centre and sibling edges/centre snapping;
+  - closest wins;
+  - the parent beats an element on ties;
+  - document order, then edge;
+  - independent axes;
+  - the moving node never snaps to itself;
+  - Snap off moves freely.
+  All are covered by snapEngine.test.ts and the session tests.
+- Intended differences:
+  - 6px instead of 8px (D3);
+  - hysteresis;
+  - targets measured from the DOM (nested, Flex/Grid, transformed);
+  - Snap off still reports guides (D22).
+
+
+5. TARGET ELIGIBILITY AND GEOMETRY BEHAVIOR
+-------------------------------------------
+[VERIFIED: collector unit test, session tests, e2e]
+- Context: the dragged element's parent Free container (the approved
+  context). Targets are its padding box (parent) plus every [data-node-id]
+  element inside it that is a document node of that subtree.
+- Excluded:
+  - the dragged element and its own descendants;
+  - authored-hidden elements (display:none / visibility:hidden via
+    isNodeAuthoredHidden);
+  - elements with a 0×0 box (not laid out, e.g. in a closed dialog);
+  - elements with no visible part after intersecting the window and every
+    clipping ancestor (overflow ≠ visible, including the Workspace scroll
+    area).
+  Partly visible elements are kept and aligned to their full bounds.
+- Included:
+  - direct siblings;
+  - nested descendants at any depth;
+  - Flow/Flex/Grid children inside containers in the context;
+  - style-locked elements.
+  Never written: snapping only ever writes the dragged node's freeLayout.
+- Ranks: a document-order traversal of the container (never DOM query
+  order).
+- Margins (D25): targets are measured border boxes, so margins never
+  count. The dragged box's offset includes its margin, so the stored x
+  keeps the margin out (session test: margin 8 → rendered edge snaps,
+  stored = 92; the BC-13.2 e2e with margins).
+- Equal spacing: border-box gaps among direct Free siblings only.
+  Nested boxes inside a sibling never define a row's spacing.
+- Scroll: targets are measured at pointer-down. Scrolling DURING a drag is
+  BC-13.5's (D41), not handled here.
+
+
+6. ALT/OPTION AND SHIFT IMPLEMENTATION
+--------------------------------------
+[VERIFIED: session tests; Chromium, Firefox, WebKit e2e]
+Alt/Option:
+- read from every pointer event, and from keydown/keyup during a drag
+  (which re-runs the frame), so pressing or releasing it without moving
+  updates immediately;
+- held: enabled = false → nothing applied; the winning alignment is still
+  computed and drawn dashed ("nearby", achieved=false);
+- released: the next frame snaps (no geometry jump other than the snap
+  itself);
+- the Snap preference is untouched;
+- Alt's default is prevented during a drag (Firefox toggles its menu bar
+  on Alt release).
+- Conflicts checked: CanvasInteractionBoundary ignores Alt; the
+  Ctrl/Cmd+Alt+C/V chords need Ctrl/Cmd; Electron has no native menu. No
+  conflict found.
+Shift:
+- the dominant axis comes from the total pointer displacement since
+  pointer-down (|dx| vs |dy|, 2px dead zone);
+- the other axis stays at its value when Shift went down (the start
+  position if held from the beginning), so pressing it mid-drag never
+  jumps;
+- only the free axis snaps (the locked axis gets no edges);
+- releasing restores free movement.
+- Conflict found and resolved: the click that follows a Shift-drag's
+  release would have reached CanvasInteractionBoundary as Shift+click
+  (additive selection). After a Shift-constrained drag that click is
+  consumed once, and the element is selected the way a plain drag's click
+  selects it (tested).
+- Resize handles are unchanged (they had no Shift behaviour).
+
+
+7. GUIDE, DISTANCE-LABEL AND EQUAL-SPACING BEHAVIOR
+---------------------------------------------------
+[VERIFIED: overlay tests, builder tests, e2e]
+- Per axis only the winning match is drawn (D18):
+  - an alignment line spans the dragged box and the referenced targets
+    (a parent reference spans the padding box);
+  - a spacing winner shows its gap indicator instead of a line.
+- achieved = the dragged box really is on the coordinate. Solid accent
+  line when achieved; dashed when it's a nearby alignment not applied
+  (Snap off or Alt) — never drawn as a snap. Rejected candidates never
+  reach the result, so they're never drawn.
+- Distance label: CSS px between the dragged border box and the nearest
+  referenced element along the line (none for overlap or parent). E2E:
+  the label equals the measured gap.
+- Equal spacing: both equal gaps as brackets with their value (e.g. 30 ×
+  2); same threshold, lock and validation as alignment; overlapping or
+  touching boxes never count.
+- Fixed 1px lines and 10px labels (screen px, no zoom); no animation;
+  pointer-events:none.
+- Guides clear on pointer-up and Escape.
+- CanvasOverlay renders nothing in Preview, and the overlay is outside the
+  document surface. E2E: Preview shows no strip, and the export contains
+  no snap markup.
+- Guides are drawn from the gesture's start snapshot of targets. A target
+  removed mid-drag is BC-13.5's (D26/D37).
+
+
+8. CANVAS TOOLBAR AND PREFERENCE PERSISTENCE
+--------------------------------------------
+[VERIFIED: component tests, e2e]
+- CanvasControlStrip, role toolbar "Canvas controls", floats at the
+  Workspace's top-right corner (Workspace controls slot).
+  - Its wrapper doesn't scroll, so the strip stays put.
+  - The page's width is not reduced, so user documents don't reflow.
+  - It isn't inside the document surface.
+  - It is hidden in Preview.
+- Controls:
+  - "Snap" toggle (aria-pressed, visible On/Off, tooltip);
+  - "About snapping" button (aria-expanded/aria-controls) → a non-modal
+    popover explaining the 6px threshold, Alt/Option, guides when off and
+    Shift. Escape closes it and returns focus; an outside press closes it.
+- No animation, no other settings.
+- Preference:
+  - setSnapEnabled writes localStorage "layoutry.editor.snapEnabled"
+    (guarded), global and outside projects;
+  - useSnapPreferenceHydration applies it after mount (no hydration
+    mismatch);
+  - invalid or missing values give the default (on);
+  - no history, no document change;
+  - replaceDocument keeps it;
+  - E2E: off survives a reload.
+- The Inspector's Snap row was removed (one control, D36).
+
+
+9. UNDO/REDO AND INTERACTION LIFECYCLE
+--------------------------------------
+[VERIFIED: session tests, e2e]
+- The transaction (beginResizeTransaction → live writes →
+  commitResizeTransaction) is unchanged: one drag = one Undo; Redo
+  restores the exact snapped geometry.
+- A click without movement: no history.
+- Escape: restores the geometry, clears guides, keeps the selection
+  (unchanged mechanism).
+- Toggling Snap never changes committed geometry.
+- Not changed here (BC-13.5): pointercancel still commits (pre-existing,
+  R4). No new cancellation regression: the same endSession path.
+
+
+10. PERFORMANCE FINDINGS
+------------------------
+[VERIFIED] Measured in Chromium dev mode with a temporary probe (deleted):
+- the setup: a 1,000-child Free container (600×400), one element dragged
+  over 30 moves;
+- snap on: pointerdown + first move 347–355 ms; per move (+2 frames)
+  median 150 ms, p90 ≈250 ms;
+- snap off: about the same (detection still runs).
+CPU profile, inclusive time over the 31 frames:
+- collectFreeSnapTargets 17 ms (once);
+- buildSnapIndex 5 ms;
+- resolveSnap 2 ms;
+- equal spacing 11 ms;
+- guide building 1 ms;
+- overlay 1 ms.
+Versus React rendering:
+- ParagraphElement ≈1,350 ms;
+- DocumentNodeRenderer ≈900 ms.
+Conclusion: snapping costs about 1 ms per frame. The cost is each live
+geometry write re-rendering all 1,000 children of the container — the
+pre-existing BC-13.1 R3 (the same pattern as BC-12.5's drop cost). It was
+not optimized, per the brief.
+Recommendation: a dedicated Canvas rendering checkpoint (memoized element
+components, so an unchanged sibling is skipped) before BC-13.7's audit.
+Small containers are unaffected. The BC-13.2 e2e containers are smooth.
+
+
+11. EXACT FOCUSED TEST COMMANDS AND RESULTS
+-------------------------------------------
+Impact map:
+- the move session, engine use and guides → the canvas utils, hooks,
+  overlay and CanvasInteractionBoundary tests;
+- the preference/store → the store snap and persistence tests;
+- the Inspector → InspectorLayoutSection;
+- the layout slot → AppShell, EditorApp, resource-panel scrolling e2e;
+- resize (unchanged, guard) → computeFreeChildResizeResult,
+  useFreeChildResizeSession.
+Commands:
+1. npx vitest run src/features/canvas/utils/freeLayoutFrame.test.ts
+   src/features/canvas/utils/snapEngine.test.ts
+   src/features/canvas/utils/collectFreeSnapTargets.test.ts
+   src/features/canvas/utils/computeFreeChildMoveResult.test.ts
+   src/features/canvas/utils/computeFreeChildResizeResult.test.ts
+   src/features/canvas/utils/measureFreeContainerBounds.test.ts
+   src/features/canvas/hooks/useFreeChildMoveSession.test.tsx
+   src/features/canvas/hooks/useFreeChildResizeSession.test.tsx
+   src/features/canvas/hooks/useNodeDragSource.test.tsx
+   src/features/canvas/components/overlay
+   src/features/canvas/components/CanvasControlStrip.test.tsx
+   src/features/canvas/components/CanvasInteractionBoundary.test.tsx
+   src/features/editor/stores/useEditorStore.snap.test.ts
+   src/features/editor/stores/useEditorStore.persistence.test.ts
+   src/features/inspector/components/InspectorLayoutSection.test.tsx
+   src/components/layout/AppShell.test.tsx
+   src/features/editor/components/EditorApp.test.tsx
+   → 24 files, 262 tests passed
+2. npx playwright test e2e/free-snap-dragging.spec.ts
+   e2e/free-snap-coordinates.spec.ts --project=chromium --repeat-each=2
+   → 20 passed
+3. npx playwright test e2e/free-snap-dragging.spec.ts
+   e2e/free-snap-coordinates.spec.ts e2e/resource-panel-scrolling.spec.ts
+   --project=chromium → 33 passed (after the final formatting)
+4. npx playwright test -c <temporary Firefox+WebKit config, deleted>
+   e2e/free-snap-dragging.spec.ts → 12 passed (Alt/Option, Shift,
+   localStorage)
+5. The temporary perf/profile probe (section 10), deleted
+6. npx tsc --noEmit -p . → 0 errors
+7. npx eslint <all modified and new .ts/.tsx files> → clean
+8. npx prettier --write on the 3 changed files that were Prettier-clean at
+   HEAD (Workspace.tsx, useEditorStore.persistence.test.ts, snap.ts).
+Validation-only issues:
+- the jsdom shorthand overflow is not expanded (the test uses longhands);
+- the test rAF stub ran only the first frame (stub fixed);
+- e2e fixture geometry: empty divs render taller (min height), a container
+  renders shorter than its stored height, and a centre coincidence. All
+  fixtures were corrected; the engine was right each time.
+- An accidental `git rm` staging of the deleted files was unstaged at
+  once; nothing is staged.
+Not run (policy): full unit, browser and Electron suites; a build.
+
+
+12. KNOWN LIMITATIONS OR DEFERRED REQUIREMENTS
+----------------------------------------------
+- Performance in very large Free containers (section 10, R3): not
+  snapping-related; a follow-up is recommended.
+- D41/D26/D37 (scroll or target changes during a drag, re-measurement,
+  pointercancel restore): BC-13.5, as planned. Targets are a pointer-down
+  snapshot.
+- Resize snapping (BC-13.4); Resource Panel insertion (BC-13.6).
+- Equal spacing: two-neighbour patterns among direct siblings only (no
+  chains of 3+).
+- Distance labels: one per alignment line (to the nearest referenced
+  element); no parent-edge distances.
+- A transformed DRAGGED element snaps its visible AABB via a constant
+  offset. This is exact for translation drags; rotation/scale don't change
+  during a drag.
+- [ASSUMPTION] Touch/pen: the same Pointer Events path (unchanged
+  sessions). There is no touch-specific Alt/Shift.
+- The C1 containment decision from BC-13.2 still stands (unreachable
+  padding-box edges show no guide).
+
+
+13. UNRESOLVED OWNER DECISIONS
+------------------------------
+P1 Large Free container drag performance (R3): approve a dedicated Canvas
+   rendering checkpoint (memoized element components) before the BC-13
+   final audit? It is not a BC-13.3 regression; snapping adds about 1 ms
+   per frame.
+C1 (from BC-13.2) Containment frame: keep (recommended) or extend to the
+   padding box.
+
+
+14. FINAL RECOMMENDATION
+------------------------
+READY FOR QA.
+- The engine powers Free dragging (a single system).
+- Alt and Shift work.
+- Guides, distances and equal spacing are accurate (Chromium, Firefox,
+  WebKit).
+- The global Snap control is in the Canvas strip, and the Inspector toggle
+  is gone.
+- Undo/Redo, selection and containment are intact.
+- Preview/Export are unaffected.
+Do not proceed to BC-13.4 before QA.
+Git working tree:
+- M: AppShell.tsx, Workspace.tsx, FreeSnapGuideOverlay(.test).tsx,
+  useFreeChildMoveSession(.test).tsx/.ts, computeFreeChildMoveResult.ts,
+  snapEngine.ts, EditorApp.tsx, useEditorStore.ts and its persistence/snap
+  tests, snap.ts, InspectorLayoutSection(.test).tsx;
+- D (unstaged): resolveFreeMoveSnap.ts and its test;
+- ??: CanvasControlStrip(.test).tsx, buildFreeSnapGuides.ts,
+  collectFreeSnapTargets(.test).ts, useSnapPreferenceHydration.ts,
+  snapPreference.ts, e2e/free-snap-dragging.spec.ts, this report.
+Nothing committed or pushed.

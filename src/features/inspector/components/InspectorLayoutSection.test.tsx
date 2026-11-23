@@ -73,28 +73,20 @@ describe("InspectorLayoutSection", () => {
     expect(section?.childResizePolicy).toBe("clamp");
   });
 
-  it("shows a Snap toggle only in Free mode, defaulting on, as pure editor state (Checkpoint 1.15.6.1.1) — never a document field", () => {
+  // BC-13.3 (D36): the Snap control moved to the Canvas control strip — the Inspector has none, in any mode.
+  it("has no Snap toggle in Free mode (the Canvas control strip owns it)", () => {
     useEditorStore.setState((state) => ({
       document: {
         ...state.document,
         children: [{ id: "section-1", tag: "section", layoutMode: "free", children: [] }],
       },
     }));
-
     render(<InspectorLayoutSection node={{ id: "section-1", tag: "section", layoutMode: "free" }} />);
-    const toggle = screen.getByRole("switch", { name: "Snap" });
-    expect(toggle).toHaveAttribute("aria-checked", "true");
-
-    fireEvent.click(toggle);
-
-    expect(useEditorStore.getState().snapEnabled).toBe(false);
-    expect(toggle).toHaveAttribute("aria-checked", "false");
-    // Toggling Snap must never touch the document or push history.
-    const section = useEditorStore.getState().document.children?.find((c) => c.id === "section-1");
-    expect(section).toEqual({ id: "section-1", tag: "section", layoutMode: "free", children: [] });
+    expect(screen.queryByRole("switch", { name: "Snap" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Snap")).not.toBeInTheDocument();
   });
 
-  it("does not show the Snap toggle in Flow mode", () => {
+  it("has no Snap toggle in Flow mode", () => {
     render(<InspectorLayoutSection node={{ id: "section-1", tag: "section" }} />);
     expect(screen.queryByRole("switch", { name: "Snap" })).not.toBeInTheDocument();
   });

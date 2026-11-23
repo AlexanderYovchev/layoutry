@@ -7,17 +7,33 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { buildFreeSnapGuides } from "@/features/canvas/utils/buildFreeSnapGuides";
+import { collectFreeSnapTargets } from "@/features/canvas/utils/collectFreeSnapTargets";
 import {
   clampFreeChildAxis,
   computeRawFreeChildMovePosition,
   type FreeChildMoveStart,
 } from "@/features/canvas/utils/computeFreeChildMoveResult";
-import { freeChildRenderedRect, measureFreeContainerFrame } from "@/features/canvas/utils/freeLayoutFrame";
-import { getElementSpacing } from "@/features/editor/types/spacing";
-import { resolveFreeMoveSnap, SNAP_THRESHOLD_PX, type FreeMoveSnapBox } from "@/features/canvas/utils/resolveFreeMoveSnap";
+import { clientRectToLocal, freeChildRenderedRect, measureFreeContainerFrame, type Rect } from "@/features/canvas/utils/freeLayoutFrame";
+import {
+  ALL_EDGES,
+  buildSnapIndex,
+  NO_SNAP_LOCK,
+  resolveSnap,
+  SNAP_EPSILON,
+  translateBox,
+  type SnapAdjust,
+  type SnapIndex,
+  type SnapLock,
+  type SnapResult,
+  type SnapSourceEdges,
+  type SnapTarget,
+} from "@/features/canvas/utils/snapEngine";
+import { computeEqualSpacingCandidates } from "@/features/canvas/utils/snapEqualSpacing";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { describeStyleLockNotice, getStyleProtection } from "@/features/editor/rules/styleProtection";
 import { TRANSFORM_ANCESTOR_BLOCKED_NOTICE, getTransformBlockingAncestor } from "@/features/editor/rules/transformGeometrySafety";
+import { getElementSpacing } from "@/features/editor/types/spacing";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
 import type { ActiveSnapGuides } from "@/features/editor/types/snap";
 
@@ -32,94 +48,168 @@ export interface UseFreeChildMoveSessionResult {
   onPointerCancel: (event: ReactPointerEvent<Element>) => void;
 }
 
+/** BC-13.3: everything snapping needs for one drag, measured once at pointer-down. */
+interface SnapContext {
+  containerId: string;
+  index: SnapIndex;
+  rectById: Map<string, Rect>;
+  /** Direct Free siblings: the boxes equal spacing is measured among. */
+  siblingTargets: SnapTarget[];
+  parentRect: Rect;
+  /**
+   * visual box = stored geometry + this offset: the element's own margin
+   * (freeChildStyle) and, for a transformed element, the difference between
+   * its untransformed box and its visible axis-aligned bounds (D23). A drag
+   * only translates, so the offset is constant for the whole gesture.
+   */
+  offset: Rect;
+}
+
+/** Below this pointer displacement (px) Shift has no dominant axis yet. */
+const SHIFT_DEAD_ZONE_PX = 2;
+
 /**
  * Drag-to-reposition for a Free container's direct child (Checkpoint
- * 3.4.4) — the Free-mode counterpart to useResizeSession, sharing the
- * exact same pointer-capture/rAF-throttled-commit/begin-commit-
- * transaction/Escape-cancel shape (kept as its own hook rather than
- * folded into useResizeSession, which stays untouched for Flow's
- * offsetX/Y margin-based resize; see the checkpoint plan's "existing
- * tested code is extended, not replaced" decision).
+ * 3.4.4): pointer capture, a rAF-throttled live commit of this one node's
+ * freeLayout, begin/commit transaction (one Undo step), Escape restores.
+ * It never changes the document tree.
  *
- * Unlike a Flow reorder-drag (dnd-kit's useNodeDragSource path), this
- * never changes the document tree — it only ever writes this one node's
- * freeLayout, committed continuously (every frame, not just on release)
- * so the canvas, its own selection overlay, and the Inspector's X/Y
- * fields all stay in sync for free, exactly like a resize drag already
- * does.
- *
- * Needs no canvasRootRef, unlike useResizeSession: every value computed
- * here (startX/Y, parentBounds) is relative to the node's own immediate
- * parent, not to the canvas root, so a single global data-node-id lookup
- * (there is exactly one Canvas per app instance — see useRenderedNodeSize
- * for the same reasoning) is all pointer-down needs.
+ * BC-13.3 — snapping runs through the shared engine (snapEngine):
+ * - targets: the parent's padding box and every visible element inside the
+ *   container (collectFreeSnapTargets), measured once at pointer-down;
+ * - the 6 screen-px threshold, independent axes, locks with hysteresis,
+ *   deterministic ties, deduplicated lines, equal spacing among direct
+ *   siblings;
+ * - a candidate the containment rule would move is rejected (no false
+ *   guide);
+ * - Alt/Option held: nothing is applied, but alignment is still detected and
+ *   shown as a nearby guide (D4/D22), the same as with Snap turned off;
+ * - Shift held: movement is constrained to the dominant axis (from the total
+ *   drag displacement); the other axis stays where it was when Shift was
+ *   pressed (no jump), and only the free axis snaps (D42);
+ * - guide state is written to the store only when it changes.
+ * The order per frame is: proposed geometry → Shift constraint → snapping →
+ * containment clamp → live write.
  */
 export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSessionResult {
   const setFreeChildGeometryLive = useEditorStore((state) => state.setFreeChildGeometryLive);
   const setActiveSnapGuides = useEditorStore((state) => state.setActiveSnapGuides);
   const [isDragging, setIsDragging] = useState(false);
   const startRef = useRef<FreeChildMoveStart | null>(null);
+  const snapRef = useRef<SnapContext | null>(null);
   const latestPointerRef = useRef({ x: 0, y: 0 });
+  const modifiersRef = useRef({ alt: false, shift: false });
+  const lockRef = useRef<SnapLock>(NO_SNAP_LOCK);
+  const shiftAnchorRef = useRef<{ x: number; y: number } | null>(null);
+  const shiftUsedRef = useRef(false);
+  const lastPositionRef = useRef<{ x: number; y: number } | null>(null);
+  const guidesKeyRef = useRef("null");
   const frameRef = useRef<number | null>(null);
-  // Checkpoint 5.7 bug fix (found via that checkpoint's own real-browser
-  // undo/redo verification — a plain click, no drag, on a Free child
-  // (e.g. simply to select it) was pushing a real, undoable history
-  // entry purely from a pointerdown+pointerup with zero pointermove
-  // events in between, exactly the same class of bug found and fixed in
-  // useResizeSession/useFreeChildResizeSession's own endSession — see
-  // their identical comments). See endSession's own comment for the fix.
+  // Checkpoint 5.7: a plain click (pointerdown + pointerup with no move) must
+  // not push a history entry — see endSession.
   const didMoveRef = useRef(false);
 
-  // Checkpoint 1.15.6.1.1 — Snap inserts itself between the raw pointer-
-  // delta position and the existing parent-containment clamp (section 21:
-  // "proposed geometry -> snapping -> containment/clamp"), so a snap to
-  // the parent's right/bottom edge still gets the exact same final
-  // containment guarantee applied afterward, and Snap-off behaves
-  // byte-for-byte like this hook did before Snap existed.
+  const publishGuides = useCallback(
+    (guides: ActiveSnapGuides | null) => {
+      const key = JSON.stringify(guides);
+      if (key === guidesKeyRef.current) return;
+      guidesKeyRef.current = key;
+      setActiveSnapGuides(guides);
+    },
+    [setActiveSnapGuides],
+  );
+
+  const resetSessionState = useCallback(() => {
+    startRef.current = null;
+    snapRef.current = null;
+    lockRef.current = NO_SNAP_LOCK;
+    shiftAnchorRef.current = null;
+    lastPositionRef.current = null;
+    guidesKeyRef.current = "null";
+  }, []);
+
   const commit = useCallback(() => {
     frameRef.current = null;
     const start = startRef.current;
     if (!start) return;
+    const pointer = latestPointerRef.current;
+    const modifiers = modifiersRef.current;
+    let raw = computeRawFreeChildMovePosition(start, pointer.x, pointer.y);
 
-    const raw = computeRawFreeChildMovePosition(start, latestPointerRef.current.x, latestPointerRef.current.y);
+    // Shift: lock the non-dominant axis at its position when Shift went down.
+    let edges: SnapSourceEdges = ALL_EDGES;
+    if (modifiers.shift) {
+      shiftUsedRef.current = true;
+      shiftAnchorRef.current ??= lastPositionRef.current ?? { x: start.startX, y: start.startY };
+      const dx = Math.abs(pointer.x - start.startPointerX);
+      const dy = Math.abs(pointer.y - start.startPointerY);
+      if (Math.max(dx, dy) >= SHIFT_DEAD_ZONE_PX) {
+        if (dx >= dy) {
+          raw = { x: raw.x, y: shiftAnchorRef.current.y };
+          edges = { x: ALL_EDGES.x, y: [] };
+        } else {
+          raw = { x: shiftAnchorRef.current.x, y: raw.y };
+          edges = { x: [], y: ALL_EDGES.y };
+        }
+      }
+    } else {
+      shiftAnchorRef.current = null;
+    }
+
+    const maxX = Math.max(0, start.parentBounds.width - start.width);
+    const maxY = Math.max(0, start.parentBounds.height - start.height);
     let x = raw.x;
     let y = raw.y;
-    let guides: ActiveSnapGuides | null = null;
+    let result: SnapResult | null = null;
+    const context = snapRef.current;
 
-    const marginLeft = start.margin?.left ?? 0;
-    const marginTop = start.margin?.top ?? 0;
-    let verticalGuide: number | undefined;
-    let horizontalGuide: number | undefined;
-
-    if (useEditorStore.getState().snapEnabled && start.containerId) {
-      // BC-13.2: snapping compares RENDERED border boxes in the local Free
-      // frame (stored position + margin) against the parent's padding box
-      // and the siblings' rendered boxes, then converts back to stored.
-      const snap = resolveFreeMoveSnap(
-        { x: raw.x + marginLeft, y: raw.y + marginTop, width: start.width, height: start.height },
-        start.snapBounds ?? start.parentBounds,
-        start.siblings ?? [],
-        SNAP_THRESHOLD_PX,
-      );
-      x = snap.x - marginLeft;
-      y = snap.y - marginTop;
-      verticalGuide = snap.verticalGuide;
-      horizontalGuide = snap.horizontalGuide;
+    if (context) {
+      const { offset } = context;
+      const visual: Rect = { x: raw.x + offset.x, y: raw.y + offset.y, width: start.width + offset.width, height: start.height + offset.height };
+      // A candidate is valid only if the stored position it implies stays
+      // inside the (unchanged) containment rule on that axis.
+      const adjust: SnapAdjust = (box, axis, edge, delta) => {
+        const next = translateBox(box, axis, edge, delta);
+        if (!next) return null;
+        const stored = axis === "x" ? next.x - offset.x : next.y - offset.y;
+        const max = axis === "x" ? maxX : maxY;
+        return stored < -SNAP_EPSILON || stored > max + SNAP_EPSILON ? null : next;
+      };
+      const spacing = [
+        ...(edges.x.length > 0 ? computeEqualSpacingCandidates("x", visual, context.siblingTargets) : []),
+        ...(edges.y.length > 0 ? computeEqualSpacingCandidates("y", visual, context.siblingTargets) : []),
+      ];
+      result = resolveSnap({
+        box: visual,
+        edges,
+        index: context.index,
+        spacing,
+        enabled: useEditorStore.getState().snapEnabled && !modifiers.alt,
+        lock: lockRef.current,
+        adjust,
+      });
+      lockRef.current = result.lock;
+      x = result.box.x - offset.x;
+      y = result.box.y - offset.y;
     }
 
-    const clampedX = clampFreeChildAxis(x, 0, Math.max(0, start.parentBounds.width - start.width));
-    const clampedY = clampFreeChildAxis(y, 0, Math.max(0, start.parentBounds.height - start.height));
-    // BC-13.2: a snap the containment clamp moved away is not an alignment —
-    // no guide for it (never a false guide, D46).
-    if (verticalGuide !== undefined && Math.abs(clampedX - x) > 1e-6) verticalGuide = undefined;
-    if (horizontalGuide !== undefined && Math.abs(clampedY - y) > 1e-6) horizontalGuide = undefined;
-    if (start.containerId && (verticalGuide !== undefined || horizontalGuide !== undefined)) {
-      guides = { containerId: start.containerId, vertical: verticalGuide, horizontal: horizontalGuide };
-    }
+    const clampedX = clampFreeChildAxis(x, 0, maxX);
+    const clampedY = clampFreeChildAxis(y, 0, maxY);
+    lastPositionRef.current = { x: clampedX, y: clampedY };
 
-    setActiveSnapGuides(guides);
+    if (context && result) {
+      const finalVisual: Rect = {
+        x: clampedX + context.offset.x,
+        y: clampedY + context.offset.y,
+        width: start.width + context.offset.width,
+        height: start.height + context.offset.height,
+      };
+      publishGuides(buildFreeSnapGuides(context.containerId, result, finalVisual, context.rectById, context.parentRect));
+    } else {
+      publishGuides(null);
+    }
     setFreeChildGeometryLive(nodeId, { x: clampedX, y: clampedY, width: start.width, height: start.height });
-  }, [nodeId, setFreeChildGeometryLive, setActiveSnapGuides]);
+  }, [nodeId, publishGuides, setFreeChildGeometryLive]);
 
   const scheduleCommit = useCallback(() => {
     if (frameRef.current !== null) return;
@@ -128,27 +218,17 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<Element>) => {
-      // Checkpoint 1.15.3, section 30 — Free-layout movement authors CSS
-      // position, so it's blocked for a protected node the same way
-      // resize is (section 28/29). Deliberately returns BEFORE
-      // stopPropagation/pointer capture: the plain click this same
-      // pointerdown/pointerup pair still produces (for selection, via
-      // CanvasInteractionBoundary's own listener) must keep working
-      // exactly as it does for any other node — only the drag mechanics
-      // are skipped here.
+      // Checkpoint 1.15.3, section 30 — blocked for a protected node.
+      // Returns BEFORE stopPropagation/pointer capture so the plain click
+      // (selection) still works.
       const store = useEditorStore.getState();
       const protection = getStyleProtection(store.document, nodeId);
       if (protection.protected) {
         store.showEditorNotice(describeStyleLockNotice([protection], false));
         return;
       }
-
-      // Checkpoint 1.15.6.14.3 geometry-safety restriction — see
-      // useResizeSession's identical check (transformGeometrySafety.ts)
-      // for the full reasoning. Deliberately also returns BEFORE
-      // stopPropagation/pointer capture, same as the protection check
-      // above, so a plain click (selection) on a blocked descendant still
-      // works exactly as it would on any other node.
+      // Checkpoint 1.15.6.14.3 — blocked under a transformed ancestor (see
+      // transformGeometrySafety); also before capture, so a click selects.
       if (getTransformBlockingAncestor(store.document, nodeId)) {
         store.showEditorNotice(TRANSFORM_ANCESTOR_BLOCKED_NOTICE);
         return;
@@ -158,46 +238,45 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
       event.currentTarget.setPointerCapture(event.pointerId);
       useEditorStore.getState().beginResizeTransaction();
       didMoveRef.current = false;
+      shiftUsedRef.current = false;
+      modifiersRef.current = { alt: event.altKey, shift: event.shiftKey };
 
       const targetEl = window.document.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(nodeId)}"]`);
       const containerEl = targetEl?.parentElement?.closest<HTMLElement>("[data-node-id]") ?? null;
-      // BC-13.2: one frame measurement — containment (unchanged content-box
-      // rule) and the snapping boundaries (padding box) from the same element.
+      const containerId = containerEl?.getAttribute("data-node-id") ?? null;
+      // BC-13.2 frame: containment (unchanged content-box rule) and the
+      // snapping boundaries (padding box) from one measurement.
       const frame = containerEl ? measureFreeContainerFrame(containerEl) : null;
       const parentBounds = frame ? frame.containment : { width: Infinity, height: Infinity };
-      const containerId = containerEl?.getAttribute("data-node-id") ?? null;
 
-      // Checkpoint 1.15.6.14.3 geometry fix (approved by the 1.15.6.14.2.1
-      // feasibility audit, Part M/U) — the drag-start structural position
-      // AND size now read directly from the document model
-      // (node.freeLayout), never a getBoundingClientRect() measurement:
-      // fully immune to any Transform anywhere in the ancestor chain (not
-      // just this node's own), matching the exact precedent
-      // FreeChildResizeHandles already established for the materially
-      // identical Free-resize case. This was an undocumented
-      // inconsistency against that precedent, not a necessity — see this
-      // checkpoint's own report.
+      // Checkpoint 1.15.6.14.3: the start position and size come from the
+      // document (node.freeLayout), immune to transforms anywhere above.
       const movingNode = findNodeById(store.document, nodeId);
       const startX = movingNode?.freeLayout?.x ?? 0;
       const startY = movingNode?.freeLayout?.y ?? 0;
       const width = movingNode?.freeLayout?.width ?? 0;
       const height = movingNode?.freeLayout?.height ?? 0;
 
-      // Snap's own sibling targets (Checkpoint 1.15.6.1.1) — read once
-      // from the DOCUMENT (not re-measured via the DOM) since every
-      // sibling's freeLayout is already the exact parent-content-box-
-      // relative geometry resolveFreeMoveSnap needs, and siblings never
-      // move mid-gesture (only this one node does) so one read at
-      // pointer-down is correct for the whole drag (section 24 — no
-      // per-frame DOM queries). The moving node itself is excluded by
-      // construction (filtered out by id, never by position — see
-      // resolveFreeMoveSnap's own "moving-element exclusion" comment).
-      const containerNode = containerId ? findNodeById(store.document, containerId) : undefined;
-      // BC-13.2: each sibling's RENDERED border box (stored geometry + its own margin).
-      const siblings: FreeMoveSnapBox[] = (containerNode?.children ?? []).flatMap((child) =>
-        child.id !== nodeId && child.freeLayout ? [freeChildRenderedRect(child.freeLayout, getElementSpacing(child).margin)] : [],
-      );
-      const movingMargin = movingNode ? getElementSpacing(movingNode).margin : {};
+      snapRef.current = null;
+      if (frame && containerEl && containerId && targetEl && movingNode?.freeLayout) {
+        const collected = collectFreeSnapTargets(containerEl, frame, store.document, containerId, nodeId);
+        const rendered = freeChildRenderedRect(movingNode.freeLayout, getElementSpacing(movingNode).margin);
+        const visible = clientRectToLocal(targetEl.getBoundingClientRect(), frame);
+        // A transformed element (D23): snap its visible axis-aligned bounds.
+        // Untransformed: the measured box equals rendered (margin included).
+        const stored = movingNode.freeLayout;
+        const offset: Rect = { x: visible.x - stored.x, y: visible.y - stored.y, width: visible.width - stored.width, height: visible.height - stored.height };
+        // Degenerate measurements (e.g. jsdom, or not laid out): fall back to margin only.
+        const measured = visible.width > 0 || visible.height > 0;
+        snapRef.current = {
+          containerId,
+          index: buildSnapIndex(collected.targets),
+          rectById: collected.rectById,
+          siblingTargets: collected.siblingTargets,
+          parentRect: collected.parentRect,
+          offset: measured ? offset : { x: rendered.x - movingNode.freeLayout.x, y: rendered.y - movingNode.freeLayout.y, width: 0, height: 0 },
+        };
+      }
 
       startRef.current = {
         startX,
@@ -208,11 +287,12 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
         startPointerY: event.clientY,
         parentBounds,
         containerId,
-        siblings,
-        snapBounds: frame?.paddingBox,
-        margin: { left: movingMargin.left ?? 0, top: movingMargin.top ?? 0 },
       };
       latestPointerRef.current = { x: event.clientX, y: event.clientY };
+      lockRef.current = NO_SNAP_LOCK;
+      shiftAnchorRef.current = null;
+      lastPositionRef.current = { x: startX, y: startY };
+      guidesKeyRef.current = "null";
       setIsDragging(true);
     },
     [nodeId],
@@ -223,6 +303,7 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
       if (!startRef.current) return;
       didMoveRef.current = true;
       latestPointerRef.current = { x: event.clientX, y: event.clientY };
+      modifiersRef.current = { alt: event.altKey, shift: event.shiftKey };
       scheduleCommit();
     },
     [scheduleCommit],
@@ -236,30 +317,51 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
         cancelAnimationFrame(frameRef.current);
         frameRef.current = null;
       }
-      // A plain click (pointerdown immediately followed by pointerup, no
-      // pointermove in between — e.g. simply selecting the node) has
-      // nothing to commit (Checkpoint 5.7 fix — see didMoveRef's own doc
-      // comment). Cancelling (not committing) the transaction here means
-      // no history entry is pushed for a click that was never actually a
-      // move.
+      // A plain click (no pointermove) commits nothing (Checkpoint 5.7).
       if (didMoveRef.current) {
         commit();
         useEditorStore.getState().commitResizeTransaction();
       } else {
         useEditorStore.getState().cancelResizeTransaction();
       }
-      // Guides are purely a during-the-gesture affordance (section 17 —
-      // "disappear on pointer-up"); the final committed geometry is
-      // already in the document by now regardless of whether it was
-      // reached via a snap.
+      // BC-13.3: after a Shift-constrained drag, the click that follows the
+      // release would otherwise ADD the element to the selection
+      // (CanvasInteractionBoundary's Shift+click). The drag selects the
+      // element the way a plain drag's click does, and that one click is
+      // consumed.
+      if (didMoveRef.current && shiftUsedRef.current) {
+        const swallow = (click: MouseEvent) => click.stopPropagation();
+        window.addEventListener("click", swallow, { capture: true, once: true });
+        window.setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0);
+        useEditorStore.getState().selectOnly(nodeId);
+      }
       setActiveSnapGuides(null);
 
       event.currentTarget.releasePointerCapture(event.pointerId);
-      startRef.current = null;
+      resetSessionState();
       setIsDragging(false);
     },
-    [commit, setActiveSnapGuides],
+    [commit, nodeId, resetSessionState, setActiveSnapGuides],
   );
+
+  // Alt/Shift pressed or released without moving the pointer still update
+  // the frame. Alt's default is prevented while dragging (Firefox would
+  // otherwise toggle its menu bar on release).
+  useEffect(() => {
+    if (!isDragging) return;
+    function handleModifier(event: KeyboardEvent) {
+      if (event.key !== "Alt" && event.key !== "Shift") return;
+      if (event.key === "Alt") event.preventDefault();
+      modifiersRef.current = { alt: event.altKey, shift: event.shiftKey };
+      scheduleCommit();
+    }
+    window.addEventListener("keydown", handleModifier, true);
+    window.addEventListener("keyup", handleModifier, true);
+    return () => {
+      window.removeEventListener("keydown", handleModifier, true);
+      window.removeEventListener("keyup", handleModifier, true);
+    };
+  }, [isDragging, scheduleCommit]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -279,13 +381,13 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
       store.cancelResizeTransaction();
       store.setActiveSnapGuides(null);
 
-      startRef.current = null;
+      resetSessionState();
       setIsDragging(false);
     }
 
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
-  }, []);
+  }, [resetSessionState]);
 
   return {
     isDragging,

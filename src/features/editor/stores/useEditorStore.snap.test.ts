@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { SNAP_PREFERENCE_KEY } from "@/features/editor/utils/snapPreference";
 import { useEditorStore } from "./useEditorStore";
 
 const initialState = useEditorStore.getState();
@@ -42,13 +43,29 @@ describe("useEditorStore — Snap state (Checkpoint 1.15.6.1.1)", () => {
     const documentBefore = useEditorStore.getState().document;
     const historyLengthBefore = useEditorStore.getState().past.length;
 
-    useEditorStore.getState().setActiveSnapGuides({ containerId: "free-1", vertical: 10, horizontal: 20 });
-    expect(useEditorStore.getState().activeSnapGuides).toEqual({ containerId: "free-1", vertical: 10, horizontal: 20 });
+    const guides = {
+      containerId: "free-1",
+      vertical: { coordinate: 10, from: 0, to: 40, achieved: true },
+      horizontal: { coordinate: 20, from: 0, to: 60, achieved: false },
+      distances: [],
+      spacing: [],
+    };
+    useEditorStore.getState().setActiveSnapGuides(guides);
+    expect(useEditorStore.getState().activeSnapGuides).toEqual(guides);
 
     useEditorStore.getState().setActiveSnapGuides(null);
     expect(useEditorStore.getState().activeSnapGuides).toBeNull();
 
     expect(useEditorStore.getState().document).toBe(documentBefore);
     expect(useEditorStore.getState().past.length).toBe(historyLengthBefore);
+  });
+
+  it("BC-13.3 (D11): setSnapEnabled remembers the choice globally (localStorage), outside the document and history", () => {
+    window.localStorage.removeItem(SNAP_PREFERENCE_KEY);
+    useEditorStore.getState().setSnapEnabled(false);
+    expect(window.localStorage.getItem(SNAP_PREFERENCE_KEY)).toBe("false");
+    useEditorStore.getState().setSnapEnabled(true);
+    expect(window.localStorage.getItem(SNAP_PREFERENCE_KEY)).toBe("true");
+    window.localStorage.removeItem(SNAP_PREFERENCE_KEY);
   });
 });

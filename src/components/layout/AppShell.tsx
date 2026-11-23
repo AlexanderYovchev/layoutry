@@ -18,6 +18,8 @@ import type { CatalogCardPlaceholder } from "@/components/layout/creationToolbar
 
 interface AppShellProps {
   workspaceContent: ReactNode;
+  /** BC-13.3: editor controls floating over the Workspace corner (the Canvas control strip). */
+  workspaceControls?: ReactNode;
   inspectorContent: ReactNode;
   structureContent?: ReactNode;
   onActivateCatalogCard?: (card: CatalogCardPlaceholder) => void;
@@ -83,6 +85,7 @@ const MIN_SUPPORTED_VIEWPORT_WIDTH =
 
 export function AppShell({
   workspaceContent,
+  workspaceControls,
   inspectorContent,
   structureContent,
   onActivateCatalogCard,
@@ -203,7 +206,7 @@ export function AppShell({
             animateWidth={isPanelToggleAnimating && !resourcePanel.isDragging}
           />
         )}
-        <Workspace>{workspaceContent}</Workspace>
+        <Workspace controls={workspaceControls}>{workspaceContent}</Workspace>
         {viewState.inspectorPanelVisible && (
           <InspectorPanel
             width={inspectorWidth}

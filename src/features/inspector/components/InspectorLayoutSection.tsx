@@ -2,7 +2,6 @@
 
 import { useFanOutSetter, useIsFanOut } from "@/features/inspector/components/InspectorSectionFanOut";
 import { useState } from "react";
-import { InspectorBooleanToggle } from "@/features/inspector/components/InspectorBooleanToggle";
 import { InspectorLinkToggle } from "@/features/inspector/components/InspectorLinkToggle";
 import { InspectorNumberFieldRow } from "@/features/inspector/components/InspectorNumberFieldRow";
 import { InspectorPropertyRow } from "@/features/inspector/components/InspectorPropertyRow";
@@ -88,8 +87,6 @@ export function InspectorLayoutSection({ node }: InspectorLayoutSectionProps) {
   const setFlowDisplayMode = useFanOutSetter("flowDisplay", useEditorStore((state) => state.setFlowDisplayMode));
   const setFlexContainerSettings = useFanOutSetter("flexContainer", useEditorStore((state) => state.setFlexContainerSettings));
   const setGridContainerSettings = useFanOutSetter("gridContainer", useEditorStore((state) => state.setGridContainerSettings));
-  const snapEnabled = useEditorStore((state) => state.snapEnabled);
-  const setSnapEnabled = useEditorStore((state) => state.setSnapEnabled);
 
   const isFree = getLayoutMode(node) === "free";
   // BC-10.4: converting Flow → Free measures each container's own children,
@@ -135,12 +132,6 @@ export function InspectorLayoutSection({ node }: InspectorLayoutSectionProps) {
             activeOption={resolveChildResizePolicy(node) === "clamp" ? "Clamp" : "Scale"}
             onSelect={handlePolicySelect}
           />
-          <InspectorPropertyRow
-            label="Snap"
-            help="Helps align freely positioned children to the parent's edges/center and to sibling edges/centers while dragging. Editor assistance only — it never changes what's stored, only where a drag lands."
-          >
-            <InspectorBooleanToggle checked={snapEnabled} onChange={setSnapEnabled} label="Snap" />
-          </InspectorPropertyRow>
         </>
       ) : (
         <>

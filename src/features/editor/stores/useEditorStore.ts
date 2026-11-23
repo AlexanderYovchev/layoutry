@@ -175,6 +175,7 @@ import { resolveFreeDestinationPlacement } from "@/features/editor/utils/resolve
 import { moveBatchRejectedMessage, moveRejectedMessage, planMove, type MoveOutcome } from "@/features/editor/commands/moveCommands";
 import { planMultiMove } from "@/features/editor/commands/multiMoveCommands";
 import { getElementDisplayName } from "@/features/editor/utils/elementDisplayName";
+import { writeSnapPreference } from "@/features/editor/utils/snapPreference";
 import { resolveDeletionFallbackSelection } from "@/features/editor/utils/resolveDeletionFallbackSelection";
 import { resolveDestinationParent } from "@/features/editor/utils/resolveDestinationParent";
 import { getGridContainerSettings } from "@/features/editor/types/flowLayout";
@@ -1488,7 +1489,11 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       return { document: setFreeChildGeometryCommand(state.document, nodeId, geometry) };
     }),
 
-  setSnapEnabled: (enabled) => set({ snapEnabled: enabled }),
+  // BC-13.3 (D11): remembered globally (snapPreference), never in the document or history.
+  setSnapEnabled: (enabled) => {
+    writeSnapPreference(enabled);
+    set({ snapEnabled: enabled });
+  },
   setActiveSnapGuides: (guides) => set({ activeSnapGuides: guides }),
 
   setEditorMode: (mode) => set({ editorMode: mode }),

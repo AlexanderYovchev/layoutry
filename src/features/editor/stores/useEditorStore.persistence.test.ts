@@ -41,7 +41,12 @@ describe("replaceDocument — the atomic restoration contract", () => {
       selectedSvgObjectIds: ["rect-1"],
       primarySvgObjectId: "rect-1",
       activeSvgTool: "rect",
-      activeSnapGuides: { containerId: "section-1", vertical: 10 },
+      activeSnapGuides: {
+        containerId: "section-1",
+        vertical: { coordinate: 10, from: 0, to: 50, achieved: true },
+        distances: [],
+        spacing: [],
+      },
     });
     expect(store().past.length).toBeGreaterThan(0);
 

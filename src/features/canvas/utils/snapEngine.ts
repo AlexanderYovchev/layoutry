@@ -15,8 +15,8 @@ import type { SpacingCandidate } from "@/features/canvas/utils/snapEqualSpacing"
  * frame by the caller). Distances are local CSS px; the threshold is given
  * in SCREEN px and divided by the scale (1 until the Canvas has zoom).
  *
- * Not yet wired into a gesture: the Free move session still uses
- * resolveFreeMoveSnap (8px) until BC-13.3.
+ * BC-13.3: the single snapping evaluator for Free dragging
+ * (useFreeChildMoveSession); the old resolveFreeMoveSnap is retired.
  */
 
 /** D3: the fixed snapping threshold, in screen px. */

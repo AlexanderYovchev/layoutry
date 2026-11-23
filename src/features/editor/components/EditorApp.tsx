@@ -17,6 +17,8 @@ import type { EditMenuCommands, FileMenuCommands } from "@/components/layout/app
 import type { ProjectIdentityInfo } from "@/components/layout/ProjectIdentity";
 import type { CatalogCardPlaceholder } from "@/components/layout/creationToolbarCategories";
 import { DocumentCanvas } from "@/features/canvas/components/DocumentCanvas";
+import { CanvasControlStrip } from "@/features/canvas/components/CanvasControlStrip";
+import { useSnapPreferenceHydration } from "@/features/editor/hooks/useSnapPreferenceHydration";
 import { EditorNoticeBanner } from "@/features/editor/components/EditorNoticeBanner";
 import { MultiDeleteConfirmDialog } from "@/features/editor/components/MultiDeleteConfirmDialog";
 import { StructurePanel } from "@/features/editor/components/structure/StructurePanel";
@@ -110,12 +112,14 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
   const [activeDrag, setActiveDrag] = useState<ActiveDragPreview | null>(null);
 
   useEditorKeyboardShortcuts();
+  useSnapPreferenceHydration();
 
   // The panels take no props and subscribe to the stores themselves, so the
   // same element objects let React skip them when only this component's
   // props change — the project header's save and recovery status flips
   // (PROJECT-1.5) no longer re-render a large Canvas and Structure tree.
   const workspaceContent = useMemo(() => <DocumentCanvas />, []);
+  const workspaceControls = useMemo(() => <CanvasControlStrip />, []);
   const inspectorContent = useMemo(() => <InspectorContent selectedElement={null} />, []);
   const structureContent = useMemo(() => <StructurePanel />, []);
 
@@ -203,6 +207,7 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
     >
       <AppShell
         workspaceContent={workspaceContent}
+        workspaceControls={workspaceControls}
         inspectorContent={inspectorContent}
         structureContent={structureContent}
         onActivateCatalogCard={handleActivateCard}
