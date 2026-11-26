@@ -6,6 +6,8 @@ import {
   useEditorStore,
 } from "@/features/editor/stores/useEditorStore";
 import { createProjectCommands } from "@/features/project/commands/projectCommands";
+import { registerActiveInteraction } from "@/features/editor/utils/activeInteraction";
+import { findNodeById } from "@/features/editor/utils/findNodeById";
 import { createIndexedDbProjectRepository } from "@/features/project/storage/indexedDbProjectRepository";
 import {
   ProjectStorageError,
@@ -571,5 +573,72 @@ describe("library listing", () => {
     expect(session().library.error).toMatch(
       /isn't letting Layoutry store projects/,
     );
+  });
+});
+
+// BC-13.5.1 — a live Free drag/resize, as the Canvas lifecycle registers it:
+// an open resize transaction, live geometry, and a cancel that rolls it back.
+const COMMITTED = { x: 20, y: 30, width: 40, height: 50 };
+function freeDocument() {
+  return pageWith({
+    id: "free",
+    tag: "div",
+    layoutMode: "free",
+    children: [{ id: "a", tag: "div", freeLayout: { ...COMMITTED } }],
+  });
+}
+function startLiveInteraction() {
+  editor().beginResizeTransaction();
+  editor().setFreeChildGeometryLive("a", {
+    x: 300,
+    y: 200,
+    width: 40,
+    height: 50,
+  });
+  const cancel = vi.fn(() => {
+    editor().restoreFreeLayoutsLive(new Map([["a", { ...COMMITTED }]]));
+    editor().cancelResizeTransaction();
+  });
+  registerActiveInteraction(cancel);
+  return cancel;
+}
+
+describe("a live Free drag/resize (BC-13.5.1, Option B)", () => {
+  it("Save cancels it first and saves only the committed geometry, exactly once", async () => {
+    const { commands, base } = setup();
+    editor().replaceDocument(freeDocument());
+    const cancel = startLiveInteraction();
+
+    await expectOk(commands.save({ name: "Live" }));
+
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(editor().transactionSnapshot).toBeNull();
+    expect(editor().past).toHaveLength(0);
+    const stored = parseProjectFile(
+      (await base.read(session().metadata.id)).text,
+    );
+    expect(
+      stored.ok && findNodeById(stored.project.document, "a")?.freeLayout,
+    ).toEqual(COMMITTED);
+  });
+
+  it("Download cancels it first and hands over the committed geometry", () => {
+    const { commands, saveFile } = setup();
+    editor().replaceDocument(freeDocument());
+    const cancel = startLiveInteraction();
+
+    expect(commands.download()).toEqual({ ok: true });
+
+    expect(cancel).toHaveBeenCalledTimes(1);
+    const parsed = parseProjectFile(saveFile.mock.calls[0][1]);
+    expect(
+      parsed.ok && findNodeById(parsed.project.document, "a")?.freeLayout,
+    ).toEqual(COMMITTED);
+  });
+
+  it("another open edit (not a registered drag/resize) is still refused, as before", async () => {
+    const { commands } = setup();
+    editor().beginTransaction();
+    expect((await commands.save()).ok).toBe(false);
   });
 });

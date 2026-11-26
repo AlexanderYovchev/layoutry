@@ -4,6 +4,7 @@ import { createElementNode } from "@/features/editor/factories/elementFactories"
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { createProjectCommands } from "@/features/project/commands/projectCommands";
 import { createProjectWorkflow } from "@/features/project/commands/projectWorkflow";
+import { registerActiveInteraction } from "@/features/editor/utils/activeInteraction";
 import { createIndexedDbProjectRepository } from "@/features/project/storage/indexedDbProjectRepository";
 import {
   ProjectStorageError,
@@ -301,5 +302,56 @@ describe("switching projects while a save is in flight (PROJECT-1.5)", () => {
     expect(editor().document.children?.length ?? 0).toBeLessThan(
       savedDocument.children?.length ?? 0,
     );
+  });
+});
+
+// BC-13.5.1 — a live Free drag/resize, as the Canvas lifecycle registers it:
+// an open resize transaction, live geometry, and a cancel that rolls it back.
+const COMMITTED = { x: 20, y: 30, width: 40, height: 50 };
+function freeDocument() {
+  return pageWith({
+    id: "free",
+    tag: "div",
+    layoutMode: "free",
+    children: [{ id: "a", tag: "div", freeLayout: { ...COMMITTED } }],
+  });
+}
+function startLiveInteraction() {
+  editor().beginResizeTransaction();
+  editor().setFreeChildGeometryLive("a", {
+    x: 300,
+    y: 200,
+    width: 40,
+    height: 50,
+  });
+  const cancel = vi.fn(() => {
+    editor().restoreFreeLayoutsLive(new Map([["a", { ...COMMITTED }]]));
+    editor().cancelResizeTransaction();
+  });
+  registerActiveInteraction(cancel);
+  return cancel;
+}
+
+describe("a live Free drag/resize (BC-13.5.1, Option B)", () => {
+  it("New Project cancels it BEFORE the unsaved-changes check: committed and saved means nothing to lose, no prompt", async () => {
+    const { workflow } = setup();
+    editor().replaceDocument(freeDocument()); // persisted as it is
+    const cancel = startLiveInteraction(); // live geometry alone would look "unsaved"
+
+    expect(await workflow.newProject()).toBe(true);
+
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(ui().dialog).toBeNull();
+  });
+
+  it("a shortcut ignored because a dialog is open never reaches the workflow, so nothing is cancelled", async () => {
+    const { workflow } = setup();
+    editor().replaceDocument(freeDocument());
+    edit(); // unsaved: New asks first
+    expect(await workflow.newProject()).toBe(false);
+    expect(ui().dialog?.kind).toBe("discard");
+    const cancel = startLiveInteraction();
+    // (useProjectKeyboardShortcuts returns early while a dialog is open; nothing calls the workflow.)
+    expect(cancel).not.toHaveBeenCalled();
   });
 });

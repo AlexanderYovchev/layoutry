@@ -2,14 +2,15 @@ import { fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useFreeChildMoveSession } from "@/features/canvas/hooks/useFreeChildMoveSession";
 import { useFreeChildResizeSession } from "@/features/canvas/hooks/useFreeChildResizeSession";
-import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { selectHasUnsavedChanges, useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
+import { useEditorKeyboardShortcuts } from "@/features/editor/hooks/useEditorKeyboardShortcuts";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
 
 /*
  * BC-13.5 — the shared Free interaction lifecycle (createFreeInteraction),
  * exercised through the real drag and resize hooks: every terminal path
- * (commit, Escape, pointercancel, lost capture, blur, other keys, unmount,
+ * (commit, Escape, pointercancel, lost capture, blur, commands, unmount,
  * deletion, reparenting, project replacement, Preview), exact node-scoped
  * rollback, history integrity (one entry, none on cancel, redo kept),
  * stale-frame protection, scroll compensation, target invalidation and
@@ -35,7 +36,10 @@ function stubRect(el: Element, box: Box) {
 function Harness({ targets }: { targets: string[] }) {
   const move = useFreeChildMoveSession("a");
   const resize = useFreeChildResizeSession("a");
+  useEditorKeyboardShortcuts(); // the real editor shortcut dispatch (BC-13.5.1)
   return (
+    <div data-testid="clip">
+    <input data-testid="field" />
     <div data-node-id="free" data-testid="container">
       <div
         data-testid="a"
@@ -56,6 +60,7 @@ function Harness({ targets }: { targets: string[] }) {
         onPointerUp={resize.onHandlePointerUp}
         onPointerCancel={resize.onHandlePointerCancel}
       />
+    </div>
     </div>
   );
 }
@@ -236,24 +241,6 @@ describe("createFreeInteraction (BC-13.5)", () => {
       expect(past()).toBe(0);
     });
 
-    it("another key (here Delete) ends the drag first — rolled back — and then reaches its own handler unprevented", () => {
-      seed();
-      const { a } = setup();
-      down(a);
-      move(a, 200, 200);
-      let seenGeometry: unknown;
-      const handler = (event: KeyboardEvent) => {
-        if (event.key === "Delete") seenGeometry = geometry();
-      };
-      window.addEventListener("keydown", handler);
-      const del = new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true });
-      window.dispatchEvent(del);
-      window.removeEventListener("keydown", handler);
-      expect(seenGeometry).toEqual(ORIGINAL);
-      expect(del.defaultPrevented).toBe(false);
-      expect(useEditorStore.getState().transactionSnapshot).toBeNull();
-    });
-
     it("unmounting mid-drag rolls back", () => {
       seed();
       const { a, unmount } = setup();
@@ -263,6 +250,325 @@ describe("createFreeInteraction (BC-13.5)", () => {
       expect(geometry()).toEqual(ORIGINAL);
       expect(past()).toBe(0);
       expect(useEditorStore.getState().transactionSnapshot).toBeNull();
+    });
+  });
+
+  describe("keyboard policy (BC-13.5.1, Option B) — through the real editor shortcuts", () => {
+    const key = (init: KeyboardEventInit, target: EventTarget = window) => {
+      const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+      target.dispatchEvent(event);
+      return event;
+    };
+    const live = () => useEditorStore.getState().transactionSnapshot !== null;
+    const MOVED = { x: 180, y: 180, width: 40, height: 40 };
+
+    it.each([
+      ["an unassigned letter", { key: "q" }],
+      ["an unassigned number", { key: "7" }],
+      ["unassigned punctuation", { key: "." }],
+      ["an unsupported Ctrl combination", { key: "k", ctrlKey: true }],
+      ["an unsupported Ctrl+Shift combination", { key: "x", ctrlKey: true, shiftKey: true }],
+      ["Ctrl alone", { key: "Control", ctrlKey: true }],
+      ["Meta alone", { key: "Meta", metaKey: true }],
+      ["Alt", { key: "Alt", altKey: true }],
+      ["Shift", { key: "Shift", shiftKey: true }],
+    ])("%s does not cancel the drag (and isn't suppressed unless it's a modifier we handle)", (_label, init) => {
+      seed();
+      const { a } = setup();
+      down(a);
+      move(a, 200, 200);
+      const event = key(init);
+      expect(live()).toBe(true);
+      expect(geometry()).toEqual(MOVED);
+      if (!["Alt"].includes(String(init.key))) expect(event.defaultPrevented).toBe(false);
+      fireEvent.pointerUp(a, { clientX: 200, clientY: 200, pointerId: 1 });
+      expect(geometry()).toEqual(MOVED);
+      expect(past()).toBe(1);
+    });
+
+    it("an unassigned key does not cancel a resize either", () => {
+      seed();
+      const { handle } = setup();
+      down(handle);
+      move(handle, 200, 120);
+      key({ key: "g" });
+      expect(live()).toBe(true);
+      fireEvent.pointerUp(handle, { clientX: 200, clientY: 120, pointerId: 1 });
+      expect(geometry()?.width).toBe(120);
+      expect(past()).toBe(1);
+    });
+
+    it.each([
+      ["drag", "a"],
+      ["resize", "handle-e"],
+    ])("Delete during a %s: rolled back first, then deleted once; Undo brings the element back at its committed geometry", (_label, testId) => {
+      seed();
+      useEditorStore.getState().selectOnly("a");
+      const view = setup();
+      const el = view.getByTestId(testId);
+      down(el);
+      move(el, 200, 200);
+      key({ key: "Delete" });
+      expect(findNodeById(useEditorStore.getState().document, "a")).toBeUndefined();
+      expect(past()).toBe(1); // the deletion only
+      expect(live()).toBe(false);
+      fireEvent.pointerUp(el, { clientX: 220, clientY: 220, pointerId: 1 });
+      expect(past()).toBe(1);
+      useEditorStore.getState().undo();
+      expect(geometry()).toEqual(ORIGINAL);
+    });
+
+    it("Undo (Ctrl+Z) cancels first and then undoes the last COMMITTED edit, exactly once; the redo stack is intact", () => {
+      seed();
+      useEditorStore.getState().setFreeChildGeometry("a", { x: 10, y: 10, width: 40, height: 40 }); // committed edit
+      const { a } = setup();
+      down(a, { clientX: 30, clientY: 30 });
+      fireEvent.pointerMove(a, { clientX: 110, clientY: 110, pointerId: 1 });
+      flush();
+      key({ key: "z", ctrlKey: true });
+      expect(geometry()).toEqual(ORIGINAL); // the edit before it, not the drag
+      expect(past()).toBe(0);
+      expect(useEditorStore.getState().future).toHaveLength(1);
+      fireEvent.pointerUp(a, { clientX: 150, clientY: 150, pointerId: 1 });
+      expect(geometry()).toEqual(ORIGINAL);
+      useEditorStore.getState().redo();
+      expect(geometry()).toEqual({ x: 10, y: 10, width: 40, height: 40 });
+    });
+
+    it("Redo (Ctrl+Shift+Z and Ctrl+Y) cancels first and redoes exactly once", () => {
+      seed();
+      useEditorStore.getState().setFreeChildGeometry("a", { x: 10, y: 10, width: 40, height: 40 });
+      useEditorStore.getState().undo();
+      const { a } = setup();
+      down(a);
+      move(a, 200, 200);
+      key({ key: "Z", ctrlKey: true, shiftKey: true });
+      expect(geometry()).toEqual({ x: 10, y: 10, width: 40, height: 40 });
+      expect(past()).toBe(1);
+      expect(useEditorStore.getState().future).toHaveLength(0);
+      useEditorStore.getState().undo();
+      down(a);
+      move(a, 200, 200);
+      key({ key: "y", ctrlKey: true });
+      expect(geometry()).toEqual({ x: 10, y: 10, width: 40, height: 40 });
+      expect(past()).toBe(1);
+    });
+
+    it("disabled commands don't cancel: Ctrl+Z / Ctrl+Y with no history, Ctrl+C / Ctrl+D / Delete with nothing selected, Ctrl+V with an empty clipboard", () => {
+      seed();
+      const { a } = setup();
+      down(a);
+      move(a, 200, 200);
+      for (const init of [{ key: "z", ctrlKey: true }, { key: "y", ctrlKey: true }, { key: "c", ctrlKey: true }, { key: "d", ctrlKey: true }, { key: "v", ctrlKey: true }, { key: "Delete" }]) {
+        key(init);
+        expect(live()).toBe(true);
+      }
+      fireEvent.pointerUp(a, { clientX: 200, clientY: 200, pointerId: 1 });
+      expect(geometry()).toEqual(MOVED);
+      expect(past()).toBe(1);
+    });
+
+    it("Copy (Ctrl+C) cancels first: the clipboard holds the COMMITTED geometry; Paste and Duplicate then act on it too", () => {
+      seed();
+      useEditorStore.getState().selectOnly("a");
+      const { a } = setup();
+      down(a);
+      move(a, 200, 200);
+      key({ key: "c", ctrlKey: true });
+      expect(live()).toBe(false);
+      expect(geometry()).toEqual(ORIGINAL);
+      expect(useEditorStore.getState().clipboard?.nodes[0].freeLayout).toEqual(ORIGINAL);
+
+      useEditorStore.getState().selectOnly("a");
+      down(a);
+      move(a, 200, 200);
+      key({ key: "d", ctrlKey: true }); // duplicate
+      expect(live()).toBe(false);
+      const free = findNodeById(useEditorStore.getState().document, "free")!;
+      expect(free.children!.map((c) => c.freeLayout)).toEqual([ORIGINAL, expect.objectContaining({ width: 40, height: 40 })]);
+      expect(free.children![0].freeLayout).toEqual(ORIGINAL);
+      expect(past()).toBe(1); // the duplicate only
+    });
+
+    it("Cut (Ctrl+X) cancels first and cuts the committed element; exactly one entry", () => {
+      seed();
+      useEditorStore.getState().selectOnly("a");
+      const { a } = setup();
+      down(a);
+      move(a, 200, 200);
+      key({ key: "x", ctrlKey: true });
+      expect(findNodeById(useEditorStore.getState().document, "a")).toBeUndefined();
+      expect(useEditorStore.getState().clipboard?.nodes[0].freeLayout).toEqual(ORIGINAL);
+      fireEvent.pointerUp(a, { clientX: 200, clientY: 200, pointerId: 1 });
+      expect(past()).toBe(1);
+    });
+
+    it("focus restrictions are unchanged: Delete typed into a text field is the field's — no cancel, nothing deleted", () => {
+      seed();
+      useEditorStore.getState().selectOnly("a");
+      const { a, getByTestId } = setup();
+      const field = getByTestId("field");
+      down(a);
+      move(a, 200, 200);
+      key({ key: "Delete" }, field);
+      expect(live()).toBe(true);
+      expect(findNodeById(useEditorStore.getState().document, "a")).toBeDefined();
+    });
+
+    it("Escape is still consumed and cancels (drag and resize), with the selection kept", () => {
+      seed();
+      useEditorStore.getState().selectOnly("a");
+      const { a, handle } = setup();
+      down(a);
+      move(a, 200, 200);
+      expect(key({ key: "Escape" }).defaultPrevented).toBe(true);
+      expect(geometry()).toEqual(ORIGINAL);
+      down(handle);
+      move(handle, 200, 120);
+      expect(key({ key: "Escape" }).defaultPrevented).toBe(true);
+      expect(geometry()).toEqual(ORIGINAL);
+      expect(useEditorStore.getState().selection.ids).toEqual(["a"]);
+      expect(past()).toBe(0);
+    });
+
+    it("the project-replacing path and Preview interrupt BEFORE they run: replaceDocument restores the outgoing document first", () => {
+      seed();
+      const { a } = setup();
+      down(a);
+      move(a, 200, 200);
+      let outgoing: unknown;
+      const unsubscribe = useEditorStore.subscribe((next, previous) => {
+        if (next.documentSessionId !== previous.documentSessionId) outgoing = findNodeById(previous.document, "a")?.freeLayout;
+      });
+      useEditorStore.getState().replaceDocument({ id: "p2", tag: "page", children: [] });
+      unsubscribe();
+      expect(outgoing).toEqual(ORIGINAL); // the outgoing document had its committed geometry back first
+    });
+  });
+
+  describe("outstanding lifecycle verification (BC-13.5.1)", () => {
+    it("no text selection during a gesture (body user-select none, restored after) and a native dragstart mid-gesture is prevented", () => {
+      seed();
+      const { a } = setup();
+      document.body.style.userSelect = "text";
+      down(a);
+      move(a, 200, 200);
+      expect(document.body.style.userSelect).toBe("none");
+      const drag = new Event("dragstart", { bubbles: true, cancelable: true });
+      a.dispatchEvent(drag);
+      expect(drag.defaultPrevented).toBe(true);
+      fireEvent.pointerUp(a, { clientX: 200, clientY: 200, pointerId: 1 });
+      expect(document.body.style.userSelect).toBe("text");
+      const later = new Event("dragstart", { bubbles: true, cancelable: true });
+      a.dispatchEvent(later);
+      expect(later.defaultPrevented).toBe(false);
+      document.body.style.userSelect = "";
+    });
+
+    it("a cancelled (or back-to-start) gesture on a saved document leaves it saved: the rolled-back document IS the original object", () => {
+      seed();
+      useEditorStore.getState().markDocumentPersisted(useEditorStore.getState().document);
+      const unsaved = () => selectHasUnsavedChanges(useEditorStore.getState());
+      const { a, handle } = setup();
+      down(a);
+      move(a, 200, 200);
+      expect(unsaved()).toBe(true); // live geometry
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(unsaved()).toBe(false);
+      down(handle);
+      move(handle, 200, 120);
+      fireEvent(handle, new Event("lostpointercapture"));
+      expect(unsaved()).toBe(false);
+      down(a);
+      move(a, 250, 250);
+      fireEvent.pointerUp(a, { clientX: 120, clientY: 120, pointerId: 1 }); // back where it started: no-op
+      expect(unsaved()).toBe(false);
+    });
+
+    it.each([
+      ["drag", "a"],
+      ["resize", "handle-e"],
+    ])("redo survives a cancelled %s after several live frames, and Redo then restores the expected committed state", (_label, testId) => {
+      seed();
+      useEditorStore.getState().setFreeChildGeometry("a", { x: 10, y: 10, width: 40, height: 40 });
+      useEditorStore.getState().undo();
+      const view = setup();
+      const el = view.getByTestId(testId);
+      down(el);
+      for (const x of [150, 180, 210]) move(el, x, 150);
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(geometry()).toEqual(ORIGINAL);
+      expect(useEditorStore.getState().future).toHaveLength(1);
+      useEditorStore.getState().redo();
+      expect(geometry()).toEqual({ x: 10, y: 10, width: 40, height: 40 });
+      expect(past()).toBe(1);
+    });
+
+    it("an unexpected lostpointercapture during a RESIZE rolls back, keeps the selection, clears guides, records nothing; a normal release then lostpointercapture commits once", () => {
+      seed([{ id: "t", tag: "div", freeLayout: { x: 300, y: 20, width: 40, height: 40 } }]);
+      useEditorStore.getState().selectOnly("a");
+      const { handle } = setup({ t: { left: 300, top: 20, right: 340, bottom: 60 } });
+      down(handle);
+      move(handle, 278, 120); // raw right 298 → snaps to 300 (guide shown)
+      expect(guides()).not.toBeNull();
+      fireEvent(handle, new Event("lostpointercapture"));
+      expect(geometry()).toEqual(ORIGINAL);
+      expect(guides()).toBeNull();
+      expect(useEditorStore.getState().selection.ids).toEqual(["a"]);
+      expect(past()).toBe(0);
+
+      down(handle);
+      move(handle, 200, 120);
+      fireEvent.pointerUp(handle, { clientX: 200, clientY: 120, pointerId: 1 });
+      fireEvent(handle, new Event("lostpointercapture"));
+      expect(geometry()?.width).toBe(120);
+      expect(past()).toBe(1);
+    });
+
+    it("a target that becomes completely clipped by a scrolling ancestor mid-drag stops being a target (its lock released, no guide)", () => {
+      seed([{ id: "t", tag: "div", freeLayout: { x: 300, y: 20, width: 40, height: 40 } }]);
+      const { a, containerRect, getByTestId, targetSpies } = setup({ t: { left: 300, top: 20, right: 340, bottom: 60 } });
+      const clip = getByTestId("clip");
+      clip.style.overflowX = "auto";
+      clip.style.overflowY = "auto";
+      stubRect(clip, { left: 0, top: 0, right: 1000, bottom: 300 });
+      Object.defineProperty(clip, "clientWidth", { value: 1000, configurable: true });
+      Object.defineProperty(clip, "clientHeight", { value: 300, configurable: true });
+      let now = 1000;
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+      down(a, { clientY: 260 }); // grab low on the element so it can stay in view
+      move(a, 318, 260);
+      expect(geometry()!.x).toBe(300);
+      // The clip scrolls down 100px: the container (and t inside it) moves up; t (local y 20..60) is now above the clip's top edge.
+      Object.defineProperty(clip, "scrollTop", { value: 100, configurable: true });
+      containerRect.mockImplementation(() => ({ left: 0, top: -100, right: 500, bottom: 300, width: 500, height: 400, x: 0, y: -100, toJSON: () => ({}) }));
+      targetSpies.get("t")!.mockImplementation(() => ({ left: 300, top: -80, right: 340, bottom: -40, width: 40, height: 40, x: 300, y: -80, toJSON: () => ({}) }));
+      window.dispatchEvent(new Event("scroll"));
+      now += 300; // past the scroll-refresh throttle
+      flush();
+      move(a, 318, 261);
+      expect(geometry()!.x).toBe(298);
+      expect(guides()?.vertical).toBeUndefined();
+    });
+
+    it("a window resize that clips a target (no scroll, no document change) refreshes targets too", () => {
+      seed([{ id: "t", tag: "div", freeLayout: { x: 300, y: 20, width: 40, height: 40 } }]);
+      const { a, getByTestId } = setup({ t: { left: 300, top: 20, right: 340, bottom: 60 } });
+      const clip = getByTestId("clip");
+      clip.style.overflowX = "hidden";
+      clip.style.overflowY = "hidden";
+      const clipRect = stubRect(clip, { left: 0, top: 0, right: 1000, bottom: 1000 });
+      Object.defineProperty(clip, "clientWidth", { value: 1000, configurable: true });
+      Object.defineProperty(clip, "clientHeight", { value: 1000, configurable: true });
+      down(a);
+      move(a, 318, 150);
+      expect(geometry()!.x).toBe(300);
+      clipRect.mockImplementation(() => ({ left: 0, top: 0, right: 250, bottom: 1000, width: 250, height: 1000, x: 0, y: 0, toJSON: () => ({}) }));
+      Object.defineProperty(clip, "clientWidth", { value: 250, configurable: true });
+      window.dispatchEvent(new Event("resize"));
+      flush();
+      move(a, 318, 151);
+      expect(geometry()!.x).toBe(298);
     });
   });
 

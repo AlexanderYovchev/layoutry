@@ -172,6 +172,7 @@ import { cloneNodeWithFreshIds } from "@/features/editor/utils/cloneNodeWithFres
 import { isStructurallyEqual } from "@/features/editor/utils/isStructurallyEqual";
 import { collectNodeIds } from "@/features/editor/utils/collectNodeIds";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
+import { interruptActiveInteraction } from "@/features/editor/utils/activeInteraction";
 import { resolveFreeDestinationPlacement } from "@/features/editor/utils/resolveFreeDestinationPlacement";
 import { moveBatchRejectedMessage, moveRejectedMessage, planMove, type MoveOutcome } from "@/features/editor/commands/moveCommands";
 import { planMultiMove } from "@/features/editor/commands/multiMoveCommands";
@@ -1310,6 +1311,21 @@ function commitCopies(
   return { ...pushHistory(state), document, selection: createSelection(rootIds, primaryId), selectionAnchorId: primaryId };
 }
 
+/** BC-13.5.1: a selection a clipboard/duplicate/delete command would actually act on (an existing, non-root element). */
+function hasActionableSelection(state: EditorState): boolean {
+  return state.selection.ids.some((id) => id !== state.document.id && findNodeById(state.document, id) !== undefined);
+}
+
+/**
+ * BC-13.5.1 (Option B): a recognized command that is about to run ends a
+ * live Free drag/resize first — rolled back, no history — so it reads and
+ * changes committed geometry only. A disabled/ineligible command (nothing
+ * to undo, nothing selected…) leaves the interaction alone.
+ */
+function interruptBeforeCommand(eligible: boolean): void {
+  if (eligible) interruptActiveInteraction();
+}
+
 function eligibleSelectedNode(state: EditorState): EditorElementNode | undefined {
   const id = state.selection.primaryId;
   if (!id || id === state.document.id) {
@@ -1501,7 +1517,12 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
 
   restoreFreeLayoutsLive: (originals) =>
     set((state) => {
-      const document = restoreFreeLayoutsCommand(state.document, originals);
+      const restored = restoreFreeLayoutsCommand(state.document, originals);
+      // BC-13.5.1: rolled back to exactly the state the interaction started
+      // from → that very document object, so nothing reads as changed (the
+      // unsaved-changes check compares document identity).
+      const open = state.transactionSnapshot;
+      const document = open && isStructurallyEqual(restored, open.document) ? open.document : restored;
       return document === state.document ? {} : { document };
     }),
 
@@ -1527,7 +1548,8 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
 
   setEditorMode: (mode) => set({ editorMode: mode }),
 
-  enterPreview: () =>
+  enterPreview: () => {
+    interruptBeforeCommand(get().editorMode !== "preview");
     set((state) => ({
       editorMode: "preview",
       runtimeVisibility: buildInitialRuntimeVisibility(state.document),
@@ -1540,7 +1562,8 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       historyMergeSnapshot: null,
       // A delete confirmation never survives into Preview (BC-10.2).
       pendingDeletion: null,
-    })),
+    }));
+  },
 
   exitPreview: () => set({ editorMode: "design", runtimeVisibility: {} }),
 
@@ -2270,7 +2293,8 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       guardedStyleMutation(state, svgNodeId, (document) => setSvgObjectsStrokeWidthCommand(document, svgNodeId, new Set(objectIds), strokeWidth)),
     ),
 
-  copySelection: () =>
+  copySelection: () => {
+    interruptBeforeCommand(hasActionableSelection(get()));
     set((state) => {
       if (existingSelectedIds(state.document, state.selection.ids).length > 1) {
         const roots = orderedSelectionRoots(state.document, state.selection.ids);
@@ -2280,9 +2304,11 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       if (!node) return {};
       const sourceParentId = findParentId(state.document, node.id);
       return { clipboard: { operation: "copy", nodes: [node], sourceParentId } };
-    }),
+    });
+  },
 
-  cutSelection: () =>
+  cutSelection: () => {
+    interruptBeforeCommand(!get().pendingDeletion && hasActionableSelection(get()));
     set((state) => {
       if (state.pendingDeletion) return {};
       // Two or more selected elements: confirm first, like a multi-delete.
@@ -2299,9 +2325,11 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
         selection: selectionFromSingle(resolveDeletionFallbackSelection(sourceParentId, state.document.id)),
         clipboard: { operation: "cut", nodes: [node], sourceParentId },
       };
-    }),
+    });
+  },
 
-  pasteClipboard: () =>
+  pasteClipboard: () => {
+    interruptBeforeCommand(!get().pendingDeletion && (get().clipboard?.nodes.length ?? 0) > 0);
     set((state) => {
       if (state.pendingDeletion) return {};
       if (state.clipboard && state.clipboard.nodes.length > 1) return pasteMany(state, state.clipboard);
@@ -2338,9 +2366,11 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
         document,
         selection: selectionFromSingle(clone.id),
       };
-    }),
+    });
+  },
 
-  duplicateSelection: () =>
+  duplicateSelection: () => {
+    interruptBeforeCommand(!get().pendingDeletion && hasActionableSelection(get()));
     set((state) => {
       if (state.pendingDeletion) return {};
       if (existingSelectedIds(state.document, state.selection.ids).length > 1) return duplicateMany(state);
@@ -2358,9 +2388,11 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       if (exceedsNavigationLinkLimit(state.document, document)) return nextEditorNoticeState(state, NAVIGATION_LINK_LIMIT_DUPLICATE_NOTICE);
       if (subtreeHasEmbeddedData(clone) && !documentFitsSaveLimit(document)) return nextEditorNoticeState(state, COPY_TOO_LARGE_NOTICE);
       return { ...pushHistory(state), document, selection: selectionFromSingle(clone.id) };
-    }),
+    });
+  },
 
-  copyStyle: () =>
+  copyStyle: () => {
+    interruptBeforeCommand(eligibleSelectedNode(get()) !== undefined);
     set((state) => {
       const source = eligibleSelectedNode(state);
       if (!source) return nextEditorNoticeState(state, STYLE_COPY_NO_SOURCE_NOTICE);
@@ -2372,13 +2404,16 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       const groups = captureStyleSnapshot(state.document, source, STYLE_GROUP_KEYS, { onlyOffered: true });
       if (isEmptyStyleSnapshot(groups)) return { ...nextEditorNoticeState(state, styleCopyEmptyNotice(name)), styleClipboard: null };
       return { ...nextEditorNoticeState(state, styleCopiedNotice(name)), styleClipboard: { version: 1, sourceName: name, groups } };
-    }),
+    });
+  },
 
-  pasteStyle: () =>
+  pasteStyle: () => {
+    interruptBeforeCommand(get().styleClipboard !== null && hasActionableSelection(get()));
     set((state) => {
       if (!state.styleClipboard) return nextEditorNoticeState(state, STYLE_PASTE_EMPTY_CLIPBOARD_NOTICE);
       return pasteStyleIntoSelection(state, state.styleClipboard, STYLE_GROUP_KEYS);
-    }),
+    });
+  },
 
   copyStyleSection: (group) =>
     set((state) => {
@@ -2410,18 +2445,24 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   // path handles an ordinary single-node delete too (roots.length === 1
   // degenerates to the pre-1.15.2 behavior exactly), so there is no
   // separate single-selection code path to keep in sync.
-  deleteSelection: () => set((state) => deleteNodesById(state, state.selection.ids)),
+  deleteSelection: () => {
+    interruptBeforeCommand(hasActionableSelection(get()));
+    set((state) => deleteNodesById(state, state.selection.ids));
+  },
 
-  requestDeleteSelection: () =>
+  requestDeleteSelection: () => {
+    interruptBeforeCommand(!get().pendingDeletion && hasActionableSelection(get()));
     set((state) => {
       if (state.pendingDeletion) return {};
       const plan = planDeletion(state.document, state.selection.ids);
       if (plan.selectedIds.length === 0) return {};
       if (plan.selectedIds.length === 1) return deleteNodesById(state, plan.selectedIds);
       return { pendingDeletion: plan };
-    }),
+    });
+  },
 
-  confirmPendingDeletion: () =>
+  confirmPendingDeletion: () => {
+    interruptBeforeCommand(get().pendingDeletion !== null);
     set((state) => {
       const pending = state.pendingDeletion;
       if (!pending) return {};
@@ -2435,7 +2476,8 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       const cut = pending.kind === "cut";
       if (!unchanged) return { ...nextEditorNoticeState(state, cut ? STALE_CUT_NOTICE : STALE_DELETION_NOTICE), pendingDeletion: null };
       return { ...(cut ? cutNodesById(state, pending.selectedIds) : deleteNodesById(state, pending.selectedIds)), pendingDeletion: null };
-    }),
+    });
+  },
 
   cancelPendingDeletion: () => set((state) => (state.pendingDeletion ? { pendingDeletion: null } : {})),
 
@@ -2551,7 +2593,8 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   setElementsDimensions: (ids, dimensions) =>
     set((state) => guardedBulkStyleMutation(state, ids, (document) => setElementsDimensionsCommand(document, new Set(ids), dimensions))),
 
-  undo: () =>
+  undo: () => {
+    interruptBeforeCommand(get().past.length > 0);
     set((state) => {
       if (state.past.length === 0) return {};
       const previous = state.past[state.past.length - 1];
@@ -2561,9 +2604,11 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
         past: state.past.slice(0, -1),
         future: [snapshot(state), ...state.future],
       };
-    }),
+    });
+  },
 
-  redo: () =>
+  redo: () => {
+    interruptBeforeCommand(get().future.length > 0);
     set((state) => {
       if (state.future.length === 0) return {};
       const [next, ...rest] = state.future;
@@ -2573,9 +2618,11 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
         past: [...state.past, snapshot(state)],
         future: rest,
       };
-    }),
+    });
+  },
 
-  replaceDocument: (document) =>
+  replaceDocument: (document) => {
+    interruptBeforeCommand(true);
     set((state) => ({
       document,
       documentSessionId: state.documentSessionId + 1,
@@ -2596,7 +2643,8 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       activeSvgTool: "select",
       svgDraft: null,
       activeSnapGuides: null,
-    })),
+    }));
+  },
 
   markDocumentPersisted: (document) => set({ persistedDocument: document }),
 }));

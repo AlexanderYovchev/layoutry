@@ -1,0 +1,434 @@
+BC-13.5.1 — Keyboard Interruption Correction & Focused Lifecycle Verification
+===========================================================================
+Date: 2026-11-26
+Milestone: BC-13 (Alignment & Snapping Guides)
+Status: implemented, focused validation passed, NOT committed (waiting for
+ChatGPT/owner QA)
+Baseline: 0d10d06 (BC-13.5).
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+- The approved Option B policy is implemented:
+  - Escape cancels an active Free drag/resize;
+  - a recognized editor command cancels it from the command's own
+    execution path, only when that command actually runs;
+  - every other key (unassigned letters, numbers, punctuation,
+    unsupported Ctrl/Cmd combinations, modifiers) leaves the interaction
+    alone.
+- The "any non-modifier key cancels" branch was removed from the
+  lifecycle. The Canvas registers the active interaction in an
+  editor-owned registry (editor/utils/activeInteraction). The
+  authoritative paths call interruptActiveInteraction() first:
+  - the store actions behind the shortcuts AND the menus/toolbar
+    (Undo/Redo, Copy/Cut/Paste/Duplicate, Delete request/confirm,
+    Copy/Paste CSS, Preview, replacing the document);
+  - the project workflow and commands (Save, Save As, New, Open, Import,
+    Close, Download);
+  - Export Code.
+  No second list of shortcuts exists, and no new shortcut system.
+- Two real defects were found while verifying, both fixed:
+  D1 Cancelling a gesture on a SAVED document left it "Unsaved". The
+     node-scoped rollback built a structurally identical but new document
+     object, and the unsaved check compares identity. This affected
+     Escape, every BC-13.5 cancel path, and the no-op path. Fixed: the
+     rollback reuses the snapshot's document object when it is
+     structurally identical.
+  D2 Dragging the same text element twice in a row: the first drag left a
+     native text selection, so the second press became a native
+     drag-and-drop. That fired pointercancel, which since BC-13.5 rolls
+     back (before, it silently stopped the drag). Fixed in the shared
+     lifecycle: no text selection during a gesture, and a native dragstart
+     is prevented. A regression test fails without the fix.
+- Outstanding BC-13.5 items:
+  - A page switching: NOT APPLICABLE (no page model);
+  - B redo preservation: PASS (newly verified, unit drag+resize and
+    browser);
+  - C lost pointer capture: PASS (newly verified for resize, plus the
+    selection/guide assertions);
+  - D resize auto-scroll: PASS (newly verified, 3 browsers);
+  - E external invalidation: PASS (reused, plus 2 new clipping tests and
+    one localized trigger).
+- Tests:
+  - unit: 26 files / 624 tests on the affected contracts (31 new tests);
+  - Chromium: 16/16 (the lifecycle spec, +7 new) and 16/16 BC-13.2–13.4
+    specs;
+  - Firefox + WebKit: the lifecycle spec 32/32;
+  - typecheck and ESLint clean.
+- Recommendation: READY FOR QA.
+
+
+2. FILES CHANGED AND REASONS
+----------------------------
+Created:
+- src/features/editor/utils/activeInteraction.ts: the registry
+  (register / interruptActiveInteraction / hasActiveInteraction).
+  It lives in the editor, so the editor and project features don't import
+  canvas internals.
+Modified:
+- src/features/canvas/utils/createFreeInteraction.ts:
+  - removed the any-key cancel;
+  - registers the interaction (reason "command") and unregisters it in
+    cleanup;
+  - body user-select none during a gesture, plus native dragstart
+    prevented (D2);
+  - a window resize marks snap targets dirty (E, localized).
+- src/features/editor/stores/useEditorStore.ts:
+  - interruptBeforeCommand(eligibility) at the top of 13 actions:
+    copySelection, cutSelection, pasteClipboard, duplicateSelection,
+    copyStyle, pasteStyle, deleteSelection, requestDeleteSelection,
+    confirmPendingDeletion, undo, redo, enterPreview, replaceDocument;
+  - + hasActionableSelection;
+  - restoreFreeLayoutsLive reuses the snapshot document when it is
+    structurally identical (D1).
+- src/features/project/commands/projectCommands.ts: editInProgress()
+  interrupts first (Save, Save As/to file, Download). Any other open edit
+  is still refused as before.
+- src/features/project/commands/projectWorkflow.ts: interrupts at
+  requestSwitch (New, Open, Import, Close), save(), saveAs() and
+  requestClose(), BEFORE the unsaved-changes check.
+- src/features/export/components/ExportCodeDialogHost.tsx:
+  openExportCodeDialog interrupts first.
+- Tests:
+  - createFreeInteraction.test.tsx: the rejected "any key cancels" test
+    was replaced by the Option B matrix; outstanding cases added; the
+    Harness mounts the REAL useEditorKeyboardShortcuts;
+  - projectCommands.test.ts (+3), projectWorkflow.test.ts (+2);
+  - e2e/free-interaction-lifecycle.spec.ts (+7).
+- This report; changelogs/2026-11-26-…BC-13.5.1.txt (gitignored).
+
+
+3. ROOT CAUSE OF THE OVERLY BROAD POLICY
+----------------------------------------
+- In BC-13.5, createFreeInteraction's capture-phase keydown handler ended
+  with `cancel("keyboard")` for every key that was not Escape or a
+  modifier.
+- It was a blanket stand-in for "a command might be about to run": the
+  lifecycle had no way to know whether a key resolved to a command, so it
+  cancelled on all of them.
+- The knowledge of what a command is belongs to the command dispatch, not
+  to the gesture.
+
+
+4. CORRECTED COMMAND-DISPATCH AND CANCELLATION ARCHITECTURE
+-----------------------------------------------------------
+- The gesture owns only Escape (consumed: preventDefault +
+  stopPropagation, so the Canvas's deselect never runs) and modifiers
+  (they update Alt/Shift state).
+- At start it calls registerActiveInteraction(() => cancel("command")).
+  Cleanup unregisters, exactly once.
+- Commands: each authoritative execution path calls
+  interruptActiveInteraction() first. The interaction is rolled back
+  (node-scoped), cleaned up, and unregistered; then the command runs on
+  committed state.
+  - Store actions: guarded by the action's own eligibility (below), so a
+    disabled command never cancels.
+  - Project workflow/commands: at the entry that reads or replaces the
+    document.
+- The keyboard shortcut hooks are unchanged: they keep their existing
+  focus/preview/dialog restrictions, and only call the actions.
+- Because the guard sits in the action itself, the Edit/File menus, the
+  toolbar and a second touch pointer get the same contract.
+- No duplicate cancellation: the registry clears itself before calling
+  cancel, and cancel is idempotent. The command is called once by its
+  single dispatcher.
+Eligibility (no cancel when the command would do nothing):
+- Undo: past > 0; Redo: future > 0;
+- Copy, Duplicate, Delete, Request Delete: an existing non-root element
+  is selected (Duplicate and Request Delete also require no pending
+  confirmation);
+- Cut: as Copy, plus no pending confirmation;
+- Paste: clipboard non-empty and no pending confirmation;
+- Confirm Delete: a pending confirmation;
+- Copy CSS: a primary selection; Paste CSS: a CSS clipboard plus a
+  selection;
+- Preview: not already previewing;
+- replaceDocument: always.
+- Project shortcuts ignored while a dialog is open never reach the
+  workflow, so nothing is cancelled (tested).
+
+
+5. KEYBOARD BEHAVIOR MATRIX
+---------------------------
+[VERIFIED U = unit through the real useEditorKeyboardShortcuts;
+ B = browser]
+
+Key                                | Active drag/resize     | Evidence
+-----------------------------------|------------------------|---------
+Escape                             | cancel, consumed,      | U drag+resize,
+                                   | selection kept         | B ×3 browsers
+q (unassigned letter)              | continues              | U drag, B
+7 / 5 (number)                     | continues              | U, B
+. , (punctuation)                  | continues              | U, B
+Ctrl+K (unsupported)               | continues              | U
+Ctrl+Shift+X (unsupported)         | continues              | U
+g (letter) during a resize         | continues              | U
+Control / Meta alone               | continues              | U, B
+Alt                                | continues, snap bypass | U (+BC-13.3/13.4
+                                   |                        | e2e)
+Shift                              | continues              | U
+Delete (selection)                 | cancel → delete once   | U drag+resize, B
+Delete with nothing selected       | continues (disabled)   | U
+Delete in a text field             | continues (field owns) | U
+Ctrl+Z (history)                   | cancel → undo once     | U, B
+Ctrl+Z with no history             | continues (disabled)   | U
+Ctrl+Shift+Z / Ctrl+Y (future)     | cancel → redo once     | U
+Ctrl+Y with no future              | continues              | U
+Ctrl+C (selection)                 | cancel → copy          | U
+                                   | committed geometry     |
+Ctrl+C with no selection           | continues              | U
+Ctrl+X                             | cancel → cut committed | U
+Ctrl+V with an empty clipboard     | continues              | U
+Ctrl+D (selection)                 | cancel → duplicate     | U
+                                   | committed              |
+Ctrl+S                             | cancel → save          | B, U
+                                   | committed geometry     | (commands)
+Ctrl+Shift+S / New / Open / Close  | cancel → before the    | U (workflow
+                                   | unsaved check          | New); same
+                                   |                        | code path for
+                                   |                        | the rest
+Ctrl+N in a browser                | never delivered by     | n/a
+                                   | browsers (desktop only)|
+
+
+6. MODIFIER COMPATIBILITY
+-------------------------
+- Alt/Option: unchanged. It is handled in the lifecycle (bypasses snap,
+  default prevented, no cancel); the preference is untouched.
+  [VERIFIED U; Alt e2e from BC-13.3/13.4 still green in this run: the
+  16 snap specs.]
+- Shift: unchanged (drag axis lock; no resize meaning). [VERIFIED U; the
+  BC-13.3 Shift e2e is green.]
+- Ctrl/Cmd alone: no cancel. A recognized Ctrl/Cmd shortcut follows the
+  command contract; an unrecognized one does nothing.
+- Platform semantics are unchanged: the shortcut hooks were not edited
+  (ControlOrMeta, Ctrl+Y on Ctrl only, AltGraph exclusion).
+
+
+7. COMMAND EXECUTION ORDERING
+-----------------------------
+[VERIFIED U unless marked]
+- Delete (drag and resize):
+  - rolled back first, then deleted;
+  - one history entry (the delete), no drag entry;
+  - the release after it records nothing;
+  - Undo restores the element at its committed geometry. [U + B]
+- Undo:
+  - cancel first, then undo the last committed edit once;
+  - the cancelled gesture is never in history;
+  - redo entry created by the undo only, then Redo restores it. [U + B]
+- Redo: cancel first, then redo once (both chords). [U]
+- Save:
+  - commands.save → editInProgress → cancel → serialize;
+  - the stored project has the committed geometry; cancel is called
+    once. [U];
+  - Ctrl+S in the browser: the element is back first, and the normal
+    save flow follows. [B]
+- Download: cancel first; the file holds the committed geometry. [U]
+- New Project (workflow): cancel BEFORE the unsaved-changes check, so a
+  saved, committed document doesn't prompt. [U]
+- Copy/Cut/Duplicate: the clipboard and the copies carry the committed
+  geometry; one entry for Duplicate/Cut. [U]
+- replaceDocument (open/import/new/close all end here): the outgoing
+  document has its committed geometry back before it is replaced. [U]
+- Another, non-gesture open edit (an Inspector merge transaction or a
+  drawing) is still refused by Save, as before. [U]
+
+
+8. PAGE-SWITCHING VERIFICATION
+------------------------------
+Status: NOT APPLICABLE.
+- Layoutry documents have no pages: one page root per project.
+  Pagination is a navigation component, not document pages (checked in
+  BC-13.5: no page state or switch command exists).
+- Future integration point: a page-switch command must call
+  interruptActiveInteraction() at its entry (as replaceDocument does now).
+  The registry and lifecycle then roll back the outgoing page and drop
+  stale callbacks via the generation token.
+- Project switching (the closest equivalent): PASS (newly verified
+  ordering for New; replaceDocument ordering; the BC-13.5 stale-callback
+  test reused).
+
+
+9. REDO-HISTORY PRESERVATION
+----------------------------
+Status: PASS — newly verified.
+- Unit (drag and resize):
+  - a committed edit, then Undo (redo available);
+  - begin the gesture; 3 live frames; Escape;
+  - future still 1; Redo → exactly the committed edit; past 1.
+- Browser (Chromium/Firefox/WebKit):
+  - a committed drag, then Undo;
+  - a drag with 10 live steps, then Escape → Redo enabled;
+  - Redo → exactly the committed drag's position.
+- Also: Ctrl+Z mid-drag keeps the redo stack correct (section 7).
+
+
+10. POINTER-CAPTURE LOSS
+------------------------
+Status: PASS — newly verified for resizing; drag reused + extended.
+- Resize (new unit):
+  - with a snapped guide showing, an unexpected lostpointercapture →
+    exact rollback, guides null, selection kept, no history;
+  - a normal pointerup followed by lostpointercapture → committed exactly
+    once (past 1, width kept).
+- Drag: the BC-13.5 unit covers both orders (reused).
+- Also new: a cancelled resize via lost capture leaves a saved document
+  saved (D1).
+- Auto-scroll cleanup on cancellation: shared code. Escape stopping
+  auto-scroll is verified in the browser (BC-13.5 reused, and the new
+  resize auto-scroll Escape test). Lost capture ends the same frame loop
+  (same cleanup()).
+- Exactly-once: every terminal path goes through cancel/pointerUp →
+  cleanup once; repeated calls are no-ops (BC-13.5 unit reused).
+
+
+11. RESIZE AUTO-SCROLL
+----------------------
+Status: PASS — newly verified (Chromium, Firefox, WebKit).
+- Workspace, south handle (the supported vertical direction):
+  - the pointer is held stationary at the bottom edge → the Workspace
+    keeps scrolling;
+  - the bottom edge follows the pointer (±4 px, one frame);
+  - the top edge stays anchored (the stored top is unchanged);
+  - Escape → the stored geometry is exactly restored, the selection is
+    kept, Undo stays disabled;
+  - a completed one: it grew > 100 px, stayed inside the container, and
+    is ONE Undo step (Undo restores it exactly, then Undo is disabled).
+- Nested horizontal scroller, east handle:
+  - the scroller scrolls and the Workspace doesn't;
+  - the left edge is anchored;
+  - the right edge grows and stays inside its Free container;
+  - Undo restores it exactly.
+- Ratio-locked SE corner during auto-scroll: the ratio is preserved
+  (±0.01).
+- Snap guides after scrolling: a south resize of the mover down to a
+  target that was offscreen at pointer-down → an achieved guide, the
+  bottom edge on the target's top (±0.05 px), the guide on its rendered
+  edge (±0.5 px).
+- Horizontal Workspace scroll: not used (the Workspace never overflows
+  horizontally; no overflow was manufactured).
+
+
+12. EXTERNAL INVALIDATION EVIDENCE
+----------------------------------
+- Ancestor deleted (during a resize): PASS — previous evidence reused
+  (BC-13.5 unit "deleting an ancestor…"). Also newly: Delete during a
+  resize via the real shortcut.
+- The active element's parent changed: PASS — reused (BC-13.5 unit).
+- A target becoming hidden: PASS — reused (BC-13.5 unit).
+- A target becoming completely clipped: PASS — newly verified (2 unit):
+  a) a scrolling ancestor clips a snapped-to target whose local rect is
+     unchanged → refreshed after the scroll throttle → lock released, no
+     guide;
+  b) a window resize clips a target with no scroll and no document change.
+     This was NOT detected before → localized fix: a resize listener marks
+     targets dirty.
+  Partly visible targets stay eligible (BC-13.3 collector unit, reused).
+- Unaffected-axis lock preservation: PASS — reused (BC-13.5 unit).
+- Canvas unmount: PASS — reused (BC-13.5 unit).
+- Stale callbacks after cancellation: PASS — reused (BC-13.5 unit: a
+  frame queued before Escape, and before replaceDocument).
+- Keyboard-correction impact: replaceDocument and enterPreview now cancel
+  BEFORE changing state (they were the subscription's job, which stays as
+  the safety net).
+
+
+13. EXACT FOCUSED TEST COMMANDS AND RESULTS
+-------------------------------------------
+1. npx vitest run src/features/editor/stores/useEditorStore.test.ts
+   src/features/editor/stores/useEditorStore.clipboardIntegrity.test.ts
+   src/features/editor/stores/useEditorStore.multiClipboard.test.ts
+   src/features/editor/stores/useEditorStore.multiDelete.test.ts
+   src/features/editor/stores/useEditorStore.styleClipboard.test.ts
+   src/features/editor/stores/useEditorStore.previewVisibility.test.ts
+   src/features/editor/stores/useEditorStore.persistence.test.ts
+   src/features/editor/stores/useEditorStore.mergeTransaction.test.ts
+   src/features/editor/hooks src/features/project/commands
+   src/features/project/hooks
+   src/features/canvas/utils/createFreeInteraction.test.tsx
+   src/features/canvas/hooks/useFreeChildMoveSession.test.tsx
+   src/features/canvas/hooks/useFreeChildResizeSession.test.tsx
+   src/features/export/components
+   → 26 files, 624 tests passed
+   Why these: the 13 guarded store actions' own contract suites; the
+   shortcut hooks; the project commands/workflow/shortcuts; the lifecycle
+   and both sessions; the Export dialog host.
+   New tests: createFreeInteraction.test.tsx +26 (it.each expanded:
+   keyboard matrix 9 + resize key + Delete ×2 + Undo + Redo + disabled +
+   copy/duplicate + cut + focus + Escape + replaceDocument; redo ×2 +
+   lost-capture resize + clipping ×2 + saved-state + user-select/
+   dragstart); projectCommands +3; projectWorkflow +2.
+   Re-run after Prettier: projectCommands + projectWorkflow → 49 passed.
+2. npx playwright test e2e/free-interaction-lifecycle.spec.ts
+   --project=chromium → 16 passed (13 + 2 failing at first, fixed; see
+   below)
+3. npx playwright test e2e/free-snap-dragging.spec.ts
+   e2e/free-snap-resizing.spec.ts e2e/free-snap-coordinates.spec.ts
+   --project=chromium → 16 passed (Alt/Shift/resize unchanged after the
+   lifecycle edit)
+4. npx playwright test -c <temporary Firefox+WebKit config, deleted>
+   e2e/free-interaction-lifecycle.spec.ts → 32 passed
+5. Regression proof (D2): with the pre-fix lifecycle swapped back in, the
+   "two drags" test fails (expected 170, received 110); then restored.
+6. npx tsc --noEmit -p . → 0 errors
+7. npx eslint <all 10 changed files> → clean
+8. npx prettier --write on the 4 project files that were Prettier-clean
+   at HEAD.
+First-run failures and causes:
+- the clipping unit fixtures lacked clientWidth/clientHeight on the clip
+  element (a fixture gap);
+- the New Project workflow test exposed D1 (a real bug, fixed);
+- the Ctrl+S e2e expected a dialog, but an imported project saves in
+  place (an assertion fix: saved status or dialog);
+- the keyboard e2e exposed D2 (a real bug, fixed; found with temporary
+  logging probes, deleted).
+Not run:
+- the full unit/browser suites (policy);
+- Electron (no Electron-specific shortcut or file-command code changed:
+  the workflow is shared and the desktop uses DOM shortcuts);
+- a build.
+
+
+14. PREVIOUS TEST EVIDENCE REUSED
+---------------------------------
+From BC-13.5 (commit 0d10d06, its report section 15):
+- the lifecycle unit tests (still in the file and passing in this run):
+  pointercancel touch/pen/mouse (simulated), blur, repeated cancels,
+  unmount, stale frames, rapid release, no-op, listener cleanup, deletion
+  (element/ancestor), reparenting, project replacement, Preview, the Snap
+  preference, scroll compensation, target move with unaffected-axis lock,
+  hidden target;
+- the auto-scroll planner unit tests (7; unchanged, not re-run);
+- the Chromium/Firefox/WebKit drag auto-scroll, nested-scroller and
+  snap-after-scroll e2e (still in the spec, re-run here);
+- the dnd-kit Escape fix and its regression proof (EditorApp unchanged).
+Not re-run: the 66-test Chromium set beyond the 32 listed, and the BC-13.5
+canvas/overlay unit folders (unchanged code).
+
+
+15. REMAINING LIMITATIONS OR UNRESOLVED DEFECTS
+-----------------------------------------------
+- Page switching: no page model exists (section 8).
+- Commands reachable only through Inspector/Structure clicks (e.g. an
+  Inspector field edit, Structure moves) are not guarded. They need a
+  pointer click, impossible during a captured mouse gesture. Only a
+  second touch pointer could reach them; the BC-13.5 subscription safety
+  net covers deletions/moves from such paths.
+- Autosave/recovery snapshots taken mid-gesture may contain live geometry
+  (unchanged from BC-13.5).
+- Touch/pen are simulated only.
+- P1 (rendering performance) and C1 (containment) stay open; K1 is
+  resolved (Option B).
+No unresolved defects found in this checkpoint.
+
+
+16. FINAL RECOMMENDATION
+------------------------
+READY FOR QA.
+Git working tree:
+- M: createFreeInteraction.ts and its test, useEditorStore.ts,
+  ExportCodeDialogHost.tsx, projectCommands.ts and its test,
+  projectWorkflow.ts and its test, e2e/free-interaction-lifecycle.spec.ts;
+- ??: src/features/editor/utils/activeInteraction.ts, this report.
+Nothing staged, committed or pushed. Do not proceed to BC-13.6 before QA.

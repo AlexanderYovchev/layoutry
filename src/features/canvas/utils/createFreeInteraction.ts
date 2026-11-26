@@ -3,6 +3,7 @@ import type { FreeSnapContext } from "@/features/canvas/utils/createFreeSnapCont
 import { clientRectToLocal, measureFreeContainerFrame, type Rect } from "@/features/canvas/utils/freeLayoutFrame";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { FreeLayoutGeometry } from "@/features/editor/types/layout";
+import { registerActiveInteraction } from "@/features/editor/utils/activeInteraction";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
 import { swallowReleaseClick } from "@/lib/swallowReleaseClick";
 
@@ -20,7 +21,8 @@ import { swallowReleaseClick } from "@/lib/swallowReleaseClick";
  * - pointerup processes the final pointer position before committing; an
  *   unchanged result records nothing (no-op);
  * - cancellation (Escape, pointercancel, an unexpected lostpointercapture,
- *   window blur / hidden tab, unmount, any other key — see below, Preview)
+ *   window blur / hidden tab, unmount, a recognized editor command — see
+ *   below, Preview)
  *   restores ONLY the touched nodes' original freeLayout and drops the
  *   transaction: no history entry, the redo stack and the selection kept;
  * - external invalidation (store subscription): the project replaced
@@ -28,11 +30,15 @@ import { swallowReleaseClick } from "@/lib/swallowReleaseClick";
  *   an ancestor) deleted → stop, nothing recreated, and any history entry
  *   recorded meanwhile gets the committed geometry back; its parent changed
  *   → stop and restore; any other document change → refresh snap targets;
- * - keyboard during an interaction: Escape is consumed (the Canvas never
- *   sees it, so the selection stays); modifier keys only update modifiers;
- *   any other key first cancels the interaction and then continues to its
- *   own handler unchanged (Delete, Undo/Redo, Ctrl+N/O, … act on the
- *   committed document, never on uncommitted live geometry).
+ * - keyboard during an interaction (BC-13.5.1, owner decision Option B):
+ *   Escape is consumed (the Canvas never sees it, so the selection stays);
+ *   modifier keys only update modifiers; every other key is left alone —
+ *   it does NOT cancel. A recognized editor command (Delete, Undo/Redo,
+ *   clipboard, Duplicate, Save, New/Open/Close, Preview…) cancels the
+ *   interaction from its own execution path, only when it actually runs:
+ *   the interaction registers itself (editor/utils/activeInteraction) and
+ *   those commands call interruptActiveInteraction() first, so they act on
+ *   the committed document, never on uncommitted live geometry.
  */
 
 export type FreeInteractionEndReason =
@@ -42,7 +48,7 @@ export type FreeInteractionEndReason =
   | "pointercancel"
   | "lost-capture"
   | "blur"
-  | "keyboard"
+  | "command"
   | "unmount"
   | "preview"
   | "deleted"
@@ -100,7 +106,7 @@ const MODIFIER_KEYS = new Set(["Alt", "AltGraph", "Shift", "Control", "Meta", "O
 let generationCounter = 0;
 
 /** Cancellations that happen while the pointer button is still down (its release click follows later). */
-const BUTTON_HELD_REASONS: ReadonlySet<FreeInteractionEndReason> = new Set(["escape", "keyboard", "deleted", "reparented", "document-replaced", "preview", "transaction-closed"]);
+const BUTTON_HELD_REASONS: ReadonlySet<FreeInteractionEndReason> = new Set(["escape", "command", "deleted", "reparented", "document-replaced", "preview", "transaction-closed"]);
 
 /** The generation of the interaction currently allowed to write; a frame queued by an earlier one compares unequal and does nothing. */
 let activeGeneration = 0;
@@ -249,10 +255,14 @@ export function createFreeInteraction(options: FreeInteractionOptions): FreeInte
     window.removeEventListener("keydown", onKeyDown, true);
     window.removeEventListener("keyup", onKeyUp, true);
     window.removeEventListener("blur", onBlur);
+    window.removeEventListener("resize", onResize);
+    window.removeEventListener("dragstart", onNativeDragStart, true);
+    document.body.style.userSelect = previousUserSelect;
     window.removeEventListener("scroll", onScroll, true);
     document.removeEventListener("visibilitychange", onVisibility);
     options.captureEl.removeEventListener("lostpointercapture", onLostCapture);
     unsubscribe();
+    unregister();
     try {
       if (options.captureEl.hasPointerCapture?.(options.pointerId)) options.captureEl.releasePointerCapture(options.pointerId);
     } catch {
@@ -335,9 +345,9 @@ export function createFreeInteraction(options: FreeInteractionOptions): FreeInte
       requestFrame();
       return;
     }
-    // Any other key: the interaction ends first (rolled back), then the key
-    // reaches its own handler and acts on the committed document.
-    cancel("keyboard");
+    // Any other key is not ours: it neither cancels nor is suppressed. A key
+    // that resolves to an editor command cancels through that command's own
+    // execution path (interruptActiveInteraction), and only if it runs.
   }
 
   function onKeyUp(event: KeyboardEvent) {
@@ -355,6 +365,16 @@ export function createFreeInteraction(options: FreeInteractionOptions): FreeInte
   // lostpointercapture that follows finds it ended and does nothing.
   const onLostCapture = () => cancel("lost-capture");
   const onScroll = () => requestFrame();
+  // A native drag-and-drop (e.g. of text selected earlier) would cancel the
+  // pointer stream (pointercancel → rollback): never start one mid-gesture.
+  const onNativeDragStart = (event: DragEvent) => event.preventDefault();
+  // A layout change (window resize) can clip or reveal targets without any
+  // scroll: refresh them on the next frame (BC-13.5.1, D19).
+  const onResize = () => {
+    targetsDirty = true;
+    lastRefresh = 0;
+    requestFrame();
+  };
 
   const unsubscribe = useEditorStore.subscribe((next, previous) => {
     if (state !== "active" || ownWrite) return;
@@ -372,9 +392,18 @@ export function createFreeInteraction(options: FreeInteractionOptions): FreeInte
     }
   });
 
+  // Recognized editor commands end this interaction before they run.
+  const unregister = registerActiveInteraction(() => cancel("command"));
+
   window.addEventListener("keydown", onKeyDown, true);
   window.addEventListener("keyup", onKeyUp, true);
   window.addEventListener("blur", onBlur);
+  window.addEventListener("resize", onResize);
+  window.addEventListener("dragstart", onNativeDragStart, true);
+  // No text selection while dragging a (text) element: a selection left in it
+  // would turn the NEXT press into a native drag-and-drop (BC-13.5.1).
+  const previousUserSelect = document.body.style.userSelect;
+  document.body.style.userSelect = "none";
   window.addEventListener("scroll", onScroll, { capture: true, passive: true });
   document.addEventListener("visibilitychange", onVisibility);
   options.captureEl.addEventListener("lostpointercapture", onLostCapture);

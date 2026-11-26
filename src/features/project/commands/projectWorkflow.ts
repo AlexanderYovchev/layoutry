@@ -1,4 +1,5 @@
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { interruptActiveInteraction } from "@/features/editor/utils/activeInteraction";
 import type {
   ImportMode,
   ProjectCommandResult,
@@ -187,6 +188,9 @@ export function createProjectWorkflow(
   }
 
   function requestSwitch(pending: ProjectSwitch): Promise<boolean> {
+    // BC-13.5.1: New/Open/Import/Close end a live drag/resize first, so the
+    // unsaved-changes check (and a save it leads to) sees committed geometry.
+    interruptActiveInteraction();
     if (hasUnsavedChanges()) {
       const replaced = ui().dialog;
       if (replaced?.kind === "discard") releaseSwitch(replaced.pending);
@@ -371,6 +375,7 @@ export function createProjectWorkflow(
     },
 
     async save(): Promise<boolean> {
+      interruptActiveInteraction(); // BC-13.5.1: save committed geometry only
       const location = session().location;
       if (location.kind === "unsaved" && !desktop) {
         ui().showDialog({ kind: "name", purpose: "first-save" });
@@ -380,6 +385,7 @@ export function createProjectWorkflow(
     },
 
     async saveAs(): Promise<boolean> {
+      interruptActiveInteraction(); // BC-13.5.1
       if (desktop) return report(await commands.saveToFile({ saveAs: true }));
       ui().showDialog({ kind: "name", purpose: "save-as" });
       return false;
@@ -517,6 +523,8 @@ export function createProjectWorkflow(
      */
     async requestClose(): Promise<void> {
       if (!desktop) return;
+      interruptActiveInteraction(); // BC-13.5.1: before the unsaved-changes check
+
       await commands.whenIdle();
       const dialog = ui().dialog;
       if (dialog?.kind === "discard" && dialog.pending.kind === "close") return;

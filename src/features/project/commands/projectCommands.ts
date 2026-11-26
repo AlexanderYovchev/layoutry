@@ -1,4 +1,5 @@
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { interruptActiveInteraction } from "@/features/editor/utils/activeInteraction";
 import type {
   DesktopOpenedFile,
   DesktopProjectFiles,
@@ -134,6 +135,10 @@ export function createProjectCommands({
   }
 
   function editInProgress(): ProjectCommandResult | null {
+    // BC-13.5.1: a live Free drag/resize is cancelled (rolled back) first, so
+    // the command saves committed geometry. Any other open edit (a drawing,
+    // an Inspector edit transaction) still has to be finished first.
+    interruptActiveInteraction();
     if (editor().transactionSnapshot === null) return null;
     return failure(
       "Finish the current edit first",

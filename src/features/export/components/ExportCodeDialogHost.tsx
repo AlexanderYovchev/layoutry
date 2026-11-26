@@ -3,6 +3,7 @@
 import { ExportCodeDialog } from "@/features/export/components/ExportCodeDialog";
 import type { DesktopExportFiles } from "@/features/export/desktop/desktopExportFiles";
 import { useExportDialogStore } from "@/features/export/stores/useExportDialogStore";
+import { interruptActiveInteraction } from "@/features/editor/utils/activeInteraction";
 
 interface ExportCodeDialogHostProps {
   title: string;
@@ -17,5 +18,8 @@ export function ExportCodeDialogHost({ title, desktop }: ExportCodeDialogHostPro
 }
 
 export function openExportCodeDialog(): void {
+  // BC-13.5.1: the export reads the document, so a live Free drag/resize ends
+  // first (rolled back) and the code is generated from committed geometry.
+  interruptActiveInteraction();
   useExportDialogStore.getState().openDialog();
 }
