@@ -27,7 +27,9 @@ export interface MeasuredNodeRect {
 export function useMeasuredNodeRect(
   canvasRootRef: RefObject<HTMLElement | null>,
   nodeId: string | null,
+  options: { trackScroll?: boolean } = {},
 ): MeasuredNodeRect | null {
+  const trackScroll = options.trackScroll === true;
   const [rect, setRect] = useState<MeasuredNodeRect | null>(null);
 
   useEffect(() => {
@@ -62,12 +64,22 @@ export function useMeasuredNodeRect(
     resizeObserver.observe(canvasRoot);
     resizeObserver.observe(target);
     window.addEventListener("resize", runMeasure);
+    // BC-13.5: opt-in for overlays that must follow a NESTED scroll container
+    // (or the node's own scroll offset) — the default assumption above only
+    // holds for the Workspace's own scrolling.
+    if (trackScroll)
+      window.addEventListener("scroll", runMeasure, {
+        capture: true,
+        passive: true,
+      });
 
     return () => {
       resizeObserver.disconnect();
       window.removeEventListener("resize", runMeasure);
+      if (trackScroll)
+        window.removeEventListener("scroll", runMeasure, { capture: true });
     };
-  }, [canvasRootRef, nodeId]);
+  }, [canvasRootRef, nodeId, trackScroll]);
 
   return rect;
 }

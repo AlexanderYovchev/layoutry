@@ -81,6 +81,7 @@ import {
   convertToFlowLayout,
   convertToFreeLayout,
   setChildResizePolicyForNode,
+  restoreFreeLayouts as restoreFreeLayoutsCommand,
   setFreeChildGeometry as setFreeChildGeometryCommand,
   type FreeContainerSelfUpdate,
 } from "@/features/editor/commands/layoutCommands";
@@ -383,6 +384,15 @@ interface EditorState {
   setFreeChildGeometry: (nodeId: string, geometry: FreeLayoutGeometry) => void;
   /** Per-frame Free-layout geometry write during a live drag/resize session — no history push; wrap in begin/commitResizeTransaction, same convention resize already established. */
   setFreeChildGeometryLive: (nodeId: string, geometry: FreeLayoutGeometry) => void;
+  /** BC-13.5: rolls back an uncommitted drag/resize — only the given nodes' freeLayout is put back (no history, no other change). */
+  restoreFreeLayoutsLive: (originals: ReadonlyMap<string, FreeLayoutGeometry | undefined>) => void;
+  /**
+   * BC-13.5: the same node-scoped rollback applied to the history entries
+   * pushed since index `fromIndex` (an external edit such as a deletion
+   * recorded while a drag/resize was live), so undoing that edit can never
+   * bring back the uncommitted geometry.
+   */
+  restoreFreeLayoutsInHistory: (originals: ReadonlyMap<string, FreeLayoutGeometry | undefined>, fromIndex: number) => void;
   /** Free-layout Snap on/off toggle (Checkpoint 1.15.6.1.1) — plain editor preference, no history, no document mutation. */
   setSnapEnabled: (enabled: boolean) => void;
   /** Sets/replaces the live snap guide(s) during an in-progress Free-child drag — no history, ephemeral (see types/snap.ts). */
@@ -1487,6 +1497,25 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       const protection = getStyleProtection(state.document, nodeId);
       if (protection.protected) return nextEditorNoticeState(state, describeStyleLockNotice([protection], false));
       return { document: setFreeChildGeometryCommand(state.document, nodeId, geometry) };
+    }),
+
+  restoreFreeLayoutsLive: (originals) =>
+    set((state) => {
+      const document = restoreFreeLayoutsCommand(state.document, originals);
+      return document === state.document ? {} : { document };
+    }),
+
+  restoreFreeLayoutsInHistory: (originals, fromIndex) =>
+    set((state) => {
+      let changed = false;
+      const past = state.past.map((entry, index) => {
+        if (index < fromIndex) return entry;
+        const document = restoreFreeLayoutsCommand(entry.document, originals);
+        if (document === entry.document) return entry;
+        changed = true;
+        return { ...entry, document };
+      });
+      return changed ? { past } : {};
     }),
 
   // BC-13.3 (D11): remembered globally (snapPreference), never in the document or history.

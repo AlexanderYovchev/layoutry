@@ -554,12 +554,13 @@ describe("useFreeChildResizeSession — snapping (BC-13.4)", () => {
     expect(useEditorStore.getState().past).toHaveLength(0);
   });
 
-  it("pointercancel keeps the existing behaviour (commits) and clears the guide", () => {
+  it("pointercancel (an interrupted touch/pen gesture) rolls the resize back: original geometry, no history, no guide (BC-13.5, D21)", () => {
     const handle = setup({ direction: "e" });
     down(handle);
     move(handle, 296);
     fireEvent.pointerCancel(handle, { pointerId: 1 });
-    expect(geometry()?.width).toBe(200);
+    expect(geometry()).toEqual({ x: 100, y: 100, width: 100, height: 50 });
+    expect(useEditorStore.getState().past).toHaveLength(0);
     expect(guides()).toBeNull();
   });
 

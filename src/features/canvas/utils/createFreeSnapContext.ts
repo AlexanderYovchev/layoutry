@@ -1,6 +1,6 @@
 import { collectFreeSnapTargets } from "@/features/canvas/utils/collectFreeSnapTargets";
 import { clientRectToLocal, freeChildRenderedRect, type FreeContainerFrame, type Rect } from "@/features/canvas/utils/freeLayoutFrame";
-import { buildSnapIndex, type SnapIndex, type SnapTarget } from "@/features/canvas/utils/snapEngine";
+import { buildSnapIndex, type SnapIndex, type SnapResult, type SnapTarget } from "@/features/canvas/utils/snapEngine";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { FreeLayoutGeometry } from "@/features/editor/types/layout";
 import { getElementSpacing } from "@/features/editor/types/spacing";
@@ -53,4 +53,16 @@ export function createFreeSnapContext(
     offset,
     measured,
   };
+}
+
+/** BC-13.5: the target ids a frame's snap result relies on (alignment references and spacing pairs) — what target invalidation watches. */
+export function referencedTargetIds(result: SnapResult): string[] {
+  const ids = new Set<string>();
+  for (const axis of [result.x, result.y]) {
+    const match = axis.match;
+    if (!match) continue;
+    for (const reference of match.line?.references ?? []) ids.add(reference.targetId);
+    for (const id of match.spacing?.referenceIds ?? []) ids.add(id);
+  }
+  return [...ids];
 }

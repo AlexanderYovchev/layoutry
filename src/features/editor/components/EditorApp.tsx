@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -30,6 +30,7 @@ import { useInsertElement } from "@/features/editor/hooks/useInsertElement";
 import { useMoveElement } from "@/features/editor/hooks/useMoveElement";
 import { resolveDragEndInsertion } from "@/features/editor/utils/resolveDragEndInsertion";
 import { resolveDragEndMove } from "@/features/editor/utils/resolveDragEndMove";
+import { swallowReleaseClick } from "@/lib/swallowReleaseClick";
 
 interface ActiveDragPreview {
   label: string;
@@ -70,6 +71,22 @@ const AUTO_SCROLL_OPTIONS = {
   acceleration: 10,
   canScroll: (element: Element) => !(element instanceof HTMLElement && element.dataset.noDragAutoscroll !== undefined),
 };
+
+/**
+ * BC-13.5 (D21): Escape during a Canvas or catalog drag (this DndContext)
+ * only cancels the drag — dnd-kit's own listener does that. Marked as
+ * handled first (capture phase), so the Canvas's Escape-clears-the-
+ * selection shortcut (CanvasInteractionBoundary skips a defaultPrevented
+ * Escape) keeps the selection — the same claim BC-12.3.1 added for
+ * Structure drags. Module-level, so the same function is added and removed.
+ */
+function claimEscapeDuringDrag(event: KeyboardEvent) {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  // The button is still held: the click its release produces (uncaptured,
+  // on whatever is under the pointer) must not change the selection either.
+  swallowReleaseClick();
+}
 
 interface EditorAppProps {
   /**
@@ -165,12 +182,17 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
         : useEditorStore.getState().enterPreview(),
   };
 
+  // Never leave the Escape claim behind if the editor unmounts mid-drag.
+  useEffect(() => () => window.removeEventListener("keydown", claimEscapeDuringDrag, true), []);
+
   function handleDragStart(event: DragStartEvent) {
+    window.addEventListener("keydown", claimEscapeDuringDrag, true);
     const label = event.active.data.current?.label;
     setActiveDrag(typeof label === "string" ? { label } : null);
   }
 
   function handleDragEnd(event: DragEndEvent) {
+    window.removeEventListener("keydown", claimEscapeDuringDrag, true);
     setActiveDrag(null);
 
     const moveRequest = resolveDragEndMove(event, documentModel);
@@ -203,7 +225,10 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
       autoScroll={AUTO_SCROLL_OPTIONS}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
-      onDragCancel={() => setActiveDrag(null)}
+      onDragCancel={() => {
+        window.removeEventListener("keydown", claimEscapeDuringDrag, true);
+        setActiveDrag(null);
+      }}
     >
       <AppShell
         workspaceContent={workspaceContent}

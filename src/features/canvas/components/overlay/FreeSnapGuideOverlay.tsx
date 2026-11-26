@@ -55,7 +55,7 @@ function Label({ x, y, value, kind }: { x: number; y: number; value: number; kin
  */
 export function FreeSnapGuideOverlay({ canvasRootRef }: FreeSnapGuideOverlayProps) {
   const guides = useEditorStore((state) => state.activeSnapGuides);
-  const containerRect = useMeasuredNodeRect(canvasRootRef, guides?.containerId ?? null);
+  const containerRect = useMeasuredNodeRect(canvasRootRef, guides?.containerId ?? null, { trackScroll: true });
 
   if (!guides || !containerRect) return null;
 

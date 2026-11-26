@@ -5,6 +5,7 @@ import {
   applyFreeContainerChildGeometries,
   convertToFlowLayout,
   convertToFreeLayout,
+  restoreFreeLayouts,
   setChildResizePolicyForNode,
   setFreeChildGeometry,
 } from "./layoutCommands";
@@ -416,5 +417,41 @@ describe("setChildResizePolicyForNode", () => {
     const root = freeTree();
     const result = setChildResizePolicyForNode(root, "does-not-exist", "clamp");
     expect(result).toBe(root);
+  });
+});
+
+describe("restoreFreeLayouts (BC-13.5)", () => {
+  const tree = (): EditorElementNode => ({
+    id: "root",
+    tag: "page",
+    children: [
+      {
+        id: "free",
+        tag: "div",
+        layoutMode: "free",
+        children: [
+          { id: "a", tag: "div", freeLayout: { x: 50, y: 60, width: 70, height: 80 } },
+          { id: "b", tag: "div", freeLayout: { x: 1, y: 2, width: 3, height: 4 }, text: "edited meanwhile" },
+          { id: "c", tag: "div", freeLayout: { x: 9, y: 9, width: 9, height: 9 } },
+        ],
+      },
+    ],
+  });
+
+  it("puts back only the listed nodes' freeLayout, leaving every other change alone", () => {
+    const restored = restoreFreeLayouts(tree(), new Map([["a", { x: 0, y: 0, width: 10, height: 10 }]]));
+    const children = restored.children![0].children!;
+    expect(children[0].freeLayout).toEqual({ x: 0, y: 0, width: 10, height: 10 });
+    expect(children[1]).toEqual(tree().children![0].children![1]);
+  });
+
+  it("removes a freeLayout the node didn't have before (original undefined)", () => {
+    const restored = restoreFreeLayouts(tree(), new Map([["c", undefined]]));
+    expect(restored.children![0].children![2]).not.toHaveProperty("freeLayout");
+  });
+
+  it("returns the same root when nothing differs, and skips missing nodes", () => {
+    const root = tree();
+    expect(restoreFreeLayouts(root, new Map([["a", { x: 50, y: 60, width: 70, height: 80 }], ["gone", undefined]]))).toBe(root);
   });
 });

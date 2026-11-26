@@ -14,6 +14,47 @@ import type { ChildResizePolicy, FreeLayoutGeometry } from "@/features/editor/ty
  * defensive clamp, but for freeLayout instead of dimensions).
  */
 
+/**
+ * BC-13.5: puts back the given nodes' Free-layout geometry exactly as it was
+ * (undefined = the node had none). Only those nodes' freeLayout fields are
+ * touched; missing nodes are skipped. Used to roll back an uncommitted
+ * drag/resize without overwriting any other document change.
+ */
+export function restoreFreeLayouts(
+  root: EditorElementNode,
+  originals: ReadonlyMap<string, FreeLayoutGeometry | undefined>,
+): EditorElementNode {
+  let self = root;
+  if (originals.has(root.id)) {
+    const original = originals.get(root.id);
+    const current = root.freeLayout;
+    const same =
+      original === current ||
+      (original !== undefined &&
+        current !== undefined &&
+        original.x === current.x &&
+        original.y === current.y &&
+        original.width === current.width &&
+        original.height === current.height);
+    if (!same) {
+      if (original) self = { ...root, freeLayout: original };
+      else {
+        const { freeLayout: _removed, ...rest } = root;
+        void _removed;
+        self = rest;
+      }
+    }
+  }
+  if (!self.children) return self;
+  let changed = false;
+  const children = self.children.map((child) => {
+    const next = restoreFreeLayouts(child, originals);
+    if (next !== child) changed = true;
+    return next;
+  });
+  return changed ? { ...self, children } : self;
+}
+
 /** Replaces exactly one node's Free-layout geometry. A no-op if nodeId doesn't exist. Width/height floor at the tag's own minimum (see resizeNode's identical minimum-only defensive clamp) — bounds against the live parent content box are the live session's job, already applied before this is ever called. */
 export function setFreeChildGeometry(
   root: EditorElementNode,
