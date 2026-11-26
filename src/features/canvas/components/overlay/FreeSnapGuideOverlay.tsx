@@ -16,7 +16,7 @@ interface FreeSnapGuideOverlayProps {
  * its padding-box corner (inside the border, where its absolute children
  * render; BC-13.2), not border + padding.
  */
-function readOriginInset(canvasRootRef: RefObject<HTMLElement | null>, containerId: string): { left: number; top: number } {
+export function readOriginInset(canvasRootRef: RefObject<HTMLElement | null>, containerId: string): { left: number; top: number } {
   const containerEl = canvasRootRef.current?.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(containerId)}"]`);
   return containerEl ? localOriginInset(containerEl) : { left: 0, top: 0 };
 }

@@ -1,6 +1,6 @@
 import { applyAutoScroll, collectScrollContainers, measureScrollers, planAutoScroll } from "@/features/canvas/utils/freeAutoScroll";
-import type { FreeSnapContext } from "@/features/canvas/utils/createFreeSnapContext";
-import { clientRectToLocal, measureFreeContainerFrame, type Rect } from "@/features/canvas/utils/freeLayoutFrame";
+import { snapReferencesChanged, type FreeSnapContext } from "@/features/canvas/utils/createFreeSnapContext";
+import { measureFreeContainerFrame } from "@/features/canvas/utils/freeLayoutFrame";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { FreeLayoutGeometry } from "@/features/editor/types/layout";
 import { registerActiveInteraction } from "@/features/editor/utils/activeInteraction";
@@ -98,8 +98,6 @@ export interface PointerLikeEvent {
 
 /** Scroll-only target refreshes (clipping changes) are throttled to this interval. */
 export const SNAP_REFRESH_INTERVAL_MS = 250;
-/** A referenced target that moved more than this (px) invalidates the snap snapshot. */
-const TARGET_MOVE_TOLERANCE_PX = 0.5;
 
 const MODIFIER_KEYS = new Set(["Alt", "AltGraph", "Shift", "Control", "Meta", "OS", "CapsLock", "Fn", "FnLock", "Hyper", "Super", "Symbol", "SymbolLock", "NumLock", "ScrollLock"]);
 
@@ -117,11 +115,6 @@ function sameGeometry(a: FreeLayoutGeometry | undefined, b: FreeLayoutGeometry |
   return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 }
 
-function rectsClose(a: Rect | undefined, b: Rect): boolean {
-  if (!a) return false;
-  const t = TARGET_MOVE_TOLERANCE_PX;
-  return Math.abs(a.x - b.x) <= t && Math.abs(a.y - b.y) <= t && Math.abs(a.width - b.width) <= t && Math.abs(a.height - b.height) <= t;
-}
 
 export function createFreeInteraction(options: FreeInteractionOptions): FreeInteraction {
   const generation = ++generationCounter;
@@ -174,18 +167,7 @@ export function createFreeInteraction(options: FreeInteractionOptions): FreeInte
 
   /** Whether a referenced target (or the parent) moved, resized, vanished or was hidden since it was measured. */
   function referencesChanged(): boolean {
-    if (!snap || !containerEl || references.length === 0) return false;
-    const frame = measureFreeContainerFrame(containerEl);
-    for (const id of references) {
-      if (id === snap.containerId) {
-        if (Math.abs(frame.paddingBox.width - snap.parentRect.width) > TARGET_MOVE_TOLERANCE_PX || Math.abs(frame.paddingBox.height - snap.parentRect.height) > TARGET_MOVE_TOLERANCE_PX) return true;
-        continue;
-      }
-      const el = containerEl.querySelector(`[data-node-id="${CSS.escape(id)}"]`);
-      if (!el) return true;
-      if (!rectsClose(snap.rectById.get(id), clientRectToLocal(el.getBoundingClientRect(), frame))) return true;
-    }
-    return false;
+    return snap !== null && containerEl !== null && snapReferencesChanged(snap, containerEl, references);
   }
 
   function runFrame(now: number, final = false) {

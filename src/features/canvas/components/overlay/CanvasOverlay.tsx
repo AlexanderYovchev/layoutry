@@ -3,6 +3,7 @@
 import type { RefObject } from "react";
 import { DropIndicatorOverlay } from "@/features/canvas/components/overlay/DropIndicatorOverlay";
 import { FormGuideOverlay } from "@/features/canvas/components/overlay/FormGuideOverlay";
+import { FreeInsertionPreviewOverlay } from "@/features/canvas/components/overlay/FreeInsertionPreviewOverlay";
 import { FreeSnapGuideOverlay } from "@/features/canvas/components/overlay/FreeSnapGuideOverlay";
 import { HoverOverlay } from "@/features/canvas/components/overlay/HoverOverlay";
 import { MediaGuideOverlay } from "@/features/canvas/components/overlay/MediaGuideOverlay";
@@ -34,9 +35,13 @@ export function CanvasOverlay({ canvasRootRef, hoveredNodeId }: CanvasOverlayPro
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
   const { nodes: selectedNodes, primary } = useSelectedNodes();
   const documentModel = useEditorStore((state) => state.document);
-  const activeDropIndicator = useActiveDropIndicator();
+  // BC-13.6: a Free container shows the live insertion preview instead of a
+  // before/after/inside indicator (which would misstate where it lands).
+  const freeInsertionActive = useEditorStore((state) => state.freeInsertionPreview !== null);
+  const dropIndicator = useActiveDropIndicator();
+  const activeDropIndicator = freeInsertionActive ? null : dropIndicator;
   const showHover =
-    hoveredNodeId !== null && hoveredNodeId !== primary?.node.id && !activeDropIndicator;
+    hoveredNodeId !== null && hoveredNodeId !== primary?.node.id && !dropIndicator;
   // Checkpoint 1.15.2, Part 14 — resize handles only ever render for a
   // genuine single selection; a multi-selection's own outlines are pure
   // visual feedback (see SelectionOverlay's own doc comment for why).
@@ -68,11 +73,12 @@ export function CanvasOverlay({ canvasRootRef, hoveredNodeId }: CanvasOverlayPro
     <div aria-hidden="true" className="pointer-events-none absolute inset-0">
       <FormGuideOverlay canvasRootRef={canvasRootRef} />
       <MediaGuideOverlay canvasRootRef={canvasRootRef} />
+      <FreeInsertionPreviewOverlay canvasRootRef={canvasRootRef} />
       <FreeSnapGuideOverlay canvasRootRef={canvasRootRef} />
       {showHover && (
         <HoverOverlay canvasRootRef={canvasRootRef} nodeId={hoveredNodeId} />
       )}
-      {!activeDropIndicator &&
+      {!dropIndicator &&
         selectedNodes.map((selected) => (
           <SelectionOverlay
             key={selected.node.id}

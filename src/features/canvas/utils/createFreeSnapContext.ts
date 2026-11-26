@@ -1,5 +1,5 @@
 import { collectFreeSnapTargets } from "@/features/canvas/utils/collectFreeSnapTargets";
-import { clientRectToLocal, freeChildRenderedRect, type FreeContainerFrame, type Rect } from "@/features/canvas/utils/freeLayoutFrame";
+import { clientRectToLocal, freeChildRenderedRect, measureFreeContainerFrame, type FreeContainerFrame, type Rect } from "@/features/canvas/utils/freeLayoutFrame";
 import { buildSnapIndex, type SnapIndex, type SnapResult, type SnapTarget } from "@/features/canvas/utils/snapEngine";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { FreeLayoutGeometry } from "@/features/editor/types/layout";
@@ -65,4 +65,59 @@ export function referencedTargetIds(result: SnapResult): string[] {
     for (const id of match.spacing?.referenceIds ?? []) ids.add(id);
   }
   return [...ids];
+}
+
+/**
+ * BC-13.6: the snap context for a box that isn't an element yet (a Resource
+ * Panel insertion preview): the same targets and eligibility as a drag (the
+ * whole container, nothing excluded), with the new element's own margin as
+ * the visual offset.
+ */
+export function createFreeInsertionSnapContext(
+  containerEl: HTMLElement,
+  frame: FreeContainerFrame,
+  document: EditorElementNode,
+  containerId: string,
+  margin: { left?: number; top?: number },
+): FreeSnapContext {
+  const collected = collectFreeSnapTargets(containerEl, frame, document, containerId, "");
+  return {
+    containerId,
+    index: buildSnapIndex(collected.targets),
+    rectById: collected.rectById,
+    siblingTargets: collected.siblingTargets,
+    parentRect: collected.parentRect,
+    offset: { x: margin.left ?? 0, y: margin.top ?? 0, width: 0, height: 0 },
+    measured: null,
+  };
+}
+
+/** A referenced target that moved more than this (px) invalidates the snap snapshot. */
+const TARGET_MOVE_TOLERANCE_PX = 0.5;
+
+function rectsClose(a: Rect | undefined, b: Rect): boolean {
+  if (!a) return false;
+  const t = TARGET_MOVE_TOLERANCE_PX;
+  return Math.abs(a.x - b.x) <= t && Math.abs(a.y - b.y) <= t && Math.abs(a.width - b.width) <= t && Math.abs(a.height - b.height) <= t;
+}
+
+/**
+ * BC-13.5 (shared since BC-13.6): whether any target the current snap result
+ * relies on (or the parent's padding box) moved, resized, was hidden or
+ * vanished since the snap context was measured — re-measures only those
+ * (1–3) elements, never the whole container.
+ */
+export function snapReferencesChanged(snap: FreeSnapContext, containerEl: HTMLElement, references: readonly string[]): boolean {
+  if (references.length === 0) return false;
+  const frame = measureFreeContainerFrame(containerEl);
+  for (const id of references) {
+    if (id === snap.containerId) {
+      if (Math.abs(frame.paddingBox.width - snap.parentRect.width) > TARGET_MOVE_TOLERANCE_PX || Math.abs(frame.paddingBox.height - snap.parentRect.height) > TARGET_MOVE_TOLERANCE_PX) return true;
+      continue;
+    }
+    const el = containerEl.querySelector(`[data-node-id="${CSS.escape(id)}"]`);
+    if (!el) return true;
+    if (!rectsClose(snap.rectById.get(id), clientRectToLocal(el.getBoundingClientRect(), frame))) return true;
+  }
+  return false;
 }

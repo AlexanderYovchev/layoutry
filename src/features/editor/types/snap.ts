@@ -54,3 +54,18 @@ export interface ActiveSnapGuides {
   distances: SnapDistanceLabel[];
   spacing: SnapSpacingIndicator[];
 }
+
+/**
+ * BC-13.6 (Decision 30): the live preview of a Resource Panel component
+ * being dragged into a Free container — its proposed border box in that
+ * container's local frame (the same frame as ActiveSnapGuides). Ephemeral
+ * editor state only: never in the document, history, Preview or export.
+ */
+export interface FreeInsertionPreview {
+  containerId: string;
+  rect: { x: number; y: number; width: number; height: number };
+  /** The component's display name, shown on the preview. */
+  label: string;
+  /** False when the hovered Free container can't accept this component (nothing would be inserted). */
+  valid: boolean;
+}

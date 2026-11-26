@@ -47,6 +47,12 @@ describe("replaceDocument — the atomic restoration contract", () => {
         distances: [],
         spacing: [],
       },
+      freeInsertionPreview: {
+        containerId: "section-1",
+        rect: { x: 1, y: 2, width: 3, height: 4 },
+        label: "P",
+        valid: true,
+      },
     });
     expect(store().past.length).toBeGreaterThan(0);
 
@@ -68,6 +74,7 @@ describe("replaceDocument — the atomic restoration contract", () => {
     expect(state.activeSvgTool).toBe("select");
     expect(state.svgDraft).toBeNull();
     expect(state.activeSnapGuides).toBeNull();
+    expect(state.freeInsertionPreview).toBeNull();
     expect(dirty()).toBe(false);
   });
 
@@ -147,6 +154,8 @@ describe("replaceDocument — the atomic restoration contract", () => {
       "activeSvgTool",
       "svgDraft",
       "activeSnapGuides",
+      // BC-13.6: the Resource Panel insertion preview never survives a load.
+      "freeInsertionPreview",
     ];
     // BC-11.2: the CSS clipboard is app-level, like the element clipboard.
     const kept = ["clipboard", "styleClipboard", "snapEnabled"];

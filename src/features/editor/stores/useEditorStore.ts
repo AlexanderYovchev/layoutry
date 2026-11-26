@@ -204,7 +204,7 @@ import type { BorderRadiusSettings } from "@/features/editor/types/borderRadius"
 import type { ShapePreset } from "@/features/editor/types/shape";
 import type { SvgPrimitiveKind, SvgViewBox } from "@/features/editor/types/svg";
 import type { SvgDrawingTool, SvgDraft } from "@/features/editor/types/svgEditMode";
-import type { ActiveSnapGuides } from "@/features/editor/types/snap";
+import type { ActiveSnapGuides, FreeInsertionPreview } from "@/features/editor/types/snap";
 import { hasSvgScene } from "@/features/editor/types/svgScene";
 import type { SvgPathCommand, SvgVectorObject, SvgVectorPoint } from "@/features/editor/types/svgScene";
 import { isValidSvgPath, isValidSvgPolygon } from "@/features/editor/utils/svgObjectGeometry";
@@ -310,6 +310,8 @@ interface EditorState {
   snapEnabled: boolean;
   /** The currently-active snap guide(s) for whichever Free child is mid-drag, or null between drags — ephemeral, cleared on pointerup/cancel, never entered into history (see types/snap.ts). */
   activeSnapGuides: ActiveSnapGuides | null;
+  /** BC-13.6: the live Resource Panel insertion preview over a Free container, or null — ephemeral, never in the document or history. */
+  freeInsertionPreview: FreeInsertionPreview | null;
 
   /**
    * The document as it was last loaded or saved (PROJECT-1.1). Unsaved
@@ -398,6 +400,7 @@ interface EditorState {
   setSnapEnabled: (enabled: boolean) => void;
   /** Sets/replaces the live snap guide(s) during an in-progress Free-child drag — no history, ephemeral (see types/snap.ts). */
   setActiveSnapGuides: (guides: ActiveSnapGuides | null) => void;
+  setFreeInsertionPreview: (preview: FreeInsertionPreview | null) => void;
 
   /** Direct mode set — editor UI state, no history (Checkpoint 1.15.6.8). */
   setEditorMode: (mode: EditorMode) => void;
@@ -1373,6 +1376,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   svgDraft: null,
   snapEnabled: true,
   activeSnapGuides: null,
+  freeInsertionPreview: null,
   persistedDocument: fixtureDocument,
 
   selectElement: (id) => set({ selection: selectionFromSingle(id), selectionAnchorId: id }),
@@ -1545,6 +1549,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
     set({ snapEnabled: enabled });
   },
   setActiveSnapGuides: (guides) => set({ activeSnapGuides: guides }),
+  setFreeInsertionPreview: (preview) => set({ freeInsertionPreview: preview }),
 
   setEditorMode: (mode) => set({ editorMode: mode }),
 
@@ -2643,6 +2648,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       activeSvgTool: "select",
       svgDraft: null,
       activeSnapGuides: null,
+      freeInsertionPreview: null,
     }));
   },
 

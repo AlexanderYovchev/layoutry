@@ -527,3 +527,41 @@ describe("useInsertElement — Free destinations (Checkpoint 3.4.4)", () => {
     expect(section?.children?.at(-1)?.freeLayout).toBeUndefined();
   });
 });
+
+describe("useInsertElement — Resource Panel pointer placement (BC-13.6)", () => {
+  afterEach(() => {
+    useEditorStore.setState(initialState, true);
+  });
+
+  function seedFree() {
+    useEditorStore.setState((state) => ({
+      document: {
+        ...state.document,
+        children: [
+          { id: "free", tag: "div", layoutMode: "free", dimensions: { preferredWidth: 600, preferredHeight: 400, offsetX: 0, offsetY: 0 }, children: [] },
+          { id: "flow", tag: "div", children: [] },
+        ],
+      },
+    }));
+  }
+
+  it("a Free destination takes the dropped geometry exactly (one history entry, the new element selected)", () => {
+    seedFree();
+    const { result } = renderHook(() => useInsertElement());
+    result.current("paragraph", "free", "inside", { x: 123, y: 45, width: 240, height: 80 });
+    const state = useEditorStore.getState();
+    const inserted = state.document.children?.[0].children?.[0];
+    expect(inserted?.freeLayout).toEqual({ x: 123, y: 45, width: 240, height: 80 });
+    expect(state.past).toHaveLength(1);
+    expect(state.selection.primaryId).toBe(inserted?.id);
+  });
+
+  it("a Flow destination ignores it (no freeLayout), and without it a Free destination keeps the first-available placement", () => {
+    seedFree();
+    const { result } = renderHook(() => useInsertElement());
+    result.current("paragraph", "flow", "inside", { x: 123, y: 45, width: 240, height: 80 });
+    expect(useEditorStore.getState().document.children?.[1].children?.[0].freeLayout).toBeUndefined();
+    result.current("paragraph", "free", "inside");
+    expect(useEditorStore.getState().document.children?.[0].children?.[0].freeLayout).toMatchObject({ x: 16, y: 16 });
+  });
+});

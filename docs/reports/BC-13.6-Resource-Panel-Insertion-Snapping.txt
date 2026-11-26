@@ -1,0 +1,550 @@
+BC-13.6 — Resource Panel Insertion Snapping
+===========================================
+Date: 2026-11-26
+Milestone: BC-13 (Alignment & Snapping Guides) — Decision 30,
+architecture clarification 3/5
+Status: implemented, focused validation passed, NOT committed (waiting for
+ChatGPT/owner QA)
+Baseline: e5edf3d (BC-13.5.1).
+
+Legend:
+- [VERIFIED] executed test or measurement;
+- [DESIGN] intended contract;
+- [ASSUMPTION] not verified.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+- A Resource Panel component dragged into a Free container now gets a
+  live preview at the pointer and lands exactly where the preview was.
+  The first-available slot is no longer used for that path.
+- The preview:
+  - is the component's default size, fitted by the existing Free rule;
+  - is contained in the destination;
+  - snaps through the SAME engine as dragging/resizing (6 px, X/Y
+    independent, locks, equal spacing, Snap preference, Alt bypass) with
+    the SAME guides and labels;
+  - auto-scrolls the Workspace / nested scrollers (reach-limited, a
+    stationary pointer keeps scrolling) with no drift;
+  - refreshes its targets after scrolling, document changes and window
+    resizes.
+- Nothing touches the document before the drop: the preview and guides are
+  ephemeral store state.
+- The drop is ONE insertElement (one Undo entry, the new element selected);
+  Undo removes it, Redo restores its exact geometry.
+- Escape, invalid drops, Flow/Flex/Grid destinations, click-to-insert,
+  paste and duplicate behave as before. A recognized command, a window
+  blur, entering Preview or a project switch cancels the drag first, so
+  nothing is inserted.
+- Architecture: Resource Panel drags are dnd-kit (EditorApp's
+  DndContext, a PointerSensor), not BC-13.5's pointer-capture gesture. A
+  small module session (freeInsertionSession) is fed by the existing
+  DndContext callbacks and reuses the shared frame, targets, engine,
+  guides, auto-scroll and the command registry. The destination comes
+  from the SAME rule the drop uses (resolveInsertionParent, extracted
+  from useInsertElement).
+- Tests:
+  - unit: 19 files / 273 tests on the affected contracts (+16 new);
+  - Chromium: the new spec 10/10 (×3 repeats green) and 57/57 regression
+    specs (resource-panel drags, lifecycle, drag/resize snap,
+    Structure/Canvas drag);
+  - Firefox + WebKit: the new spec 20/20;
+  - typecheck and ESLint clean.
+- Performance: the session costs ≈4 ms per frame at 1,000 targets. It
+  causes no document or paragraph re-renders: the measured re-renders
+  during a catalog drag over many Free children are dnd-kit's (identical
+  with the session disconnected).
+- Recommendation: READY FOR QA, with 2 owner decisions (section 19).
+
+
+2. CHANGED-FILE INVENTORY AND REASONS
+-------------------------------------
+Created:
+- src/features/canvas/utils/freeInsertionSession.ts: the insertion
+  session: start/destination/finish/cancel; one rAF loop; snapping;
+  auto-scroll; refresh; interruption; cleanup.
+- src/features/canvas/components/overlay/FreeInsertionPreviewOverlay.tsx:
+  the preview (dashed translucent outline + label; red when invalid).
+- src/features/editor/utils/resolveInsertionParent.ts: the one
+  insertion-destination rule, extracted from useInsertElement so the
+  preview and the drop can't disagree.
+- Tests:
+  - src/features/canvas/utils/freeInsertionSession.test.ts (14);
+  - e2e/free-insertion-snapping.spec.ts (10).
+- This report; changelogs/2026-11-26-…BC-13.6.txt (gitignored).
+Modified:
+- src/features/editor/components/EditorApp.tsx: DndContext onDragStart
+  (start a session for catalog drags, card hotspot), onDragMove/onDragOver
+  (destination via resolveInsertionParent), onDragEnd (final placement,
+  interrupted drags insert nothing), onDragCancel and unmount (cancel);
+  dnd-kit autoScroll's canScroll stands down while a Free destination
+  scrolls.
+- src/features/editor/hooks/useInsertElement.ts: uses
+  resolveInsertionParent; an optional `freeGeometry` honoured only for a
+  Free destination. Every other path is unchanged.
+- src/features/editor/stores/useEditorStore.ts: + freeInsertionPreview
+  and setFreeInsertionPreview (ephemeral; reset by replaceDocument).
+- src/features/editor/types/snap.ts: + FreeInsertionPreview.
+- src/features/canvas/components/overlay/CanvasOverlay.tsx: renders the
+  preview under the guides. The before/after/inside indicator is
+  suppressed while a Free preview shows (hover/selection stay hidden as
+  with an indicator).
+- src/features/canvas/components/overlay/FreeSnapGuideOverlay.tsx:
+  readOriginInset exported (shared with the preview overlay; same local
+  frame).
+- src/features/canvas/utils/createFreeSnapContext.ts:
+  - + createFreeInsertionSnapContext (targets for a box that isn't an
+    element yet);
+  - + snapReferencesChanged (the per-frame referenced-target check, moved
+    here from createFreeInteraction to be shared).
+- src/features/canvas/utils/createFreeInteraction.ts: uses
+  snapReferencesChanged (pure extraction, no behaviour change; the
+  lifecycle specs are green).
+- Tests: useInsertElement.test.ts (+2); useEditorStore.persistence.test.ts
+  (the new field is reset on load).
+
+
+3. EXISTING RESOURCE PANEL DRAG ARCHITECTURE
+--------------------------------------------
+[VERIFIED by reading and probing]
+- Tiles (CatalogCard, variant "tile") are dnd-kit useDraggable with data
+  { kind: "insert", elementType, label }.
+- One DndContext in EditorApp (PointerSensor, 4 px activation,
+  pointerWithin minus the active item, dnd-kit autoScroll
+  threshold y 0.2) handles both Canvas moves and catalog inserts.
+- Feedback:
+  - a DragOverlay label chip;
+  - CanvasOverlay's DropIndicatorOverlay (useDndContext active/over →
+    before/after line or inside outline).
+- Drop: onDragEnd → resolveDragEndInsertion (over + zone from the dragged
+  rect's centre: inside the middle 50% of a container, before/after
+  outside it) → useInsertElement → insertElement. That is one history entry
+  and selects the new node.
+- Free placement for every insertion (click, drag, paste, duplicate):
+  resolveFreeDestinationPlacement = first-available 16 px grid slot,
+  normalized to the approximate container size.
+- Structural validity: insertNode refuses via canParentAcceptChild.
+- Cancellation: dnd-kit's PointerSensor cancels on Escape (keydown on
+  document, event.code), pointercancel, visibilitychange and resize, but
+  NOT on window blur. EditorApp already claims Escape (BC-13.5) so the
+  selection is kept and the release click is swallowed.
+- Not reusable as-is: BC-13.5's createFreeInteraction assumes pointer
+  capture on an existing element, node originals and an open transaction.
+  None exists for a catalog drag (nothing in the document). Its
+  building blocks were reused instead.
+
+
+4. POINTER-POSITION INSERTION IMPLEMENTATION
+--------------------------------------------
+[DESIGN; VERIFIED unit + e2e]
+- onDragStart (catalog only): startFreeInsertion with:
+  - an in-memory prototype from createElementNode (never inserted; it only
+    gives the tag, the default Free size, margin);
+  - the label;
+  - the activator pointer;
+  - the card hotspot.
+- onDragMove/onDragOver: resolveDragEndInsertion + resolveInsertionParent
+  → setFreeInsertionDestination(parentId). If that parent is a Free
+  container (and not under a rotated/scaled ancestor or itself
+  rotated/scaled) it gets the preview; otherwise the preview is cleared.
+  The destination is checked with canParentAcceptChild: invalid → a red
+  preview with no snapping and no placement.
+- Per frame (one rAF loop, latest pointer from a window pointermove
+  listener):
+  1. auto-scroll step;
+  2. target refresh if due;
+  3. size = normalizeFreeLayoutGeometry(default size, measured
+     containment) (the existing rule: containment beats the minimum, so an
+     oversized component is fitted, as click-insert already does);
+  4. position = pointer → local (current container origin) − hotspot ×
+     size − margin, clamped to containment;
+  5. snapping (section 6);
+  6. publish the preview (border box) and guides; keep the placement
+     (stored geometry).
+- Drop (onDragEnd):
+  - finishFreeInsertion processes the final pointer once more (a
+    pointerup listener records the release position), returns the
+    placement and ends the session;
+  - an interrupted drag inserts nothing;
+  - if the drop's parent (same rule) is the previewed container →
+    insert(..., freeGeometry);
+  - if dnd-kit reports an ANCESTOR of it (its rects can lag the session's
+    auto-scroll) → inserted into the previewed container;
+  - any other parent → the existing placement.
+- Overlap is allowed (Decision 14); nothing is moved to make room.
+- Scope: only this path passes freeGeometry. Click-insert, paste,
+  duplicate, the Structure panel and Flow/Flex/Grid keep their placement.
+  [VERIFIED: useInsertElement unit; e2e click-insert still lands on the
+  16 px grid slot.]
+
+
+5. PREVIEW GEOMETRY AND ANCHOR CONVENTION
+-----------------------------------------
+- Anchor: the pointer keeps the same RELATIVE spot of the component box
+  that it held on the Resource Panel card (the hotspot = the pointer's
+  fractional position in the card at drag start, clamped 0..1; 0.5/0.5
+  if unknown). The new box is not the card's size.
+- Rationale:
+  - it preserves the existing drag hotspot in spirit;
+  - it is predictable: grabbing a card at its middle puts the box's
+    middle under the pointer;
+  - it doesn't jump when entering a container (the box is placed
+    relative to the pointer, never re-anchored to a slot);
+  - it is the same for every component (no component-specific rules).
+- No drift: every frame maps the CURRENT pointer through the CURRENT
+  container origin (padding box, scroll included). There is no
+  accumulated delta.
+- Snapping may offset the box temporarily; releasing a lock returns it to
+  the unsnapped position (an engine lock).
+- The preview equals the drop: the stored placement is the last computed
+  geometry, re-computed at the final pointer. [VERIFIED e2e: the inserted
+  box equals the last preview box (±0.5 px) in a plain container, after
+  snapping, after auto-scroll; unit: the final pointer is processed.]
+- Limitation [VERIFIED by reasoning, not specifically tested]: the preview
+  shows the stored default size. A component whose content renders taller
+  than its stored box (a minimum-height block) will look taller once
+  inserted.
+
+
+6. SHARED SNAPPING-ENGINE INTEGRATION
+-------------------------------------
+- Targets: createFreeInsertionSnapContext → collectFreeSnapTargets (the
+  BC-13.3 eligibility: parent padding box; every visible element in the
+  container, nested; Flex/Grid descendants as reference; locked
+  included; hidden/clipped/offscreen/0×0 excluded; nothing to exclude as
+  "self").
+- The new component's margin is the visual offset (margins never count as
+  size).
+- Per frame: resolveSnap({ box, ALL_EDGES, index, spacing:
+  computeEqualSpacingCandidates(x and y, siblings), enabled: snapEnabled
+  && !Alt, lock, adjust }). The adjust is a translation validated against
+  containment, so a candidate the containment would move is rejected:
+  never applied, never drawn as achieved (C1: unreachable padding edges
+  stay unreachable).
+- Locks start empty for each destination (no carry-over).
+- [VERIFIED]
+  - unit: the 6 px snap to an element edge with an achieved guide;
+    beyond the release, unsnapped; Alt → unsnapped + dashed, Alt
+    released → snapped; Snap off → unsnapped + dashed; equal spacing;
+    an invalid child → no snapping;
+  - e2e: the left edge 3 px from an element's edge → snapped, the guide
+    on the rendered edge, the drop keeps it; Alt dashed/released; Snap
+    off drop unsnapped; a target revealed by auto-scroll snaps.
+- Reused evidence (unchanged engine): snapEngine/snapEqualSpacing/
+  collector unit tests (BC-13.2/13.3), threshold/dedupe/tie rules.
+- Shift: no insertion behaviour (none existed; not extended).
+
+
+7. GUIDE AND EQUAL-SPACING BEHAVIOR
+-----------------------------------
+- Same builder and overlay as BC-13.3/13.4:
+  - the winning guide per axis;
+  - solid only when achieved; dashed for nearby (Snap off/Alt);
+  - CSS-px distance labels;
+  - equal-spacing gaps.
+- They are computed from the final preview box.
+- Cleared when:
+  - leaving a Free destination (Flow/Flex/Grid or nothing);
+  - switching to another Free container (fresh);
+  - the destination is deleted;
+  - Escape / cancel / drop / interruption;
+  - Preview;
+  - a project switch (replaceDocument also resets both store fields).
+  [VERIFIED unit + e2e]
+- Guides are editor-only (CanvasOverlay: nothing in Preview, outside the
+  document surface).
+
+
+8. DESTINATION SWITCHING
+------------------------
+- The destination is re-resolved on every dnd-kit move/over with the
+  drop's own rule.
+- Free → another Free container: new frame and targets, locks reset,
+  guides cleared, preview in the new container's coordinates and
+  containment. [VERIFIED e2e free → free2]
+- Free → Flow/Flex/Grid: preview, guides and auto-scroll ownership end;
+  dnd-kit's indicator and auto-scroll come back; the drop uses the
+  existing placement. [VERIFIED e2e: Flow, Flex, Grid; no Free geometry
+  on the inserted node; Chromium/Firefox/WebKit]
+- Leaving all contexts (no hovered target): no preview. The drop then
+  follows the EXISTING rule (see section 19, O1).
+- Stickiness (found while testing auto-scroll):
+  - while the pointer is still inside the current Free destination, an
+    ANCESTOR reported by dnd-kit doesn't steal it (dnd-kit's droppable
+    rects can lag the session's auto-scroll under a stationary pointer);
+  - nested or unrelated containers still switch at once.
+- Destination deleted mid-drag: the preview goes, the placement is null,
+  and the drop can't recreate it. [VERIFIED unit]
+- Pre-existing dnd-kit rule observed (not changed): pointerWithin ranks
+  overlapping droppables by corner distance, so a Free container that
+  exactly fills its parent (same rect) is out-ranked by the parent and the
+  existing rule targets the parent (section 18).
+
+
+9. COMPONENT VALIDATION AND STRUCTURAL INTEGRITY
+------------------------------------------------
+- The drop uses the authoritative path: createElementNode (the factory's
+  full subtree, ids, defaults, accessibility, CSS, interactions) →
+  insertElement (canParentAcceptChild via insertNode, Pagination
+  invariants, one history entry, selection).
+- The preview pre-checks canParentAcceptChild for its valid flag only.
+- [VERIFIED]
+  - e2e: a List Item over a Free div → red preview "List Item can't go
+    here", and the drop inserts nothing (unchanged: insertNode refuses),
+    no history;
+  - unit: invalid → no snapping, no placement.
+- Subtrees: insertElement inserts the factory subtree atomically (existing
+  behaviour; e2e Undo/Redo of the inserted paragraph; component subtrees
+  use the same command). [PASS — previous evidence reused for
+  Navbar/Pagination/Form/List/Table factories: their existing insertion
+  suites are unchanged code.]
+- No new component-integrity defects found.
+
+
+10. AUTO-SCROLL AND TARGET INVALIDATION
+---------------------------------------
+- Auto-scroll:
+  - freeAutoScroll (BC-13.5) with reach = the destination's padding box;
+    the innermost scroller first;
+  - a stationary pointer keeps scrolling (the loop continues while
+    scrolled);
+  - it stops on leaving the band, at the boundary, on destination change,
+    and at drop/cancel;
+  - dnd-kit's own autoScroll is disabled (canScroll → false) only while
+    a Free destination owns scrolling, so the two never fight.
+  [VERIFIED e2e Chromium/Firefox/WebKit: Workspace vertical; the preview
+  under the pointer after scrolling; a target revealed by scrolling
+  snaps; the drop matches the preview; one Undo.]
+- Nested scroll container during insertion: the shared planner and its
+  priority were verified for drags in BC-13.5 (e2e, 3 browsers). The
+  insertion session uses the same collectScrollContainers/planAutoScroll
+  calls. An insertion-specific nested-scroller e2e was NOT run:
+  UNVERIFIED in the browser for insertion (PASS — previous evidence reused
+  for the shared code).
+- Target refresh:
+  - on a destination change (always);
+  - on a scroll signature change (≤250 ms throttle);
+  - on a document change (next frame);
+  - on a window resize;
+  - when a referenced target (or the parent) moves, resizes, hides or
+    disappears (snapReferencesChanged, per frame, 1–3 elements).
+  Locks on vanished lines release; other-axis locks are kept (the
+  engine). [VERIFIED unit: deletion; reused BC-13.5/13.5.1 evidence for
+  the shared check (moved, not changed).]
+
+
+11. ATOMIC INSERTION AND UNDO/REDO
+----------------------------------
+[VERIFIED e2e + unit]
+- Before the drop:
+  - no document mutation (same node id set; the document object is
+    unchanged in unit);
+  - no history (Undo disabled);
+  - no unsaved change (the document is untouched);
+  - no selection change.
+- The drop:
+  - one insertElement → exactly one Undo entry, the new element selected;
+  - Undo removes it (and only it);
+  - Redo restores the identical left/top (no snapping recalculated:
+    whole-document history).
+- Invalid drop (List Item) and Escape: nothing inserted, no entry.
+- No temporary document element is ever created.
+
+
+12. CANCELLATION AND KEYBOARD POLICY
+------------------------------------
+- Escape: dnd-kit cancels; EditorApp's claim keeps the selection and
+  swallows the release click; cancelFreeInsertion clears everything.
+  [VERIFIED e2e ×3 browsers]
+- Unrelated keys (q): the insertion continues, and the drop inserts.
+  [VERIFIED e2e + unit] Modifiers alone don't cancel; Alt bypasses
+  snapping (its default is prevented).
+- Recognized commands (BC-13.5.1 registry): the session registers itself.
+  interruptActiveInteraction() ends it and cancels the dnd-kit drag
+  through its own Escape path (a synthetic keydown on document, which the
+  PointerSensor listens for), then the command runs. Any later drop is
+  ignored ("interrupted").
+  [VERIFIED e2e: Delete with a selection mid-drag → the selection is
+  deleted, nothing inserted, one history entry; unit: registry interrupt
+  → Escape dispatched, finish → interrupted.]
+- Window blur (dnd-kit doesn't handle it), entering Preview, a project
+  switch → interrupt. [VERIFIED unit]
+- pointercancel / visibilitychange / resize → dnd-kit's own cancel →
+  onDragCancel → cancelFreeInsertion. [ASSUMPTION for pointercancel and
+  touch/pen: dnd-kit's documented sensor behaviour; not tested here. NOT
+  simulated.]
+- Canvas/editor unmount → cancelFreeInsertion (EditorApp effect cleanup).
+  [VERIFIED by code only]
+- Native HTML drag-and-drop is not involved (dnd-kit pointer events).
+
+
+13. CLEANUP AND STALE-CALLBACK PROTECTION
+-----------------------------------------
+- endSession (once per session; idempotent) clears:
+  - the queued frame;
+  - every listener (pointermove/pointerup, Alt key, scroll, resize, blur);
+  - the store subscription;
+  - the registry entry;
+  - the preview and guides;
+  - the destination, its caches and its locks.
+- Frames check `current === session` and the generation, so a frame
+  queued before a cancel never publishes. [VERIFIED unit]
+- A second finish returns nothing (no duplicate insertion). [VERIFIED
+  unit]
+- A new drag ends any previous session first.
+- The Snap preference is never written. [VERIFIED unit]
+
+
+14. EXISTING FLOW/FLEX/GRID AND CLICK-TO-INSERT COMPATIBILITY
+-------------------------------------------------------------
+- resolveInsertionParent is a verbatim extraction: the 38 existing
+  useInsertElement tests pass unchanged, + 2 new.
+- Flow/Flex/Grid Resource Panel drops: the drop indicator and placement
+  are unchanged. [VERIFIED e2e; the resource-panel-scrolling spec's
+  drag-vs-click equality (2 sections) green]
+- Click-to-insert into a selected Free container: still the
+  first-available 16 px grid slot. [VERIFIED e2e + unit]
+- Paste/duplicate: untouched code paths (resolveFreeDestinationPlacement
+  callers unchanged). [PASS — previous evidence reused]
+- Canvas move drags (the same DndContext): unaffected; the session starts
+  only for elementType payloads. [VERIFIED: the Structure keyboard spec's
+  Canvas drag test green]
+
+
+15. PERFORMANCE OBSERVATIONS
+----------------------------
+[VERIFIED] Chromium dev mode; temporary probes (deleted); a 1,000-child
+Free container; a catalog Paragraph dragged across it, 30 moves:
+- with the session: per move median 82–83 ms, p90 ≈233–249 ms. Profile:
+  - computeFrame 130 ms in total (≈4 ms per frame, including
+    measurements);
+  - equal spacing 11 ms; resolveSnap 2 ms; reference checks 6 ms;
+  - the preview overlay 6.5 ms;
+  - no document or DocumentNodeRenderer work.
+- the same drag with the session DISCONNECTED: median 83–84 ms, p90
+  228–259 ms; ParagraphElement re-render 883 ms (with the session:
+  724 ms).
+  → those re-renders are dnd-kit's (every droppable re-renders when `over`
+  changes, and the pointer crosses many small Free children). They are not
+  caused by the preview.
+- Over a Flow container (the pointer within one paragraph): 67 ms, no
+  paragraph re-renders.
+Conclusion:
+- no new document-level updates;
+- the session's own cost is small;
+- the remaining cost is the pre-existing dnd-kit droppable re-render plus
+  P1 (rendering).
+
+
+16. EXACT FOCUSED TEST COMMANDS AND RESULTS
+-------------------------------------------
+1. npx vitest run src/features/canvas/utils/createFreeInteraction.test.tsx
+   src/features/canvas/utils/freeInsertionSession.test.ts
+   src/features/canvas/utils/collectFreeSnapTargets.test.ts
+   src/features/canvas/hooks/useFreeChildMoveSession.test.tsx
+   src/features/canvas/hooks/useFreeChildResizeSession.test.tsx
+   src/features/canvas/components/overlay
+   src/features/editor/components/EditorApp.test.tsx
+   src/features/editor/hooks/useInsertElement.test.ts
+   src/features/editor/utils/resolveDragEndInsertion.test.ts
+   src/features/editor/stores/useEditorStore.snap.test.ts
+   src/features/editor/stores/useEditorStore.persistence.test.ts
+   src/features/canvas/utils/resolveActiveDropIndicator.test.ts
+   → 19 files, 273 tests passed
+   - The first run had 1 failure: the store-field registry test needed the
+     new field listed (an intended test update).
+   - New: freeInsertionSession 14, useInsertElement +2, and persistence
+     asserts the reset.
+   - Re-run after Prettier: persistence → 11 passed.
+2. npx playwright test e2e/free-insertion-snapping.spec.ts
+   --project=chromium → 10 passed; --repeat-each=3 (9 tests at that point)
+   → 27 passed
+3. npx playwright test -c <temporary Firefox+WebKit config, deleted>
+   e2e/free-insertion-snapping.spec.ts → 20 passed (after relaxing one
+   WebKit-only Grid-parent assertion, see 18)
+4. npx playwright test e2e/resource-panel-scrolling.spec.ts
+   e2e/free-interaction-lifecycle.spec.ts e2e/free-snap-dragging.spec.ts
+   e2e/free-snap-resizing.spec.ts e2e/structure-keyboard-reorder.spec.ts
+   --project=chromium → 57 passed
+5. Temporary probes (deleted): tile hit / drag start; destination/over
+   logging; 3 performance probes (with the session, Flow baseline, the
+   session disconnected).
+6. npx tsc --noEmit -p . → 0 errors
+7. npx eslint <all changed files> → clean (one react-hooks/refs error in
+   the new overlay was fixed by reusing readOriginInset)
+8. npx prettier --write on the 2 changed files Prettier-clean at HEAD
+   (useEditorStore.persistence.test.ts, snap.ts).
+Test-fixture issues found while developing (code was right):
+- the tile below the visible list (scroll it into view);
+- unreachable positions (a 240 px paragraph past the containment);
+- the 16 px grid slot;
+- a tall container filling the page sheet (dnd-kit's corner ranking).
+Not run: full suites, Electron (no Electron-specific path), a build,
+physical touch/pen.
+
+
+17. PREVIOUS TEST EVIDENCE REUSED
+---------------------------------
+- Engine, equal spacing, collector, guide builder/overlay (BC-13.2/13.3
+  unit and e2e): unchanged code.
+- Auto-scroll planner and nested-scroller priority (BC-13.5 unit + 3
+  browsers e2e).
+- Referenced-target invalidation (BC-13.5/13.5.1 unit): moved verbatim;
+  the createFreeInteraction tests re-run green.
+- Command registry and eligibility (BC-13.5.1).
+- Specialized component factories and insertion validation (their
+  existing suites; unchanged code).
+
+
+18. KNOWN LIMITATIONS AND UNRESOLVED DEFECTS
+--------------------------------------------
+Limitations:
+- The preview shows the stored default size; content taller than that
+  renders taller after insertion.
+- dnd-kit's droppable re-render when `over` changes over many small Free
+  children (pre-existing performance; section 15).
+- Pre-existing dnd-kit corner-distance ranking: a Free container exactly
+  covering its parent can lose to the parent as the drop target (both the
+  existing and the new path follow it).
+- WebKit: after scrolling the Workspace MID-drag (scrollIntoView), the
+  Flow parent dnd-kit resolves can differ from Chromium's (the unchanged
+  existing rule; the test now asserts the contract: no Free geometry,
+  nothing in the Free containers).
+- Containers under a rotated/scaled ancestor (or themselves rotated/scaled)
+  keep first-available placement (the pointer math assumes 1:1, the same
+  safety rule as drag/resize).
+- Not verified:
+  - insertion-specific nested-scroller auto-scroll in the browser;
+  - pointercancel/touch/pen during a catalog drag;
+  - Canvas unmount mid-drag (code-level cleanup only).
+Unresolved defects: none found in BC-13.6's scope.
+
+
+19. OWNER DECISIONS REQUIRED
+----------------------------
+O1 A drop with NO hovered target (outside every drop target, e.g. back
+   over the Resource Panel) has always inserted at the default
+   destination (resolveDestinationParent, the same as click-insert). The
+   brief asks that leaving all valid contexts prevent insertion, but it
+   also asks to preserve unrelated existing insertion behaviour, which
+   conflicts. Per CLAUDE.md I did not change it.
+   Options:
+   (a) keep;
+   (b) drop outside any target inserts nothing.
+O2 A Free drop next to a Free child keeps the existing structural rule
+   ("before/after" that sibling in the children list), which decides the
+   paint order. Keep, or always append (on top) for Free pointer drops?
+(P1, C1 still open from earlier checkpoints.)
+
+
+20. FINAL RECOMMENDATION
+------------------------
+READY FOR QA (with O1/O2 for the owner).
+Git working tree:
+- M: CanvasOverlay.tsx, FreeSnapGuideOverlay.tsx, createFreeInteraction.ts,
+  createFreeSnapContext.ts, EditorApp.tsx, useInsertElement.ts and its
+  test, useEditorStore.ts and its persistence test, types/snap.ts;
+- ??: FreeInsertionPreviewOverlay.tsx, freeInsertionSession.ts and its
+  test, resolveInsertionParent.ts, e2e/free-insertion-snapping.spec.ts,
+  this report.
+Nothing staged, committed or pushed. Do not proceed to BC-13.7 before QA.

@@ -10,6 +10,8 @@ import {
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
+  type DragMoveEvent,
+  type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { AppShell } from "@/components/layout/AppShell";
@@ -18,18 +20,28 @@ import type { ProjectIdentityInfo } from "@/components/layout/ProjectIdentity";
 import type { CatalogCardPlaceholder } from "@/components/layout/creationToolbarCategories";
 import { DocumentCanvas } from "@/features/canvas/components/DocumentCanvas";
 import { CanvasControlStrip } from "@/features/canvas/components/CanvasControlStrip";
+import {
+  cancelFreeInsertion,
+  finishFreeInsertion,
+  isFreeInsertionScrolling,
+  setFreeInsertionDestination,
+  startFreeInsertion,
+} from "@/features/canvas/utils/freeInsertionSession";
 import { useSnapPreferenceHydration } from "@/features/editor/hooks/useSnapPreferenceHydration";
 import { EditorNoticeBanner } from "@/features/editor/components/EditorNoticeBanner";
 import { MultiDeleteConfirmDialog } from "@/features/editor/components/MultiDeleteConfirmDialog";
 import { StructurePanel } from "@/features/editor/components/structure/StructurePanel";
 import { InspectorContent } from "@/features/inspector/components/InspectorContent";
-import { isInsertableElementType } from "@/features/editor/factories/elementFactories";
+import { createElementNode, isInsertableElementType } from "@/features/editor/factories/elementFactories";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { useEditorKeyboardShortcuts } from "@/features/editor/hooks/useEditorKeyboardShortcuts";
 import { useInsertElement } from "@/features/editor/hooks/useInsertElement";
 import { useMoveElement } from "@/features/editor/hooks/useMoveElement";
 import { resolveDragEndInsertion } from "@/features/editor/utils/resolveDragEndInsertion";
 import { resolveDragEndMove } from "@/features/editor/utils/resolveDragEndMove";
+import { resolveInsertionParent } from "@/features/editor/utils/resolveInsertionParent";
+import { findAncestorChain } from "@/features/editor/utils/findNodeById";
+import type { EditorElementNode } from "@/features/editor/types/document";
 import { swallowReleaseClick } from "@/lib/swallowReleaseClick";
 
 interface ActiveDragPreview {
@@ -69,7 +81,10 @@ const POINTER_SENSOR_OPTIONS = { activationConstraint: { distance: 4 } };
 const AUTO_SCROLL_OPTIONS = {
   threshold: { x: 0, y: 0.2 },
   acceleration: 10,
-  canScroll: (element: Element) => !(element instanceof HTMLElement && element.dataset.noDragAutoscroll !== undefined),
+  // BC-13.6: while a Resource Panel drag previews a Free container, that
+  // session's own auto-scroll (freeAutoScroll, limited to what the container
+  // can reach) is the only one running.
+  canScroll: (element: Element) => !isFreeInsertionScrolling() && !(element instanceof HTMLElement && element.dataset.noDragAutoscroll !== undefined),
 };
 
 /**
@@ -80,6 +95,11 @@ const AUTO_SCROLL_OPTIONS = {
  * Escape) keeps the selection — the same claim BC-12.3.1 added for
  * Structure drags. Module-level, so the same function is added and removed.
  */
+/** Whether ancestorId is an ancestor of nodeId. */
+function isAncestorOf(documentModel: EditorElementNode, ancestorId: string, nodeId: string): boolean {
+  return findAncestorChain(documentModel, nodeId).some((ancestor) => ancestor.id === ancestorId);
+}
+
 function claimEscapeDuringDrag(event: KeyboardEvent) {
   if (event.key !== "Escape") return;
   event.preventDefault();
@@ -183,17 +203,50 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
   };
 
   // Never leave the Escape claim behind if the editor unmounts mid-drag.
-  useEffect(() => () => window.removeEventListener("keydown", claimEscapeDuringDrag, true), []);
+  useEffect(
+    () => () => {
+      window.removeEventListener("keydown", claimEscapeDuringDrag, true);
+      cancelFreeInsertion();
+    },
+    [],
+  );
 
   function handleDragStart(event: DragStartEvent) {
     window.addEventListener("keydown", claimEscapeDuringDrag, true);
     const label = event.active.data.current?.label;
     setActiveDrag(typeof label === "string" ? { label } : null);
+
+    // BC-13.6: a Resource Panel component (not a Canvas move) gets the live
+    // Free insertion session; the pointer keeps the spot it held on the card.
+    const elementType = event.active.data.current?.elementType;
+    if (typeof elementType === "string" && isInsertableElementType(elementType)) {
+      const activator = event.activatorEvent;
+      const card = event.active.rect.current.initial;
+      const pointer = activator instanceof PointerEvent || activator instanceof MouseEvent ? { x: activator.clientX, y: activator.clientY } : null;
+      startFreeInsertion({
+        prototype: createElementNode(elementType),
+        label: typeof label === "string" ? label : elementType,
+        pointer: pointer ?? { x: 0, y: 0 },
+        hotspot: pointer && card && card.width > 0 && card.height > 0 ? { x: (pointer.x - card.left) / card.width, y: (pointer.y - card.top) / card.height } : { x: 0.5, y: 0.5 },
+      });
+    }
+  }
+
+  /** BC-13.6: the destination the drop would use right now (the shared insertion rule) — a Free container gets the live preview. */
+  function handleDragMoveOrOver(event: DragMoveEvent | DragOverEvent) {
+    const request = resolveDragEndInsertion(event, documentModel);
+    if (!request) return; // not a Resource Panel component
+    setFreeInsertionDestination(
+      request.targetId ? resolveInsertionParent(documentModel, request.targetId, request.zone, primarySelectedId).parentId : null,
+    );
   }
 
   function handleDragEnd(event: DragEndEvent) {
     window.removeEventListener("keydown", claimEscapeDuringDrag, true);
     setActiveDrag(null);
+    // The final pointer position is processed first; an interrupted drag inserts nothing.
+    const { placement, interrupted } = finishFreeInsertion();
+    if (interrupted) return;
 
     const moveRequest = resolveDragEndMove(event, documentModel);
     if (moveRequest) {
@@ -204,7 +257,21 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
     const insertRequest = resolveDragEndInsertion(event, documentModel);
     if (!insertRequest) return;
 
-    insert(insertRequest.elementType, insertRequest.targetId, insertRequest.zone);
+    // BC-13.6 (Decision 30): a drop into the Free container the preview was
+    // showing lands exactly where the preview was; any other drop keeps the
+    // existing placement.
+    const parentId = insertRequest.targetId
+      ? resolveInsertionParent(documentModel, insertRequest.targetId, insertRequest.zone, primarySelectedId).parentId
+      : null;
+    if (placement && parentId !== null && parentId !== placement.containerId && isAncestorOf(documentModel, parentId, placement.containerId)) {
+      // dnd-kit reported a coarser (ancestor) target than the Free container
+      // the preview was showing (its rects can lag the session's auto-scroll):
+      // the drop goes where the preview was.
+      insert(insertRequest.elementType, placement.containerId, "inside", placement.geometry);
+      return;
+    }
+    const freeGeometry = placement && parentId === placement.containerId ? placement.geometry : undefined;
+    insert(insertRequest.elementType, insertRequest.targetId, insertRequest.zone, freeGeometry);
   }
 
   function handleActivateCard(card: CatalogCardPlaceholder) {
@@ -224,10 +291,13 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
       collisionDetection={collisionDetection}
       autoScroll={AUTO_SCROLL_OPTIONS}
       onDragStart={handleDragStart}
+      onDragMove={handleDragMoveOrOver}
+      onDragOver={handleDragMoveOrOver}
       onDragEnd={handleDragEnd}
       onDragCancel={() => {
         window.removeEventListener("keydown", claimEscapeDuringDrag, true);
         setActiveDrag(null);
+        cancelFreeInsertion(); // Escape, pointercancel, an interrupted drag: nothing is inserted
       }}
     >
       <AppShell
