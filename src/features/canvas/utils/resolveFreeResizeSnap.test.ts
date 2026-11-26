@@ -4,6 +4,7 @@ import { buildFreeSnapGuides } from "@/features/canvas/utils/buildFreeSnapGuides
 import {
   controlledEdges,
   isValidFreeResizeGeometry,
+  renderedFreeSize,
   resolveFreeResizeSnap,
   type FreeResizeSnapRequest,
 } from "@/features/canvas/utils/resolveFreeResizeSnap";
@@ -167,6 +168,37 @@ describe("resolveFreeResizeSnap (BC-13.4)", () => {
     const leftPair = [element("a", { x: 10, y: 100, width: 40, height: 50 }, 1), element("b", { x: 80, y: 100, width: 40, height: 50 }, 2)];
     const west = resolveFreeResizeSnap(request({ direction: "w", targets: leftPair, proposal: { x: 152, y: 100, width: 100, height: 50 } }));
     expect(west.geometry).toEqual({ x: 150, y: 100, width: 102, height: 50 });
+  });
+
+  describe("authored CSS min/max size (BC-13.7, D15/D46)", () => {
+    it("the rendered size follows CSS: max clamps, then min wins", () => {
+      expect(renderedFreeSize({ width: 300, height: 50 }, { maxWidth: 180 })).toEqual({ width: 180, height: 50 });
+      expect(renderedFreeSize({ width: 100, height: 50 }, { minWidth: 120, maxWidth: 110 })).toEqual({ width: 120, height: 50 });
+      expect(renderedFreeSize({ width: 100, height: 50 })).toEqual({ width: 100, height: 50 });
+    });
+
+    it("a candidate beyond max-width is rejected — no snap, no (false) achieved guide on an edge the CSS clamp keeps the element from", () => {
+      const targets = [element("t", { x: 300, y: 300, width: 10, height: 10 })];
+      // Stored width 196 renders at 180 (right edge 280); the line at 300 would need width 200 > 180.
+      const out = resolveFreeResizeSnap(request({ targets, proposal: { x: 100, y: 100, width: 196, height: 50 }, sizeLimits: { maxWidth: 180 } }));
+      expect(out.geometry).toEqual({ x: 100, y: 100, width: 196, height: 50 });
+      expect(out.result.x.match).toBeNull();
+      const guides = buildFreeSnapGuides("parent", out.result, { x: 100, y: 100, width: 180, height: 50 }, new Map(targets.map((t) => [t.id, t.rect])), { x: 0, y: 0, width: 500, height: 400 });
+      expect(guides?.vertical?.achieved ?? false).toBe(false);
+    });
+
+    it("within the limit it snaps, measured from the RENDERED edge", () => {
+      const targets = [element("t", { x: 276, y: 300, width: 10, height: 10 })]; // 4px left of the rendered right edge (280)
+      const out = resolveFreeResizeSnap(request({ targets, proposal: { x: 100, y: 100, width: 196, height: 50 }, sizeLimits: { maxWidth: 180 } }));
+      expect(out.geometry).toEqual({ x: 100, y: 100, width: 176, height: 50 });
+    });
+
+    it("a candidate below an authored min-width is rejected", () => {
+      const targets = [element("t", { x: 182, y: 300, width: 4, height: 10 })]; // lines 182/184/186: each needs a width < 90
+      const out = resolveFreeResizeSnap(request({ targets, proposal: { x: 100, y: 100, width: 90, height: 50 }, sizeLimits: { minWidth: 90 } }));
+      expect(out.geometry.width).toBe(90);
+      expect(out.result.x.match).toBeNull();
+    });
   });
 
   describe("aspect-ratio-locked corners", () => {

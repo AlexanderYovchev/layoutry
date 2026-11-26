@@ -1,0 +1,231 @@
+BC-17.1 — Owner Decisions
+Report 4 of 4
+=========================
+Date: 2026-11-26.
+Investigation only.
+
+ALREADY APPROVED (not re-asked):
+- comprehensive component-specific CSS customization;
+- dedicated styling menus in the Inspector;
+- logically categorized properties;
+- expandable menus on demand;
+- independent styling of component visual parts;
+- applicable interaction-state styling;
+- advanced visual CSS capabilities;
+- context-aware controls;
+- an organized, non-overwhelming interface;
+- design freedom beyond templates.
+
+Each decision below has: question, options, advantages and disadvantages,
+consequences, a recommendation, and the reason.
+
+
+O1 — STYLE-RULE MODEL (how parts/pseudo-elements/states are represented)
+Q: How do non-base styles live in the document?
+A) A per-node styleRules list: { target, state, groups } using the
+   existing typed groups. The base stays in today's top-level fields.
+   + one model for parts/pseudo/states, reuses all group types/
+     resolvers/controls, existing data untouched.
+   − a new dimension in every group-keyed feature (clipboard, reset,
+     multi-select).
+B) Separate bespoke structures per component (progressStyles,
+   paginationStyles…).
+   + quick for one component.
+   − 82× duplication, inconsistent behaviour, no shared Inspector.
+C) Expose every part as a hidden child document node.
+   + reuses node editing.
+   − corrupts BC-12 structure semantics, fake nodes in export, can't
+     represent pseudo/state.
+Consequences of A: schema v4 fields, an IR rules layer, a registry.
+Recommendation: A. It is the only option that scales to every component,
+keeps export clean and preserves existing documents.
+
+O2 — CANVAS STYLE PIPELINE
+Q: How does the Canvas render selector-based styles?
+A) Keep inline base styles; add a document-scoped generated <style> for
+   rules only.
+   + smallest change, base parity untouched.
+   − state/part rules must beat inline base styles. Inline wins over
+     classes, so a hover rule can't override an inline base colour
+     without !important. This makes A unworkable for state overrides of
+     base properties.
+B) Move ALL authored styles (base too) to the generated stylesheet on the
+   Canvas (class per node), as export already does.
+   + exact Canvas/export parity (identical rules), correct cascade for
+     states, one pipeline.
+   − a larger refactor of every element renderer; must not re-render
+     nodes on edit (update stylesheet text); free-drag live geometry may
+     stay inline (it is editor-only and not exported as-is) — decide per
+     property.
+C) B for base + state, with the BC-13 live drag geometry kept inline
+   during gestures.
+Recommendation: C (B with a documented exception for live interaction
+geometry). Reason: correctness of the cascade requires B; BC-13
+performance and geometry need the exception.
+
+O3 — INSPECTOR HIERARCHY
+Q: Adopt the proposed hierarchy (component properties → Target selector →
+State selector → search → categories Layout/Size/Spacing/Typography/Fill
+& Background/Border & Corners/Effects/Shape & Mask/Transform/Motion/
+Advanced)?
+Options:
+A) As proposed.
+B) Tabs (Properties | Style | Advanced) + the same categories.
+C) Keep the current flat order + add only the selectors.
+- A: + discoverable, one scroll, works at narrow widths; − long when many
+  categories are open (mitigated by search + remembered collapse).
+- B: + shorter pages; − hides styling behind a tab, more clicks.
+- C: + least change; − doesn't meet "organized" at BC-17 scale.
+Recommendation: A, with the option to add tabs later if usability
+testing shows a need.
+
+O4 — PROGRESS BAR: NATIVE VS CUSTOM
+Q: Which representation backs Progress/Progress Bar styling?
+A) Native <progress> + track/fill part targets (vendor pseudo-elements,
+   automatic appearance:none when styled).
+B) Replace it with a custom div structure with role="progressbar".
+C) A first, plus an explicit opt-in "custom" variant/conversion for
+   segments, inner labels and Firefox-reliable animation.
+(Comparison: Report 1 §10.4.)
+Recommendation: C, delivering A in BC-17.5 and the custom variant only
+on approval. Reason: native semantics, zero migration and most
+appearances covered; custom only where native truly can't.
+
+O5 — PROJECT FORMAT v4
+Q: Approve a format bump to v4 with an identity migration (no rewrite),
+older builds refusing v4 files, and an explicit-save upgrade of legacy
+files (BC-05.3/05.4 pattern)?
+Options:
+A) v4 at BC-17.2.
+B) Add optional fields without a bump. Older builds would silently strip
+   them (Zod strips unknown keys): data loss.
+C) A bump per checkpoint (v4, v5, …).
+Recommendation: A, extended additively within v4 while it is unreleased.
+If BC-17 ships incrementally to users, bump per release that adds fields
+(C at release granularity). Reason: prevents silent data loss; existing
+appearances unchanged.
+
+O6 — CROSS-TARGET STATES
+Q: Allow states on one element to style another (card:hover → title;
+label:focus-within; figure:hover → image)?
+A) Yes, limited to ancestor-state → descendant (a parent-hover state
+   available on descendants within the same component).
+B) No (each element only reacts to its own states).
+- A: + enables common designs (hover cards, image zoom); − more selector
+  generation and Inspector UI ("Parent hover").
+- B: + simple; − many common designs impossible.
+Recommendation: A, scoped to "ancestor within the same component/
+container", generated as `.ancestor:hover .el`.
+
+O7 — PSEUDO-ELEMENT CONTENT POLICY
+Q: What may ::before/::after `content` contain?
+A) Decorative only: empty box, or an allow-listed glyph set; ignored by
+   assistive tech (empty alt text `content: "x" / ""`, where supported).
+B) Also user text, explicitly marked "announced to screen readers".
+C) Any text.
+Recommendation: A first, B as an explicit option. Reason: decoration is
+the main use (icons, separators, indicators); screen-reader impact must
+be a conscious choice. C is not recommended.
+
+O8 — CUSTOM MEDIA PLAYER CONTROLS
+Q: Offer custom video/audio controls (runtime JS) or style only the
+container/surface?
+A) Container/surface only; native controls documented as browser-styled.
+B) A custom accessible control bar (a new runtime in Preview/Export).
+Recommendation: A for BC-17. B is a separate feature checkpoint if
+wanted. Reason: native controls can't be styled reliably; a custom
+player is a product feature with runtime, accessibility and testing cost.
+
+O9 — PAGINATION STATE-LOOK MIGRATION
+Q: Replace BC-09's style-copying "current look" with state rules
+([aria-current="page"] target)?
+A) Migrate in BC-17.6 (v4 migration converts the current link's look into
+   a "Current page" rule; copying is removed).
+B) Keep copying and add rules alongside it.
+Recommendation: A. Reason: two mechanisms would conflict; rules make the
+current style follow the page automatically. Existing appearance is
+preserved by the migration (tested).
+
+O10 — RUNTIME-SET SEMANTIC STATE ATTRIBUTES
+Q: May the interaction runtime set aria-expanded/aria-selected/data-state
+on triggers, tabs, collapsibles, dropdowns, popovers and toasts (in
+Preview and Export) so those states can be styled?
+A) Yes, generated by the existing runtime, matching ARIA patterns.
+B) No; style only native/authored states.
+Recommendation: A. It also improves accessibility (aria-expanded/
+aria-selected are correct ARIA), and is required for "open"/"selected"
+styling.
+Scope check: this touches the export runtime (BC-04/EXPORT behaviour);
+it needs an export-runtime review.
+
+O11 — MULTI-SELECTION SCOPE FOR TARGETS/STATES
+Q: With several elements selected, which targets/states are offered?
+A) Only the intersection (targets and states every selected element
+   supports); mixed values shown as today.
+B) The union, with per-element skipping.
+Recommendation: A (BC-10 principle: never expose controls that can't
+apply to every selected target).
+
+O12 — BC-14 / BC-17.11 PRESET INFRASTRUCTURE
+Q: Share one preset system (typography presets and component appearance
+presets) built on style rules?
+A) One preset system (named bundles of style rules + typography), built
+   once, used by BC-14 and BC-17.11.
+B) Separate systems.
+Recommendation: A. Sequencing: BC-14 after BC-17.2/17.4b, or BC-14 first
+with the shared format agreed in advance.
+Needs the owner's milestone ordering.
+
+O13 — MISSING NATIVE COMPONENTS
+Q: Add components the owner's examples assume but Layoutry lacks (range,
+meter, date/time, file, color input, details/summary, blockquote/code/pre,
+description list, tooltip) inside BC-17 or as a separate milestone?
+A) Separate milestone (BC-17 focuses on styling existing components;
+   the architecture is ready for them).
+B) Include the styling-relevant ones (range, meter, details) in
+   BC-17.5/17.6.
+Recommendation: A, with meter/range/details as the first items of the
+follow-up. Reason: keeps BC-17 scoped; each new component needs factory,
+renderer, Inspector, export and accessibility work.
+
+O14 — SVG EDITING GRANULARITY
+Q: Style per vector object only, or also add curve editing (C/Q/A) and
+gradients/filters in BC-17.7?
+A) Per-object paint, opacity, dash, caps/joins, fill-rule, gradients (defs),
+   transforms, states; NO curve editing.
+B) A + curve editing.
+Recommendation: A. Curve editing is drawing-tool work, not styling.
+
+O15 — BROWSER COMPATIBILITY POLICY
+Q: How to handle vendor-only or partially supported styling (progress
+pseudo-elements, scrollbars, select picker, media controls,
+backdrop-filter prefix)?
+A) Support where at least Chromium (Electron) and one other engine work,
+   with an Inspector note naming the limits; never emulate with editor-
+   only tricks.
+B) Only cross-engine standard features.
+C) Chromium-only features allowed.
+Recommendation: A. Reason: Electron is Chromium (the desktop app gets
+full fidelity) while web export stays honest about differences.
+
+O16 — CSS CLIPBOARD SCOPE
+Q: What do Copy/Paste CSS carry?
+A) Everything (base + all targets + states + animations referenced),
+   pasted only where the target registry is compatible (incompatible
+   parts listed in the notice, BC-11 style), atomic.
+B) The base only (today's behaviour).
+Recommendation: A, plus the per-section menu acting on the current
+target+state. Keyframes referenced by pasted animations are copied/
+deduplicated by content.
+
+AREAS WITH NO ADDITIONAL DECISION NEEDED
+- Typed values only, no free-form CSS: required by the security,
+  validation, clipboard and multi-select contracts already in place; the
+  approved requirements say "visual controls".
+- Reduced motion for animations: follows the existing transition rule
+  (accessibility baseline).
+- No CSS injection into iframes / sandbox unchanged: BC-02.3/BC-08
+  security decisions already settled.
+- Box-sizing stays border-box: existing, consistent baseline (BC-05).
+- Keeping native controls native by default: follows the approved
+  accessibility constraints.

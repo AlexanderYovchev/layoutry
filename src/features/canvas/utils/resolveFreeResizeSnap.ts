@@ -17,6 +17,7 @@ import {
 import { computeEqualSpacingCandidates, type SpacingCandidate } from "@/features/canvas/utils/snapEqualSpacing";
 import type { FreeLayoutGeometry } from "@/features/editor/types/layout";
 import type { ResizeConstraints, ResizeDirection } from "@/features/editor/types/resize";
+import type { SizeConstraints } from "@/features/editor/types/sizeConstraints";
 import type { FreeLayoutBounds } from "@/features/editor/utils/normalizeFreeLayoutGeometry";
 
 /**
@@ -56,6 +57,15 @@ export interface FreeResizeSnapRequest {
   aspectRatio: number | null;
   /** An extra validity rule for a candidate stored rectangle. */
   accept?: (geometry: FreeLayoutGeometry) => boolean;
+  /**
+   * BC-13.7: the element's authored CSS min/max width/height (Inspector
+   * Size constraints), which the browser applies to a Free child too. The
+   * snapping box uses the size the element really RENDERS at, and a
+   * candidate whose size falls outside these limits is rejected — so a
+   * snap can never claim an edge the CSS clamp keeps the element from
+   * reaching (no false guide).
+   */
+  sizeLimits?: SizeConstraints;
   index: SnapIndex;
   siblingTargets: readonly SnapTarget[];
   enabled: boolean;
@@ -77,6 +87,22 @@ export function controlledEdges(direction: ResizeDirection): { x: SnapEdge | nul
   };
 }
 
+/** The size a Free child renders at: CSS max-width/height clamps first, then min-width/height wins (the CSS rule). */
+export function renderedFreeSize(size: { width: number; height: number }, limits: SizeConstraints = {}): { width: number; height: number } {
+  const clamp = (value: number, min: number | undefined, max: number | undefined) => Math.max(min ?? -Infinity, Math.min(value, max ?? Infinity));
+  return { width: clamp(size.width, limits.minWidth, limits.maxWidth), height: clamp(size.height, limits.minHeight, limits.maxHeight) };
+}
+
+/** Whether a stored size sits inside the authored CSS limits (so it renders at exactly that size). */
+function withinSizeLimits(geometry: FreeLayoutGeometry, limits: SizeConstraints): boolean {
+  const e = SNAP_EPSILON;
+  if (limits.maxWidth !== undefined && geometry.width > limits.maxWidth + e) return false;
+  if (limits.minWidth !== undefined && geometry.width < limits.minWidth - e) return false;
+  if (limits.maxHeight !== undefined && geometry.height > limits.maxHeight + e) return false;
+  if (limits.minHeight !== undefined && geometry.height < limits.minHeight - e) return false;
+  return true;
+}
+
 export function isValidFreeResizeGeometry(
   geometry: FreeLayoutGeometry,
   containment: FreeLayoutBounds,
@@ -91,7 +117,10 @@ export function isValidFreeResizeGeometry(
 
 export function resolveFreeResizeSnap(request: FreeResizeSnapRequest): FreeResizeSnapResult {
   const { direction, offset, containment, constraints, aspectRatio } = request;
-  const toVisual = (g: FreeLayoutGeometry): Rect => ({ x: g.x + offset.x, y: g.y + offset.y, width: g.width, height: g.height });
+  const limits = request.sizeLimits ?? {};
+  // The box snapping sees is the one the element renders: its stored size
+  // clamped by its authored CSS min/max (unchanged when it has none).
+  const toVisual = (g: FreeLayoutGeometry): Rect => ({ x: g.x + offset.x, y: g.y + offset.y, ...renderedFreeSize(g, limits) });
   const toStored = (r: Rect): FreeLayoutGeometry => ({ x: r.x - offset.x, y: r.y - offset.y, width: r.width, height: r.height });
   const controlled = controlledEdges(direction);
   const edges: SnapSourceEdges = {
@@ -125,6 +154,7 @@ export function resolveFreeResizeSnap(request: FreeResizeSnapRequest): FreeResiz
       }
     }
     if (!isValidFreeResizeGeometry(next, containment, constraints)) return null;
+    if (!withinSizeLimits(next, limits)) return null;
     if (request.accept && !request.accept(next)) return null;
     return toVisual(next);
   };

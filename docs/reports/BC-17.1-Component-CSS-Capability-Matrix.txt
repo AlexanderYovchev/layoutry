@@ -1,0 +1,603 @@
+BC-17.1 — Component & CSS Capability Matrix
+Report 2 of 4
+============================================
+Date: 2026-11-26.
+Scope: every one of the 82 insertable Resource Panel components
+(FACTORIES_BY_TYPE), their structural sub-elements, and the 29 disabled
+placeholder cards.
+Sources:
+- the factory output (the diagnostic inventory, Report 1 §2.4);
+- elementCapabilities.ts;
+- InspectorNodeSummary.tsx;
+- elementStyleRecipes.ts;
+- the export printer.
+Investigation only; nothing changed.
+
+STATUS CODES
+FULL     FULLY SUPPORTED (model + Inspector + Canvas + Preview + Export)
+PARTIAL  PARTIALLY SUPPORTED (some values/units/variants missing)
+HIDDEN   SUPPORTED BUT NOT EXPOSED (model/renderer can, Inspector doesn't offer)
+MISSING  applicable but absent
+N/A      NOT APPLICABLE to this element
+BROWSER  BROWSER RESTRICTED (vendor-only, unreliable, or impossible)
+ARCH     REQUIRES ARCHITECTURE CHANGE (selectors/rules/stylesheet: Report 1 §16)
+UNVER    UNVERIFIED (not established by source inspection)
+
+CATEGORY KEYS (the brief's §6 categories)
+LAY  Layout (display, position, inset, overflow, flex/grid, order, z-index)
+DIM  Dimensions (width/height, min/max, aspect ratio, box-sizing, units)
+SPC  Spacing (margin, padding, gap)
+TYP  Typography
+BG   Background (colour, image, gradients, layers)
+BRD  Borders & radius (incl. outline)
+SHD  Shadows (box/text)
+OPB  Opacity & blending
+PAT  Patterns
+FLT  Filters
+MSK  Masks & clipping
+TRF  Transforms
+TRN  Transitions
+ANI  Animations
+PSE  Pseudo-elements
+PART Component-specific parts
+ST   State styling
+
+Reasons and work codes used below:
+- M1–M14 = the missing capabilities and L1–L8 = the limitations (both in
+  Report 1 §8–9);
+- CP = the recommended checkpoint (Report 3).
+
+
+A. SHARED PROFILE STATUS (applied to the entries in B)
+======================================================
+The same limits apply to every element because they come from the model,
+not the component:
+- TYP PARTIAL where supported: 9 fields; missing text-transform,
+  word-spacing, text-indent, white-space, text-overflow, wrapping,
+  text-shadow, decoration style/colour (M8). CP 17.4b (Typography
+  extensions; coordinate with BC-14).
+- BG PARTIAL where supported: one colour + one image or one linear/radial
+  gradient; missing layers, conic, repeating, origin, clip, blend (M4).
+  CP 17.4.
+- PAT MISSING everywhere: needs repeating/conic gradients + layers (M4).
+  CP 17.4.
+- BRD PARTIAL: four sides + four corners FULL; outline/offset MISSING;
+  elliptical radii MISSING; border-image MISSING (M9). CP 17.4b.
+- SHD: box-shadow FULL (8 layers, inset); text-shadow MISSING (M8).
+- OPB PARTIAL: opacity FULL (Filters section); mix-blend-mode,
+  isolation, background-blend MISSING (M10). CP 17.10.
+- FLT PARTIAL: 8 functions in a fixed order; drop-shadow, backdrop-filter
+  and ordering MISSING (M10). CP 17.10.
+- MSK: Shape presets (clip-path) PARTIAL on shape-capable containers only;
+  free clip-path and masks MISSING (M11). CP 17.10.
+- TRF PARTIAL: translate/rotate/uniform scale; skew, origin, perspective
+  and 3D MISSING (M7; BC-13 D23 geometry contract). CP 17.10b.
+- TRN PARTIAL: one transition among 4 properties (M6). CP 17.3b.
+- ANI MISSING (no keyframes) (M5). CP 17.3b.
+- PSE ARCH (no selector layer, L1) (M2). CP 17.3.
+- ST ARCH (no state rules, L1) (M1). CP 17.3.
+- PART: compositions = real child nodes (FULL as nodes; discoverability
+  PARTIAL M13); native parts ARCH (M3).
+- LAY: display/position/inset/overflow/z-index FULL;
+  flex FULL except order (MISSING);
+  grid PARTIAL (1–4 column presets; no templates/areas/auto-flow).
+- DIM: preferred size/min/max are px-only (PARTIAL: no %/rem/fit-content
+  keywords/calc); aspect ratio FULL; box-sizing N/A (fixed border-box by
+  design).
+- SPC: margin/padding FULL (px numbers, independent and linked); gap FULL
+  in flex/grid; logical properties MISSING (low priority).
+
+Profiles:
+P-TEXT (h1–h6, p, a, li, button, th, td, legend, figcaption, caption)
+  Exposed: Typography, Background, Border, Radius, Box Shadow, Filters,
+  Transition, Transform, Display, Position, Spacing, Size (+ Flex/Grid
+  child).
+  Not exposed: Shape (N/A by design), Layout (N/A for leaves).
+  Targets to add: base, before, after, selection; marker (li only).
+  States: hover, active, focus-visible (a, button), disabled (button),
+  current (a in nav/pagination).
+P-CONT (div, section, header, nav, main, article, aside, footer, form,
+  label, fieldset, ul, ol, figure)
+  Exposed: Background, Border, Radius, Shape (shape-capable tags only;
+  N/A for ul/ol/figure/fieldset), Box Shadow, Filters, Transition,
+  Transform, Display, Position, Spacing, Layout (Flow/Flex/Grid/Free),
+  Size.
+  TYP MISSING (inheritable typography on containers: no typography
+  resolver in resolveContainerElementStyle → renderer + capability work;
+  strongly linked to BC-14 presets). CP 17.4b.
+  Targets to add: base, before, after, scrollbar (when overflow scrolls),
+  marker (ul/ol via li).
+  States: hover, focus-within; open for show/hide targets (interaction
+  runtime).
+P-MEDIA (img; video; audio; iframe)
+  Exposed: Size, Media fit (img/video), Border, Radius, Box Shadow,
+  Filters, Transition, Transform, Display, Position, Spacing; Background
+  for video/audio/svg (per overrides).
+  BG for img N/A by design (covered by the image; Checkpoint 4.3).
+  MSK MISSING (no Shape for media: clip-path/mask on an image is a
+  common need). CP 17.8.
+P-FIELD (input text-like, textarea, select)
+  Exposed: Typography, Background, Border, Radius, Box Shadow, Filters,
+  Transition, Transform, Display, Position, Spacing, Size, Form Control.
+  Targets to add: placeholder (input/textarea); arrow (select, with
+  appearance:none).
+  States: focus-visible, hover, disabled, invalid/valid, read-only,
+  placeholder-shown.
+P-TOGGLE (input checkbox/radio)
+  Exposed as P-FIELD, but most box styles have little visible effect on
+  the native widget (HIDDEN-in-effect: they apply to an element the
+  browser paints itself) → PARTIAL in practice.
+  Targets: box (appearance:none surface), indicator (::before), label (a
+  real sibling node in compositions). States: checked, indeterminate,
+  disabled, hover, focus-visible.
+
+
+B. COMPONENT ENTRIES (82)
+=========================
+Format: id — catalog name [category] — structure
+  Existing | Missing (beyond profile limits) | Targets | States | Native |
+  Reuse | Work | CP
+
+--- HTML category (21) ---
+
+1 container — Container [HTML] — <div> {flow layout, spacing}
+  Existing: P-CONT incl. Shape.
+  Missing: container TYP (MISSING); layers/patterns.
+  Targets: base, before, after, scrollbar.
+  States: hover, focus-within.
+  Native: none.
+  Reuse: all CSS sections.
+  Work: style rules (R1–R3), BG layers, container typography.
+  CP 17.2–17.4.
+
+2 section — Section [HTML] — <section> {flow, spacing}
+  As 1.
+
+3 heading — Heading [HTML] — <h1> (level h1–h6 via Heading Level)
+  Existing: P-TEXT.
+  Missing: TYP extensions, text-shadow, background-clip:text (gradient
+  text).
+  Targets: base, before, after, selection.
+  States: hover.
+  Native: none.
+  Work: M8, R1.
+  CP 17.3, 17.4b.
+
+4 paragraph — Paragraph [HTML] — <p>
+  As 3 (plus first-letter/first-line: optional, low priority).
+
+5 divider — Divider [HTML] — <hr> (default divider border)
+  Existing: Border, Radius, Shadow, Filters, Transform, Display, Position,
+  Size, Spacing.
+  BG N/A today (hr is not a container/text): a gradient divider needs a
+  background → HIDDEN/MISSING (capability excludes it; the box recipe has
+  no background resolver).
+  Targets: base.
+  States: none.
+  Work: enable background on hr (capability + recipe).
+  CP 17.9.
+
+6 figure — Figure [HTML] — <figure> > <img> + <figcaption>
+  Existing: P-CONT (no Shape); the img and figcaption are real nodes
+  (P-MEDIA / P-TEXT).
+  Parts: figure, image, caption (as nodes).
+  States: hover (e.g. image zoom on figure hover needs a parent-state
+  selector `.figure:hover .img`) → ARCH (cross-target state).
+  CP 17.8.
+
+7 progress — Progress [HTML] — native <progress value max> (indeterminate
+  supported)
+  Existing: Border, Radius, Shadow, Filters, Transition, Transform,
+  Display, Position, Size, Spacing; component section (Indeterminate,
+  Value, Max).
+  BG MISSING (capability false; no recipe), TYP N/A.
+  Parts: track, fill (ARCH + BROWSER: ::-webkit-progress-bar /
+  ::-webkit-progress-value, ::-moz-progress-bar; appearance:none when
+  styled); accent-color (fill colour) HIDDEN (not modelled).
+  States: indeterminate (:indeterminate), hover.
+  Native: Firefox fill-animation reliability BROWSER.
+  Reuse: gradient editor, radius, shadow list.
+  Work: part targets (R1–R3), BG layers + repeating gradients (stripes,
+  segments), keyframes (animated stripes); optional custom variant (O4).
+  CP 17.5 (after 17.2–17.4).
+
+
+8 link — Link [HTML] — <a> {typography}
+  Existing: P-TEXT + Link section.
+  Missing: text-decoration style/colour/offset.
+  States: hover, active, focus-visible, visited (privacy-restricted:
+  colour only, BROWSER).
+  Targets: base, before, after.
+  CP 17.3, 17.6.
+
+9 unorderedList — Unordered List [HTML] — <ul> > 3×<li>
+  Existing: P-CONT (no Shape) + List section; the li are P-TEXT nodes.
+  Missing: list-style-type/position/image (the reset sets list-style:none;
+  check the List section's values in BC-17.9: UNVER for coverage);
+  ::marker styling.
+  Parts: list, item (nodes), marker (pseudo).
+  States: item hover.
+  CP 17.9.
+
+10 orderedList — Ordered List [HTML] — <ol> > 3×<li>
+  As 9 (plus counter styles).
+
+11 listItem — List Item [HTML] — <li>
+  P-TEXT + marker target.
+  CP 17.9.
+
+12 button — Button [HTML] — <button> (text)
+  Existing: P-TEXT.
+  States: hover, active, focus-visible, disabled (high value).
+  Targets: base, before, after.
+  CP 17.3, 17.6.
+
+13 dialog — Dialog [HTML] — <dialog> (initially hidden)
+  Existing: dialog recipe = position + default presentation; Display
+  N/A (capability false); P-CONT otherwise (children layout disabled).
+  Parts: box, backdrop (::backdrop: the default table already emits it;
+  authored backdrop MISSING → ARCH).
+  States: open ([open]).
+  CP 17.6.
+
+14 table — Table [HTML] — <table> > <thead><tr><th>… + <tbody><tr><td>…
+  Existing: table Typography (supportsTypography) + Border, Background
+  (container), Shadow…; Table + Table Selection sections; th/td P-TEXT;
+  tr/thead/tbody restricted (no Display/Position/Radius/Shadow).
+  Parts: table, header row(s), body rows, cells (nodes), caption (node
+  when present).
+  Missing: zebra/alternating rows (needs :nth-child state/structural
+  selector → ARCH), border-collapse/spacing controls, column styling.
+  CP 17.9.
+
+15 header — Header [HTML] — <header> {flow, spacing}
+  As 1 (sticky headers: position sticky FULL).
+16 nav — Nav [HTML] — <nav>
+  As 1.
+17 main — Main [HTML] — <main>
+  As 1.
+18 article — Article [HTML] — <article>
+  As 1.
+19 aside — Aside [HTML] — <aside>
+  As 1.
+20 footer — Footer [HTML] — <footer>
+  As 1.
+
+21 footerComposition — Simple Footer [HTML] — <footer> > <div> > <p "©…">
+  + <nav> > 3×<a>
+  Existing: every part is a real node (P-CONT / P-TEXT).
+  Parts: footer, inner row, copyright, link group, links.
+  States: link hover/focus-visible.
+  Work: state rules; a parts navigator (M13).
+  CP 17.6.
+(The Heading card appears once; the HTML category holds 21 cards:
+container, section, divider, figure, progress, heading, paragraph, link,
+unorderedList, orderedList, listItem, button, dialog, table, header,
+nav, main, article, aside, footer, footerComposition.)
+
+--- Components category (41) ---
+
+Buttons:
+22 primaryButton — Primary Button — <button> {typography, background,
+   radius, spacing}
+   P-TEXT.
+   States: hover, active, focus-visible, disabled (the key missing
+   capability for buttons).
+   Targets: base, before, after (icon glyph slot).
+   CP 17.3.
+23 secondaryButton — as 22.
+24 outlineButton — as 22 (authored border).
+25 ghostButton — as 22.
+26 buttonGroup — Button Group — <div flex> > 3×<button>
+   Container P-CONT, buttons P-TEXT.
+   Parts: group, buttons (nodes).
+   States: button hover/active/focus; a "selected" button =
+   aria-pressed/aria-current semantic state → ARCH + semantics decision
+   (O10).
+   CP 17.6.
+27 dropdownButton — Dropdown Button — <div> > <button
+   (toggle interaction)> + <div menu (initially hidden)> > 3×<a>
+   Parts: trigger, menu, items (nodes).
+   States: open (on the trigger/menu via the interaction runtime →
+   needs a runtime-set attribute, ARCH), item hover/focus.
+   CP 17.6.
+
+Cards:
+28 basicCard — Basic Card — <div card {bg, border, radius, shadow}> >
+   <h3>, <p>, <a>
+   Parts: card, title, description, link (nodes).
+   States: card hover (lift: transform + shadow transition → M6
+   multi-transition), link hover.
+   Missing: cross-target state (card:hover → title colour) ARCH.
+   CP 17.3, 17.9.
+29 imageCard — Image Card — <div card> > <img> + <div body> > h3, p, a
+   As 28 (+ image hover zoom: cross-target state + transform).
+30 horizontalCard — Horizontal Card — as 29 (row layout).
+31 profileCard — Profile Card — <div card> > <img avatar {radius}>, h3,
+   p, a
+   As 28 (+ image mask/clip MISSING, M11).
+32 featureCard — Feature Card — <div card> > h3, p
+   As 28.
+33 pricingCard — Pricing Card — <div card> > h3 (name), h3 (price), p,
+   <ul> > li×3, <button>
+   As 28 + list marker (17.9) + button states (17.3).
+
+Navigation:
+34 basicNavbar — Basic Navbar — <nav {bg, border}> > 4×<a>
+   Parts: bar, links (nodes).
+   States: link hover/focus-visible/current (aria-current not authored
+   by default here → semantics O10).
+   Missing: underline indicator (::after) PSE.
+   CP 17.6.
+35 navbarWithCta — Navbar with CTA — nav > 3×a + <button>
+   As 34 + button states.
+36 centeredNavbar — Centered Navbar — as 34.
+37 breadcrumbs — Breadcrumbs — <nav> > a, p "/", a, p "/", a
+   Parts: links, separators (real <p> nodes; ::before separators would
+   be cleaner but the existing structure works), current crumb
+   (aria-current not set → O10).
+   CP 17.6.
+38 pagination — Pagination — <nav component=pagination> > <a disabled
+   "Previous">, <a aria-current=page "1">, <a "2">, <a "3">, <a "Next">
+   Existing: real nodes; Pagination section (BC-09); "current look"
+   COPIED between nodes on page change (getStateLook/applyStateLook:
+   background, border, box-shadow, text colour, cursor) — a workaround
+   (Report 1 L6).
+   Parts (semantic targets mapped to node roles): container, page link,
+   current page, previous/next, first/last (if present), ellipsis,
+   disabled control.
+   States: current ([aria-current="page"]), disabled ([aria-disabled] or
+   the authored disabled → keep BC-09 semantics), hover, focus-visible.
+   Work: role-based rules on the container (e.g. "all page links",
+   "current page") instead of per-node copies; migrate state looks (O9).
+   CP 17.6.
+39 sidebarNavigation — Sidebar Navigation — <nav> > 4×<a {radius}>
+   As 34 (+ active item state).
+
+Forms:
+40 labeledTextField — Labeled Text Field — <label> > <p "Full Name">,
+   <input text>
+   Parts: label text, input (nodes).
+   States: input focus-visible/invalid/disabled, placeholder target;
+   label colour on input focus → cross-target state (:focus-within on
+   the label) ARCH.
+   CP 17.5.
+41 searchBar — Search Bar — <form> > <input search>, <button>
+   As 40 + button states; the search cancel button ::-webkit-search-
+   cancel-button BROWSER.
+42 newsletterSignup — Newsletter Signup — <form> > <input email>,
+   <button>
+   As 41.
+43 contactForm — Contact Form — <form card> > 3×(label > p + input/
+   textarea) + button
+   As 40 for each field.
+44 loginForm — Login Form — <form card> > h2, label(p, input email),
+   label(p, input password), label(input checkbox, p), button
+   As 40 + checkbox targets (box, indicator: P-TOGGLE).
+   CP 17.5.
+45 labeledSelectField — Labeled Select Field — <label> > <p>, <select>
+   > 3×<option>
+   Select: field FULL-ish via P-FIELD; arrow target ARCH
+   (appearance:none + background arrow); the open dropdown list BROWSER
+   (Chromium-only base-select).
+   Option styling: options are nodes, but most browsers ignore option
+   styles in the native list (BROWSER).
+   CP 17.5.
+
+Interactive / feedback:
+46 collapsible — Collapsible — <div> > <button (toggle)> + <div content>
+   > p
+   Parts: trigger, panel (nodes).
+   States: open (runtime toggles visibility; there's no attribute to
+   style the trigger → ARCH, a runtime-set data-state or aria-expanded,
+   O10); chevron rotation (::after + transform).
+   CP 17.6.
+47 basicTabs — Basic Tabs — <div> > <div tablist> > 3×button (3
+   interactions each) + <div panels> > 3×div (2 initially hidden)
+   Parts: tab list, tab, active tab, panel.
+   States: selected tab (needs aria-selected set by the runtime → ARCH +
+   semantics O10), hover, focus-visible.
+   CP 17.6.
+48 modal — Modal — <div> > <button (open)> + <dialog (hidden)> > <div> >
+   h2, p, button (close)
+   Dialog parts: box, backdrop (::backdrop authored → ARCH), open state.
+   CP 17.6.
+49 infoAlert — Info Alert — <div {bg, border, radius}> > h3, p
+   P-CONT + text nodes.
+   Targets: before (an icon slot via a pseudo-element) PSE.
+   CP 17.3/17.9.
+50 successAlert — as 49.
+51 warningAlert — as 49.
+52 errorAlert — as 49.
+53 dismissibleAlert — Dismissible Alert — <div> > <div>(h3, p) + <button
+   (hide)>
+   As 49 + button states.
+54 manualToast — Manual Toast — <div> > <button (show)> + <div toast
+   (hidden) {bg, border, radius, shadow, position}> > div(h3, p) + button
+   As 49 + enter/exit animation (ANI) + open state.
+   CP 17.6.
+55 popover — Popover — <div> > button + <div (hidden) {…shadow}> > h3, p
+   As 54 (arrow via ::before PSE).
+56 drawer — Drawer — <div> > button + <dialog (hidden) {bg, shadow,
+   position, dimensions}> > div(h2, p, button)
+   As 48 + slide-in animation (ANI).
+
+Data display:
+57 badge — Badge — <div {bg, border, radius}> > <p "Badge">
+   P-CONT + P-TEXT.
+   Targets: before (a dot) PSE.
+   CP 17.9.
+58 avatar — Avatar — <img {radius, aspect ratio, media fit}>
+   P-MEDIA. MSK missing; a status ring (outline/::after) PSE/BRD.
+   CP 17.8.
+59 avatarWithText — Avatar with Text — <div> > <img> + <div>(p, p)
+   As 58 + text nodes.
+60 statCard — Stat Card — <div {bg, border, radius}> > 3×p
+   As 28 (no link).
+61 metadataRow — Metadata Row — <div> > p (key), p (value)
+   P-CONT + P-TEXT.
+   CP 17.9.
+62 progressBar — Progress Bar — <div column {border, radius}> > <div row>
+   > <p "Progress"> + native <progress>
+   Label = a real node; the bar = item 7 (track/fill targets, patterns,
+   animation); the optional inner label needs the custom variant (O4).
+   CP 17.5.
+
+--- Media category (6) ---
+63 image — Image — <img>
+   P-MEDIA + Image section (upload/src/alt).
+   Missing: masks/clip-path (MSK), filter presets already FULL, an
+   overlay (needs a wrapper or ::after: img has no pseudo-elements →
+   requires a wrapper node; N/A as a pseudo).
+   States: hover (zoom/filter).
+   CP 17.8.
+64 video — Video — <video> (native controls)
+   P-MEDIA (+ background) + Video section (src, poster, controls,
+   autoplay, muted, loop).
+   Control bar BROWSER (shadow DOM; ::-webkit-media-controls non-standard,
+   not Firefox). Custom player = runtime JS (O8).
+   Poster styling = object-fit (FULL).
+   CP 17.8.
+65 videoEmbed — Video Embed — <iframe {aspect ratio}> (YouTube/Vimeo/…)
+   Frame box only (border, radius, shadow, filters).
+   Inner player: cross-origin, NOT styleable (by design; BC-08 security).
+   CP 17.8 (box only).
+66 audio — Audio Player — <audio controls>
+   Container/background FULL; the native control bar BROWSER (as 64);
+   custom player O8.
+   CP 17.8.
+67 svg — SVG — editor-generated inline <svg> (primitive or vector scene)
+   SVG section + Drawing Mode + Vector Object (fill, stroke,
+   strokeWidth, viewBox); box styles.
+   Missing (M12): per-object opacity, dash, caps/joins, fill-rule,
+   gradients/filters (defs), per-object transforms, curves, object
+   animation, hover states on shapes.
+   Targets: svg box, each vector object (the object id is stable; they
+   are scene objects, not document nodes).
+   CP 17.7.
+68 iframe — Embed — <iframe sandbox title>
+   Box only; the content is cross-origin (N/A); sandbox untouched.
+   CP 17.8 (box only).
+
+--- Forms category (14) ---
+69 form — Form — <form>
+   P-CONT (+Shape).
+   States: focus-within, :invalid on the form (needs field constraints).
+   CP 17.5.
+70 label — Label — <label> (container)
+   P-CONT (+Shape); typography MISSING (container) — notable for a label.
+   CP 17.4b/17.5.
+71 input — Text Input — <input type=text>
+   P-FIELD; ::placeholder ARCH; states ARCH.
+   CP 17.5.
+72 emailInput — Email Input — as 71 (:invalid meaningful with
+   type=email).
+73 passwordInput — Password Input — as 71 (browser reveal buttons:
+   Edge ::-ms-reveal is legacy; N/A).
+74 numberInput — Number Input — as 71; spin buttons
+   ::-webkit-inner-spin-button BROWSER (the base reset already
+   normalizes them).
+75 searchInput — Search Input — as 71; ::-webkit-search-cancel-button
+   BROWSER.
+76 urlInput — URL Input — as 72.
+77 telInput — Tel Input — as 71.
+78 textarea — Textarea — <textarea>
+   P-FIELD; resize handle (the `resize` property) MISSING; scrollbar
+   target.
+   CP 17.5.
+79 select — Select — <select> > 3×<option>
+   As 45.
+80 checkboxInput — Checkbox — <input type=checkbox>
+   P-TOGGLE: accent-color HIDDEN; box + indicator targets ARCH
+   (appearance:none + ::before + :checked); states checked/indeterminate/
+   disabled/focus-visible.
+   CP 17.5.
+81 radioInput — Radio Button — <input type=radio>
+   As 80 (outer ring = box, inner dot = indicator).
+82 fieldset — Fieldset — <fieldset> > <legend "Group">
+   P-CONT + legend P-TEXT (the legend is a real node).
+   States: :disabled on fieldset (affects children).
+   CP 17.5.
+(The Forms category holds 14 cards: form, label, input, emailInput,
+passwordInput, numberInput, searchInput, urlInput, telInput, textarea,
+select, checkboxInput, radioInput, fieldset.)
+
+
+C. STRUCTURAL SUB-ELEMENTS (not insertable alone)
+=================================================
+- figcaption, legend, caption, th, td: P-TEXT (th/td/caption without
+  Display/Position).
+- option: Typography/Background only; native list rendering BROWSER.
+- thead/tbody/tfoot/tr: Background/Border/Typography(table)/Size;
+  no Display/Position/Radius/Shadow (by design).
+  Zebra striping needs structural selectors (tr:nth-child) → a table-level
+  "alternate rows" target (ARCH).
+  CP 17.9.
+- h2–h6: as Heading.
+- img inside figure/cards: P-MEDIA.
+
+
+D. DISABLED PLACEHOLDER CARDS (29) — not components today
+=========================================================
+- HTML: Menu.
+- Components: Panel.
+- Layout (all 9): Row, Column, Grid, Grid Item, Wrapper, Section Frame,
+  Spacer, Two Column, Stack.
+- Media: Gallery, Video Background, Icon.
+- Forms: Submit Button, Reset Button, Error Message, Helper Text, Form
+  Row.
+- Styles (all 10): Font Scale, Font Weight, Color Palette, Theme Toggle,
+  Spacing Scale, Padding Preset, Shadow, Border Radius, Reset, Typography
+  Base.
+Relevance:
+- the Styles cards are the obvious home for BC-14 Typography Presets and
+  BC-17.11 appearance presets;
+- Layout cards map to existing Flow/Flex/Grid settings (presets, not new
+  styling);
+- Icon depends on SVG work (17.7);
+- Video Background depends on media + background layers.
+None is implemented in BC-17.1. New components are out of scope (Report
+4, O13).
+
+
+E. NOT-IMPLEMENTED HTML COMPONENTS FROM THE BRIEF'S EXAMPLES
+============================================================
+Confirmed absent (no factory):
+- blockquote (the tag is text-bearing in capabilities, but has no card);
+- code, pre, span (inline text), description lists;
+- range, date/time, file, color inputs;
+- meter, details/summary (Collapsible approximates it), accordion,
+  tooltip.
+Each has a styling story ready in the architecture (range: track/thumb
+targets; meter: as progress; details: [open] state + ::marker), but
+adding the components is a separate decision (O13).
+
+
+F. CROSS-CUTTING WORK SUMMARY (where each gap is solved)
+========================================================
+- 17.2 Shared styling architecture: style rules model, capability
+  registry, a Canvas stylesheet pipeline (R1–R3), Inspector frame
+  (target/state selectors, categories, search). Needed by everything
+  below.
+- 17.3 States + pseudo-elements on all P-TEXT/P-CONT/P-FIELD
+  (buttons, links, inputs, containers) + forced-state Canvas preview.
+- 17.3b Motion: transitions[] + keyframes + reduced motion.
+- 17.4 Backgrounds: layers, conic/repeating gradients, patterns.
+- 17.4b Typography extensions (+ container typography) and border/
+  outline extensions (coordinated with BC-14).
+- 17.5 Form controls + Progress (native part targets; optional custom
+  progress variant).
+- 17.6 Navigation/pagination/interactive: role-based part rules,
+  semantic states (current/selected/open/disabled), the Pagination
+  state-look migration.
+- 17.7 SVG.
+- 17.8 Image/video/audio/embeds (box, masks, media states; native
+  controls documented).
+- 17.9 Tables, lists, dividers, badges/alerts/data display.
+- 17.10 Filters/blend/masks/clip; 17.10b transforms (with BC-13 D23).
+- 17.11 Presets.
+- 17.12 Parity.
+- 17.13 Audit.
+Statuses marked UNVER above (List section style coverage; whether
+InspectorSection mounts closed children) are to be confirmed at the start
+of 17.2/17.9.

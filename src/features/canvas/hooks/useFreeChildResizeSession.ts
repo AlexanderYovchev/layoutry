@@ -17,7 +17,7 @@ import {
 import { createFreeInteraction, type FreeInteraction } from "@/features/canvas/utils/createFreeInteraction";
 import { createFreeSnapContext, referencedTargetIds } from "@/features/canvas/utils/createFreeSnapContext";
 import { measureFreeContainerFrame } from "@/features/canvas/utils/freeLayoutFrame";
-import { resolveFreeResizeSnap } from "@/features/canvas/utils/resolveFreeResizeSnap";
+import { renderedFreeSize, resolveFreeResizeSnap } from "@/features/canvas/utils/resolveFreeResizeSnap";
 import { NO_SNAP_LOCK, SNAP_EPSILON, type SnapAxis, type SnapLock } from "@/features/canvas/utils/snapEngine";
 import { resolveContainerScalingSnapshot } from "@/features/canvas/utils/resolveContainerScalingSnapshot";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
@@ -26,6 +26,7 @@ import { describeStyleLockNotice, getStyleProtection } from "@/features/editor/r
 import { findNodeById } from "@/features/editor/utils/findNodeById";
 import { getResizeConstraintsForTag, type FreeLayoutGeometry } from "@/features/editor/types/layout";
 import { getTransformSettings, hasNonIdentityRotateOrScale } from "@/features/editor/types/transform";
+import { getSizeConstraints, isValidSizeConstraintValue, type SizeConstraints } from "@/features/editor/types/sizeConstraints";
 import { TRANSFORM_ANCESTOR_BLOCKED_NOTICE, getTransformBlockingAncestor } from "@/features/editor/rules/transformGeometrySafety";
 import { RESIZE_HANDLE_CURSORS, type ResizeDirection } from "@/features/editor/types/resize";
 
@@ -141,6 +142,13 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
           aspectRatioLocked: getEffectiveAspectRatioLocked({ aspectRatioLocked: node?.aspectRatioLocked, tag }),
         };
         const snappable = !hasNonIdentityRotateOrScale(getTransformSettings(node ?? {}));
+        // BC-13.7: the authored CSS min/max the browser applies (valid values only, like resolveSizeConstraintsStyle).
+        const authored = getSizeConstraints(node ?? {});
+        const sizeLimits: SizeConstraints = {};
+        for (const key of ["minWidth", "maxWidth", "minHeight", "maxHeight"] as const) {
+          const value = authored[key];
+          if (value !== undefined && isValidSizeConstraintValue(value)) sizeLimits[key] = value;
+        }
         const flooredSize = (geometry: FreeLayoutGeometry) =>
           containerScaling
             ? deriveFlooredContainerOuterSize(geometry.width, geometry.height, containerScaling.startContentBounds, containerScaling.outerToContentInset)
@@ -170,9 +178,12 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
             const context = createFreeSnapContext(containerEl, measureFreeContainerFrame(containerEl), useEditorStore.getState().document, containerId, { ...live, freeLayout: live.freeLayout }, targetEl);
             // An axis whose rendered size doesn't follow the stored size (e.g.
             // content taller than the box) can't be snapped exactly.
+            // (Compared with the size its CSS min/max makes it render at.)
+            const expected = renderedFreeSize(live.freeLayout, sizeLimits);
+            const measured = context.measured;
             axes = {
-              x: !context.measured || Math.abs(context.offset.width) <= SIZE_TRACKING_TOLERANCE_PX,
-              y: !context.measured || Math.abs(context.offset.height) <= SIZE_TRACKING_TOLERANCE_PX,
+              x: !measured || Math.abs(measured.width - expected.width) <= SIZE_TRACKING_TOLERANCE_PX,
+              y: !measured || Math.abs(measured.height - expected.height) <= SIZE_TRACKING_TOLERANCE_PX,
             };
             return context;
           },
@@ -198,6 +209,7 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
                       return Math.abs(size.width - geometry.width) <= SNAP_EPSILON && Math.abs(size.height - geometry.height) <= SNAP_EPSILON;
                     }
                   : undefined,
+                sizeLimits,
                 index: snap.index,
                 siblingTargets: snap.siblingTargets,
                 enabled: useEditorStore.getState().snapEnabled && !alt,
@@ -207,7 +219,7 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
               result = snapped.geometry;
               lock = snapped.result.lock;
               coupledWinner = snapped.coupledWinner;
-              const size = flooredSize(result);
+              const size = renderedFreeSize(flooredSize(result), sizeLimits);
               const finalVisual = { x: result.x + snap.offset.x, y: result.y + snap.offset.y, width: size.width, height: size.height };
               publishGuides(buildFreeSnapGuides(snap.containerId, snapped.result, finalVisual, snap.rectById, snap.parentRect));
               references = referencedTargetIds(snapped.result);

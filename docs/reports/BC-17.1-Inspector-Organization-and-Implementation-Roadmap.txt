@@ -1,0 +1,489 @@
+BC-17.1 — Inspector Organization & Implementation Roadmap
+Report 3 of 4
+==========================================================
+Date: 2026-11-26.
+Investigation only.
+Basis: Report 1 (architecture) and Report 2 (matrix). Names, hierarchy
+and labels below are proposals for owner review (Report 4); nothing is
+implemented.
+
+
+1. RECOMMENDED INSPECTOR ORGANIZATION
+-------------------------------------
+Principles (owner-approved, applied):
+- context-aware (registry-driven);
+- logical categories;
+- expandable sections;
+- advanced tiers on demand;
+- a target selector;
+- a state selector;
+- live feedback;
+- no irrelevant controls;
+- reuse the existing 4.1 primitives;
+- keep every existing section and its behaviour.
+Proposed structure (top to bottom):
+1. Element header (existing InspectorElementSummary/Identity) + style
+   protection notice.
+2. Component properties (existing per-tag sections: Progress value/max,
+   Video playback, Pagination pages, Link, Select options, Table, SVG
+   Drawing…), unchanged.
+3. Styling area (new frame around the existing CSS sections):
+   a. Target selector: "Element" plus the component's registry targets
+      (parts and pseudo-elements). Child-node parts (cards, navbars) are
+      offered as "jump to part" links that SELECT the child node — they
+      stay real nodes.
+   b. State selector: "Default" plus the states the registry allows for
+      the chosen target.
+      - A non-default state shows only properties that are meaningful in
+        it; values that are inherited from Default are dimmed with
+        "inherits from Default".
+      - Toggling a state turns on the editor-only forced-state preview on
+        the Canvas.
+   c. Property search: filters the visible categories/fields by name
+      ("radius", "shadow", "stripe").
+   d. Categories (collapsible; the open state is remembered per category
+      in a per-viewer preference):
+      - Layout: Display & Visibility, Position, Flex/Grid (container),
+        Flex/Grid child;
+      - Size: Size & Constraints, Aspect Ratio, Media Fit;
+      - Spacing;
+      - Typography;
+      - Fill & Background: colour, layers (image/gradients/patterns);
+      - Border & Corners: borders, radius, outline;
+      - Effects: Shadows (box, text), Opacity & Blending, Filters (and
+        Backdrop);
+      - Shape & Mask: Shape presets, Clip path, Masks;
+      - Transform;
+      - Motion: Transitions, Animations;
+      - Advanced (collapsed): Cursor/Pointer/User-select, Scrollbar,
+        Isolation, Order/z-index extras, browser-specific parts.
+   e. Each category header keeps: the modified dot, Reset (section),
+      the "⋯" CSS menu (Copy/Paste the section's CSS for the current
+      target+state), and a help button (contextual explanation).
+4. Interactions, Protection (existing), as today.
+Target/state reset levels:
+- field reset (existing);
+- category reset (existing);
+- "Reset this state" (new);
+- "Reset this target" (new);
+- "Reset all styling" (BC-05 Reset size/all, extended).
+
+
+2. TEXT HIERARCHY EXAMPLES
+--------------------------
+2.1 Progress Bar (native progress inside the composition)
+  Progress  [component properties: Indeterminate · Value · Max]
+  Styling
+    Target: [ Element | Track | Fill ]          State: [ Default | Indeterminate ]
+    ▸ Size              (Element: height, width)
+    ▸ Fill & Background (Track: colour/gradient/pattern · Fill: colour/gradient/stripes)
+    ▸ Border & Corners  (Element/Track/Fill radius; Element border)
+    ▸ Effects           (shadows: Track inset; Fill glow)
+    ▸ Motion            (Fill: "Animated stripes" via animation; reduced-motion note)
+    ▸ Advanced          (browser notes: Firefox fill animation limited)
+  Label part: "Progress" label → [Select label] (a real <p> node)
+
+2.2 Pagination
+  Pagination  [pages, current page, previous/next — BC-09 section]
+  Styling
+    Target: [ Container | Page links | Current page | Previous/Next | Disabled control ]
+    State:  [ Default | Hover | Focus visible ]   (Current/Disabled are targets, mapped
+             to [aria-current="page"] / the disabled semantics, never faked)
+    ▸ Typography ▸ Fill & Background ▸ Border & Corners ▸ Effects ▸ Motion ▸ Spacing
+
+2.3 Checkbox (Login Form "Remember me")
+  Form control [name, value, checked, required…]
+  Styling
+    Target: [ Element | Box | Check indicator ]   State: [ Default | Hover | Focus visible | Checked | Indeterminate | Disabled ]
+    ▸ Size ▸ Fill & Background ▸ Border & Corners ▸ Effects ▸ Motion
+    (Box styling switches the control to appearance:none automatically; a note
+     explains the native look is replaced.)
+
+2.4 Button (Primary Button)
+  Styling
+    Target: [ Element | Before | After ]          State: [ Default | Hover | Active | Focus visible | Disabled ]
+    ▸ Typography ▸ Fill & Background ▸ Border & Corners ▸ Effects ▸ Transform ▸ Motion ▸ Spacing ▸ Size ▸ Layout
+
+2.5 SVG
+  SVG [Drawing mode, viewBox] · Vector object [selected object]
+  Styling
+    Target: [ SVG box | Selected object(s) ]      State: [ Default | Hover ]
+    ▸ Paint (object: fill, fill opacity, stroke, width, dash, caps/joins, fill rule)
+    ▸ Gradients (object fill/stroke gradient → generated <defs>)
+    ▸ Effects (box: shadow/filters; object: opacity)
+    ▸ Transform (object) ▸ Motion (object animations)
+
+2.6 Image (Image Card's image)
+  Image [source, upload, alt]
+  Styling
+    Target: [ Element ]   State: [ Default | Hover | Parent hover (card) ]
+    ▸ Size ▸ Media Fit ▸ Border & Corners ▸ Shape & Mask (clip/mask) ▸ Effects (filters)
+    ▸ Transform (hover zoom) ▸ Motion
+
+2.7 Table
+  Table [rows/columns]
+  Styling
+    Target: [ Table | Header row | Body rows | Alternate rows | Cells | Header cells | Caption ]
+    State:  [ Default | Row hover ]
+    ▸ Typography ▸ Fill & Background ▸ Border (incl. collapse/spacing) ▸ Spacing
+
+
+3. COMPONENT-SPECIFIC TARGET ORGANIZATION
+-----------------------------------------
+- Registry entry per component type:
+  - targets: id, label, kind (pseudo-element | native part | role group |
+    structural), selector recipe, allowed categories, allowed states,
+    browser notes;
+  - order: Element first, then parts in visual order.
+- Kinds:
+  - pseudo-element: before/after/placeholder/marker/selection/backdrop;
+  - native part: progress track/fill, checkbox box/indicator, select
+    arrow, scrollbar;
+  - role group (compositions whose parts are real nodes but which need
+    "style all of them at once"): pagination page links/current/
+    prev-next; table rows/alternate rows/cells; tabs tab/active tab.
+    A role group compiles to a container-scoped selector (e.g.
+    `.pagination-x .page-link`) using generated role classes on the
+    child nodes — no fake nodes;
+  - structural: alternate rows (`:nth-child(even)`).
+- Real child nodes remain directly selectable (Canvas/Structure, BC-12
+  untouched); the target list offers "jump to" for them.
+
+
+4. STATE SELECTOR ORGANIZATION
+------------------------------
+- True CSS pseudo-classes:
+  hover, active, focus, focus-visible, focus-within, disabled, checked,
+  indeterminate, invalid, valid, required, read-only, placeholder-shown,
+  open (dialog [open]).
+- Semantic states (attribute selectors driven by existing semantics or the
+  runtime):
+  - current ([aria-current="page"], BC-09);
+  - disabled control in pagination (the authored disabled semantics);
+  - selected tab ([aria-selected="true"], set by the tabs runtime);
+  - expanded (collapsible/dropdown: [aria-expanded="true"] set by the
+    interaction runtime);
+  - open (popover/toast: a runtime data-state).
+  These need the runtime to set the attribute in Preview/Export (O10).
+- Precedence (generated order = cascade order):
+  Default < Hover < Focus-visible < Active < Checked/Selected/Current <
+  Invalid < Disabled. Disabled last, so a disabled hover doesn't look
+  active. Documented and fixed.
+- Forced-state preview: [data-ly-force-state] in the editor stylesheet
+  only; export omits it.
+
+
+5. ADVANCED CSS MENU ORGANIZATION
+---------------------------------
+- Fill & Background layers: a list (reuse the InspectorShadowLayerList
+  pattern):
+  - each layer = colour | image | linear | radial | conic | repeating
+    variants, with size/position/repeat/blend/clip;
+  - "Pattern" = a layer preset group (stripes, dots, checker, grid,
+    segments) that EXPANDS into editable gradient parameters (angle,
+    thickness, spacing, colours), never a locked template.
+- Effects: filters as an ordered list (drag to reorder) + backdrop
+  filters + blend modes + isolation.
+- Shape & Mask: Shape presets (existing) + a clip path editor (circle/
+  ellipse/inset/polygon with handles on the Canvas later) + mask layers
+  (gradient masks first; image masks via the asset pipeline).
+- Motion:
+  - Transitions list (property, duration, easing incl. cubic-bezier
+    editor, delay);
+  - Animations list referencing document keyframes (keyframe editor:
+    timeline of stops with the same property controls);
+  - reduced-motion behaviour displayed.
+- Transform: translate/rotate/scale (existing) + skew, origin, perspective
+  (gated by BC-13 geometry rules).
+
+
+6. EXISTING CONTROLS TO REUSE
+-----------------------------
+- InspectorSection, InspectorPropertyRow, InspectorPropertyStateDot,
+  InspectorResetButton;
+- InspectorNumericValueControl/InspectorUnitSelect,
+  InspectorNumberFieldRow, InspectorSliderField, InspectorSegmentedRow,
+  InspectorBooleanToggle, InspectorLinkToggle (linked values);
+- InspectorColorFieldShell (colour + alpha);
+- InspectorGradientSection/InspectorGradientStopTrack (extend: types,
+  repeating, conic);
+- InspectorShadowLayerList (generic list editor template);
+- InspectorBackgroundPositionGrid/InspectorObjectPositionGrid;
+- InspectorShapeGrid;
+- InspectorBorderVisualSideSelector/InspectorBorderRadiusCornerSelector;
+- InspectorSectionCssMenu (BC-11), InspectorMixedSectionPanel/
+  InspectorSharedValueNote (BC-10), InspectorHelpButton,
+  InspectorImageUploadField (asset pipeline for image layers/masks).
+
+
+7. NEW CONTROLS REQUIRED
+------------------------
+- Target selector; State selector (+ forced-state toggle); property
+  search box.
+- Generic ordered-list editor (generalize the shadow list): background
+  layers, filters, transitions, animations, masks.
+- Gradient type switch extension (conic, repeating), stop hints.
+- Pattern parameter editor (an expanded layer preset).
+- Easing editor (cubic-bezier curve + steps).
+- Keyframe timeline editor.
+- Clip-path editor (numeric first; Canvas handles later).
+- SVG paint controls (dash pattern, caps/joins, fill rule, opacity).
+- Content editor for ::before/::after (decorative glyph/empty, or
+  announced text; O7).
+
+
+8. IMPLEMENTATION CHECKPOINTS
+-----------------------------
+The preliminary 13 checkpoints are kept in spirit but reordered and split
+by dependency. Proposed 16:
+
+BC-17.2 Shared styling architecture (data + pipeline)
+  Objective: the style-rule model and the one stylesheet pipeline, with
+    no visible feature yet.
+  Scope:
+    - node.styleRules (target × state × groups) types + Zod;
+    - capability registry (from elementCapabilities);
+    - IR emits rules with generated selectors;
+    - Canvas renders a document-scoped <style> from the same IR;
+    - Preview the same;
+    - export prints it;
+    - format v4 (identity migration);
+    - parity harness extended.
+  Dependencies: owner O1, O2, O5.
+  Affected: all components (no visual change).
+  Acceptance:
+    - existing projects render byte-identical CSS declarations and
+      identical screenshots (parity) in Canvas/Preview/Export;
+    - v3 → v4 opens unchanged;
+    - Undo/Redo, clipboard and multi-select unaffected;
+    - stylesheet updates don't re-render nodes (measured at 1,000
+      elements).
+  Risks: specificity/order differences between inline and class rules
+    (mitigated by moving base styles too, or keeping inline base + rules
+    for others; O2); performance.
+  Testing: parity unit + Chromium/Firefox/WebKit screenshot parity on a
+    kitchen-sink document; migration tests; a perf probe.
+
+BC-17.2b Inspector frame
+  Objective: target/state selectors, category grouping, search,
+    remembered sections, without new properties.
+  Scope: the registry-driven section list; Bulk/single convergence where
+    feasible; existing sections re-homed into categories.
+  Dependencies: 17.2, O3, O11.
+  Acceptance:
+    - every existing control still reachable;
+    - no irrelevant sections;
+    - search finds every field;
+    - keyboard accessible;
+    - Inspector render time not worse than today.
+  Testing: Inspector component tests; e2e navigation; a11y checks.
+
+BC-17.3 States & pseudo-elements (core)
+  Objective: authoring state styles and ::before/::after/::placeholder/
+    ::selection/::marker for applicable elements; forced-state preview.
+  Scope: buttons, links, inputs, textareas, containers, list items; the
+    cascade order; the content policy; reset per state/target;
+    clipboard/multi-select per (group, target, state).
+  Dependencies: 17.2, 17.2b, O6, O7.
+  Acceptance:
+    - a hover/focus-visible/disabled style authored on the Canvas shows
+      in the forced preview, in Preview on real hover, and in export
+      with identical CSS;
+    - no runtime behaviour is introduced;
+    - focus-removal advisory;
+    - BC-11 paste validates target/state compatibility.
+  Risks: cascade conflicts; accessibility of generated content.
+  Testing: unit (selector generation, precedence); browser state tests ×3
+    engines.
+
+BC-17.3b Motion: transitions list + keyframe animations
+  Scope: transitions[] (more properties, cubic-bezier), document
+    keyframes, animations[] per element/target/state, reduced motion
+    (Canvas + export), an animation preview play/pause in the editor.
+  Dependencies: 17.3.
+  Acceptance:
+    - animated stripes on a progress fill reproducible in all engines
+      that support it;
+    - reduced motion honoured;
+    - no animation runs during BC-13 drags (geometry measurement is
+      stable).
+  Testing: unit, browser, the reduced-motion emulation.
+
+BC-17.4 Backgrounds, gradients & patterns
+  Scope:
+    - background layers;
+    - conic + repeating gradients;
+    - stop hints;
+    - background-clip/origin/blend;
+    - the pattern layer presets as editable parameters;
+    - gradient text (background-clip:text).
+  Dependencies: 17.2 (17.3 for state backgrounds).
+  Acceptance: stripes/dots/checker/grid/segments buildable and editable
+    by parameters; existing single backgrounds unchanged (v4 identity).
+  Testing: unit (serialization), screenshot parity.
+
+BC-17.4b Typography, borders & outline extensions
+  Scope:
+    - TYP extensions + text-shadow;
+    - container (inherited) typography;
+    - outline/offset;
+    - elliptical radii;
+    - decoration style/colour.
+  Dependencies: 17.2; coordinate with BC-14 (O12).
+
+BC-17.5 Form controls & Progress
+  Scope:
+    - Progress native part targets (track/fill) with vendor selectors +
+      auto appearance;
+    - checkbox/radio box+indicator;
+    - select field+arrow;
+    - placeholder;
+    - input states (invalid/disabled/focus);
+    - textarea resize;
+    - optional custom progress variant only if O4 approves.
+  Dependencies: 17.3, 17.3b, 17.4.
+  Acceptance: the 10 Progress appearances (Report 1 §10.3) achievable as
+    stated per engine; native semantics kept; existing progress/inputs
+    unchanged until styled.
+  Testing: 3 engines + Electron smoke; a11y tree checks.
+
+BC-17.6 Navigation, Pagination & interactive components
+  Scope:
+    - role-group targets (pagination page/current/prev-next/disabled;
+      tabs; dropdown; collapsible; navbars; breadcrumbs);
+    - semantic states via runtime attributes (O10);
+    - Pagination state-look migration to rules (O9);
+    - dialog/drawer/modal backdrop and open state;
+    - toast/popover open animations.
+  Dependencies: 17.3, 17.3b.
+  Acceptance:
+    - BC-09 current-page semantics, disabled boundaries and interaction
+      restrictions preserved;
+    - changing the current page keeps the current style without copying
+      fields;
+    - existing paginations look identical after migration.
+  Testing: BC-09 regression subset, migration tests, browser.
+
+BC-17.7 SVG styling
+  Scope:
+    - per-object opacity, dash, caps/joins, fill-rule;
+    - gradients/filters as generated <defs> with safe ids;
+    - per-object transforms;
+    - object hover states;
+    - object animations;
+    - (curves optional, O14).
+  Dependencies: 17.2, 17.3, 17.3b.
+  Acceptance: no raw markup; ids unique per document/export; parity.
+
+BC-17.8 Image, video, audio & embeds
+  Scope:
+    - masks/clip on media;
+    - media states (hover zoom/filter, parent-hover cross-target O6);
+    - poster/surface styling;
+    - native control limits documented in the Inspector;
+    - embed box only.
+  Dependencies: 17.3, 17.10 (masks) — can be split.
+  Acceptance: no change to BC-07/BC-08 security; cross-origin untouched.
+
+BC-17.9 Tables, lists & remaining components
+  Scope:
+    - table row/alternate/cell/header targets;
+    - border-collapse/spacing;
+    - list markers and list-style;
+    - divider background;
+    - alerts/badges/stat/metadata icon slots (::before).
+  Dependencies: 17.3, 17.4.
+
+BC-17.10 Filters, blending, masks & clipping
+  Scope: ordered filters, drop-shadow, backdrop-filter, blend modes,
+    isolation, a free clip-path editor, gradient/image masks.
+  Dependencies: 17.2, 17.4 (gradient engine for masks).
+  Browser notes: backdrop-filter (WebKit -webkit- prefix), mask
+    prefixes.
+
+BC-17.10b Transforms (advanced)
+  Scope: skew, scaleX/Y, origin, perspective, 3D, ordering.
+  Dependencies: BC-13 D23 follow-up (transformed geometry) — must not
+    break snapping/containment.
+  Acceptance: BC-13 snapping/containment regression subset green.
+
+BC-17.11 Appearance presets
+  Scope: component appearance presets as editable bundles of rules
+    (never locked templates), using the Styles placeholders; shared
+    infrastructure with BC-14 (O12).
+  Dependencies: 17.3–17.9.
+
+BC-17.12 Persistence, Canvas, Preview & Export parity
+  Scope:
+    - the full parity matrix (every target/state/category per engine);
+    - save/reopen;
+    - export cleanliness review (no editor selectors, minimal vendor
+      rules);
+    - stylesheet size and perf at 1,000 elements.
+  Dependencies: all above.
+
+BC-17.13 Final compliance & regression audit
+  Scope: per-decision compliance (as BC-13.7), deferred items documented.
+
+Ordering rationale:
+- 17.2/17.2b are foundations (nothing else is buildable without
+  selectors);
+- states and pseudo-elements are the single biggest unlock;
+- backgrounds/patterns precede Progress because stripes/segments need
+  them;
+- motion precedes animated progress;
+- transforms come late because of BC-13 geometry coupling.
+
+
+9. DEPENDENCIES (summary graph)
+-------------------------------
+17.2 → 17.2b → 17.3 → {17.3b, 17.4, 17.4b} → 17.5 → 17.6 → {17.7, 17.8,
+17.9} → 17.10 → 17.10b → 17.11 → 17.12 → 17.13.
+External:
+- BC-14 shares the typography/preset infrastructure (17.4b/17.11);
+- BC-13 D23 follow-up gates 17.10b;
+- BC-13 P1 (Canvas render perf) affects 17.2's acceptance;
+- the not-implemented components (range/meter/date/file/details) are
+  separate (O13).
+
+
+10. ACCEPTANCE CRITERIA (milestone-level)
+-----------------------------------------
+- Every component's applicable categories, parts and states from Report
+  2 are authorable visually (or documented BROWSER-restricted with the
+  reason shown in the Inspector).
+- Canvas = Preview = saved/reopened = exported appearance (screenshot
+  parity per engine, allowing documented native differences).
+- No existing project changes appearance on open or save (v4 identity
+  migration; parity tests).
+- Semantics/accessibility preserved (native controls stay native unless
+  an explicit custom variant is chosen); reduced motion honoured; focus
+  advisory.
+- Export: clean class-based CSS; no editor-only selectors; vendor rules
+  only where needed; typed, validated values; no arbitrary CSS.
+- Inspector: no flat dump; registry-driven; search; remembered sections;
+  keyboard accessible; no performance regression.
+- Clipboard, multi-select, reset and Undo/Redo work per (group, target,
+  state).
+
+
+11. TESTING STRATEGY
+--------------------
+- Change-focused per checkpoint (standing rule): an impact map; unit
+  tests for the model, schema, selector generation, precedence,
+  migration; component tests for new Inspector controls.
+- Parity harness:
+  - extend canvasExportParity (unit) with rules;
+  - a browser screenshot-parity spec on a kitchen-sink document (Canvas
+    vs Preview vs exported HTML) per engine, run on the checkpoints that
+    touch the pipeline (17.2, 17.12).
+- Engine coverage:
+  - Chromium for every checkpoint;
+  - Firefox/WebKit where vendor parts/backdrop/masks/animation differ
+    (17.3b, 17.5, 17.10);
+  - Electron smoke when the pipeline changes (17.2, 17.12).
+- Accessibility: accessibility-tree assertions for form controls/
+  progress/pagination/tabs; reduced-motion emulation; keyboard focus
+  visibility.
+- Performance: a probe at 1,000 elements for 17.2 (stylesheet update
+  cost) and 17.12.

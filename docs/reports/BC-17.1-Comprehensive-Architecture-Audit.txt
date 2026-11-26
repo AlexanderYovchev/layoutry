@@ -1,0 +1,750 @@
+BC-17.1 — Comprehensive Component & CSS Capability Audit
+Report 1 of 4: Comprehensive Architecture Audit
+=========================================================
+Date: 2026-11-26
+Milestone: BC-17 — Comprehensive Component Styling & Advanced CSS
+Customization
+Type: investigation only. No production code, rendering, Inspector or
+project-format change was made. Nothing committed.
+Companion reports:
+- BC-17.1-Component-CSS-Capability-Matrix.txt (every component);
+- BC-17.1-Inspector-Organization-and-Implementation-Roadmap.txt;
+- BC-17.1-Owner-Decisions.txt.
+
+Evidence legend:
+- [CODE] read in the repository at the baseline commit;
+- [DIAG] produced by the one diagnostic run (section 2.4);
+- [BROWSER-KNOWLEDGE] documented browser behaviour, not re-tested here;
+- [ASSUMPTION] stated reasoning, not verified.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+- Layoutry has a sound, centralized and typed style architecture, but it
+  is a ONE-SELECTOR-PER-ELEMENT architecture:
+  - every document node carries ~18 typed style groups
+    (typography, background, border, borderRadius, boxShadow, filters,
+    transition, transform, display, position, spacing, flow/flex/grid,
+    dimensions, sizeConstraints, aspectRatio, mediaFit, shape, SVG paint);
+  - one shared set of pure "style recipe" resolvers turns them into CSS
+    for BOTH the Canvas (React inline styles) and Export (one class rule
+    per element: `.<element-class> { ... }`). [CODE]
+- That single fact explains almost every gap the owner sees. There is no
+  way to author a style for anything that is not "this element, in its
+  normal state":
+  - no interaction states (:hover, :focus-visible, :checked, :disabled,
+    [aria-current]…);
+  - no pseudo-elements (::before/::after, ::placeholder, ::marker, the
+    native ::-webkit-progress-value, ::-moz-progress-bar…);
+  - no component-part targets inside native controls;
+  - no @keyframes.
+  The export stylesheet confirms it in its own words: "A transition is the
+  only motion the document model can author: there are no keyframe
+  animations". [CODE: printExportStylesheet.ts]
+- Within that model, several groups are deliberately narrow:
+  - background: one colour + ONE image or ONE linear/radial gradient;
+    no layers, no conic or repeating gradients, so no patterns or stripes;
+  - transforms: translate/rotate/uniform scale; no skew, origin or
+    perspective;
+  - transitions: one entry, one of 4 properties;
+  - filters: a fixed set in a fixed order; no drop-shadow, no backdrop;
+  - typography: 9 fields; no text-transform, shadow or white-space;
+  - no outline, blend modes, masks, or free clip-path (only Shape presets
+    on containers).
+- Compound components (cards, navbars, pagination, alerts, tabs, forms…)
+  are already built from ordinary, real, independently styleable child
+  nodes. Their "parts" exist and are editable today. The problems are
+  discoverability (the parts are only reachable by selecting them on the
+  Canvas/Structure) and STATE (e.g. Pagination's current page is styled by
+  COPYING style fields from node to node when the current page changes —
+  a bespoke workaround for the missing state-selector concept). [CODE:
+  paginationCommands.ts getStateLook/applyStateLook]
+- Native leaf controls are where real styling is impossible today:
+  <progress>, checkbox/radio <input>, <select>, <video>/<audio> controls.
+  Their visible parts live in browser shadow/UA rendering, which needs
+  pseudo-elements, appearance:none, or custom markup — none of which the
+  model can express. The Progress Bar's plain green-on-grey look is simply
+  the browser's default <progress> rendering; the Inspector offers no
+  background/typography for it at all (capability rules).
+- Recommended architecture (detailed in section 16): extend the EXISTING
+  typed style groups with a "style rule" layer — base + named TARGETS
+  (component parts, pseudo-elements) x STATES — rendered through the SAME
+  recipe resolvers. Supporting work:
+  - the Canvas moves from inline styles to a generated, scoped stylesheet
+    for anything selector-based;
+  - export already prints class rules, so it extends naturally;
+  - a capability registry decides which targets/states/groups apply per
+    component;
+  - a project format v4 (additive, existing appearances unchanged).
+  This is a core architectural change. It must come first (BC-17.2/17.3)
+  before any component-specific styling work.
+- Decisions needed: 16 owner decisions (Report 4). Most important:
+  - O1 the style-rule model (targets x states);
+  - O2 the Canvas stylesheet pipeline;
+  - O4 Progress native vs custom (recommendation: a native <progress>
+    upgraded with standard + vendor pseudo-element targets, plus an
+    opt-in custom-structure variant for designs native can't reach);
+  - O5 format v4.
+
+
+2. REPOSITORY BASELINE
+----------------------
+2.1 State
+- Branch: main. HEAD: 63a4c52 (BC-13.6.1, committed).
+- Project format: CURRENT_PROJECT_FORMAT_VERSION = 3
+  (src/features/project/types/projectFile.ts), with a migration chain
+  (projectFormatMigrations.ts). Files from a NEWER version are refused
+  ("saved by a newer version of Layoutry"); older versions migrate
+  forward.
+- Unfinished concurrent work (NOT touched by this investigation):
+  BC-13.7 (final BC-13 audit) is in progress and uncommitted:
+  - M src/features/canvas/hooks/useFreeChildResizeSession.ts;
+  - M src/features/canvas/utils/resolveFreeResizeSnap.ts and its test
+    (the authored max-width/min-width resize-snapping correction);
+  - ?? e2e/bc13-final-audit.spec.ts.
+  Its two TXT reports have not been written yet. One temporary BC-13.7
+  diagnostic file (e2e/zz-touch-probe.spec.ts) was deleted, as was always
+  intended for it. Limitation: BC-13 is not formally closed; nothing in
+  BC-17.1 depends on the uncommitted files.
+- BC-14 (Typography Presets): no code exists. The Resource Panel "Styles"
+  category holds 10 disabled placeholders (Font Scale, Font Weight,
+  Typography Base, Color Palette, Shadow, Border Radius…), which are the
+  natural BC-14/BC-17.11 home.
+2.2 Main architecture locations [CODE]
+- Document model: src/features/editor/types/document.ts
+  (EditorElementNode); style group types in src/features/editor/types/*.
+- Validation: src/features/editor/schemas/editorDocumentSchema.ts (Zod;
+  default object behaviour strips unknown keys); export-time
+  validateExportCssValue.ts.
+- Factories: src/features/editor/factories/*.ts (82 insertable types).
+- Catalog: src/components/layout/creationToolbarCategories.ts.
+- Capabilities: src/features/editor/rules/elementCapabilities.ts.
+- Canvas renderers: src/features/canvas/components/document/elements/*.
+- Style recipes: src/features/canvas/utils/elementStyleRecipes.ts plus 16
+  resolve*Style.ts files.
+- Default presentations: getDocumentDefaultStyle (shared Canvas/Export
+  table).
+- Export: src/features/export/utils/buildExportDocument.ts (IR, using the
+  SAME recipes), printExportStylesheet.ts, exportBaseStylesheet.ts,
+  exportClassNames.ts.
+- Inspector: src/features/inspector/components/* (52 section
+  components, 17 of them Bulk multi-selection variants);
+  InspectorNodeSummary.tsx composes them.
+2.3 Testing
+No unit, browser or Electron tests were run (investigation).
+2.4 Diagnostic
+Exactly one, deliberately narrow: a temporary Vitest file
+(src/features/editor/factories/zz-inventory-probe.test.ts) that called
+every factory and wrote each generated tag tree to a scratch file.
+- Command: npx vitest run
+  src/features/editor/factories/zz-inventory-probe.test.ts → 1 passed.
+- The file was deleted immediately (git status shows no zz files). The
+  inventory in Report 2 comes from it.
+
+
+3. CURRENT COMPONENT ARCHITECTURE
+---------------------------------
+- 82 insertable component types (FACTORIES_BY_TYPE), all in the
+  catalog:
+  - HTML 21;
+  - Components 41;
+  - Media 6;
+  - Forms 14.
+  There are also 29 disabled "not available yet" placeholder cards (Menu,
+  Panel, the 9 Layout cards, Gallery, Video Background, Icon, Submit/Reset
+  Button, Error Message, Helper Text, Form Row, and the 10 Styles cards).
+  [CODE + DIAG]
+- Four structural kinds:
+  1. Simple elements: one real HTML element (div, section, h1, p, hr, a,
+     li, ul/ol, header, nav, main, article, aside, footer, form, label,
+     fieldset, button, img, textarea, select, input).
+  2. Native leaf controls with UA-rendered parts: progress; input
+     checkbox/radio; select; video/audio (controls); iframe (a cross-origin
+     document); svg (an editor-generated vector scene).
+  3. Compositions: trees of ordinary nodes created by factories (cards,
+     navbars, breadcrumbs, pagination, sidebar nav, button group, dropdown,
+     alerts, toast, popover, modal/drawer (<dialog>), tabs, collapsible,
+     badge, avatar(+text), stat card, metadata row, progress bar, the form
+     compositions, the footer composition).
+     - Every part is a document node with the full style groups its tag
+       supports.
+     - Behaviour uses the click show/hide/toggle Interactions model.
+     - Only Pagination carries a semantic marker (component: "pagination")
+       plus aria-current/disabled.
+  4. Structural sub-elements, never inserted alone: figcaption, option,
+     thead/tbody/tfoot/tr/th/td, caption, legend, h2–h6 (via the Heading
+     Level control).
+- Not implemented as components (examples from the brief, confirmed
+  absent): blockquote (text-bearing tag known, but there is no catalog
+  card), code/pre, inline span, input range/date/time/file/color, meter,
+  details/summary, a true accordion (Collapsible approximates it), tooltip,
+  description lists, icon, gallery, video background.
+
+
+4. CURRENT INSPECTOR ARCHITECTURE
+---------------------------------
+- InspectorNodeSummary renders, top to bottom:
+  - Identity, Protection, Interactions;
+  - geometry (Size / Flex child / Grid child / Media);
+  - per-tag sections (Image, Video, Audio, Progress, Iframe/Video Embed,
+    SVG + Drawing Mode + Vector Object, Link, Heading Level, List,
+    Navigation Links, Pagination, Table, Table Selection, Option, Form
+    Control, Select Options);
+  - the CSS groups, each gated by a capability flag: Typography,
+    Background, Border, Border Radius, Shape, Box Shadow, Filters,
+    Transition, Transform, Display, Position, Spacing, Layout.
+  [CODE]
+- Shared primitives already exist (Checkpoint 4.1 architecture):
+  - InspectorSection (collapsible, header actions, cssGroup);
+  - InspectorPropertyRow and InspectorPropertyStateDot (modified
+    indicators);
+  - InspectorResetButton (section and field reset, BC-05);
+  - InspectorNumericValueControl / InspectorUnitSelect (value + unit);
+  - InspectorSliderField, InspectorSegmentedRow, InspectorColorFieldShell
+    (colour);
+  - InspectorGradientSection + InspectorGradientStopTrack (gradient);
+  - InspectorShadowLayerList (a list editor);
+  - InspectorShapeGrid, InspectorBackgroundPositionGrid,
+    InspectorObjectPositionGrid;
+  - InspectorSectionCssMenu (BC-11 Copy/Paste section CSS);
+  - InspectorMixedSectionPanel / InspectorSharedValueNote (multi-selection
+    mixed values);
+  - the Bulk* sections (BC-10).
+- Organization today:
+  - a single long column;
+  - sections open/closed in local state (not remembered across
+    selections or sessions);
+  - no search;
+  - no target or state selector;
+  - no "advanced" tier;
+  - all applicable groups always listed.
+- Mechanisms that already exist and support BC-17: capability gating,
+  per-group Copy/Paste, mixed values, reset and modified indicators.
+- Duplication risk: each group has a single-selection and a Bulk
+  component pair (17 pairs). A new target/state dimension multiplied over
+  those pairs would be costly. See section 16 (registry-driven sections).
+
+
+5. CURRENT CSS DATA MODEL
+-------------------------
+[CODE] What each group can express (units: CssLengthValue =
+px/%/rem/em/vw/vh/unitless/deg where a group uses it; spacing,
+dimensions and sizeConstraints are px numbers):
+- typography:
+  - fontFamily, fontSize, fontWeight (100–900), fontStyle, color,
+    textAlign (left/center/right/justify), lineHeight, letterSpacing,
+    textDecorationLine (none/underline/overline/line-through);
+  - missing: text-transform, word-spacing, text-indent, white-space,
+    text-overflow, overflow-wrap/word-break, text-shadow, decoration
+    style/color/thickness, font-variant/features, vertical-align.
+- background:
+  - color; sourceType image|gradient; image (URL/embedded upload); size
+    auto/cover/contain/custom; 9-point position; repeat (6 values);
+    attachment;
+  - gradient: linear (angle, 2–16 stops) or radial (ellipse/circle,
+    9-point position, stops);
+  - missing: multiple layers, conic, repeating-linear/radial, stop hints,
+    free positions, background-origin, background-clip (incl. text),
+    background-blend-mode.
+- border: four independent sides (width, style ×9, colour). Missing:
+  outline, outline-offset, border-image.
+- borderRadius: four corners (px/rem/em/%). Missing: elliptical (x/y)
+  radii.
+- boxShadow: up to 8 layers (inset, x, y, blur, spread, colour,
+  enabled). Complete for box-shadow.
+- filters:
+  - opacity (rendered as the CSS opacity property), blur, brightness,
+    contrast, saturate, grayscale, hue-rotate, invert, sepia;
+  - fixed function order;
+  - missing: drop-shadow(), backdrop-filter, user ordering,
+    mix-blend-mode, isolation.
+- shape: 11 clip-path presets (circle … trapezoid), on SHAPE_CAPABLE_TAGS
+  (div/section/header/nav/main/article/aside/footer/form/label) only.
+  Missing: free clip-path editing, masks.
+- transform: translateX/Y (px), rotateDeg, uniform scale. Missing: skew,
+  scaleX/Y, transform-origin, perspective, 3D, ordering.
+- transition: ONE entry, property ∈ {opacity, background-color,
+  border-color, box-shadow}, duration, timing (5 keywords), delay.
+  Missing: multiple entries, transform/colour/size properties,
+  cubic-bezier/steps.
+- display: block/inline/inline-block/none (flex/grid live in flowLayout),
+  visibility, overflow(+x/y), pointer-events, cursor (7), user-select.
+- position: position, top/right/bottom/left, z-index.
+- flowLayout: block | flex (direction, wrap, justify, align, align-content,
+  row/column gap) | grid (1–4 column presets, rows auto/1–4, gaps).
+  Missing: free grid templates, areas, auto-flow.
+- flexChild: grow, shrink, basis, align-self. Missing: order.
+- gridChild: column/row start + span.
+- dimensions (preferred px), sizeConstraints (min/max width/height px),
+  aspectRatio (auto | ratio), mediaFit (object-fit, object-position %),
+  freeLayout (x/y/w/h px).
+- Box sizing: fixed border-box by the base reset (not authorable; that is
+  deliberate and consistent).
+- SVG: svgKind primitive (rectangle/circle/triangle/star) with
+  fill/stroke/strokeWidth/viewBox, OR an svgScene of vector objects
+  (rect/ellipse/line/polygon/path with M/L/Z only), each with fill, stroke
+  and strokeWidth.
+- Animations: none.
+Values are typed enums and numbers, validated by Zod on load and by the
+export CSS validator — there are no arbitrary CSS strings (good for
+security; section 14).
+
+
+6. CURRENT RENDERING AND EXPORT ARCHITECTURE
+--------------------------------------------
+- Canvas: each element renderer calls its recipe
+  (resolveTextElementStyle, resolveBoxElementStyle,
+  resolveImageElementStyle…). That returns `defaults` (shared default
+  presentation class ids) plus `style` (a React CSSProperties object),
+  applied INLINE. [CODE]
+- Preview: the same Canvas renderers in editorMode "preview" (an
+  interaction runtime for show/hide); the same inline styles.
+- Export: buildExportDocument builds an IR using the SAME recipe
+  functions; printExportStylesheet emits, in order:
+  - the base reset;
+  - the used default presentations (`.<default-class>`, plus @media and
+    ::backdrop variants from the default table);
+  - one `.<element-class>` rule per element with authored declarations;
+  - a reduced-motion block for authored transitions.
+  The HTML gets class names; there are no inline styles. [CODE]
+- Parity: canvasExportParity.test.tsx exists (BC-02/EXPORT-1 work).
+  Because both sides share the resolvers, parity holds by construction
+  for element-level declarations.
+- Consequence for BC-17: inline styles CANNOT express selectors. States,
+  pseudo-elements, parts inside native controls and keyframes require the
+  Canvas to render a generated <style> (scoped stylesheet) as well. That
+  stylesheet should come from the same IR the export prints, so Canvas
+  and Export stay one pipeline (section 16, owner decision O2).
+
+
+7. EXISTING REUSABLE CAPABILITIES
+---------------------------------
+- Typed groups + shared recipes (one source of truth) → new groups slot in
+  the same way.
+- Capability flags → generalize into a capability registry (per tag /
+  component / target / state).
+- Inspector primitives (section 4): value+unit, slider, segmented, colour,
+  gradient stop track, shadow layer list (a reusable list editor for
+  multiple backgrounds, transitions, filters, animations), position grids,
+  shape grid, reset, state dots, mixed-value panel, section CSS menu.
+- History/transactions: begin/commit/cancelTransaction with merge (live
+  slider/gradient edits = one Undo step; BC-01/4.3.1).
+- BC-05 reset, BC-10 bulk edit and mixed values, BC-11 group-keyed CSS
+  clipboard (STYLE_GROUP_KEYS) — all group-keyed. Extending the key with
+  (target, state) reuses them.
+- Default presentation table with ::backdrop and @media support → proof
+  that the export printer already handles selector suffixes.
+- Interactions runtime (show/hide/toggle) + initialPreviewVisibility → the
+  base for "open" states (dialog, popover, dropdown, tabs).
+
+
+8. MISSING CAPABILITIES (summary; per component in Report 2)
+------------------------------------------------------------
+- M1 Interaction/semantic states for any element (hover, active,
+  focus-visible, focus-within, disabled, checked, invalid, placeholder-
+  shown, open, [aria-current]).
+- M2 Pseudo-element targets (::before/::after content boxes,
+  ::placeholder, ::marker, ::selection, ::file-selector-button,
+  ::backdrop for the user's dialogs).
+- M3 Native control part targets (progress track/fill, checkbox/radio
+  indicator, select field/arrow, range track/thumb when range exists,
+  scrollbars).
+- M4 Multiple background layers, conic and repeating gradients →
+  patterns (stripes, dots, checkerboard, grid, segments).
+- M5 Keyframe animations (including an animated-stripes use case) with
+  reduced-motion handling.
+- M6 Transitions: multiple, more properties, custom easing.
+- M7 Transforms: skew, origin, perspective, 3D, ordering (BC-13 geometry
+  impact).
+- M8 Typography extensions (section 5), text-shadow, background-clip:text.
+- M9 Outline + offset, elliptical radii, border-image (optional).
+- M10 Blend modes, isolation, backdrop-filter, drop-shadow(), filter
+  ordering.
+- M11 Masks and free clip-path (circle/ellipse/inset/polygon editing;
+  gradient masks).
+- M12 SVG: opacity, dash, caps/joins, fill-rule, gradients/filters (defs),
+  per-object transforms, curves (path C/Q), per-object animation.
+- M13 Discoverability: part navigation, a target selector, state selector,
+  property search, remembered section state.
+- M14 Missing native components that the owner's examples assume (range,
+  meter, date/time, file, color input, details/summary): new components,
+  out of BC-17's styling scope but relevant dependencies (Report 4, O13).
+
+
+9. ARCHITECTURAL LIMITATIONS
+----------------------------
+- L1 One rule per element (inline on the Canvas): no selectors. This is
+  the root of M1–M5.
+- L2 Groups are flat, singular objects (one background, one transition):
+  layers need list-shaped groups (the boxShadow list shows the pattern).
+- L3 Capability = per-tag booleans: they can't say "this property applies
+  to the progress FILL in the :hover state".
+- L4 The Bulk/single section duplication (17 pairs) would multiply.
+- L5 Zod strips unknown keys: new fields saved by a newer build are
+  silently lost if an older build opens and re-saves the file → a format
+  version bump is mandatory for new fields (v4), so older builds refuse
+  instead of stripping.
+- L6 Pagination's state-look copying (and any similar future workaround)
+  conflicts with real state styling; it must migrate to state rules
+  (BC-09 semantics preserved).
+- L7 BC-13 geometry: the snapping/containment code measures rendered
+  border boxes (good), but some styling affects geometry:
+  - transform-origin, skew and 3D: see the BC-13 D23 limitation;
+  - outline and box-shadow: none;
+  - clip-path and mask: none on the box;
+  - typography that changes size: already handled by rendered
+    measurement.
+  New transform features must go through BC-13's transform safety rules.
+- L8 The large-Canvas rendering bottleneck (BC-13 P1): a generated
+  stylesheet updated per edit must not re-render every node. It should
+  update one <style> text, not React props.
+
+
+10. PROGRESS BAR DEEP INVESTIGATION
+-----------------------------------
+10.1 What exists [CODE]
+- Progress (HTML card): a bare native <progress value=50 max=100>.
+- Progress Bar (Components card): <div flex column> > <div header row> >
+  <p "Progress">, then the native <progress>. The label is a real
+  paragraph node.
+- Model: progressValue / progressMax / indeterminate (the Progress
+  section: Indeterminate toggle, Value, Max).
+- Rendering: resolveBoxElementStyle = placement + border + radius +
+  shadow + filters/opacity + transition + transform + display. NO
+  background and NO typography (capabilities: not a container, not
+  text-bearing).
+- Export: <progress class=…> with the same declarations; the base reset
+  adds `progress { vertical-align: baseline }`.
+10.2 Why the appearance is limited
+- The track and fill are drawn by the browser (UA shadow parts). The
+  default look (accent-coloured fill on a grey track, a platform-specific
+  shape) is the browser's.
+- Styling them needs either `accent-color` (fill colour only; not
+  modelled), or `appearance: none` plus vendor pseudo-elements:
+  - Chromium/WebKit: ::-webkit-progress-bar (track),
+    ::-webkit-progress-value (fill);
+  - Firefox: ::-moz-progress-bar (fill; the track is the element itself).
+  None is representable in the model (L1). Even border-radius and border
+  on the element only partially affect the native rendering while
+  appearance is auto. [BROWSER-KNOWLEDGE]
+10.3 The ten target appearances, by approach
+Notation: A = native + part targets; B = custom track/fill structure.
+1 Solid: A yes (fill colour, track colour); B yes.
+2 Rounded: A yes (radius on the element + track + fill; the fill
+  radius applies to the fill pseudo-element); B yes.
+3 Multi-stop gradient: A yes in Chromium/WebKit/Firefox (background on
+  the fill pseudo-element); B yes.
+4 Diagonal stripes: needs repeating-linear-gradient (M4). A yes once M4
+  exists; B yes.
+5 Segmented: a repeating gradient mask/gaps on the track or fill (M4).
+  A possible but brittle (the segment count is relative to the fill
+  width); B better (segments are real cells or a masked track).
+6 Animated stripes: keyframes on background-position (M5). A Chromium/
+  WebKit yes via the pseudo-element; Firefox animating
+  ::-moz-progress-bar: partial/unreliable [BROWSER-KNOWLEDGE]. B yes
+  everywhere.
+7 Thin minimal: A yes (height + radius); B yes.
+8 Independent track/fill: A yes (two targets); B yes.
+9 Shadows and borders: A track: yes on the element; fill inset shadow on
+  the pseudo-element (Chromium/WebKit), limited in Firefox; B yes.
+10 Value label: the existing composition already has a real label node;
+  a label INSIDE the fill needs B (or a pseudo-element `content: attr()`,
+  which doesn't work for progress).
+10.4 Approaches compared
+A Native <progress> + standard/vendor part targets ("track", "fill"),
+  with appearance handled automatically when a part is styled:
+  - styling: good (1–4, 7–9), segments brittle, Firefox animation weaker;
+  - accessibility: best (native role, value, max, indeterminate, AT
+    support);
+  - consistency: mostly; the vendor selectors must be emitted for both
+    engines (the printer emits a webkit and a moz rule per part);
+    Electron = Chromium;
+  - export: clean (native element + a few vendor rules);
+  - compatibility: existing projects unchanged (no parts styled = today's
+    rendering);
+  - complexity: medium (part→selector mapping per engine; Canvas
+    stylesheet);
+  - maintenance: vendor selectors are stable, long-lived names;
+  - Undo/Redo: same transactions;
+  - migration: none.
+B Custom structure: <div role="progressbar" aria-valuenow/min/max> >
+  track > fill (width = value/max):
+  - styling: full (every appearance, inner labels, segments as cells);
+  - accessibility: good if the ARIA contract is generated correctly
+    (aria-valuetext, an accessible name, indeterminate = no valuenow) —
+    more to get right and test;
+  - consistency: identical in every engine;
+  - export: the parts become real exported elements; the value→width
+    calculation must be static in export (an inline width %) → clean;
+  - compatibility: a new representation; existing projects must keep the
+    native element;
+  - complexity: high (new renderer, value sync, editor protections so
+    users don't break the structure);
+  - maintenance: a self-owned widget;
+  - migration: none if B is a NEW variant (old nodes stay native).
+C Hybrid: keep native A as the default (every existing project), and
+  offer B as an explicit, opt-in "custom progress" variant (or a
+  conversion command) when a design needs what native can't do
+  (segments, inner label, reliable animation in Firefox):
+  - +: no silent change, both strengths;
+  - −: two representations to maintain, plus a conversion story.
+10.5 Recommendation
+- C, delivered as:
+  - BC-17.5 ships A (part targets track/fill on the native element) for
+    all existing and new Progress nodes;
+  - a separate, later step adds B as an explicit variant only if the
+    owner approves (O4).
+- Rationale: A covers 7–8 of the 10 appearances with the best semantics
+  and zero migration; B is justified only for segments, inner labels and
+  Firefox animation parity.
+- Meter does not exist yet (O13).
+
+
+11. NATIVE/CUSTOM COMPONENT COMPARISON (other native controls)
+--------------------------------------------------------------
+[BROWSER-KNOWLEDGE unless noted; Electron = Chromium]
+- Checkbox/Radio:
+  - accent-color (all modern engines): colour only;
+  - full design: appearance:none + an ::before/::after indicator +
+    :checked/:indeterminate/:disabled states, all standard. Needs
+    M1 + M2;
+  - keeps the native input (keyboard, forms, label association);
+  - recommended: native + targets "box", "indicator" + states;
+  - no custom markup.
+- Select:
+  - the closed field is styleable with appearance:none (+ a background
+    arrow);
+  - the open dropdown list is OS/UA-drawn: not styleable, except
+    Chromium's new `appearance: base-select` / ::picker(select)
+    (Chromium-only, recent) → BROWSER RESTRICTED;
+  - recommended: style the field + arrow target; document the list as
+    native;
+  - no custom listbox (it would break native behaviour/accessibility).
+- Text inputs/textarea:
+  - standard CSS is complete enough;
+  - targets: ::placeholder;
+  - states: :focus-visible, :invalid/:valid (needs authored constraints),
+    :disabled, :read-only;
+  - number spin buttons and the search cancel button are vendor
+    pseudo-elements (WebKit) → BROWSER RESTRICTED (optional);
+  - date/time/file/color/range are not implemented components (M14).
+- Video/Audio controls:
+  - the native control bar lives in shadow DOM; Chromium/WebKit expose
+    non-standard ::-webkit-media-controls-* (fragile, not in Firefox) →
+    BROWSER RESTRICTED;
+  - the media surface/container is fully styleable (border, radius,
+    shadow, filters, object-fit for video; poster exists);
+  - fully custom controls need runtime JS (play/seek/volume) and
+    accessible custom buttons → a separate opt-in feature (O8).
+    Recommended: no custom players in BC-17 beyond the container/surface.
+- Iframe / Video Embed: cross-origin documents → only the frame box is
+  styleable. No CSS injection, sandbox and CSP stay as BC-02.3/BC-08 set
+  them (non-negotiable).
+- Dialog: standard; targets "backdrop" (::backdrop) and the dialog box;
+  state "open" ([open]).
+- Scrollbars: scrollbar-color/scrollbar-width are standard (Firefox,
+  Chromium 121+; WebKit partial; Safari needs ::-webkit-scrollbar) → a
+  "scrollbar" target on overflow containers, BROWSER-RESTRICTED notes.
+
+
+12. SVG INVESTIGATION
+---------------------
+[CODE] Representation:
+- an editor-generated inline <svg>;
+- either a legacy primitive (svgKind rectangle/circle/triangle/star, with
+  svgFill/svgStroke/svgStrokeWidth/svgViewBox) or an svgScene: vector
+  objects rect/ellipse/line/polygon/path (path commands M/L/Z only), each
+  with fill/stroke/strokeWidth;
+- edited in SVG Drawing Mode (object selection, move/resize, Vector Object
+  section);
+- no raw SVG markup is ever imported or rendered (SvgElement: "no
+  dangerouslySetInnerHTML, no raw …") → no script/foreignObject/external
+  reference risk today.
+Supported: fill, stroke colour, stroke width, viewBox, and the outer box
+styles (border/radius/shadow/filters/transform/background).
+Missing (M12):
+- fill-opacity/stroke-opacity/opacity per object;
+- stroke-dasharray/offset, linecap, linejoin, miterlimit, fill-rule;
+- gradients (<linearGradient>/<radialGradient> in <defs>), SVG filters,
+  per-object transforms;
+- curve commands (C/Q/A);
+- object-level animation (a CSS animation on a shape; SMIL not
+  recommended).
+CSS vs attributes:
+- fill/stroke/stroke-* and opacity work as CSS properties on SVG shapes
+  (presentation attributes are equivalent) → they can reuse the style-rule
+  pipeline, targeting objects by generated class;
+- gradients/filters need <defs> with generated ids.
+Safe ids:
+- generate deterministic, document-unique ids (e.g. from node id + def
+  id) and reference them only via url(#id) built by the exporter, never
+  from user text;
+- keep the "no raw markup" rule;
+- sanitize only what the editor generates;
+- no external hrefs in SVG.
+viewBox/aspect: viewBox exists; preserveAspectRatio is not modelled
+(default xMidYMid meet). Low priority.
+
+
+13. PERSISTENCE IMPLICATIONS
+----------------------------
+- Today the format can represent element-level styles only. It cannot
+  represent part styles, pseudo-element styles, state styles, layers,
+  conic/repeating gradients, patterns, masks, multiple filters/
+  transitions, keyframes, or SVG defs.
+- All of these need new optional data. Because Zod strips unknown keys
+  (L5), shipping them requires format v4:
+  - migration v3→v4: identity (no data rewritten; existing appearances
+    untouched — every new field is absent = today's rendering);
+  - validation: new schemas with the same typed, enum-first style; reject
+    invalid entries field by field (as the existing groups do), never the
+    whole document;
+  - save: v4 always; older builds refuse v4 files ("newer version") rather
+    than silently stripping;
+  - protected migration: as BC-05.3 (format 2) did, a legacy file opened
+    and saved is written as v4 only on an explicit save; the BC-05.4 save
+    prompt pattern exists;
+  - Undo/Redo: whole-document snapshots already include any new fields;
+    no special handling;
+  - invalid data recovery: field-level drop with a diagnostic, as
+    existing groups do.
+- Pagination migration (L6): converting the current-page "state look" to
+  a state rule is a v4 migration step (O9). Until then the copying
+  mechanism keeps working.
+- No migration was implemented (owner approval required, O5).
+
+
+14. ACCESSIBILITY AND SECURITY IMPLICATIONS
+-------------------------------------------
+Accessibility:
+- Native-first (keyboard, forms, AT):
+  - style native controls via parts/states rather than replacing them
+    (checkbox, radio, select, progress);
+  - custom widgets only as explicit variants with generated ARIA (O4,
+    O8).
+- Focus:
+  - an authored :focus-visible style must never be "outline: none"
+    without a replacement;
+  - the Inspector should warn when focus styles are removed (an
+    advisory, not a block).
+- Reduced motion:
+  - keyframes and transitions get the existing reduced-motion treatment
+    (export already has one for transitions; extend it to animations:
+    animation-duration/iteration under prefers-reduced-motion);
+  - the Canvas follows the editor's global rule.
+- States must not fake semantics: "current page" stays aria-current
+  (BC-09), "disabled" stays the real attribute; state rules only style
+  them.
+- Generated content: ::before/::after `content` is read by screen
+  readers → decorative content only by default (empty string or an
+  allow-listed glyph); text content needs an explicit "announced" choice
+  (O7).
+Security:
+- Keep typed values; NO free-form CSS text box. Every new value is an
+  enum, number, colour or validated length.
+- URLs (mask images, background layers): through the existing
+  image-asset/embed pipeline (BC-07 upload validation, exportUrlPolicy);
+  no arbitrary url() strings.
+- Selectors: generated only (class + fixed target/state suffix tables);
+  never user-typed selectors → no selector injection.
+- Keyframes: generated names (from node/animation ids), keyframe
+  properties limited to supported groups.
+- content: escaped string literal (escapeMarkup-style CSS escaping) +
+  length limits.
+- SVG: no raw markup; generated defs ids; url(#id) only to generated defs.
+- Iframes: no styling of third-party documents; sandbox/CSP untouched.
+
+
+15. PERFORMANCE IMPLICATIONS
+----------------------------
+- The Inspector must stay lazy:
+  - render only open sections (InspectorSection could already mount
+    children only when open — verify per section in BC-17.2);
+  - target/state switching changes WHICH rule is edited, not how many
+    controls mount.
+- Capability resolution: memoized per (component type, target), not per
+  edit.
+- Canvas: the generated stylesheet must be updated incrementally (one
+  <style> per document, or per element) without re-rendering nodes. The
+  large-Canvas bottleneck (BC-13 P1) makes React-prop-driven styling of
+  1,000 nodes expensive; stylesheet text updates avoid that.
+- Stylesheet size: only emit rules that have declarations (as today);
+  de-duplicate identical part/state rules by class (optional
+  optimization).
+- History: whole-document snapshots with structural sharing; a style
+  edit replaces one node path (unchanged cost).
+- Serialization/export: linear in rules; keyframes deduplicated by
+  content.
+
+
+16. RECOMMENDED ARCHITECTURE
+----------------------------
+R1 Style rules on each node (the data):
+   node.styleRules?: Array<{ target: TargetId; state: StateId; groups:
+   { typography?, background?, border?, … } }>.
+   - The existing top-level groups remain the (base, base) rule. Nothing
+     existing moves, so there is no appearance change.
+   - TargetId ∈ the component's registry:
+     - "base";
+     - semantic parts (e.g. progress "track"/"fill", checkbox
+       "indicator", select "arrow");
+     - pseudo-elements ("before", "after", "placeholder", "marker",
+       "backdrop", "selection").
+   - StateId ∈ {"default", "hover", "active", "focus-visible",
+     "focus-within", "disabled", "checked", "indeterminate", "invalid",
+     "open", "current"…}, filtered by the registry.
+   - A hybrid of child nodes and semantic parts: compositions keep using
+     REAL CHILD NODES as their parts (already editable, exported, in
+     Structure). The registry only adds semantic parts for things that
+     are NOT nodes (native shadow parts, pseudo-elements). Target
+     identity is stable by being a fixed registry key, never an index.
+R2 Capability registry (generalizing elementCapabilities):
+   per component type → targets → (allowed groups, allowed states,
+   browser notes, selector recipe). One table drives the Inspector, the
+   validation, the clipboard compatibility and the selector generation.
+   No separate system per component.
+R3 One stylesheet pipeline:
+   - extend the export IR so each element yields rules (selector,
+     declarations), not just base declarations;
+   - selectors are generated from the class + target/state recipes
+     (e.g. `.el-x:hover`, `.el-x::-webkit-progress-value`,
+     `.el-x[aria-current="page"]`);
+   - the Canvas renders the same rules into a document-scoped <style>
+     (inside the document surface scope), keeping inline base styles or
+     moving them too (O2);
+   - Preview uses the same stylesheet;
+   - export prints it;
+   - keyframes and reduced-motion blocks come from the same IR.
+R4 Forced-state preview on the Canvas:
+   - the editor-only state selector adds a data attribute
+     (data-ly-force-state="hover") to the element;
+   - generated rules for state S also match
+     `[data-ly-force-state~="S"]` IN THE EDITOR STYLESHEET ONLY (export
+     omits that selector);
+   - no runtime behaviour, no semantic change.
+R5 List-shaped groups:
+   - background layers (each: colour | image | gradient (linear, radial,
+     conic, repeating) + size/position/repeat/blend/clip);
+   - transitions[]; filters[] (ordered); animations[] referencing
+     document keyframe definitions (document-level, like assets);
+   - masks (layers);
+   - reuse InspectorShadowLayerList's list-editing pattern.
+R6 Inspector:
+   - Target selector + State selector at the top of the styling area;
+   - categories grouped (Layout, Size, Spacing, Typography, Fill &
+     Background, Border & Corners, Effects, Motion, Advanced) with
+     "advanced" sections collapsed or added on demand;
+   - property search;
+   - remembered open state per category;
+   - a registry-driven section list (the Bulk/single pairs folded behind
+     a common section contract where possible, to avoid 17×N
+     components).
+R7 Format v4 (additive) + a Pagination state-look migration (O9).
+R8 Pseudo-element content policy, reduced motion, focus advisory, typed
+   values only.
+Why not alternatives:
+- per-component bespoke styling systems duplicate R1–R3 82 times;
+- a free-form "custom CSS" box breaks validation, the clipboard,
+  multi-selection, security, and the owner's "visual controls" goal;
+- exposing native shadow parts as fake document nodes would corrupt
+  BC-12 structure semantics.
