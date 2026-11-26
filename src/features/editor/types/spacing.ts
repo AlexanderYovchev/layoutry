@@ -1,3 +1,4 @@
+import type { LogicalEdgeValues } from "@/features/editor/types/logicalProperties";
 /**
  * Margin/padding for any rendered box (Checkpoint 3.5). Deliberately a
  * separate concept from dimensions.offsetX/offsetY (the Checkpoint 3.4.3
@@ -35,6 +36,9 @@ export type SpacingBox = "margin" | "padding";
 export interface ElementSpacing {
   margin?: EdgeValues;
   padding?: EdgeValues;
+  /** BC-17.2 (P-2): logical twins, stored separately; not rendered until BC-17.3. */
+  marginLogical?: LogicalEdgeValues;
+  paddingLogical?: LogicalEdgeValues;
 }
 
 /** Both boxes, never undefined — for readers that only look sides up. */

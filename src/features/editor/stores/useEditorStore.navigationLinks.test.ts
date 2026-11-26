@@ -330,7 +330,7 @@ describe("Navigation links store actions (BC-06.2)", () => {
 
       expect(children(navId)).toEqual(["a:About", "a:Services", "a:New link", "a:Contact"]);
       const saved = serializeProject({ metadata: result.project.metadata, document: store().document });
-      expect(JSON.parse(saved).formatVersion).toBe(3);
+      expect(JSON.parse(saved).formatVersion).toBe(4);
       expect(parseProjectFile(saved).ok).toBe(true);
     });
   });

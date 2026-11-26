@@ -1,3 +1,4 @@
+import type { LogicalBorderSides } from "@/features/editor/types/logicalProperties";
 /**
  * Border styling for any border-capable node (Checkpoint 4.4) — same
  * grouped, fully-optional settings-object shape typography/background
@@ -71,6 +72,8 @@ export interface BorderSettings {
   right?: BorderSideSettings;
   bottom?: BorderSideSettings;
   left?: BorderSideSettings;
+  /** BC-17.2 (P-2): border-block-* / border-inline-* sides, stored separately; not rendered yet. */
+  borderLogical?: LogicalBorderSides;
 }
 
 const EMPTY_SIDE: BorderSideSettings = {};

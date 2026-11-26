@@ -146,6 +146,42 @@ export function formatVersionOf(
   }
 }
 
+/**
+ * The top-level `formatRevision` of a project text (BC-17.2, format 4 and
+ * later), or null when it has none. Only used for format comparisons.
+ */
+export function formatRevisionOf(
+  text: string | null | undefined,
+): number | null {
+  if (typeof text !== "string") return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    const revision = isRecord(parsed) ? parsed.formatRevision : undefined;
+    return typeof revision === "number" && Number.isInteger(revision)
+      ? revision
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether writing `incoming` would raise the project format of a file
+ * read as `read` (BC-05.4, extended to revisions in BC-17.2): a higher
+ * version, or the same version with a higher revision. A missing revision
+ * counts as 0. Unknown versions never count as an upgrade.
+ */
+export function raisesProjectFormat(
+  read: { formatVersion: number | null; formatRevision: number | null },
+  incoming: { formatVersion: number | null; formatRevision: number | null },
+): boolean {
+  if (read.formatVersion === null || incoming.formatVersion === null)
+    return false;
+  if (read.formatVersion !== incoming.formatVersion)
+    return read.formatVersion < incoming.formatVersion;
+  return (read.formatRevision ?? 0) < (incoming.formatRevision ?? 0);
+}
+
 /** A file name only — any folder part the renderer sends is discarded. */
 export function safeSuggestedFileName(value: unknown): string {
   if (typeof value !== "string" || value.length > MAX_SUGGESTED_NAME_LENGTH)
@@ -191,6 +227,7 @@ export function createProjectFileService(options: ProjectFileServiceOptions) {
             filePath,
             fingerprint,
             formatVersionOf(text),
+            formatRevisionOf(text),
           ),
           fileName,
           text,
@@ -282,6 +319,7 @@ export function createProjectFileService(options: ProjectFileServiceOptions) {
       if (typeof request.upgradeFormat !== "boolean")
         throw new InvalidPayloadError("upgradeFormat must be a boolean");
       const incomingVersion = formatVersionOf(text);
+      const incomingRevision = formatRevisionOf(text);
 
       const capability = registry.resolve(ownerId, token);
       if (!capability)
@@ -299,12 +337,15 @@ export function createProjectFileService(options: ProjectFileServiceOptions) {
       // and retries with upgradeFormat only after an explicit Overwrite.
       // `force` comes from the external-change prompt, which can only follow
       // this one, so it implies the upgrade was already confirmed.
+      // BC-17.2: a higher revision within the same format version counts too.
       if (
         !request.upgradeFormat &&
         !request.force &&
         capability.formatVersion !== null &&
-        incomingVersion !== null &&
-        capability.formatVersion < incomingVersion
+        raisesProjectFormat(capability, {
+          formatVersion: incomingVersion,
+          formatRevision: incomingRevision,
+        })
       )
         return {
           status: "older-format",
@@ -321,7 +362,13 @@ export function createProjectFileService(options: ProjectFileServiceOptions) {
           ops,
           options.writeHooks,
         );
-        registry.recordVersion(ownerId, token, fingerprint, incomingVersion);
+        registry.recordVersion(
+          ownerId,
+          token,
+          fingerprint,
+          incomingVersion,
+          incomingRevision,
+        );
         return { status: "saved", fileName: capability.fileName };
       } catch (error) {
         if (

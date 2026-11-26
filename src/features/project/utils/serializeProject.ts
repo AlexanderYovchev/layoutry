@@ -3,6 +3,7 @@ import {
   type ProjectLimits,
 } from "@/features/project/rules/projectLimits";
 import {
+  CURRENT_PROJECT_FORMAT_REVISION,
   CURRENT_PROJECT_FORMAT_VERSION,
   DEFAULT_PROJECT_NAME,
   PROJECT_FILE_FORMAT,
@@ -72,6 +73,7 @@ export function formatProjectFileText(project: LayoutryProject): string {
     body = {
       format: PROJECT_FILE_FORMAT,
       formatVersion: CURRENT_PROJECT_FORMAT_VERSION,
+      formatRevision: CURRENT_PROJECT_FORMAT_REVISION,
       project: toCanonicalJsonValue(project.metadata, "project"),
       document: toCanonicalJsonValue(project.document, "document"),
     };

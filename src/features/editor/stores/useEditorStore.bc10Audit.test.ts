@@ -330,7 +330,7 @@ describe("BC-10.6 audit", () => {
       expect([node("h")?.typography?.lineHeight, node("p")?.typography?.lineHeight]).toEqual([px(40), px(20)]);
       const text = serializeProject({ metadata: createProjectMetadata({ id: "p", now: new Date(0) }), document: store().document });
       const file: unknown = JSON.parse(text);
-      expect(file).toMatchObject({ formatVersion: 3 });
+      expect(file).toMatchObject({ formatVersion: 4, formatRevision: 0 });
       expect(text).not.toMatch(/"(selection|selectionAnchorId|clipboard|pendingDeletion|primaryId|mixed|unresolved|renderedStyles)"/);
       expect(text).toContain(copies[0]);
     });

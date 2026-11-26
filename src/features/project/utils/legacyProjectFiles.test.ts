@@ -17,6 +17,18 @@ import { isPaginationNode } from "@/features/editor/types/pagination";
  * every later build.
  */
 
+/**
+ * The version metadata this build writes (BC-17.2: format 4, revision 0)
+ * in place of an older file's `"formatVersion": N,` line — the ONLY bytes
+ * a re-save of a frozen fixture may change.
+ */
+function withCurrentVersion(text: string, olderVersion: number): string {
+  return text.replace(
+    `"formatVersion": ${olderVersion},`,
+    '"formatVersion": 4,\n  "formatRevision": 0,',
+  );
+}
+
 function fixture(name: string): Buffer {
   return readFileSync(
     path.join(process.cwd(), "test", "fixtures", "persistence", name),
@@ -65,11 +77,15 @@ describe("project files from earlier checkpoints", () => {
     const saved: unknown = JSON.parse(serializeProject(result.project));
     const original: unknown = JSON.parse(text);
 
-    // Saving writes format 3. Removing every spacing side that was 0 (and
-    // any box left empty) from the original gives exactly the saved file:
-    // nothing else was touched, and every non-zero side survived.
+    // Saving writes format 4 revision 0 (BC-17.2). Removing every spacing
+    // side that was 0 (and any box left empty) from the original gives
+    // exactly the saved file: nothing else was touched, and every non-zero
+    // side survived.
     expect(saved).toEqual(
-      Object.assign({}, stripSpacingZeros(original), { formatVersion: 3 }),
+      Object.assign({}, stripSpacingZeros(original), {
+        formatVersion: 4,
+        formatRevision: 0,
+      }),
     );
     expect(JSON.stringify(original)).toMatch(/"padding":\{"bottom":0/);
     expect(JSON.stringify(saved)).not.toMatch(
@@ -87,9 +103,7 @@ describe("project files from earlier checkpoints", () => {
     expect(button?.spacing).toEqual({
       padding: { top: 0, right: 0, bottom: 0, left: 0 },
     });
-    expect(serializeProject(result.project)).toBe(
-      text.replace('"formatVersion": 2,', '"formatVersion": 3,'),
-    );
+    expect(serializeProject(result.project)).toBe(withCurrentVersion(text, 2));
   });
 
   it("opens a PROJECT-1.3 native file, through the browser import as well", async () => {
@@ -204,9 +218,7 @@ describe("a format 2 project with the old Pagination (BC-09.2)", () => {
   });
 
   it("re-saves to the same bytes apart from its format version", () => {
-    expect(serializeProject(open())).toBe(
-      text().replace('"formatVersion": 2,', '"formatVersion": 3,'),
-    );
+    expect(serializeProject(open())).toBe(withCurrentVersion(text(), 2));
   });
 
   it("keeps the old Pagination as an ordinary nav: Buttons, no marker, no accessibility fields", () => {
@@ -244,12 +256,80 @@ describe("a format 2 project with the old Pagination (BC-09.2)", () => {
   });
 });
 
-describe("the first format 3 file (BC-09.2 fixture)", () => {
-  it("re-saves to the very same bytes, with the marker and every accessibility field kept", () => {
-    const text = fixture("project-3-pagination.layoutry").toString("utf8");
+describe("the first format 4.0 file (BC-17.2 fixture)", () => {
+  it("re-saves to the very same bytes, with every styling-foundation field kept", () => {
+    const text = fixture("project-4.0-styling-foundation.layoutry").toString(
+      "utf8",
+    );
     const result = parseProjectFile(text);
     if (!result.ok) throw new Error(result.error.message);
     expect(serializeProject(result.project)).toBe(text);
+    const document = result.project.document;
+    expect(document.styleAssets?.counters).toEqual([
+      { id: "counter-steps", name: "Steps" },
+    ]);
+    const [heading, button, progress] = document.children?.[0].children ?? [];
+    expect(heading.styleRules?.[0].content?.kind).toBe("parts");
+    expect(button.styleRules?.map((rule) => rule.id)).toEqual([
+      "rule-hover",
+      "rule-focus",
+      "rule-disabled",
+      "rule-parent-hover",
+    ]);
+    expect(progress).toMatchObject({
+      progressVariant: "custom",
+      progressValue: 42,
+      progressSegments: { count: 10 },
+    });
+  });
+
+  it("exports exactly what the same document exports without its styling-foundation data (none of it renders yet)", () => {
+    const result = parseProjectFile(
+      fixture("project-4.0-styling-foundation.layoutry").toString("utf8"),
+    );
+    if (!result.ok) throw new Error(result.error.message);
+    const FOUNDATION = new Set([
+      "styleRules",
+      "styleAssets",
+      "outline",
+      "counters",
+      "logicalSize",
+      "dir",
+      "progressVariant",
+      "progressSegments",
+      "progressLabel",
+      "marginLogical",
+      "paddingLogical",
+      "insetLogical",
+      "borderLogical",
+      "radiusLogical",
+      "direction",
+      "unicodeBidi",
+      "writingMode",
+      "textOrientation",
+    ]);
+    // The same document with every foundation field removed, at any depth.
+    const plain: EditorElementNode = JSON.parse(
+      JSON.stringify(result.project.document, (key: string, value: unknown) =>
+        FOUNDATION.has(key) ? undefined : value,
+      ),
+    );
+    expect(JSON.stringify(plain)).not.toMatch(/styleRules|Logical"|counters/);
+    for (const mode of ["standalone", "separate"] as const)
+      expect(exportHtmlCss(result.project.document, { mode }).files).toEqual(
+        exportHtmlCss(plain, { mode }).files,
+      );
+  });
+});
+
+describe("the first format 3 file (BC-09.2 fixture)", () => {
+  it("re-saves to the very same bytes apart from its version metadata, with the marker and every accessibility field kept", () => {
+    const text = fixture("project-3-pagination.layoutry").toString("utf8");
+    const result = parseProjectFile(text);
+    if (!result.ok) throw new Error(result.error.message);
+    // BC-17.2: 3 → 4 is an identity migration; only formatVersion/formatRevision change.
+    expect(serializeProject(result.project)).toBe(withCurrentVersion(text, 3));
+    expect(JSON.parse(text).document).toEqual(result.project.document);
     const [header, pagination, step] = result.project.document.children ?? [];
     expect(header.ariaLabel).toBe("Site header");
     expect(header.children?.[0].disabled).toBe(true);

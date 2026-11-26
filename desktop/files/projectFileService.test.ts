@@ -8,6 +8,8 @@ import {
   InvalidPayloadError,
   MAX_PROJECT_TEXT_LENGTH,
   createProjectFileService,
+  formatRevisionOf,
+  raisesProjectFormat,
   safeSuggestedFileName,
 } from "./projectFileService";
 
@@ -451,5 +453,100 @@ describe("older project formats (BC-05.4)", () => {
         upgradeFormat: "yes",
       }),
     ).rejects.toBeInstanceOf(InvalidPayloadError);
+  });
+});
+
+describe("format revisions inside format 4 (BC-17.2)", () => {
+  const V = (version: number, revision: number | null, v: string) =>
+    `${JSON.stringify({ format: "layoutry-project", formatVersion: version, ...(revision === null ? {} : { formatRevision: revision }), v })}\n`;
+
+  async function openText(
+    service: ReturnType<typeof setup>["service"],
+    text: string,
+  ) {
+    openAnswer = path.join(dir, "Site.layoutry");
+    await fs.writeFile(openAnswer, text);
+    const opened = await service.open(OWNER);
+    if (opened.status !== "opened") throw new Error(JSON.stringify(opened));
+    return { token: opened.file.token, target: openAnswer };
+  }
+  const write = (
+    service: ReturnType<typeof setup>["service"],
+    token: string,
+    text: string,
+    upgradeFormat = false,
+  ) => service.write(OWNER, { token, text, force: false, upgradeFormat });
+
+  it("compares (version, revision): a higher revision of the same version is an upgrade", () => {
+    expect(
+      raisesProjectFormat(
+        { formatVersion: 4, formatRevision: 0 },
+        { formatVersion: 4, formatRevision: 1 },
+      ),
+    ).toBe(true);
+    expect(
+      raisesProjectFormat(
+        { formatVersion: 4, formatRevision: 1 },
+        { formatVersion: 4, formatRevision: 1 },
+      ),
+    ).toBe(false);
+    expect(
+      raisesProjectFormat(
+        { formatVersion: 3, formatRevision: null },
+        { formatVersion: 4, formatRevision: 0 },
+      ),
+    ).toBe(true);
+    expect(
+      raisesProjectFormat(
+        { formatVersion: 4, formatRevision: 2 },
+        { formatVersion: 4, formatRevision: 1 },
+      ),
+    ).toBe(false);
+    expect(
+      raisesProjectFormat(
+        { formatVersion: null, formatRevision: null },
+        { formatVersion: 4, formatRevision: 0 },
+      ),
+    ).toBe(false);
+    expect(formatRevisionOf(V(4, 3, "x"))).toBe(3);
+    expect(formatRevisionOf(V(3, null, "x"))).toBeNull();
+  });
+
+  it("a format 3 file is not overwritten by a format 4 save without consent", async () => {
+    const { service } = setup();
+    const { token, target } = await openText(service, V(3, null, "original"));
+    expect(await write(service, token, V(4, 0, "new"))).toEqual({
+      status: "older-format",
+      fileName: "Site.layoutry",
+      formatVersion: 3,
+    });
+    expect(await fs.readFile(target, "utf8")).toBe(V(3, null, "original"));
+  });
+
+  it("a revision upgrade asks first, writes nothing, and saves only on explicit consent; then never asks again", async () => {
+    const { service } = setup();
+    const { token, target } = await openText(service, V(4, 0, "original"));
+    expect(await write(service, token, V(4, 1, "new"))).toEqual({
+      status: "older-format",
+      fileName: "Site.layoutry",
+      formatVersion: 4,
+    });
+    expect(await fs.readFile(target, "utf8")).toBe(V(4, 0, "original"));
+    expect(await write(service, token, V(4, 1, "new"), true)).toEqual({
+      status: "saved",
+      fileName: "Site.layoutry",
+    });
+    expect(await write(service, token, V(4, 1, "again"))).toEqual({
+      status: "saved",
+      fileName: "Site.layoutry",
+    });
+  });
+
+  it("the same revision saves straight back", async () => {
+    const { service } = setup();
+    const { token } = await openText(service, V(4, 0, "a"));
+    expect(await write(service, token, V(4, 0, "b"))).toMatchObject({
+      status: "saved",
+    });
   });
 });

@@ -5,6 +5,7 @@ import {
   MAX_PROJECT_NAME_LENGTH,
 } from "@/features/project/rules/projectName";
 import {
+  CURRENT_PROJECT_FORMAT_REVISION,
   CURRENT_PROJECT_FORMAT_VERSION,
   PROJECT_FILE_FORMAT,
   type ProjectFile,
@@ -29,10 +30,16 @@ export const projectMetadataSchema = z.strictObject({
   updatedAt: z.iso.datetime({ message: "timestamps must be ISO 8601 UTC" }),
 });
 
-/** Version 3 envelope (BC-09.2: accessibility fields and component markers; format 2 added optional spacing sides). A new format version gets its own schema. */
-export const projectFileV3Schema = z.strictObject({
+/**
+ * Version 4 envelope (BC-17.2: the styling foundation; formatRevision 0).
+ * Earlier formats are migrated to this one before validation (format 3
+ * added accessibility fields and component markers, format 2 optional
+ * spacing sides). A new format version or revision updates this schema.
+ */
+export const projectFileV4Schema = z.strictObject({
   format: z.literal(PROJECT_FILE_FORMAT),
   formatVersion: z.literal(CURRENT_PROJECT_FORMAT_VERSION),
+  formatRevision: z.literal(CURRENT_PROJECT_FORMAT_REVISION),
   project: projectMetadataSchema,
   document: editorElementNodeSchema,
 });
@@ -45,4 +52,4 @@ function assertSameType<Condition extends true>(): Condition | undefined {
   return undefined;
 }
 assertSameType<Equal<z.infer<typeof projectMetadataSchema>, ProjectMetadata>>();
-assertSameType<Equal<z.infer<typeof projectFileV3Schema>, ProjectFile>>();
+assertSameType<Equal<z.infer<typeof projectFileV4Schema>, ProjectFile>>();

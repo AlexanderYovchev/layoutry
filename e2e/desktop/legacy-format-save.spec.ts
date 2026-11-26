@@ -117,7 +117,7 @@ for (const { version, fixture } of ORIGINALS) {
       );
       await expect(status(page)).toHaveText("Saved");
       expect(await sha256(original)).toBe(originalHash);
-      expect(await formatOf(copy)).toBe(3);
+      expect(await formatOf(copy)).toBe(4);
 
       // The project now lives in a format 3 file: Save writes straight to it.
       await dragInsertContainer(page);
@@ -154,7 +154,7 @@ for (const { version, fixture } of ORIGINALS) {
         .getByRole("button", { name: "Overwrite Original" })
         .click();
       await expect(status(page)).toHaveText("Saved");
-      expect(await formatOf(original)).toBe(3);
+      expect(await formatOf(original)).toBe(4);
       expect(await readdir(folder)).toEqual(["Legacy Site.layoutry"]);
 
       await dragInsertContainer(page);

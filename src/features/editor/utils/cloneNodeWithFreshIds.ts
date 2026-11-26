@@ -3,6 +3,7 @@ import { remapInteractionTargets } from "@/features/editor/commands/interactionC
 import { getInteractions } from "@/features/editor/types/interactions";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { SvgScene } from "@/features/editor/types/svgScene";
+import { generateStyleRuleId } from "@/features/editor/types/styleRules";
 
 /**
  * Regenerates every vector object's own id within a duplicated SVG's
@@ -78,6 +79,12 @@ function cloneSubtree(node: EditorElementNode, idMap: Map<string, string>): Edit
     id: freshId,
     svgScene: node.svgScene ? cloneSvgSceneWithFreshIds(node.svgScene) : undefined,
     interactions: interactions.length > 0 ? interactions.map((binding) => ({ ...binding, id: generateNodeId("interaction") })) : undefined,
+    // BC-17.2: style rule ids are document-unique, so every copy gets fresh
+    // ones. Everything else in a rule (target, condition, groups, content
+    // and its counter references) is copied by value; counter references
+    // keep their ids — same-document copies continue the same sequence,
+    // and a paste into another document maps them (reconcilePastedCounters).
+    ...(node.styleRules ? { styleRules: node.styleRules.map((rule) => ({ ...rule, id: generateStyleRuleId() })) } : {}),
     children: node.children?.map((child) => cloneSubtree(child, idMap)),
   };
 }

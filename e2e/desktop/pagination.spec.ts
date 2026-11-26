@@ -85,7 +85,7 @@ test("insert the new Pagination, save it to a real format 3 file and reopen it u
   await page.keyboard.press("Control+s");
   await expect(page.locator("[data-project-status]")).toHaveAttribute("data-project-status", "saved");
   const saved = JSON.parse(await readFile(target, "utf8")) as { formatVersion: number; document: SavedNode };
-  expect(saved.formatVersion).toBe(3);
+  expect(saved.formatVersion).toBe(4);
   const savedNav = findById(saved.document, navId);
   expect(savedNav?.component).toBe("pagination");
   expect(savedNav?.ariaLabel).toBe("Pagination");
@@ -108,5 +108,5 @@ test("insert the new Pagination, save it to a real format 3 file and reopen it u
   await layoutry.page.keyboard.press("Control+s");
   await expect(layoutry.page.locator("[data-project-status]")).toHaveText("Saved");
   await expect(layoutry.page.getByRole("dialog", { name: "Upgrade Project File?" })).toBeHidden();
-  expect(JSON.parse(await readFile(target, "utf8")).formatVersion).toBe(3);
+  expect(JSON.parse(await readFile(target, "utf8")).formatVersion).toBe(4);
 });

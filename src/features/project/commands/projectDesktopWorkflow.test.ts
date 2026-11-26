@@ -323,13 +323,13 @@ describe.each([
       expect(workflow.hasUnsavedChanges()).toBe(true);
     });
 
-    it("Save As keeps the original byte-identical and saves a format 3 copy", async () => {
+    it("Save As keeps the original byte-identical and saves a format 4 copy", async () => {
       const { desktop, workflow } = await openLegacy();
       await workflow.save();
       desktop.script.saveAs = "Site (new).layoutry";
       expect(await workflow.resolveOlderFormat("save-as")).toBe(true);
       expect(desktop.disk.get("Site.layoutry")).toBe(LEGACY);
-      expect(formatOf(desktop.disk.get("Site (new).layoutry"))).toBe(3);
+      expect(formatOf(desktop.disk.get("Site (new).layoutry"))).toBe(4);
       expect(session().location).toMatchObject({
         kind: "file",
         fileName: "Site (new).layoutry",
@@ -352,7 +352,7 @@ describe.each([
       const { desktop, workflow } = await openLegacy();
       await workflow.save();
       expect(await workflow.resolveOlderFormat("overwrite")).toBe(true);
-      expect(formatOf(desktop.disk.get("Site.layoutry"))).toBe(3);
+      expect(formatOf(desktop.disk.get("Site.layoutry"))).toBe(4);
       edit();
       expect(await workflow.save()).toBe(true);
       expect(ui().dialog).toBeNull();

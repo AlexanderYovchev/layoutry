@@ -4,6 +4,7 @@ import type { FileCapabilityRegistry } from "../files/fileCapabilities";
 import {
   expectKeys,
   expectToken,
+  formatRevisionOf,
   formatVersionOf,
   InvalidPayloadError,
   MAX_PROJECT_TEXT_LENGTH,
@@ -485,6 +486,7 @@ export function createRecoveryService(options: RecoveryServiceOptions) {
                 // BC-05.4: the original's format, so saving restored work
                 // never silently upgrades an older-format file.
                 formatVersionOf(original?.text),
+                formatRevisionOf(original?.text),
               ),
               fileName: path.basename(header.association.path),
             };

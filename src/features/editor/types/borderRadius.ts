@@ -1,3 +1,4 @@
+import type { LogicalRadii } from "@/features/editor/types/logicalProperties";
 /**
  * Border radius for any radius-capable node (Checkpoint 4.5) — same
  * grouped, fully-optional settings-object shape border.ts established
@@ -35,6 +36,8 @@ export interface BorderRadiusSettings {
   topRight?: CssLengthValue;
   bottomRight?: CssLengthValue;
   bottomLeft?: CssLengthValue;
+  /** BC-17.2 (P-2): border-start-start-radius …, stored separately; not rendered yet. */
+  radiusLogical?: LogicalRadii;
 }
 
 /** A node with no radius set renders with no border-radius CSS at all — see resolveBorderRadiusStyle. */

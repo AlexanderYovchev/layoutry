@@ -114,7 +114,7 @@ describe("Pagination management in the store (BC-09.3)", () => {
     const reopened = parseProjectFile(text);
     if (!reopened.ok) throw new Error(reopened.error.message);
     expect(findNodeById(reopened.project.document, id)).toEqual(nav(id));
-    expect(JSON.parse(text).formatVersion).toBe(3);
+    expect(JSON.parse(text).formatVersion).toBe(4);
   });
 
   it("Delete of the current page on the Canvas promotes the page before it, in the same Undo step", () => {

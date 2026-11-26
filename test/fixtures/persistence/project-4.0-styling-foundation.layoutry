@@ -1,0 +1,343 @@
+{
+  "format": "layoutry-project",
+  "formatVersion": 4,
+  "formatRevision": 0,
+  "project": {
+    "createdAt": "2026-11-26T00:00:00.000Z",
+    "id": "4e1f2a3b-5c6d-4e7f-8a9b-0c1d2e3f4a5b",
+    "name": "Format 4.0 styling foundation",
+    "updatedAt": "2026-11-26T00:00:00.000Z"
+  },
+  "document": {
+    "children": [
+      {
+        "children": [
+          {
+            "counters": {
+              "increment": [
+                {
+                  "counter": {
+                    "id": "counter-steps",
+                    "kind": "document"
+                  }
+                }
+              ]
+            },
+            "id": "h2-step",
+            "spacing": {
+              "margin": {
+                "bottom": 8
+              },
+              "paddingLogical": {
+                "inlineStart": 12
+              }
+            },
+            "styleRules": [
+              {
+                "condition": {},
+                "content": {
+                  "kind": "parts",
+                  "parts": [
+                    {
+                      "kind": "text",
+                      "text": "Step "
+                    },
+                    {
+                      "counter": {
+                        "id": "counter-steps",
+                        "kind": "document"
+                      },
+                      "kind": "counter",
+                      "style": {
+                        "kind": "predefined",
+                        "style": "decimal"
+                      }
+                    },
+                    {
+                      "kind": "text",
+                      "text": ". "
+                    }
+                  ]
+                },
+                "groups": {
+                  "typography": {
+                    "color": "#2563eb"
+                  }
+                },
+                "id": "rule-step-number",
+                "target": "before"
+              }
+            ],
+            "tag": "h2",
+            "text": "Install",
+            "typography": {
+              "color": "#111827",
+              "direction": "ltr",
+              "writingMode": "horizontal-tb"
+            }
+          },
+          {
+            "background": {
+              "color": "#2563eb"
+            },
+            "borderRadius": {
+              "radiusLogical": {
+                "endEnd": {
+                  "unit": "px",
+                  "value": 6
+                }
+              },
+              "topLeft": {
+                "unit": "px",
+                "value": 6
+              }
+            },
+            "id": "button-primary",
+            "outline": {
+              "style": "auto"
+            },
+            "styleRules": [
+              {
+                "condition": {
+                  "self": [
+                    "hover"
+                  ]
+                },
+                "groups": {
+                  "background": {
+                    "color": "#1d4ed8"
+                  }
+                },
+                "id": "rule-hover",
+                "target": "element"
+              },
+              {
+                "condition": {
+                  "self": [
+                    "focus-visible"
+                  ]
+                },
+                "groups": {
+                  "outline": {
+                    "color": "#93c5fd",
+                    "offset": {
+                      "unit": "px",
+                      "value": 2
+                    },
+                    "style": "solid",
+                    "width": {
+                      "unit": "px",
+                      "value": 2
+                    }
+                  }
+                },
+                "id": "rule-focus",
+                "target": "element"
+              },
+              {
+                "condition": {
+                  "self": [
+                    "disabled"
+                  ]
+                },
+                "groups": {
+                  "background": {
+                    "color": "#94a3b8"
+                  },
+                  "display": {
+                    "cursor": "not-allowed"
+                  }
+                },
+                "id": "rule-disabled",
+                "target": "element"
+              },
+              {
+                "condition": {
+                  "ancestor": {
+                    "atom": "hover",
+                    "scope": {
+                      "kind": "parent"
+                    }
+                  }
+                },
+                "groups": {
+                  "transform": {
+                    "scale": 1.02
+                  }
+                },
+                "id": "rule-parent-hover",
+                "target": "element"
+              }
+            ],
+            "tag": "button",
+            "text": "Continue"
+          },
+          {
+            "id": "progress-upload",
+            "logicalSize": {
+              "inlineSize": {
+                "unit": "rem",
+                "value": 20
+              }
+            },
+            "progressLabel": {
+              "indeterminateText": "Preparing",
+              "kind": "template",
+              "locale": {
+                "kind": "tag",
+                "tag": "en"
+              },
+              "percentFormat": {
+                "fractionDigits": 0,
+                "grouping": true,
+                "trailingZeros": "trim"
+              },
+              "template": "{value} of {max} ({percent})",
+              "valueFormat": {
+                "fractionDigits": 2,
+                "grouping": true,
+                "trailingZeros": "trim"
+              }
+            },
+            "progressMax": 100,
+            "progressSegments": {
+              "count": 10,
+              "gap": {
+                "unit": "px",
+                "value": 2
+              }
+            },
+            "progressValue": 42,
+            "progressVariant": "custom",
+            "styleRules": [
+              {
+                "condition": {},
+                "groups": {
+                  "background": {
+                    "color": "#16a34a"
+                  }
+                },
+                "id": "rule-progress-fill",
+                "target": "progress.fill"
+              },
+              {
+                "condition": {},
+                "groups": {
+                  "typography": {
+                    "color": "#14532d"
+                  }
+                },
+                "id": "rule-progress-label",
+                "target": "progress.label"
+              }
+            ],
+            "tag": "progress"
+          },
+          {
+            "border": {
+              "borderLogical": {
+                "blockEnd": {
+                  "color": "#e5e7eb",
+                  "style": "solid",
+                  "width": {
+                    "unit": "px",
+                    "value": 1
+                  }
+                }
+              }
+            },
+            "id": "img-free-logical",
+            "position": {
+              "insetLogical": {
+                "inlineStart": {
+                  "unit": "px",
+                  "value": 4
+                }
+              },
+              "position": "relative"
+            },
+            "src": "",
+            "tag": "img"
+          }
+        ],
+        "counters": {
+          "reset": [
+            {
+              "counter": {
+                "id": "counter-steps",
+                "kind": "document"
+              }
+            }
+          ]
+        },
+        "dir": "ltr",
+        "id": "section-steps",
+        "tag": "section"
+      }
+    ],
+    "id": "page-root",
+    "styleAssets": {
+      "counters": [
+        {
+          "id": "counter-steps",
+          "name": "Steps"
+        }
+      ],
+      "keyframes": [
+        {
+          "id": "keyframes-pulse",
+          "name": "Pulse",
+          "stops": [
+            {
+              "groups": {
+                "filters": {
+                  "opacity": 1
+                }
+              },
+              "offset": 0
+            },
+            {
+              "groups": {
+                "filters": {
+                  "opacity": 0.6
+                }
+              },
+              "offset": 100
+            }
+          ]
+        }
+      ],
+      "presets": [
+        {
+          "createdAt": "2026-11-26T00:00:00.000Z",
+          "id": "preset-step",
+          "kind": "element",
+          "library": "project",
+          "name": "Numbered step",
+          "payload": {
+            "counters": [
+              {
+                "id": "counter-local",
+                "name": "Steps"
+              }
+            ],
+            "groups": {
+              "counters": {
+                "increment": [
+                  {
+                    "counter": {
+                      "id": "counter-local",
+                      "kind": "document"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "updatedAt": "2026-11-26T00:00:00.000Z"
+        }
+      ]
+    },
+    "tag": "page"
+  }
+}

@@ -9,12 +9,13 @@ serves browser storage (PROJECT-1.2, see
 - **Code:** `src/features/project/`. Public API: `src/features/project/index.ts`.
 - **Document schema:** `src/features/editor/schemas/editorDocumentSchema.ts`.
 
-## Structure (format version 3)
+## Structure (format version 4, revision 0)
 
 ```json
 {
   "format": "layoutry-project",
-  "formatVersion": 3,
+  "formatVersion": 4,
+  "formatRevision": 0,
   "project": {
     "id": "0b7f1c2e-5c1a-4c8e-9a51-2f4d6f0d9e11",
     "name": "Untitled Project",
@@ -127,10 +128,40 @@ and that 100,000-level nested JSON is rejected without a stack overflow.
 
 ## Versioning and migration policy
 
-- `formatVersion` is an integer. Version 3 is current (BC-09.2). Versions
-  1 (PROJECT-1.1 to BC-05.2) and 2 (BC-05.3 to BC-08.5) still open through
-  the migrations below; their canonical bytes are pinned by files written
-  by that code (see "Compatibility fixtures").
+- `formatVersion` is an integer. Version 4 is current (BC-17.2), at
+  `formatRevision` 0. Versions 1 (PROJECT-1.1 to BC-05.2), 2 (BC-05.3 to
+  BC-08.5) and 3 (BC-09.2 to BC-17.1.3) still open through the migrations
+  below; their canonical bytes are pinned by files written by that code
+  (see "Compatibility fixtures").
+- **`formatRevision` (format 4 and later):** an integer ≥ 0, the schema
+  revision within the version. BC-17 is built in revisions (owner decision
+  N9: no public release until BC-17 completes, but development files must
+  keep opening): every later schema change, even a purely additive
+  optional field, is one registered step (4, r) → (4, r + 1) in
+  `PROJECT_REVISION_MIGRATIONS`. The revision number is the ONLY signal that
+  a step has run — never the presence or absence of a field — so a user who
+  resets data a step created is never migrated again. A format 4 file with
+  a missing, negative or non-integer revision is refused
+  (`invalid-structure`); a revision newer than this build is refused with
+  `unsupported-version`, never stripped. Formats 1–3 have no revision; a
+  format 1–3 file that claims one is refused as forged.
+- **Format 4 vs 3 (BC-17.2): the styling foundation.** Format 4 revision 0
+  only adds optional data, so every format 3 document means exactly the
+  same in format 4. New element fields: `styleRules` (typed per-target,
+  per-state rules), `styleAssets` (document keyframes, counters and project
+  presets; root only), `outline`, `counters`, `logicalSize`, `dir`,
+  `progressVariant`, `progressSegments`, `progressLabel` (Progress only).
+  New group fields: `spacing.marginLogical`/`paddingLogical`,
+  `position.insetLogical`, `border.borderLogical`,
+  `borderRadius.radiusLogical`, `typography.direction`/`unicodeBidi`/
+  `writingMode`/`textOrientation`. None of it renders yet (BC-17.3+). The
+  3 → 4 step rewrites nothing and inserts no default; it refuses a format
+  1–3 file that already contains any of these fields. Integrity adds:
+  document-unique style rule ids, one rule per (target, canonical state),
+  counter references that resolve, unique asset ids and names, assets only
+  on the root, Progress data only on Progress (`editor/rules/
+  stylingIntegrity.ts`). See `docs/reports/BC-17.2-*` and the BC-17.1.3
+  architecture reports.
 - **Format 3 vs 2 (BC-09.2):** format 3 only adds four optional element
   fields, so every format 2 document means exactly the same in format 3:
   - `ariaLabel`: an accessible name (`aria-label`) on a landmark-capable
@@ -164,8 +195,9 @@ and that 100,000-level nested JSON is rejected without a stack overflow.
 - **Older than this build:** upgraded by `migrateProjectFile`
   (`utils/projectFormatMigrations.ts`, PROJECT-1.5), one step at a time
   (v1 → v2 → …), each step a `FormatMigration` in
-  `PROJECT_FORMAT_MIGRATIONS`. Today it has two steps, 1 → 2 (BC-05.3)
-  and 2 → 3 (BC-09.2).
+  `PROJECT_FORMAT_MIGRATIONS`. Today it has three steps, 1 → 2 (BC-05.3),
+  2 → 3 (BC-09.2) and 3 → 4 (BC-17.2), then the format 4 revision steps
+  (none yet at revision 0).
 
 ### Migration contract
 
@@ -217,7 +249,12 @@ A Save dialog destination needs no second prompt, because Windows already
 confirmed replacing it. After a successful save the file is in the current
 format, so the prompt never repeats. Recovery snapshots never write to the
 original file. The rule compares versions, so it needed no change for
-format 3: a format 1 or 2 file asks, a format 3 file saves straight back.
+format 3. BC-17.2 extends it to revisions: each token also records the
+file's `formatRevision`, and a write is an upgrade when it raises the
+version, or keeps the version and raises the revision
+(`raisesProjectFormat`). A format 1–3 file asks before becoming format 4;
+a format (4, r) file asks before becoming (4, r + 1); the same revision
+saves straight back.
 
 **Browser storage (BC-09.2 review).** Browser library projects are outside
 this rule (the BC-05.4 product decision covers desktop files), and they
@@ -231,6 +268,15 @@ need no prompt:
   doesn't change it, so nothing is lost;
 - browser recovery records hold their own copy of the project text and
   are migrated in memory on restore, like any open.
+
+### Adding a revision (format 4)
+
+1. Bump `CURRENT_PROJECT_FORMAT_REVISION`.
+2. Update the schema(s) and `projectFileV4Schema`'s revision literal.
+3. Append `{ from: r - 1, migrate }` to `PROJECT_REVISION_MIGRATIONS`
+   (identity unless data changes shape; it sets `formatRevision`).
+4. Add a frozen fixture written by the new revision, and keep every older
+   fixture (including `project-4.0-styling-foundation.layoutry`) passing.
 
 ### Adding a version
 
@@ -276,7 +322,8 @@ checkpoints:
   (Previous/Next Buttons, no marker), plus its exported files, which a
   format 3 build must still export byte for byte;
 - the first format 3 file (BC-09.2): the new Pagination and the other
-  accessibility fields.
+  accessibility fields;
+- the first format 4.0 file (BC-17.2): every styling-foundation field.
 
 Tests check that each still opens without rewriting anything. Format 1
 and 2 files are migrated in memory; a format 2 file re-saves to the same

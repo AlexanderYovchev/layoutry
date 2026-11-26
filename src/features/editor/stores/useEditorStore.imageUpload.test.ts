@@ -138,7 +138,7 @@ describe("embedded images through persistence and export (BC-07.2)", () => {
     store().setElementSrc(image.id, PNG_DATA_URL);
     store().setElementAltText(image.id, "Legacy image");
     const text = serializeProject({ metadata: opened.project.metadata, document: store().document });
-    expect(JSON.parse(text).formatVersion).toBe(3);
+    expect(JSON.parse(text).formatVersion).toBe(4);
     const reopened = parseProjectFile(text);
     expect(reopened.ok && findNodeById(reopened.project.document, image.id)).toMatchObject({ src: PNG_DATA_URL, displayName: "Legacy image" });
   });

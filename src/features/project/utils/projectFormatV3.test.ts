@@ -19,10 +19,14 @@ const metadata = createProjectMetadata({ id: "project-1", now: new Date("2026-11
 
 const link = (extra: Partial<EditorElementNode> = {}): EditorElementNode => ({ id: "a-1", tag: "a", text: "1", href: "#", ...extra });
 
-/** A file object written by this build, then given `formatVersion` and `document` as a test needs. */
+/**
+ * A file object written by this build, then given `formatVersion` and
+ * `document` as a test needs. BC-17.2: a genuine format 1–3 envelope has no
+ * formatRevision (only format 4 carries one), so it is left out below 4.
+ */
 function file(document: unknown, formatVersion = 3): string {
-  const base: Record<string, unknown> = JSON.parse(serializeProject({ metadata, document: pageWith() }));
-  return JSON.stringify({ ...base, formatVersion, document });
+  const { formatRevision, ...base }: Record<string, unknown> = JSON.parse(serializeProject({ metadata, document: pageWith() }));
+  return JSON.stringify({ ...base, formatVersion, ...(formatVersion >= 4 ? { formatRevision } : {}), document });
 }
 
 function rejected(text: string, code: ProjectLoadErrorCode) {
@@ -40,9 +44,9 @@ function accepted(text: string): EditorElementNode {
 }
 
 describe("format 3 files", () => {
-  it("are what this build writes", () => {
+  it("are upgraded to what this build writes (format 4 revision 0 since BC-17.2)", () => {
     const text = serializeProject({ metadata, document: pageWith(createPaginationNode()) });
-    expect(JSON.parse(text).formatVersion).toBe(3);
+    expect(JSON.parse(text)).toMatchObject({ formatVersion: 4, formatRevision: 0 });
   });
 
   it("round-trip every accessibility field and the marker exactly", () => {
@@ -130,7 +134,7 @@ describe("format 3 files", () => {
   });
 
   it("refuse a newer format", () => {
-    expect(rejected(file(pageWith(), 4), "unsupported-version").message).toMatch(/newer version of Layoutry \(format 4\)/);
+    expect(rejected(file(pageWith(), 5), "unsupported-version").message).toMatch(/newer version of Layoutry \(format 5\)/);
   });
 });
 
@@ -140,7 +144,8 @@ describe("format 2 → 3 migration", () => {
     const raw = JSON.parse(file(document, 2));
     const result = migrateProjectFile(raw);
     if (!result.ok) throw new Error(result.error.message);
-    expect(result.value).toEqual({ ...raw, formatVersion: 3 });
+    // The chain continues 3 → 4 (BC-17.2), which also only changes version metadata.
+    expect(result.value).toEqual({ ...raw, formatVersion: 4, formatRevision: 0 });
     // The input object is never modified, and the result is deterministic.
     expect(raw.formatVersion).toBe(2);
     expect(migrateProjectFile(raw)).toEqual(result);
@@ -150,7 +155,7 @@ describe("format 2 → 3 migration", () => {
     const result = parseProjectFile(file(pageWith({ id: "b-1", tag: "button", spacing: { padding: { top: 0, right: 8, bottom: 0, left: 8 } } } as never), 1));
     if (!result.ok) throw new Error(result.error.message);
     expect(result.project.document.children?.[0].spacing).toEqual({ padding: { right: 8, left: 8 } });
-    expect(JSON.parse(serializeProject(result.project)).formatVersion).toBe(3);
+    expect(JSON.parse(serializeProject(result.project)).formatVersion).toBe(4);
   });
 
   it.each([1, 2])("refuses a format %i file that already contains a format 3 field (no version bypass)", (version) => {

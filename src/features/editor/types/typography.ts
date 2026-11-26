@@ -1,3 +1,4 @@
+import type { CssDirection, TextOrientationValue, UnicodeBidiValue, WritingModeValue } from "@/features/editor/types/logicalProperties";
 /**
  * Text styling for any text-bearing node (Checkpoint 4.2) — one grouped,
  * fully-optional settings object (see EditorElementNode.typography),
@@ -63,6 +64,11 @@ export interface TypographySettings {
   lineHeight?: CssLengthValue;
   letterSpacing?: CssLengthValue;
   textDecorationLine?: TextDecorationLine;
+  /** BC-17.2 (P-2): direction and writing mode (Default condition only; not rendered until BC-17.7). */
+  direction?: CssDirection;
+  unicodeBidi?: UnicodeBidiValue;
+  writingMode?: WritingModeValue;
+  textOrientation?: TextOrientationValue;
 }
 
 /** A node with no typography set renders using its own tag's default presentation (see resolveTypographyStyle) — there is no synthesized TypographySettings default here, unlike getMediaFitSettings. */

@@ -30,6 +30,13 @@ export interface FileCapability {
    * explicit consent (see projectFileService.write).
    */
   formatVersion: number | null;
+  /**
+   * The format revision within that version (BC-17.2: format 4 evolves
+   * through numbered revisions). `null` when the file has none (formats
+   * 1–3) or it is unknown. A write that raises (version, revision) needs
+   * the same explicit consent as a version upgrade.
+   */
+  formatRevision: number | null;
 }
 
 export class FileCapabilityRegistry {
@@ -45,6 +52,7 @@ export class FileCapabilityRegistry {
     filePath: string,
     fingerprint: FileFingerprint | null,
     formatVersion: number | null = null,
+    formatRevision: number | null = null,
   ): string {
     let tokens = this.owners.get(ownerId);
     if (!tokens) {
@@ -58,6 +66,7 @@ export class FileCapabilityRegistry {
       fileName: path.basename(filePath),
       fingerprint,
       formatVersion,
+      formatRevision,
     });
     while (tokens.size > MAX_TOKENS_PER_OWNER) {
       const oldest = tokens.keys().next().value;
@@ -78,11 +87,13 @@ export class FileCapabilityRegistry {
     token: string,
     fingerprint: FileFingerprint,
     formatVersion: number | null = null,
+    formatRevision: number | null = null,
   ): void {
     const capability = this.resolve(ownerId, token);
     if (!capability) return;
     capability.fingerprint = fingerprint;
     capability.formatVersion = formatVersion;
+    capability.formatRevision = formatRevision;
   }
 
   release(ownerId: number, token: string): void {

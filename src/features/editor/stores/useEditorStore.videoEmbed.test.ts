@@ -76,7 +76,7 @@ describe("Video Embed in the document", () => {
   it("an empty Video Embed keeps its identity through save and reopen, in the current project format (Video Embed added no field)", () => {
     const { document, text } = saveAndReopen();
     expect(JSON.parse(text).formatVersion).toBe(CURRENT_PROJECT_FORMAT_VERSION);
-    expect(CURRENT_PROJECT_FORMAT_VERSION).toBe(3);
+    expect(CURRENT_PROJECT_FORMAT_VERSION).toBe(4);
     const reopened = findNodeById(document, embedId);
     expect(reopened).toEqual(node(embedId));
     expect(reopened && isVideoEmbedNode(reopened)).toBe(true);

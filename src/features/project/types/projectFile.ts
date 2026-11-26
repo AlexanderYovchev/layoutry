@@ -7,7 +7,18 @@ import type { EditorElementNode } from "@/features/editor/types/document";
  */
 
 export const PROJECT_FILE_FORMAT = "layoutry-project";
-export const CURRENT_PROJECT_FORMAT_VERSION = 3;
+export const CURRENT_PROJECT_FORMAT_VERSION = 4;
+/**
+ * The schema revision within the current format version (BC-17.2; BC-17.1.3
+ * Report 1 §12). Format 4 evolves through numbered revisions while BC-17 is
+ * built (N9): every later schema change, even a purely additive optional
+ * field, is one revision step (4, r) → (4, r + 1). The revision number is
+ * the ONLY signal that a step has run — never the presence or absence of a
+ * field — and a file with a newer revision is refused, never stripped.
+ */
+export const CURRENT_PROJECT_FORMAT_REVISION = 0;
+/** The first format version that carries formatRevision. */
+export const REVISIONED_FORMAT_VERSION = 4;
 export const PROJECT_FILE_EXTENSION = ".layoutry";
 export const PROJECT_FILE_MEDIA_TYPE = "application/vnd.layoutry.project+json";
 export const DEFAULT_PROJECT_NAME = "Untitled Project";
@@ -30,6 +41,7 @@ export interface ProjectMetadata {
 export interface ProjectFile {
   format: typeof PROJECT_FILE_FORMAT;
   formatVersion: typeof CURRENT_PROJECT_FORMAT_VERSION;
+  formatRevision: typeof CURRENT_PROJECT_FORMAT_REVISION;
   project: ProjectMetadata;
   /** The editor's authored document root (tag "page"), unchanged in shape. */
   document: EditorElementNode;

@@ -1,3 +1,4 @@
+import type { LogicalOffsets } from "@/features/editor/types/logicalProperties";
 /**
  * CSS `position` — Position Foundation (Checkpoint 5.1). Same grouped,
  * fully-optional settings-object shape typography/border/boxShadow/
@@ -104,6 +105,8 @@ export interface PositionSettings {
   bottom?: OffsetValue;
   left?: OffsetValue;
   zIndex?: ZIndexValue;
+  /** BC-17.2 (P-2): inset-block-* / inset-inline-*, stored separately; not rendered until BC-17.7. */
+  insetLogical?: LogicalOffsets;
 }
 
 /** A node with no position settings renders with none of this checkpoint's CSS at all — the tag's own default rendering (`static`) governs, exactly like filters/border/display. */

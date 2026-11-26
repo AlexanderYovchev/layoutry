@@ -25,6 +25,12 @@ import type { InitialPreviewVisibility } from "@/features/editor/types/previewVi
 import type { TransitionSettings } from "@/features/editor/types/transition";
 import type { TransformSettings } from "@/features/editor/types/transform";
 import type { AriaCurrentValue, ComponentMarker } from "@/features/editor/types/accessibility";
+import type { CounterOperations } from "@/features/editor/types/counters";
+import type { HtmlDirValue, LogicalSizeSettings } from "@/features/editor/types/logicalProperties";
+import type { OutlineSettings } from "@/features/editor/types/outline";
+import type { ProgressLabel, ProgressSegments, ProgressVariant } from "@/features/editor/types/progress";
+import type { StyleAssets } from "@/features/editor/types/styleAssets";
+import type { StyleRule } from "@/features/editor/types/styleRules";
 
 export interface ElementDimensions {
   /**
@@ -612,4 +618,26 @@ export interface EditorElementNode {
    * rendered HTML. See types/accessibility.ts (ComponentMarker).
    */
   component?: ComponentMarker;
+
+  // --- Project format 4, revision 0 (BC-17.2): styling foundation ---------
+  // Data only in this checkpoint: nothing below is rendered, exported or
+  // offered in the Inspector yet, and no existing document gains any of it.
+  /** Extra styling for parts, pseudo-elements and states (types/styleRules.ts). The top-level groups stay the base. */
+  styleRules?: StyleRule[];
+  /** Document assets (keyframes, counters, project presets). Only on the root "page" node (an integrity rule). */
+  styleAssets?: StyleAssets;
+  /** The outline group (types/outline.ts). */
+  outline?: OutlineSettings;
+  /** counter-reset / -increment / -set (types/counters.ts, P-4). */
+  counters?: CounterOperations;
+  /** inline-size, block-size and min/max twins (types/logicalProperties.ts, P-2). */
+  logicalSize?: LogicalSizeSettings;
+  /** The HTML dir attribute (content semantics, not styling; P-2). */
+  dir?: HtmlDirValue;
+  /** Progress only: absent = native (types/progress.ts, N1.1). */
+  progressVariant?: ProgressVariant;
+  /** Progress only: custom-variant segments (BC-17.13). */
+  progressSegments?: ProgressSegments;
+  /** Progress only: custom-variant label (N1.2, P-3); kept while native. */
+  progressLabel?: ProgressLabel;
 }

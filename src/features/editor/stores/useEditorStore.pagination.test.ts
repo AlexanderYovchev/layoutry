@@ -38,7 +38,7 @@ const allCurrentLinks = (root: EditorElementNode): EditorElementNode[] => [
 
 function saveAndReopen(): EditorElementNode {
   const text = serializeProject({ metadata: createProjectMetadata({ id: "project-1", now: new Date(0) }), document: store().document });
-  expect(JSON.parse(text).formatVersion).toBe(3);
+  expect(JSON.parse(text).formatVersion).toBe(4);
   const result = parseProjectFile(text);
   if (!result.ok) throw new Error(result.error.message);
   return result.project.document;

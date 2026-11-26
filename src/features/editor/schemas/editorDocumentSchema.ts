@@ -11,10 +11,51 @@ import {
   isValidBackgroundImageUrl,
   type BackgroundSettings,
 } from "@/features/editor/types/background";
+import type { BorderSettings } from "@/features/editor/types/border";
 import {
-  BORDER_STYLE_VALUES,
-  type BorderSettings,
-} from "@/features/editor/types/border";
+  borderSideSchema,
+  cssLengthSchema,
+  finite,
+  offsetSchema,
+} from "@/features/editor/schemas/cssValueSchemas";
+import {
+  ASSET_ID_PATTERN,
+  assetNameSchema,
+  counterDefinitionSchema,
+  counterOperationsSchema,
+  cssDirectionSchema,
+  htmlDirSchema,
+  logicalBorderSidesSchema,
+  logicalEdgeValuesSchema,
+  logicalOffsetsSchema,
+  logicalRadiiSchema,
+  logicalSizeSchema,
+  outlineSchema,
+  progressLabelSchema,
+  progressSegmentsSchema,
+  progressVariantSchema,
+  pseudoContentSchema,
+  styleConditionSchema,
+  styleTargetIdSchema,
+  textOrientationSchema,
+  unicodeBidiSchema,
+  writingModeSchema,
+} from "@/features/editor/schemas/stylingFoundationSchemas";
+import { MAX_COUNTER_DEFINITIONS } from "@/features/editor/types/counters";
+import {
+  MAX_KEYFRAME_STOPS,
+  MAX_KEYFRAMES_DEFINITIONS,
+  MAX_PRESETS_PER_LIBRARY,
+  PRESET_KINDS,
+  type StyleAssets,
+} from "@/features/editor/types/styleAssets";
+import {
+  CONTENT_TARGETS,
+  isDefaultCondition,
+  MAX_STYLE_RULES_PER_NODE,
+  type StyleRule,
+  type StyleRuleGroups,
+} from "@/features/editor/types/styleRules";
 import type { BorderRadiusSettings } from "@/features/editor/types/borderRadius";
 import type { BoxShadowSettings } from "@/features/editor/types/boxShadow";
 import {
@@ -82,7 +123,6 @@ import type { TypographySettings } from "@/features/editor/types/typography";
 /** Node ids are generated as `${tag}-${suffix}`; this accepts every editor id and keeps ids safe for HTML/CSS. */
 export const NODE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
-const finite = z.number();
 const nonEmptyString = z.string().min(1);
 
 // An empty string is a cleared field; anything else must pass the same
@@ -97,18 +137,6 @@ const backgroundImageUrl = z
   .refine((value) => value === "" || isValidBackgroundImageUrl(value), {
     message: "background image URL contains forbidden characters",
   });
-
-const cssUnitSchema = z.enum([
-  "px",
-  "%",
-  "rem",
-  "em",
-  "vw",
-  "vh",
-  "unitless",
-  "deg",
-]);
-const cssLengthSchema = z.strictObject({ value: finite, unit: cssUnitSchema });
 
 const backgroundPositionSchema = z.enum([
   "top-left",
@@ -200,6 +228,8 @@ const edgeValuesSchema = z.strictObject({
 const spacingSchema = z.strictObject({
   margin: edgeValuesSchema.optional(),
   padding: edgeValuesSchema.optional(),
+  marginLogical: logicalEdgeValuesSchema.optional(),
+  paddingLogical: logicalEdgeValuesSchema.optional(),
 });
 
 const objectPositionAxisSchema = z.strictObject({
@@ -228,6 +258,10 @@ const typographySchema = z.strictObject({
   textDecorationLine: z
     .enum(["none", "underline", "overline", "line-through"])
     .optional(),
+  direction: cssDirectionSchema.optional(),
+  unicodeBidi: unicodeBidiSchema.optional(),
+  writingMode: writingModeSchema.optional(),
+  textOrientation: textOrientationSchema.optional(),
 });
 
 const gradientStopSchema = z.strictObject({
@@ -269,16 +303,12 @@ const backgroundSchema = z.strictObject({
   gradient: gradientSchema.optional(),
 });
 
-const borderSideSchema = z.strictObject({
-  width: cssLengthSchema.optional(),
-  style: z.enum(BORDER_STYLE_VALUES).optional(),
-  color: z.string().optional(),
-});
 const borderSchema = z.strictObject({
   top: borderSideSchema.optional(),
   right: borderSideSchema.optional(),
   bottom: borderSideSchema.optional(),
   left: borderSideSchema.optional(),
+  borderLogical: logicalBorderSidesSchema.optional(),
 });
 
 const borderRadiusSchema = z.strictObject({
@@ -286,6 +316,7 @@ const borderRadiusSchema = z.strictObject({
   topRight: cssLengthSchema.optional(),
   bottomRight: cssLengthSchema.optional(),
   bottomLeft: cssLengthSchema.optional(),
+  radiusLogical: logicalRadiiSchema.optional(),
 });
 
 const boxShadowSchema = z.array(
@@ -324,7 +355,6 @@ const displaySchema = z.strictObject({
   userSelect: z.enum(USER_SELECT_VALUES).optional(),
 });
 
-const offsetSchema = z.union([cssLengthSchema, z.literal("auto")]);
 const positionSchema = z.strictObject({
   position: z.enum(POSITION_VALUES).optional(),
   top: offsetSchema.optional(),
@@ -332,6 +362,7 @@ const positionSchema = z.strictObject({
   bottom: offsetSchema.optional(),
   left: offsetSchema.optional(),
   zIndex: z.union([finite, z.literal("auto")]).optional(),
+  insetLogical: logicalOffsetsSchema.optional(),
 });
 
 const aspectRatioSchema = z.discriminatedUnion("mode", [
@@ -428,6 +459,121 @@ const transformSchema = z.strictObject({
   scale: finite.optional(),
 });
 
+// --- Project format 4, revision 0 (BC-17.2): the styling foundation -------
+// Local structure here; document-wide rules in rules/stylingIntegrity.ts.
+
+/** A rule's groups: the same schemas as the base groups above. */
+const styleRuleGroupsSchema = z.strictObject({
+  typography: typographySchema.optional(),
+  background: backgroundSchema.optional(),
+  border: borderSchema.optional(),
+  borderRadius: borderRadiusSchema.optional(),
+  shape: z.enum(SHAPE_PRESET_IDS).optional(),
+  boxShadow: boxShadowSchema.optional(),
+  filters: filtersSchema.optional(),
+  display: displaySchema.optional(),
+  position: positionSchema.optional(),
+  spacing: spacingSchema.optional(),
+  sizeConstraints: sizeConstraintsSchema.optional(),
+  logicalSize: logicalSizeSchema.optional(),
+  mediaFit: mediaFitSchema.optional(),
+  transition: transitionSchema.optional(),
+  transform: transformSchema.optional(),
+  outline: outlineSchema.optional(),
+  counters: counterOperationsSchema.optional(),
+});
+
+const styleRuleSchema = z
+  .strictObject({
+    id: z.string().regex(ASSET_ID_PATTERN, { message: "invalid rule id" }),
+    target: styleTargetIdSchema,
+    condition: styleConditionSchema,
+    groups: styleRuleGroupsSchema,
+    content: pseudoContentSchema.optional(),
+  })
+  .superRefine((rule, context) => {
+    if (rule.target === "element" && isDefaultCondition(rule.condition))
+      context.addIssue({
+        code: "custom",
+        path: ["condition"],
+        message: "the element's default styling is its base groups, not a rule",
+      });
+    if (rule.content !== undefined && !CONTENT_TARGETS.has(rule.target))
+      context.addIssue({
+        code: "custom",
+        path: ["content"],
+        message: `generated content is only allowed on ::before, ::after and ::marker, not "${rule.target}"`,
+      });
+    if (rule.content === undefined && Object.keys(rule.groups).length === 0)
+      context.addIssue({
+        code: "custom",
+        path: ["groups"],
+        message: "a styling rule must contain styling or content",
+      });
+  });
+
+const keyframesDefinitionSchema = z.strictObject({
+  id: z.string().regex(ASSET_ID_PATTERN, { message: "invalid id" }),
+  name: assetNameSchema,
+  stops: z
+    .array(
+      z.strictObject({
+        offset: finite.min(0).max(100),
+        groups: styleRuleGroupsSchema,
+      }),
+    )
+    .min(1)
+    .max(MAX_KEYFRAME_STOPS)
+    .superRefine((stops, context) => {
+      const offsets = new Set<number>();
+      stops.forEach((stop, index) => {
+        if (offsets.has(stop.offset))
+          context.addIssue({
+            code: "custom",
+            path: [index, "offset"],
+            message: "keyframe offsets must be unique",
+          });
+        offsets.add(stop.offset);
+      });
+    }),
+});
+
+const presetDefinitionSchema = z.strictObject({
+  id: z.string().regex(ASSET_ID_PATTERN, { message: "invalid id" }),
+  library: z.literal("project"),
+  name: assetNameSchema,
+  kind: z.enum(PRESET_KINDS),
+  payload: z.strictObject({
+    groups: styleRuleGroupsSchema.optional(),
+    rules: z.array(styleRuleSchema).max(MAX_STYLE_RULES_PER_NODE).optional(),
+    keyframes: z
+      .array(keyframesDefinitionSchema)
+      .max(MAX_KEYFRAMES_DEFINITIONS)
+      .optional(),
+    counters: z
+      .array(counterDefinitionSchema)
+      .max(MAX_COUNTER_DEFINITIONS)
+      .optional(),
+  }),
+  createdAt: z.iso.datetime({ message: "timestamps must be ISO 8601 UTC" }),
+  updatedAt: z.iso.datetime({ message: "timestamps must be ISO 8601 UTC" }),
+});
+
+const styleAssetsSchema = z.strictObject({
+  keyframes: z
+    .array(keyframesDefinitionSchema)
+    .max(MAX_KEYFRAMES_DEFINITIONS)
+    .optional(),
+  counters: z
+    .array(counterDefinitionSchema)
+    .max(MAX_COUNTER_DEFINITIONS)
+    .optional(),
+  presets: z
+    .array(presetDefinitionSchema)
+    .max(MAX_PRESETS_PER_LIBRARY)
+    .optional(),
+});
+
 export const editorElementNodeSchema = z.strictObject({
   id: z.string().regex(NODE_ID_PATTERN, { message: "invalid element id" }),
   tag: z
@@ -500,6 +646,16 @@ export const editorElementNodeSchema = z.strictObject({
   ariaCurrent: z.enum(ARIA_CURRENT_VALUES).optional(),
   disabled: z.literal(true).optional(),
   component: z.enum(COMPONENT_MARKERS).optional(),
+  // Project format 4, revision 0 (BC-17.2).
+  styleRules: z.array(styleRuleSchema).max(MAX_STYLE_RULES_PER_NODE).optional(),
+  styleAssets: styleAssetsSchema.optional(),
+  outline: outlineSchema.optional(),
+  counters: counterOperationsSchema.optional(),
+  logicalSize: logicalSizeSchema.optional(),
+  dir: htmlDirSchema.optional(),
+  progressVariant: progressVariantSchema.optional(),
+  progressSegments: progressSegmentsSchema.optional(),
+  progressLabel: progressLabelSchema.optional(),
 });
 
 // --- Drift guards: each schema must produce exactly the editor's type. ---
@@ -539,6 +695,9 @@ assertSameType<Equal<z.infer<typeof svgSceneSchema>, SvgScene>>();
 assertSameType<Equal<z.infer<typeof interactionSchema>, InteractionBinding>>();
 assertSameType<Equal<z.infer<typeof transitionSchema>, TransitionSettings>>();
 assertSameType<Equal<z.infer<typeof transformSchema>, TransformSettings>>();
+assertSameType<Equal<z.infer<typeof styleRuleGroupsSchema>, StyleRuleGroups>>();
+assertSameType<Equal<z.infer<typeof styleRuleSchema>, StyleRule>>();
+assertSameType<Equal<z.infer<typeof styleAssetsSchema>, StyleAssets>>();
 assertSameType<
   Equal<z.infer<typeof editorElementNodeSchema>, EditorElementNode>
 >();

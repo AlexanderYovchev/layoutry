@@ -1,5 +1,6 @@
 import { findMisplacedAccessibilityField } from "@/features/editor/rules/accessibilityAttributes";
 import { canContainChildren } from "@/features/editor/rules/insertionRules";
+import { findStylingIntegrityError } from "@/features/editor/rules/stylingIntegrity";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { ProjectLimits } from "@/features/project/rules/projectLimits";
 import type { ProjectLoadError } from "@/features/project/types/projectFile";
@@ -118,6 +119,10 @@ export function checkDocumentIntegrity(
       `An interaction targets element "${missing.targetId}", which does not exist.`,
       missing.path,
     );
+
+  // BC-17.2: styling rules, assets and counter references (format 4).
+  const styling = findStylingIntegrityError(root);
+  if (styling) return fail(styling.message, styling.path);
   return null;
 }
 

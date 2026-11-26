@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import {
+  CURRENT_PROJECT_FORMAT_REVISION,
   CURRENT_PROJECT_FORMAT_VERSION,
   DEFAULT_PROJECT_NAME,
   PROJECT_FILE_FORMAT,
@@ -59,12 +60,14 @@ describe("serializeProject", () => {
     expect(parsed).toMatchObject({
       format: PROJECT_FILE_FORMAT,
       formatVersion: CURRENT_PROJECT_FORMAT_VERSION,
+      formatRevision: CURRENT_PROJECT_FORMAT_REVISION,
       project: metadata,
       document: { id: "page-root", tag: "page" },
     });
     expect(Object.keys(parsed as object)).toEqual([
       "format",
       "formatVersion",
+      "formatRevision",
       "project",
       "document",
     ]);

@@ -1,10 +1,11 @@
 # Frozen persistence fixtures (PROJECT-1.5)
 
 Byte-exact data as earlier Layoutry checkpoints wrote it. Tests check
-that every later build still opens it, without rewriting the file. Format 1
-and 2 files are migrated to the current format (3) in memory on open
-(BC-05.3, BC-09.2); a format 2 file re-saves to the same bytes apart from
-its `formatVersion`, and a format 3 file to the very same bytes.
+that every later build still opens it, without rewriting the file. Format
+1, 2 and 3 files are migrated to the current format (4, revision 0) in
+memory on open (BC-05.3, BC-09.2, BC-17.2); an older file re-saves to the
+same bytes apart from its version metadata (`"formatVersion": 4,` plus
+`"formatRevision": 0,`), and a format 4.0 file to the very same bytes.
 Never regenerate or reformat these files: a change that breaks them is
 a compatibility break. Add a new fixture instead. `.gitattributes` turns
 off line-ending conversion here, because sizes and SHA-256 hashes are part
@@ -20,6 +21,7 @@ of the data.
 | `project-2-spacing-zero.layoutry` | BC-05.3 (format 2) | `serializeProject` in a throwaway test: authored zero padding/margin, mixed sides, an unset button and an empty spacing record |
 | `project-2-legacy-pagination.layoutry` | BC-08.5 code (`c6a0448`, format 2), frozen at the start of BC-09.2 | `serializeProject` in a throwaway test: Basic Navbar, Breadcrumbs, the pre-BC-09.2 Pagination preset (Previous/Next Buttons, no marker) with a click interaction on Next, and its target Paragraph |
 | `project-2-legacy-pagination.export.index.html`, `.export.styles.css`, `.export.script.js` | same commit and run | `exportHtmlCss(document, { mode: "separate" })` of that file: what an old Pagination must still export byte for byte |
+| `project-4.0-styling-foundation.layoutry` | BC-17.2 (format 4, revision 0) | `serializeProject` in a throwaway test: document counter, keyframes and project preset assets; style rules (hover, focus-visible, disabled, parent hover, ::before content with a counter, Progress parts); counter operations; outline; logical twins (padding, radius, inset, border, inline size); direction/writing mode; a custom Progress with segments and a formatted label. Every later revision step must keep opening it |
 | `project-3-pagination.layoutry` | BC-09.2 (format 3) | `serializeProject` in a throwaway test: the new Pagination (marker, aria-label, aria-current, disabled Previous), a labelled header with a disabled button, and an aria-current="step" link |
 
 Tests: `src/features/project/utils/legacyProjectFiles.test.ts`,

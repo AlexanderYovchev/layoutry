@@ -33,9 +33,16 @@ const chain = {
 
 describe("migrateProjectFile", () => {
   it("passes a current-format file through untouched", () => {
-    const file = { format: "layoutry-project", formatVersion: 3, x: 1 };
-    expect(CURRENT_PROJECT_FORMAT_VERSION).toBe(3);
-    expect(PROJECT_FORMAT_MIGRATIONS.map((step) => step.from)).toEqual([1, 2]);
+    const file = {
+      format: "layoutry-project",
+      formatVersion: 4,
+      formatRevision: 0,
+      x: 1,
+    };
+    expect(CURRENT_PROJECT_FORMAT_VERSION).toBe(4);
+    expect(PROJECT_FORMAT_MIGRATIONS.map((step) => step.from)).toEqual([
+      1, 2, 3,
+    ]);
     expect(migrateProjectFile(file)).toEqual({ ok: true, value: file });
   });
 

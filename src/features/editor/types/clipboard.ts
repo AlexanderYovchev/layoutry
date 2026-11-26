@@ -1,3 +1,4 @@
+import type { CopiedCounterContext } from "@/features/editor/types/counters";
 import type { EditorElementNode } from "@/features/editor/types/document";
 
 /**
@@ -23,4 +24,12 @@ export interface EditorClipboard {
    * whole clipboard: never saved.
    */
   sourceParentIds?: readonly (string | null)[];
+  /**
+   * BC-17.2: the session document token at copy time and the counter
+   * definitions the copied subtrees reference, so a paste never leaves a
+   * dangling counter reference (commands/counterReferenceCommands.ts).
+   * Absent on clipboards made before any counter existed: references then
+   * resolve as a foreign paste.
+   */
+  counterContext?: CopiedCounterContext;
 }

@@ -1,0 +1,481 @@
+BC-17.2 — Styling Model, Capability Registry and Project Format v4
+Implementation Report (Report 1 of 3)
+=================================================================
+Date: 2026-11-26.
+Authority: BC-17.1.3 Reports 1–6 (committed in 7cd2042), Report 1 §4,
+§4.10–4.11, §5, §5.6, §9.7.1, §11, §12.1–12.5, Report 4 BC-17.2.
+Nothing was committed or pushed.
+
+
+1. STARTING GIT STATE
+---------------------
+- Branch main, HEAD 7cd2042 ("docs(audit): BC-17.1.3 consolidated
+  architecture corrections …").
+- Working tree clean. All seven BC-17.1.3 reports present.
+
+
+2. IMPLEMENTATION SUMMARY
+-------------------------
+BC-17.2 adds the typed styling foundation as DATA ONLY:
+- style rules, conditions, targets, generated content, style assets
+  (keyframes, counters, project presets), the counters and outline
+  groups, logical twin fields, direction/writing mode, and the Progress
+  variant/segments/label model, all with strict Zod schemas and
+  compile-time drift guards;
+- a capability registry derived from elementCapabilities, with context
+  predicates (INAPPL vs LIMIT) and pure inactive-rule / inactive-field
+  computation;
+- document-wide styling integrity (rule ids, rule uniqueness, counter
+  references, asset placement and names);
+- fresh rule ids on clone, and counter-reference reconciliation on paste
+  (same document / foreign document), using the existing session
+  document token;
+- project format 4 revision 0: the 3 → 4 identity step, the revision-step
+  framework, refusal of malformed and newer revisions, and protected
+  saving extended to revisions in the desktop main process.
+
+No rendering, Canvas, Preview, Export, Inspector or CSS-generation path
+changed. Nothing in the editor can author the new data yet; the registry
+says so explicitly (STYLING_AUTHORING_AVAILABILITY: all false). Existing
+documents gain no field and change no value.
+
+
+3. PRODUCTION FILES CREATED
+---------------------------
+src/features/editor/types/
+  styleRules.ts        StateAtom (+ canonical order), StyleTargetId and
+                       kinds, StylingProfileId, StyleCondition,
+                       AncestorScope, canonicalConditionKey, ContentPart,
+                       PseudoContent, glyph allow-list, StyleRuleGroups,
+                       StyleRule, MAX_STYLE_RULES_PER_NODE,
+                       generateStyleRuleId
+  counters.ts          CounterDefinition, CounterRef, CounterOperation(s),
+                       predefined counter styles, CounterStyleRef,
+                       counterCssIdentifiers (c-<slug>), counterOperationRefs,
+                       CopiedCounterContext, bounds
+  outline.ts           OutlineSettings, OUTLINE_STYLE_VALUES
+  logicalProperties.ts LogicalEdgeValues, LogicalOffsets,
+                       LogicalBorderSides, LogicalRadii, LogicalSizeSettings,
+                       direction / unicode-bidi / writing-mode /
+                       text-orientation / HTML dir enums
+  styleAssets.ts       StyleAssets, KeyframesDefinition, KeyframeStop,
+                       PresetDefinition, PresetPayload, PRESET_KINDS,
+                       normalizeAssetName, isValidAssetName, bounds
+src/features/editor/schemas/
+  cssValueSchemas.ts   cssUnit/cssLength/borderSide/offset schemas, moved
+                       unchanged out of editorDocumentSchema.ts so the
+                       foundation schemas can reuse them without a cycle
+  stylingFoundationSchemas.ts
+                       condition (canonical order, no duplicates, no
+                       empty list), targets, counters, content parts,
+                       outline, logical twins, direction enums, Progress
+                       variant/segments/label (template + locale checks)
+src/features/editor/rules/
+  stylingRegistry.ts   resolveStylingProfile, getStylingCapabilities,
+                       targetsAcrossVariants, isCuratedCompound,
+                       profileAtoms, ANCESTOR_ATOMS,
+                       STYLING_AUTHORING_AVAILABILITY,
+                       isStylingFeatureAuthorable
+  stylingContextPredicates.ts
+                       evaluateContextCapability (float, clear,
+                       shapeOutside, physical/logical insets, logical
+                       size, first-line/first-letter), parentLayoutOf,
+                       vectorObjectSelfAtomApplicability, Default-state-only
+                       field lists and messages
+  inactiveStyling.ts   computeInactiveStyling, resolveAncestorScope,
+                       InactiveRule / InactiveField / InactiveReason
+  stylingIntegrity.ts  findStylingIntegrityError
+  generatedIdPrefix.ts chooseGeneratedIdPrefix, collectAuthoredHtmlIds,
+                       generatedIdPrefixFor
+src/features/editor/commands/
+  counterReferenceCommands.ts
+                       copiedCounterContext, referencedCounterIds,
+                       reconcilePastedCounters,
+                       exceedsCounterDefinitionLimit,
+                       COUNTER_LIMIT_PASTE_NOTICE
+test/fixtures/persistence/
+  project-4.0-styling-foundation.layoutry
+                       the first frozen format 4.0 file (8,924 bytes,
+                       SHA-256 9dfa3c7f…4a93d), written by serializeProject
+                       in a throwaway test
+
+
+4. PRODUCTION FILES MODIFIED
+----------------------------
+Editor model:
+- types/document.ts: EditorElementNode gains styleRules, styleAssets,
+  outline, counters, logicalSize, dir, progressVariant, progressSegments,
+  progressLabel (all optional).
+- types/spacing.ts (marginLogical, paddingLogical), position.ts
+  (insetLogical), border.ts (borderLogical), borderRadius.ts
+  (radiusLogical), typography.ts (direction, unicodeBidi, writingMode,
+  textOrientation).
+- types/progress.ts: ProgressVariant, getProgressVariant,
+  ProgressSegments, ProgressNumberFormat, ProgressLabelLocale,
+  ProgressLabel, isWellFormedLocaleTag, findProgressTemplateError, bounds.
+- types/clipboard.ts: EditorClipboard.counterContext (optional).
+- schemas/editorDocumentSchema.ts: the new group fields; styleRuleGroups,
+  styleRule, keyframes, preset and styleAssets schemas; the new node
+  fields; drift guards for StyleRuleGroups, StyleRule, StyleAssets.
+- utils/cloneNodeWithFreshIds.ts: fresh rule ids.
+- stores/useEditorStore.ts: copy/cut record counterContext; single and
+  multi paste call reconcilePastedCounters and refuse a paste that would
+  exceed the counter bound.
+Project persistence:
+- types/projectFile.ts: CURRENT_PROJECT_FORMAT_VERSION 4,
+  CURRENT_PROJECT_FORMAT_REVISION 0, REVISIONED_FORMAT_VERSION 4,
+  ProjectFile.formatRevision.
+- schemas/projectFileSchema.ts: projectFileV4Schema (replaces V3).
+- utils/projectFormatMigrations.ts: 3 → 4 step, FORMAT_4_ELEMENT_FIELDS,
+  FORMAT_4_GROUP_FIELDS, RevisionMigration, PROJECT_REVISION_MIGRATIONS
+  (empty), revision validation and applyRevisionSteps.
+- utils/parseProjectFile.ts (V4 schema), serializeProject.ts (writes
+  formatRevision after formatVersion), checkDocumentIntegrity.ts (calls
+  findStylingIntegrityError after the existing checks).
+- desktop/fakeDesktopProjectFiles.ts (the renderer-side test double):
+  compares (version, revision).
+Desktop main process:
+- desktop/files/fileCapabilities.ts: FileCapability.formatRevision;
+  issue/recordVersion take it.
+- desktop/files/projectFileService.ts: formatRevisionOf,
+  raisesProjectFormat; open records the revision; write asks before
+  raising version OR revision; records the written revision.
+- desktop/recovery/recoveryService.ts: a recovery restore's token records
+  the original's revision too.
+Documentation:
+- docs/architecture/project-format.md: format 4 structure, revision
+  policy, the 3 → 4 step, protected save for revisions, "Adding a
+  revision", the new fixture.
+- test/fixtures/persistence/README.md: the new fixture.
+
+
+5. TEST FILES CREATED OR MODIFIED
+---------------------------------
+Created:
+- src/features/project/utils/projectFormatV4.test.ts (103 tests)
+- src/features/editor/rules/stylingRegistry.test.ts (91)
+- src/features/editor/rules/inactiveStyling.test.ts (13)
+- src/features/editor/commands/counterReferenceCommands.test.ts (12)
+- src/features/editor/rules/generatedIdPrefix.test.ts (3)
+- src/features/project/desktop/fakeDesktopProjectFiles.test.ts (2)
+- src/components/layout/creationToolbarStylingCoverage.test.ts (83)
+Modified (expected-value updates for format 4, never weakened, plus new
+cases):
+- desktop/files/projectFileService.test.ts (+4 revision tests)
+- src/features/project/utils/legacyProjectFiles.test.ts (re-save
+  comparison now "same bytes apart from version metadata"; +2 tests for
+  the 4.0 fixture, incl. export equality)
+- projectFormatMigrations.test.ts, projectFormatV3.test.ts (the helper
+  now builds a genuine format 3 envelope: a format 1–3 file never has a
+  formatRevision), parseProjectFile.test.ts, serializeProject.test.ts,
+  src/features/project/commands/projectDesktopWorkflow.test.ts
+- seven useEditorStore.*.test.ts files and four e2e/desktop specs: the
+  "saves format 3" assertions now expect format 4.
+Details: Report 2.
+
+
+6. FOUNDATIONAL MODEL
+---------------------
+6.1 Base styling is unchanged: the top-level groups remain the implicit
+    rule (target "element", default state). The schema REFUSES a rule for
+    target "element" in the default state, so a second source of truth
+    for base styling cannot exist.
+6.2 StyleRule { id, target, condition, groups, content? }:
+    - id: [A-Za-z0-9_-]{1,128}, unique across the document (integrity);
+    - target: closed enum of 43 semantic ids, each with one kind (element,
+      pseudo, part, structural, role-group);
+    - condition: self atoms (16-atom closed enum, canonical order, no
+      duplicates, never an empty list) and/or one ancestor atom with a
+      scope parent | component | profile(<closed profile id>);
+    - groups: the SAME schemas as the base groups (17 groups), strict;
+    - content: only on ::before/::after/::marker; a rule must carry styling
+      or content (never empty);
+    - one rule per (target, canonicalConditionKey(condition)) per node.
+    There are no selector strings anywhere.
+6.3 PseudoContent = empty | parts(1–16, altText?), ContentPart = text |
+    glyph (22 allow-listed) | counter | counters(separator); ≤ 200
+    characters of text in total; control characters refused.
+6.4 styleAssets (root only): keyframes (id, name, 1–64 stops with unique
+    offsets 0–100, typed groups), counters (id, name), presets (library
+    "project", kind, payload {groups, rules, keyframes, counters},
+    timestamps). Names are unique per list after NFC + trim + whitespace
+    collapse + case-fold, 1–64 characters, no control characters. A preset
+    payload must be self-contained (its counter references resolve inside
+    it), because presets are applied detached.
+6.5 Counters (P-4): CounterRef = document(id) | builtin("list-item");
+    operations reset/increment/set, integers ±1,000,000, ≤ 32 per list,
+    each counter at most once per list; counterCssIdentifiers derives
+    c-<slug> identifiers ([a-z0-9-], collision suffixes, never a reserved
+    keyword). No printer yet.
+6.6 Outline: width, style (border styles + "auto"), colour, offset.
+6.7 Logical twins (P-2): separate optional fields with the twin's value
+    type (spacing: numbers; insets: offset values; borders: full sides;
+    radii and sizes: CSS lengths). Direction enums; node.dir is a content
+    attribute, not a style group. Nothing is converted or defaulted.
+6.8 Progress (N1.1/N1.2/P-3): variant native|custom (absent = native),
+    segments (integer 1–100 + gap), ProgressLabel {kind, template?,
+    percentFormat, valueFormat (0–6 digits, keep/trim, grouping), locale
+    neutral|tag (well-formed BCP 47 ≤ 35), indeterminateText ≤ 60}.
+    Templates: only {value} {max} {percent}; {{ and }} literal; a % sign
+    beside {percent} refused. Formatting output is BC-17.13.
+6.9 Inactive semantics: computed, never stored (§9).
+
+
+7. CAPABILITY REGISTRY
+----------------------
+- 28 profiles resolved from tag + input type + Progress variant
+  (resolveStylingProfile); every one of the 49 known tags has a profile,
+  and no unknown tag does.
+- Element-target groups are DERIVED from elementCapabilities flags
+  (supportsBackground → background, supportsBorder → border + outline, …),
+  plus spacing/counters (all but option), sizeConstraints/logicalSize
+  (resizable elements) and one explicit, documented extension: typography
+  on containers, lists and dialogs (matrix A5, BC-17.7). The registry
+  test checks the derivation against getElementCapabilities for every
+  tag, so the two cannot drift.
+- Targets per profile (e.g. progress native: element, track, fill; custom
+  adds segment, label; inputs get placeholder / search.cancel /
+  number.spin by input type; a marked Pagination adds its role groups).
+- Atoms per profile and target; curated compounds (N6): checkbox/radio
+  hover+checked, focus-visible+checked; fields focus+invalid; pagination
+  page hover+current, focus-visible+current. No free builder.
+- Field allow-lists for placeholder, marker, selection and first-line.
+- Inventory, verified FROM SOURCE (creationToolbarStylingCoverage.test):
+  111 Resource Panel cards, 82 enabled element types, 29 placeholders —
+  exactly the architecture's numbers; every node each of the 82 factories
+  creates resolves a profile. No discrepancy.
+- Not offered by any profile yet (by design): tabs.*, nav.*,
+  breadcrumb.separator — they need component markers that arrive with
+  BC-17.14/17.15 (the registry test pins this list).
+- Authoring: STYLING_AUTHORING_AVAILABILITY is false for every foundation
+  feature; no UI reads the registry yet, so nothing unfinished is
+  exposed.
+
+
+8. CONTEXT PREDICATES
+---------------------
+evaluateContextCapability returns applicable | inapplicable(reason) |
+limitation(reason):
+- float/clear: applicable in normal flow; INAPPL for Flex items, Grid
+  items, Free children and absolute/fixed elements;
+- shapeOutside: INAPPL "Needs a float" unless a float is given (the float
+  field itself arrives with BC-17.7);
+- physical insets, logical insets, logical size: LIMIT on Free children
+  (their geometry is the Canvas-owned left/top/width/height);
+- first-line/first-letter: INAPPL on inline, Flexbox and Grid containers;
+- vectorObjectSelfAtomApplicability: self focus atoms INAPPL;
+- Default-state-only limitations: direction/unicodeBidi/writingMode/
+  textOrientation and counter operations.
+
+
+9. INACTIVE RULE AND FIELD COMPUTATION
+--------------------------------------
+computeInactiveStyling(node, ancestors) is pure (tested on deep-frozen
+input) and deterministic. Rule-level reasons: unknown profile, target of
+the other variant (kept; active again after switching back), target not
+applicable, target context (first-line on Flexbox), state not applicable,
+compound not curated (incl. ancestor+self), ancestor unresolved, ancestor
+state not applicable. Field-level: group not applicable to a pseudo or
+part, field outside an allow-list, Free-child logical size/insets (LIMIT),
+Default-state-only fields in a state rule (LIMIT). Base styling is
+checked only for the predicate-governed foundation fields, so existing
+base groups keep exactly the applicability the Inspector already gives
+them. Inactive data is never removed by anything in this checkpoint.
+Invalid data never reaches this function (schema/integrity reject it).
+
+
+10. PROJECT FORMAT v4
+---------------------
+- Written: {"format", "formatVersion": 4, "formatRevision": 0, "project",
+  "document"} (key order pinned by serializeProject.test).
+- Read: formats 1, 2, 3 (migrated), 4.0 (as is).
+- Refused: formatVersion > 4 ("newer version", unchanged path);
+  format 4 with revision > 0 ("newer version … revision N",
+  unsupported-version); format 4 with a missing, negative, fractional,
+  string or null revision (invalid-structure, path formatRevision);
+  format 1–3 claiming a formatRevision, or containing any format 4 node
+  or group field (migration-failed, "The file itself was not changed").
+- Nothing is stripped: the strict schema refuses any unknown field.
+- Existing limits (16 Mi characters, 20,000 nodes, depth 100, JSON depth
+  and value count) are unchanged and still enforced first.
+
+
+11. MIGRATION FRAMEWORK
+-----------------------
+- Version chain 1 → 2 → 3 → 4, unchanged contract (pure, clone-based,
+  throw-don't-guess, checked target version).
+- 3 → 4 (migrateToStylingFoundation): identity apart from formatVersion 4
+  and formatRevision 0; no default inserted; forged-field refusal.
+- Revisions: MigrationOptions.revisions {formatVersion 4,
+  currentRevision, migrations}; applyRevisionSteps runs (4,r) → (4,r+1)
+  in order, refuses gaps, fails safely on a throwing step, and rejects a
+  step that doesn't produce exactly r+1. PROJECT_REVISION_MIGRATIONS is
+  empty at revision 0 (no hypothetical step implemented). The revision
+  number is the only signal a step has run (synthetic-step tests show a
+  revision-1 file does not re-run 0 → 1).
+
+
+12. PROTECTED SAVE
+------------------
+- BC-05.4 lives in the desktop main process; it compared formatVersion
+  only. It now compares (version, revision): raisesProjectFormat is true
+  for a higher version, or the same version with a higher revision. The
+  capability records the revision on open, recovery restore and write.
+- So a format 1–3 file asks before its first format 4 save (Save As /
+  Overwrite Original / Cancel), and a future (4,r) file will ask before
+  becoming (4,r+1). Same revision saves straight back. A failed migration
+  or validation never writes (loading never writes).
+- Verified: main-process unit tests (incl. 4 new revision tests), the
+  renderer workflow tests with the fake bridge, and the real Electron spec
+  e2e/desktop/legacy-format-save.spec.ts (8/8, format 1 and 2 originals:
+  Cancel/Escape, Save As byte-identical original, cancelled Save As,
+  Overwrite Original, close prompt).
+- Browser library storage is outside BC-05.4, unchanged.
+
+
+13. CLONE AND IDENTITY CHANGES
+------------------------------
+- cloneNodeWithFreshIds: every cloned rule gets a fresh document-unique
+  id; groups, conditions, content and counter references are copied by
+  value; nodes without rules get no styleRules field.
+- Session document token: the existing EditorState.documentSessionId
+  (incremented by replaceDocument on every New/Open/Import/Close/restore)
+  IS the token; no second token was added. It is editor state only —
+  never serialized, never exported (test asserts it is not in the
+  document).
+- Element clipboard: copy/cut store counterContext {sourceDocumentSessionId,
+  referenced definitions}. Paste (single and multi):
+  same document → references kept (a deleted definition is recreated
+  with its id); foreign → mapped to the destination definition with the
+  same normalized name, else created with a fresh id (unique name). No
+  pasted reference can dangle; one paste = one history entry (Undo removes
+  the definition it brought). Duplicate is same-document by construction.
+- CSS clipboard (BC-11) is unchanged: it copies base groups only, and no
+  base group references a counter.
+- Generated-id prefix (Report 1 §11): chooseGeneratedIdPrefix picks "ly-",
+  "ly1-", … so generated ids never collide with authored htmlIds; authored
+  ids are not restricted or renamed (no migration). Used from BC-17.3/17.14.
+
+
+14. SVG IDENTITY VERIFICATION
+-----------------------------
+- No SVG scene field was added (BC-17.18 owns them).
+- Strict validation refuses: an id on a path command, stored anchors, a
+  C command, clip-path/defId/mask references, an object transform, a
+  scene-level defs list (7 negative tests + 1).
+- Existing scenes stay valid; per-SVG object-id uniqueness is still
+  enforced; clone still regenerates object ids (existing tests pass).
+- Document-wide uniqueness of vector object ids holds by construction
+  (random generator ids, regenerated on every clone) but is NOT newly
+  enforced by integrity: that would be a new restriction that could
+  reject a previously valid file. It is recorded for the BC-17.18
+  revision step, which can remap duplicates (limitation L-2).
+
+
+15. SECURITY AND INTEGRITY SAFEGUARDS
+-------------------------------------
+- Closed enums for targets, atoms, scopes, profiles, glyphs, counter
+  styles, directions, variants, label kinds; finite numbers; integer
+  checks; bounded lists (≤ 256 rules/node, ≤ 1,024 keyframes and counter
+  definitions, ≤ 64 stops, ≤ 2,048 presets, ≤ 32 operations, ≤ 16 parts).
+- No raw CSS, selectors, content strings, @counter-style or template
+  expressions can be represented; text is length-limited and refuses
+  control characters; counter identifiers are derived, never authored.
+- Assets only on the root; references must resolve; ids unique.
+- Format forgery checks for 1–3 files; newer formats/revisions refused.
+- Existing projectLimits, prototype-key and depth checks run first.
+
+
+16. ACCEPTANCE CRITERIA
+-----------------------
+A Styling foundation — MET. Types + strict schemas exist; base styles
+  unchanged; valid data round-trips (fully styled round-trip test and the
+  4.0 fixture re-save to identical bytes); invalid structures, duplicate
+  and canonical-duplicate rules refused; inactive computation tested and
+  non-destructive.
+B Registry — MET. All 49 known tags and every node of all 82 Resource
+  Panel types resolve; inventory read from source (111/82/29); targets,
+  states, curated compounds and predicates tested; nothing authorable.
+C Foundational fields — MET. Logical/direction/counter/content/label/
+  locale validation tested; physical fields unchanged; SVG restrictions
+  enforced.
+D Migration — MET. All frozen v1–v3 fixtures load and reach (4,0); content
+  identical apart from version metadata (byte comparisons); v4.0
+  round-trips; newer versions/revisions refused; malformed revisions
+  refused; no stripping; limits unchanged.
+E Protected saving — MET (main process, workflow, Electron spec).
+F Cloning/integrity — MET (fresh rule ids, no dangling counters, token
+  lifecycle, SVG behaviour unchanged).
+G Scope isolation — MET. No rendering/Inspector/compiler change; the 4.0
+  fixture exports exactly the same files as the same document with every
+  foundation field removed (standalone and separate), and the frozen
+  format 2 Pagination still exports byte for byte.
+
+
+17. PERFORMANCE MEASUREMENTS
+----------------------------
+Operation: parseProjectFile (size check → JSON.parse → structure scan →
+migration → strict schema → integrity), the full load path.
+Environment: Windows 10, AMD Ryzen 7 2700X (8 cores / 16 threads),
+Node 24.14.0, Vitest, development (non-minified) sources; 7 samples each,
+median reported. Fixture: 20,000 nodes (the projectLimits maximum) — a
+page with 2,000 sections, each with 9 children (p/button with text,
+typography, background).
+- Baseline at HEAD 7cd2042 (format 3), base fixture (+ border and
+  padding): 13,852,433 characters; runs 258–316 ms; MEDIAN 267.3 ms.
+- After BC-17.2, same base fixture (format 4.0; +23 characters):
+  runs 275–292 ms; MEDIAN 288.3 ms (+21 ms, +7.9%; the run ranges
+  overlap); integrity check alone: median 19.2 ms.
+- After BC-17.2, styled fixture (every node one hover rule, every ninth
+  a counter increment + a ::before counter rule, one counter definition;
+  border/padding dropped to stay under the 16 Mi-character limit):
+  16,071,461 characters, ≈20,000 style rules; runs 475–501 ms; MEDIAN
+  486.4 ms; integrity alone 39.1 ms.
+Observations: the new styling integrity pass is linear and costs tens of
+milliseconds at the maximum document size; the styled cost is dominated
+by the extra JSON (the file is 16% larger). Validation runs only on
+load/save/import/recovery, never per edit, so ordinary editing is
+unaffected. No optimization was needed. The measurement test was
+temporary and has been deleted.
+
+
+18. REMAINING LIMITATIONS (none blocks BC-17.3)
+-----------------------------------------------
+L-1 Progress effective max: the architecture (§9.7.2) says an invalid max
+    formats as 1; the existing editor contract (getProgressMax) uses 100.
+    BC-17.13 must format with getProgressMax (existing behaviour wins);
+    a documentation correction, no data impact.
+L-2 Vector object ids are unique per SVG (enforced) and in practice per
+    document (generated), but document-wide uniqueness is not enforced
+    (see §14); planned for the BC-17.18 revision step.
+L-3 The "component" ancestor scope resolves to the nearest marked
+    component or form/label/fieldset/dialog/button/link ancestor;
+    composition-root identity (cards etc.) is refined in BC-17.5.
+L-4 Logical sizes are CSS lengths while the physical width/height and
+    min/max remain px numbers until BC-17.7 (the architecture's "CssUnit
+    lengths"; both twins move to all units there).
+L-5 Leaf logical keyword values (text-align start/end, float/clear
+    values, resize block/inline) and the float field itself are BC-17.7
+    revisions, as Report 1 §12.5 schedules.
+L-6 Keyframe stops reuse StyleRuleGroups; animation-specific validation
+    arrives with BC-17.11.
+L-7 Paste refuses (with a notice) only the theoretical case of exceeding
+    1,024 counter definitions; the reconcile path is exercised by tests
+    and hand-made files only, since no UI can create counters yet.
+L-8 The four modified e2e desktop specs other than legacy-format-save
+    (image-upload, navigation-links, pagination) only changed their
+    expected format number 3 → 4 and were not run (Report 2).
+L-9 Prettier reports style differences in files that were already
+    unformatted at HEAD; only new files and files clean at HEAD were
+    formatted, to keep the diff free of unrelated reformatting.
+
+
+19. REMAINING BLOCKERS
+----------------------
+None. BC-13 stays formally OPEN (not touched); BC-14 stays scheduled for
+BC-17.23 (requirement text still needed, A-4).
+
+
+20. FINAL READINESS RECOMMENDATION
+----------------------------------
+READY FOR BC-17.2 EXTERNAL QA.

@@ -11,14 +11,19 @@ import type {
  * checks on write (external edits and deletions are conflicts), and
  * scriptable native dialogs. Test-only.
  */
-/** The top-level formatVersion of a project text, or null. */
-function formatVersionOf(text: string | null): number | null {
+/** The top-level formatVersion and formatRevision (BC-17.2) of a project text; null when there is no version. */
+function formatOf(
+  text: string | null,
+): { version: number; revision: number } | null {
   if (text === null) return null;
   try {
     const parsed: unknown = JSON.parse(text);
     if (typeof parsed !== "object" || parsed === null) return null;
     const version: unknown = Reflect.get(parsed, "formatVersion");
-    return typeof version === "number" ? version : null;
+    const revision: unknown = Reflect.get(parsed, "formatRevision");
+    return typeof version === "number"
+      ? { version, revision: typeof revision === "number" ? revision : 0 }
+      : null;
   } catch {
     return null;
   }
@@ -121,16 +126,21 @@ export function createFakeDesktopProjectFiles() {
       }
       // Same rule as the main process (BC-05.4): an older-format file is
       // only replaced after an explicit Overwrite.
-      const readVersion = formatVersionOf(capability.version);
-      const incomingVersion = formatVersionOf(text);
-      if (
-        !upgradeFormat &&
-        !force &&
-        readVersion !== null &&
-        incomingVersion !== null &&
-        readVersion < incomingVersion
-      )
-        return { status: "older-format", fileName, formatVersion: readVersion };
+      // BC-17.2: a higher revision within the same version counts too.
+      const read = formatOf(capability.version);
+      const incoming = formatOf(text);
+      const raises =
+        read !== null &&
+        incoming !== null &&
+        (read.version !== incoming.version
+          ? read.version < incoming.version
+          : read.revision < incoming.revision);
+      if (!upgradeFormat && !force && raises && read !== null)
+        return {
+          status: "older-format",
+          fileName,
+          formatVersion: read.version,
+        };
       if (!force && capability.version !== null) {
         const current = disk.get(fileName);
         if (current === undefined)

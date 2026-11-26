@@ -1,0 +1,191 @@
+BC-17.2 — Test Impact and Verification
+Report 2 of 3
+=====================================
+Date: 2026-11-26. Policy: change-focused testing (no automatic full
+suites). Every command below was actually executed in this checkpoint;
+nothing here is reused evidence unless marked "previous evidence".
+
+
+1. CHANGED FUNCTIONALITY
+------------------------
+- Document model + strict schema: new optional node and group fields,
+  style rules, assets (data only).
+- Project persistence: format 4 revision 0, the 3 → 4 step, revision
+  validation and the revision-step framework, serializer envelope.
+- Integrity: styling integrity after the existing checks.
+- Registry, context predicates, inactive computation (new, no consumer).
+- Clone: fresh rule ids. Store: counter context on copy/cut, counter
+  reconciliation on paste.
+- Desktop main process: older-format protection compares (version,
+  revision); the renderer test double mirrors it.
+- Generated-id prefix rule (new, no consumer).
+NOT changed: Canvas, Preview, Export, Inspector, element renderers,
+interactions, BC-13 gestures, snapping, SVG editing.
+
+
+2. DIRECTLY AFFECTED DEPENDENCIES AND CONTRACTS
+-----------------------------------------------
+- PROJECT-1.x chain, frozen fixtures, limits, loader/serializer
+  (byte-exact re-save contracts).
+- BC-05.4 protected save (main process, workflow, Electron).
+- BC-09.2 format 3 refusal rules (forged-field checks extended to 4).
+- BC-10/BC-11 clipboard and clone contracts (store paste paths changed).
+- Editor store tests that pin "this build writes format 3".
+- elementCapabilities (the registry derives from it; read-only use).
+- Export output (must not change: checked through the fixtures).
+
+
+3. NEW TESTS
+------------
+- projectFormatV4.test.ts (103): envelope and fully styled exact
+  round-trip; 5 malformed-revision cases; newer revision/version; unknown
+  fields; 3 → 4 identity; 9 + 9 forged-field cases + formatRevision
+  forgery; revision framework (order, no re-run, gap, throwing, sloppy,
+  caller not mutated); 19 invalid rule shapes; accepted forms; 6 counter
+  operation cases + valid multi-counter; 7 logical/direction/outline
+  cases; 17 Progress cases + accepted label kinds/locales; integrity
+  (duplicate rule ids, canonical duplicates, 3 dangling-counter paths,
+  duplicate/normalized names, invalid names, assets off root, Progress
+  data elsewhere, keyframe offsets, preset self-containment, preset
+  library); SVG identity (8).
+- stylingRegistry.test.ts (91): known-tag coverage, every factory node,
+  every profile used, unoffered targets pinned, derivation from
+  elementCapabilities for every tag, Progress parts, Pagination role
+  groups, input parts, compound curation, pseudo allow-lists, authoring
+  availability all false.
+- inactiveStyling.test.ts (13): predicates (float/clear/shape-outside,
+  Free LIMIT, first-line, vector focus); variant switch preserved; state
+  and compound; ancestor scopes; group/field allow-lists; context target;
+  Default-state limitations; Free-child logical fields; purity on frozen
+  input.
+- counterReferenceCommands.test.ts (12): identifiers; same-document keep
+  and recreate; foreign name map and create (no merge, no collision);
+  no-reference no-op; copy context; clone rule ids and counter refs;
+  store copy/paste/duplicate same document; paste into another document
+  (+ one Undo removes the definition); token not in the document.
+- generatedIdPrefix.test.ts (3); fakeDesktopProjectFiles.test.ts (2);
+  creationToolbarStylingCoverage.test.ts (83: inventory 111/82/29 from
+  source + every enabled type).
+- projectFileService.test.ts: +4 revision tests (raisesProjectFormat,
+  formatRevisionOf, format 3 → 4 asks, (4,0) → (4,1) asks / consent /
+  no repeat, same revision saves).
+- legacyProjectFiles.test.ts: +2 (4.0 fixture re-saves byte-identically;
+  4.0 fixture exports exactly what the stripped document exports).
+
+
+4. EXISTING TESTS UPDATED (expected values only, never weakened)
+---------------------------------------------------------------
+- "writes format 3" → "writes format 4 (revision 0)": 7 store tests,
+  projectFormatV3 (2), projectDesktopWorkflow (2 + titles), serializer
+  envelope keys, migration "current file passes through" (now
+  formatRevision 0 and steps [1,2,3]), parseProjectFile future version
+  4 → 5, projectFormatV3 "newer format" 4 → 5.
+- Frozen-fixture byte checks: "same bytes apart from formatVersion" now
+  replaces the version line with formatVersion 4 + formatRevision 0
+  (withCurrentVersion); the format 3 fixture previously re-saved
+  identically and now differs ONLY in that metadata (asserted), with its
+  document deep-equal to the file's.
+- projectFormatV3 helper: builds a genuine format 1–3 envelope (no
+  formatRevision); otherwise every format 3 refusal test would have been
+  testing the new forgery check instead of its own rule.
+- e2e/desktop/{image-upload, legacy-format-save, navigation-links,
+  pagination}.spec.ts: expected saved format 3 → 4.
+
+
+5. EXECUTED COMMANDS AND RESULTS
+--------------------------------
+Baseline (before any edit; temporary test, deleted):
+  npx vitest run src/features/project/utils/zzValidationPerf.tmp.test.ts
+  --reporter=verbose --silent=false
+  → PERF base median 267.3 ms (Report 1 §17).
+Static:
+  npx tsc --noEmit -p .                       → exit 0 (app, incl. all
+                                                 drift guards)
+  npx tsc -p desktop/tsconfig.json --noEmit   → exit 0
+  npx eslint <every changed and new .ts/.tsx> → 0 errors, 0 warnings
+  npm run lint (eslint .)                     → clean
+  npx prettier --check <changed files>        → differences only in files
+                                                 already unformatted at
+                                                 HEAD (left as they were)
+Targeted Vitest (final run, after all edits):
+  npx vitest run src/features/project desktop/files desktop/recovery
+    src/features/editor/rules src/features/editor/schemas
+    src/features/editor/commands
+    src/features/editor/utils/cloneNodeWithFreshIds.test.ts
+    src/features/editor/stores
+    src/components/layout/creationToolbarCategories.test.ts
+    src/components/layout/creationToolbarStylingCoverage.test.ts
+  → 118 files passed; 2,462 passed, 1 skipped (pre-existing skip), 0
+    failed.
+  npx vitest run src/features/editor/rules/generatedIdPrefix.test.ts
+  → 3 passed (added after the run above).
+  Per-file counts of the new/changed files: 417/417 passed.
+  Why this set: every project-persistence file (format change), the
+  desktop file and recovery services (protected save), editor rules/
+  schemas/commands (new code, integrity), clone, and ALL editor store
+  tests (the store's copy/cut/paste changed and several pin the format).
+Interim runs: the first targeted run after the format bump failed 50
+tests, all of them version expectations or the format 3 helper, fixed
+as described in §4; the new suites found one real bug (below).
+Electron (justified: the main-process write check changed):
+  ELECTRON_RUN_AS_NODE unset; npm run desktop:build → exit 0 (36 s)
+  npx playwright test -c playwright.desktop.config.ts
+    e2e/desktop/legacy-format-save.spec.ts
+  → 8 passed (format 1 and 2 originals: Cancel/Escape, Save As keeps the
+    original byte-identical and writes format 4, cancelled Save As,
+    Overwrite Original once, close-prompt path).
+Performance (temporary test, deleted): Report 1 §17.
+
+
+6. DEFECT FOUND BY THE NEW TESTS (fixed in this checkpoint)
+----------------------------------------------------------
+findProgressTemplateError used string.includes on a percent-sign string
+with the neighbouring character, and "".includes is always true, so a
+template ending or starting with {percent} was wrongly refused. Fixed
+with a Set lookup; covered by the accepted-template test.
+
+
+7. TESTS INTENTIONALLY NOT EXECUTED, AND WHY
+-------------------------------------------
+- Canvas, Preview, Export, Inspector, SVG and BC-13 suites: no code on
+  those paths changed; export equality is checked through the fixtures
+  (format 2 Pagination byte-for-byte export, 4.0 fixture export
+  equality).
+- Browser (Playwright web) suites: rendering unchanged (roadmap: none
+  required for 17.2).
+- e2e/desktop image-upload, navigation-links and pagination specs: only
+  their expected saved format number changed (3 → 4); the format they
+  check is covered by unit tests and the Electron legacy-format spec.
+  Risk: low; they will run with their next checkpoint.
+- Full unit / browser / Electron regression suites: not justified.
+
+
+8. PREVIOUS EVIDENCE REUSED
+---------------------------
+- BC-05.4, BC-09.2, PROJECT-1.5 suites — re-run here as part of the
+  targeted set (not merely reused).
+- No earlier browser evidence is claimed for anything new.
+
+
+9. NEWLY VERIFIED BEHAVIOUR
+---------------------------
+Format 4.0 write/read; the identity 3 → 4 migration of all frozen v1–v3
+fixtures; refusal of newer and malformed revisions and forged files;
+strict validation of every foundation structure; styling integrity;
+registry coverage of every known tag and all 82 Resource Panel types;
+predicates; inactive computation and its purity; clone rule ids;
+paste-time counter reconciliation; protected save across versions and
+revisions (unit, workflow, Electron); unchanged export output; the
+validation measurement.
+
+
+10. REMAINING UNVERIFIED
+------------------------
+- Anything visual: nothing renders the new data yet (BC-17.3+).
+- A real (4,r) → (4,r+1) step: none exists yet; the framework is tested
+  with synthetic steps.
+- A protected-save prompt for a revision upgrade in Electron: unit- and
+  workflow-tested only, because this build can only write revision 0.
+- The three e2e desktop specs listed in §7.
+- Browser behaviour of logical properties, counters, labels, etc.: their
+  checkpoints.

@@ -169,6 +169,7 @@ import { documentFitsSaveLimit, subtreeHasEmbeddedData } from "@/features/editor
 import { clampGridChildPlacement } from "@/features/editor/utils/clampGridChildPlacement";
 import { fixtureDocument } from "@/features/editor/fixtureDocument";
 import { cloneNodeWithFreshIds } from "@/features/editor/utils/cloneNodeWithFreshIds";
+import { COUNTER_LIMIT_PASTE_NOTICE, copiedCounterContext, exceedsCounterDefinitionLimit, reconcilePastedCounters } from "@/features/editor/commands/counterReferenceCommands";
 import { isStructurallyEqual } from "@/features/editor/utils/isStructurallyEqual";
 import { collectNodeIds } from "@/features/editor/utils/collectNodeIds";
 import { findNodeById, findParentId } from "@/features/editor/utils/findNodeById";
@@ -1197,9 +1198,15 @@ const DUPLICATE_REJECTION_NOTICES: Record<CopiesRejection, string> = {
 };
 
 /** Each root's parent, aligned with `roots` (BC-10.5.1, see EditorClipboard.sourceParentIds). */
-function multiClipboard(document: EditorElementNode, operation: EditorClipboard["operation"], roots: EditorElementNode[]): EditorClipboard {
-  const sourceParentIds = roots.map((root) => findParentId(document, root.id));
-  return { operation, nodes: roots, sourceParentId: sourceParentIds[0] ?? null, sourceParentIds };
+function multiClipboard(state: Pick<EditorState, "document" | "documentSessionId">, operation: EditorClipboard["operation"], roots: EditorElementNode[]): EditorClipboard {
+  const sourceParentIds = roots.map((root) => findParentId(state.document, root.id));
+  return { operation, nodes: roots, sourceParentId: sourceParentIds[0] ?? null, sourceParentIds, ...counterContextFor(state, roots) };
+}
+
+/** BC-17.2: the counter definitions the copied roots reference, with the session document token (counterReferenceCommands). */
+function counterContextFor(state: Pick<EditorState, "document" | "documentSessionId">, roots: readonly EditorElementNode[]): Pick<EditorClipboard, "counterContext"> {
+  const context = copiedCounterContext(state.document, roots, state.documentSessionId);
+  return context.counters.length > 0 ? { counterContext: context } : {};
 }
 
 /**
@@ -1214,7 +1221,7 @@ function cutNodesById(state: EditorState, ids: readonly string[]): Partial<Edito
   if (roots.length === 0) return {};
   const removed = deleteNodesById(state, ids);
   if (!removed.document) return {};
-  return { ...removed, clipboard: multiClipboard(state.document, "cut", roots) };
+  return { ...removed, clipboard: multiClipboard(state, "cut", roots) };
 }
 
 /**
@@ -1282,7 +1289,9 @@ function pasteMany(state: EditorState, clipboard: EditorClipboard): Partial<Edit
     cut: clipboard.operation === "cut",
   });
   if (!result.ok) return nextEditorNoticeState(state, PASTE_REJECTION_NOTICES[result.reason]);
-  return commitCopies(state, result.document, result.rootIds, result.formerCurrentPageIds, true, result.keptCurrentPageId);
+  const inserted = reconcilePastedCounters(result.document, result.rootIds, clipboard.counterContext, state.documentSessionId);
+  if (exceedsCounterDefinitionLimit(inserted)) return nextEditorNoticeState(state, COUNTER_LIMIT_PASTE_NOTICE);
+  return commitCopies(state, inserted, result.rootIds, result.formerCurrentPageIds, true, result.keptCurrentPageId);
 }
 
 /** Multi-duplicate (BC-10.5): each selected subtree's copy right after its original. */
@@ -2303,12 +2312,12 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
     set((state) => {
       if (existingSelectedIds(state.document, state.selection.ids).length > 1) {
         const roots = orderedSelectionRoots(state.document, state.selection.ids);
-        return { clipboard: multiClipboard(state.document, "copy", roots) };
+        return { clipboard: multiClipboard(state, "copy", roots) };
       }
       const node = eligibleSelectedNode(state);
       if (!node) return {};
       const sourceParentId = findParentId(state.document, node.id);
-      return { clipboard: { operation: "copy", nodes: [node], sourceParentId } };
+      return { clipboard: { operation: "copy", nodes: [node], sourceParentId, ...counterContextFor(state, [node]) } };
     });
   },
 
@@ -2328,7 +2337,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
         ...pushHistory(state),
         document,
         selection: selectionFromSingle(resolveDeletionFallbackSelection(sourceParentId, state.document.id)),
-        clipboard: { operation: "cut", nodes: [node], sourceParentId },
+        clipboard: { operation: "cut", nodes: [node], sourceParentId, ...counterContextFor(state, [node]) },
       };
     });
   },
@@ -2359,11 +2368,18 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       );
       // A pasted trigger may still point at a target deleted since the
       // copy; that binding is removed, as deleting the target would have.
-      const document = withPaginationInvariants(
-        state.document,
-        removeInteractionsWithMissingTargets(insertNode(state.document, destinationParentId, clone)),
-        movesCurrentPage ? { preferredCurrentId: clone.id } : wasCurrentPage ? { ordinaryLookIds: new Set([clone.id]) } : undefined,
+      // BC-17.2: pasted counter references always resolve (same document: kept; foreign: mapped by name or created).
+      const document = reconcilePastedCounters(
+        withPaginationInvariants(
+          state.document,
+          removeInteractionsWithMissingTargets(insertNode(state.document, destinationParentId, clone)),
+          movesCurrentPage ? { preferredCurrentId: clone.id } : wasCurrentPage ? { ordinaryLookIds: new Set([clone.id]) } : undefined,
+        ),
+        [clone.id],
+        state.clipboard?.counterContext,
+        state.documentSessionId,
       );
+      if (exceedsCounterDefinitionLimit(document)) return nextEditorNoticeState(state, COUNTER_LIMIT_PASTE_NOTICE);
       if (exceedsNavigationLinkLimit(state.document, document)) return nextEditorNoticeState(state, NAVIGATION_LINK_LIMIT_PASTE_NOTICE);
       if (subtreeHasEmbeddedData(clone) && !documentFitsSaveLimit(document)) return nextEditorNoticeState(state, COPY_TOO_LARGE_NOTICE);
       return {
