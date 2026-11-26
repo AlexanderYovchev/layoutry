@@ -10,6 +10,8 @@ import type { EditorElementNode } from "../src/features/editor/types/document";
  * (one Undo step, exact Redo), no document change before the drop,
  * Free → Flow switching, an invalid container, Escape and command
  * interruption, unrelated keys, and auto-scroll.
+ * BC-13.6.1: D1 (outside drops insert nothing), D2 (Free drops append),
+ * subtree Undo/Redo, destination switching, margins, nested auto-scroll.
  */
 
 const SURFACE = "[data-document-surface]";
@@ -60,8 +62,8 @@ const tallFixture: EditorElementNode = {
 async function grabTile(page: Page, name: string) {
   await tile(page, name).scrollIntoViewIfNeeded();
   const box = (await tile(page, name).boundingBox())!;
-  const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x ?? 0, y ?? 0)?.closest("button")?.textContent?.trim() ?? null, [box.x + box.width / 2, box.y + box.height / 2]);
-  expect(hit, "the pointer is on the tile").toBe(name);
+  // Polled: right after a drop, dnd-kit's drop animation can still cover the tile briefly.
+  await expect.poll(() => page.evaluate(([x, y]) => document.elementFromPoint(x ?? 0, y ?? 0)?.closest("button")?.textContent?.trim() ?? null, [box.x + box.width / 2, box.y + box.height / 2]), { message: "the pointer is on the tile" }).toBe(name);
   const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
@@ -276,4 +278,242 @@ test("between Free containers the preview moves to the new one (fresh targets, n
   expect(await childIds(page, "free2")).toEqual([]);
   expect((await childIds(page, "free")).filter((id) => id !== "anchor")).toEqual([]);
   expect(await node(page, added[0]!).evaluate((el) => el.style.position)).not.toBe("absolute");
+});
+
+/* ---------------- BC-13.6.1 ---------------- */
+
+const styleOf = (page: Page, id: string) => node(page, id).evaluate((el) => ({ left: el.style.left, top: el.style.top, width: el.style.width, height: el.style.height, zIndex: getComputedStyle(el).zIndex }));
+const descendantIds = (page: Page, id: string) => node(page, id).evaluate((el) => [el.getAttribute("data-node-id"), ...[...el.querySelectorAll("[data-node-id]")].map((c) => c.getAttribute("data-node-id"))]);
+const tree = (page: Page) => page.getByRole("tree", { name: "Page structure" });
+
+/** Free container with two plain siblings, one with an authored z-index, and one with a margin. */
+const orderFixture: EditorElementNode = {
+  id: "page-root",
+  tag: "page",
+  children: [
+    {
+      id: "free",
+      tag: "div",
+      layoutMode: "free",
+      displayName: "Free",
+      dimensions: { preferredWidth: 600, preferredHeight: 400, offsetX: 0, offsetY: 0 },
+      children: [
+        p("first", 40, 40, 160, 60),
+        { ...p("topper", 40, 200, 160, 80), position: { zIndex: 5 } },
+        p("second", 330, 40, 160, 60),
+        { ...p("marg", 260, 200, 120, 40), spacing: { margin: { left: 20, top: 0 } } },
+      ],
+    },
+    { id: "flowbox", tag: "div", displayName: "FlowBox", children: [{ id: "flowp", tag: "p", text: "Flow paragraph", displayName: "FlowPara" }] },
+  ],
+};
+
+test("D1: released outside every drop target (here over the Inspector), nothing is inserted — no fallback; selection, Redo and the saved state are kept; feedback cleared", async ({ page }) => {
+  await open(page, orderFixture, "first");
+  // A committed edit, undone: Redo must survive.
+  await node(page, "first").click();
+  await page.keyboard.press("ControlOrMeta+d");
+  await button(page, "Undo").click();
+  await expect(button(page, "Redo")).toBeEnabled();
+  await node(page, "second").click();
+  const status = await page.locator("[data-project-status]").getAttribute("data-project-status");
+  const before = await allIds(page);
+  const free = (await node(page, "free").boundingBox())!;
+  await grabTile(page, "Paragraph");
+  await page.mouse.move(free.x + 300, free.y + 330, { steps: 10 });
+  await expect(preview(page)).toBeVisible(); // a valid Free destination first…
+  const inspector = (await page.getByRole("complementary", { name: "Inspector panel" }).boundingBox())!;
+  await page.mouse.move(inspector.x + inspector.width / 2, inspector.y + inspector.height / 2, { steps: 10 }); // …then left
+  await expect(preview(page)).toHaveCount(0);
+  await page.mouse.up();
+  expect(await allIds(page)).toEqual(before);
+  await expect(button(page, "Redo")).toBeEnabled();
+  await page.getByRole("tab", { name: "Structure" }).click();
+  await expect(tree(page).getByRole("treeitem", { name: /second/ }).first()).toHaveAttribute("aria-selected", "true");
+  expect(await page.locator("[data-project-status]").getAttribute("data-project-status")).toBe(status);
+  await expect(page.locator('[data-canvas-overlay^="snap-guide"]')).toHaveCount(0);
+});
+
+test("D1: an empty project still accepts a drop on its page (the root is a real drop target)", async ({ page }) => {
+  await gotoApp(page);
+  await importDocument(page, { id: "page-root", tag: "page", children: [] }, "page-root");
+  const sheet = (await page.locator(SURFACE).boundingBox())!;
+  await grabTile(page, "Paragraph");
+  await page.mouse.move(sheet.x + sheet.width / 2, sheet.y + 60, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(async () => (await allIds(page)).length).toBe(2); // the root + the new paragraph
+  await expect(button(page, "Undo")).toBeEnabled();
+});
+
+test("D2: dropped over a sibling's upper half (formerly 'before') or lower half (formerly 'after'), the component is APPENDED — existing order unchanged, on top of plain siblings, under an authored z-index; Structure shows document order", async ({ page }) => {
+  await open(page, orderFixture, "first");
+  for (const [half, offsetY] of [["upper", 12], ["lower", 48]] as const) {
+    const first = (await node(page, "first").boundingBox())!;
+    await grabTile(page, "Paragraph");
+    await page.mouse.move(first.x + 80, first.y + offsetY, { steps: 10 });
+    await expect(preview(page), `${half} half`).toBeVisible();
+    await page.mouse.up();
+    const order = await childIds(page, "free");
+    expect(order.slice(0, 4), `${half}: existing order kept`).toEqual(["first", "topper", "second", "marg"]);
+    expect(order).toHaveLength(5);
+    const added = order[4]!;
+    // Overlapping "first" (no z-index): the appended element paints on top (polled: dnd-kit's drop animation covers the point briefly).
+    await expect.poll(() => page.evaluate(([x, y]) => document.elementFromPoint(x ?? 0, y ?? 0)?.closest("[data-node-id]")?.getAttribute("data-node-id"), [first.x + 80, first.y + offsetY])).toBe(added);
+    expect((await styleOf(page, added)).zIndex).toBe("auto"); // no z-index assigned
+    await button(page, "Undo").click();
+    expect(await childIds(page, "free")).toEqual(["first", "topper", "second", "marg"]); // Undo restores the previous order
+  }
+
+  // Over the z-index:5 sibling: appended, but the authored stacking still wins (nothing rewritten).
+  const topper = (await node(page, "topper").boundingBox())!;
+  await grabTile(page, "Paragraph");
+  await page.mouse.move(topper.x + 80, topper.y + 40, { steps: 10 });
+  await page.mouse.up();
+  const order = await childIds(page, "free");
+  const added = order[4]!;
+  expect((await styleOf(page, "topper")).zIndex).toBe("5");
+  expect((await styleOf(page, added)).zIndex).toBe("auto");
+  await expect.poll(() => page.evaluate(([x, y]) => document.elementFromPoint(x ?? 0, y ?? 0)?.closest("[data-node-id]")?.getAttribute("data-node-id"), [topper.x + 80, topper.y + 40])).toBe("topper");
+  // Structure panel: document order, the new element last, selected on both sides.
+  await page.getByRole("tab", { name: "Structure" }).click();
+  await tree(page).getByRole("treeitem", { name: /^(Collapse |Expand )?Free/ }).first().waitFor();
+  const rows = await tree(page).getByRole("treeitem").evaluateAll((els) => els.map((el) => el.getAttribute("aria-label") ?? el.textContent ?? ""));
+  const idxFirst = rows.findIndex((r) => /first/.test(r));
+  const idxMarg = rows.findIndex((r) => /marg/.test(r));
+  const idxNew = rows.findIndex((r) => /Paragraph/.test(r));
+  expect(idxFirst).toBeLessThan(idxMarg);
+  expect(idxMarg).toBeLessThan(idxNew);
+  await expect(tree(page).getByRole("treeitem", { name: /Paragraph/ }).first()).toHaveAttribute("aria-selected", "true");
+});
+
+test("Undo/Redo of a component SUBTREE (Basic Card): appended, one Undo step; Redo restores the same ids, geometry and order", async ({ page }) => {
+  await open(page, orderFixture, "first");
+  const free = (await node(page, "free").boundingBox())!;
+  await page.getByRole("tab", { name: "Components" }).click();
+  await grabTile(page, "Basic Card");
+  await page.mouse.move(free.x + 300, free.y + 150, { steps: 10 });
+  await expect(preview(page)).toBeVisible();
+  await page.mouse.up();
+  const order = await childIds(page, "free");
+  expect(order).toHaveLength(5);
+  const card = order[4]!;
+  const ids = await descendantIds(page, card);
+  expect(ids.length).toBeGreaterThan(2); // a real subtree
+  const geometry = await styleOf(page, card);
+  await button(page, "Undo").click();
+  await expect(node(page, card)).toHaveCount(0);
+  for (const id of ids) await expect(node(page, id!)).toHaveCount(0);
+  await expect(button(page, "Undo")).toBeDisabled();
+  await button(page, "Redo").click();
+  expect(await childIds(page, "free")).toEqual(order);
+  expect(await descendantIds(page, card)).toEqual(ids);
+  expect(await styleOf(page, card)).toEqual(geometry);
+});
+
+test("destination switching: Free → Flow → back to Free (fresh preview) → outside (gone) → re-entered; the drop lands at the last preview", async ({ page }) => {
+  await open(page, orderFixture, "first");
+  const free = (await node(page, "free").boundingBox())!;
+  const flow = (await node(page, "flowbox").boundingBox())!;
+  await grabTile(page, "Paragraph");
+  await page.mouse.move(free.x + 480, free.y + 150, { steps: 8 });
+  await expect(preview(page)).toBeVisible();
+  await page.mouse.move(flow.x + flow.width / 2, flow.y + flow.height / 2, { steps: 8 });
+  await expect(preview(page)).toHaveCount(0);
+  await page.mouse.move(free.x + 480, free.y + 150, { steps: 8 });
+  await expect(preview(page)).toBeVisible();
+  const inspector = (await page.getByRole("complementary", { name: "Inspector panel" }).boundingBox())!;
+  await page.mouse.move(inspector.x + 40, inspector.y + 200, { steps: 8 });
+  await expect(preview(page)).toHaveCount(0);
+  await page.mouse.move(free.x + 470, free.y + 160, { steps: 8 });
+  await expect(preview(page)).toBeVisible();
+  const last = await previewBox(page);
+  await page.mouse.up();
+  const added = (await childIds(page, "free"))[4]!;
+  const box = (await node(page, added).boundingBox())!;
+  expect(box.x).toBeCloseTo(last.x, 0);
+  expect(box.y).toBeCloseTo(last.y, 0);
+});
+
+test("margins (Decision 25): the preview aligns with a target's rendered border box, not its margin box", async ({ page }) => {
+  await open(page, orderFixture, "first");
+  const marg = (await node(page, "marg").boundingBox())!; // the border box (margin-left 20 excluded)
+  await grabTile(page, "Paragraph");
+  await page.mouse.move(marg.x + 100, marg.y - 60, { steps: 10 });
+  const at = await previewBox(page);
+  // Put the preview's left edge 3px right of the border-box edge: it snaps to it…
+  await page.mouse.move(marg.x + 100 + (marg.x + 3 - at.x), marg.y - 60, { steps: 4 });
+  await expect(page.locator('[data-canvas-overlay="snap-guide-vertical"]')).toHaveAttribute("data-achieved", "true");
+  expect((await previewBox(page)).x).toBeCloseTo(marg.x, 0);
+  // …and 3px right of the MARGIN edge (marg.x − 20) there is nothing to snap to.
+  await page.mouse.move(marg.x + 100 + (marg.x - 20 + 3 - at.x), marg.y - 60, { steps: 4 });
+  await expect.poll(async () => Math.round((await previewBox(page)).x - (marg.x - 17))).toBe(0);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+});
+
+/**
+ * A nested scroller (a Flow container with authored overflow:auto) whose
+ * content overflows downwards: a filler, then a Free container narrower
+ * than the scroller with a target far down. (A Free container WIDER than its
+ * scroller loses dnd-kit's pointerWithin ranking to the scroller itself —
+ * the existing drop-target rule — so it can't be the destination; see the
+ * report.)
+ */
+const nestedFixture: EditorElementNode = {
+  id: "page-root",
+  tag: "page",
+  children: [
+    {
+      id: "vscroller",
+      tag: "div",
+      displayName: "VScroller",
+      display: { overflow: "auto" },
+      dimensions: { preferredWidth: 420, preferredHeight: 240, offsetX: 0, offsetY: 0 },
+      children: [
+        { id: "filler", tag: "div", displayName: "Filler", dimensions: { preferredWidth: 300, preferredHeight: 60, offsetX: 0, offsetY: 0 }, children: [] },
+        { id: "vinner", tag: "div", layoutMode: "free", displayName: "VInner", dimensions: { preferredWidth: 300, preferredHeight: 420, offsetX: 0, offsetY: 0 }, children: [p("far", 10, 10, 60, 30)] },
+      ],
+    },
+  ],
+};
+
+test("nested-scroller auto-scroll while inserting: the inner scroller scrolls (not the Workspace) with a stationary pointer, only as far as the Free container reaches; the preview stays contained and the drop matches it; Escape stops it", async ({ page }) => {
+  await open(page, nestedFixture, "far");
+  const scroller = (await node(page, "vscroller").boundingBox())!;
+  const ws0 = await workspace(page).evaluate((el) => el.scrollTop);
+  const inner0 = (await node(page, "vinner").boundingBox())!;
+  await grabTile(page, "Paragraph");
+  // Inside the 40px edge band, but still over the Free container once its bottom reaches the scroller's content edge (33px padding).
+  const edgeY = scroller.y + scroller.height - 36;
+  const x = inner0.x + 150;
+  await page.mouse.move(x, edgeY, { steps: 10 });
+  await expect.poll(async () => node(page, "vscroller").evaluate((el) => el.scrollTop), { timeout: 8000 }).toBeGreaterThan(20);
+  expect(await workspace(page).evaluate((el) => el.scrollTop)).toBe(ws0); // the innermost scroller, not the Workspace
+  // It stops once the Free container's bottom is in view (reach), with the preview contained and under the pointer.
+  let previous = -1;
+  await expect.poll(async () => { const now = await node(page, "vscroller").evaluate((el) => el.scrollTop); const same = now === previous; previous = now; return same; }, { intervals: [200] }).toBe(true);
+  const inner = (await node(page, "vinner").boundingBox())!;
+  const held = await previewBox(page);
+  // Contained (the containment wins over following the pointer in this short container).
+  expect(held.y).toBeGreaterThanOrEqual(inner.y - 0.5);
+  expect(held.y + held.height).toBeLessThanOrEqual(inner.y + inner.height + 0.5);
+  const last = held;
+  await page.mouse.up();
+  const added = (await childIds(page, "vinner")).filter((id) => id !== "far");
+  expect(added).toHaveLength(1);
+  const box = (await node(page, added[0]!).boundingBox())!;
+  expect(box.x).toBeCloseTo(last.x, 0);
+  expect(box.y).toBeCloseTo(last.y, 0);
+
+  // Escape mid-scroll: scrolling stops at once, nothing inserted.
+  await node(page, "vscroller").evaluate((el) => (el.scrollTop = 0));
+  await grabTile(page, "Paragraph");
+  await page.mouse.move(x, edgeY, { steps: 10 });
+  await expect.poll(async () => node(page, "vscroller").evaluate((el) => el.scrollTop), { timeout: 8000 }).toBeGreaterThan(5);
+  await page.keyboard.press("Escape");
+  const stopped = await node(page, "vscroller").evaluate((el) => el.scrollTop);
+  await page.waitForTimeout(300);
+  expect(await node(page, "vscroller").evaluate((el) => el.scrollTop)).toBe(stopped);
+  await page.mouse.up();
+  expect((await childIds(page, "vinner")).length).toBe(2);
 });

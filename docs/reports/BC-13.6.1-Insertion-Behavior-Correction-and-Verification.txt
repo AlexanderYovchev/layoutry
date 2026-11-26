@@ -1,0 +1,442 @@
+BC-13.6.1 — Insertion Behavior Correction & Focused Verification
+================================================================
+Date: 2026-11-26
+Milestone: BC-13 (Alignment & Snapping Guides)
+Status: implemented, focused validation passed, NOT committed (waiting for
+ChatGPT/owner QA)
+Baseline: 33ef608 (BC-13.6).
+Owner decisions: D1 = B (a drop outside every destination inserts
+nothing); D2 = A (Free drops append).
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+- D1: a Resource Panel drop inserts only onto a real destination under the
+  final pointer, checked against the CURRENT document. Released outside
+  every drop target, or on one that no longer exists, it inserts nothing:
+  no selection/root fallback, no first-available placement. The
+  document, selection, Undo/Redo and the saved state are unchanged.
+  The page sheet itself stays a valid root drop area. This was a real gap
+  found while verifying: dnd-kit reports NO droppable over an empty page,
+  so without it D1 would have broken insertion into an empty project.
+- D2: a drop into a Free container APPENDS the new component to the
+  container's children (on top in default stacking) at the preview
+  geometry, whichever sibling was hovered. No z-index is assigned or
+  rewritten; authored stacking still wins.
+- Changed code: one drop handler (EditorApp) plus the insertion session's
+  finish (it also returns the final pointer) and its destination-deletion
+  policy (now ends the whole gesture). Click-insert, paste, duplicate, the
+  Structure panel and Flow/Flex/Grid ordering are untouched.
+- All outstanding BC-13.6 items now have evidence (sections 10–17).
+  Newly verified:
+  - subtree Undo/Redo identity;
+  - nested-scroller auto-scroll;
+  - five dynamic-invalidation cases through the session;
+  - Free→Flow→Free→outside→re-enter;
+  - destination deletion;
+  - margins.
+- Tests:
+  - unit: 4 files / 80 tests (5 new + 1 changed);
+  - Chromium: the insertion spec 17 tests (+7 new) ×3 = 51/51, plus
+    29/29 regression (resource-panel drag-vs-click, Structure/Canvas
+    drag);
+  - Firefox + WebKit: the insertion spec 34/34 (1 fixture fix);
+  - typecheck and ESLint clean.
+- Recommendation: READY FOR QA.
+
+
+2. CHANGED-FILE INVENTORY AND REASONS
+-------------------------------------
+Modified:
+- src/features/editor/components/EditorApp.tsx (handleDragEnd):
+  - D1: target = the hovered node, else the root when the final pointer is
+    on the page sheet (isOverDocumentSurface), else nothing; it must exist
+    in the current document;
+  - D2: a Free parent (or a coarser ancestor of the previewed container)
+    → insert(..., container, "inside", preview geometry), i.e. append; a
+    Free parent without a pointer placement → appended too;
+  - otherwise, the existing before/after/inside insert.
+- src/features/canvas/utils/freeInsertionSession.ts:
+  - finishFreeInsertion also returns the final pointer;
+  - a deleted destination now interrupts the whole gesture (it used to
+    just clear the preview).
+- src/features/canvas/utils/freeInsertionSession.test.ts: the deletion
+  test updated to the new policy; +5 invalidation tests; 3 assertions
+  switched to toMatchObject (the result gained `pointer`).
+- e2e/free-insertion-snapping.spec.ts: +7 tests and 2 fixtures; grabTile's
+  hit check now polls (dnd-kit's drop animation briefly covers the tile).
+Created: this report; changelogs/2026-11-26-…BC-13.6.1.txt (gitignored).
+Not changed: useInsertElement, resolveInsertionParent,
+resolveDragEndInsertion, the store, click-insert/paste/duplicate paths,
+the engine and lifecycle utilities.
+
+
+3. PREVIOUS FALLBACK INSERTION BEHAVIOR
+---------------------------------------
+- resolveDragEndInsertion returned { elementType } with no target when
+  nothing was hovered (event.over null). useInsertElement →
+  resolveInsertionParent then fell back to resolveDestinationParent: the
+  selected container, the selection's parent, or the root. This is the
+  same fallback click-insert uses.
+- A hovered id missing from the document took the same fallback.
+- Measured while verifying: over an EMPTY page dnd-kit reports no
+  droppable (the root's element has no height to hit), so the old
+  fallback was what made drops into an empty project work.
+
+
+4. D1 IMPLEMENTATION AND VERIFICATION
+-------------------------------------
+Implementation (EditorApp.handleDragEnd, Resource Panel drops only):
+  current  = useEditorStore.getState().document   // not a stale render copy
+  targetId = hovered id
+          ?? (final pointer on [data-document-surface] ? root id : none)
+  if (!targetId || !findNodeById(current, targetId)) return  // nothing
+- Nothing is created, so there is nothing to roll back. The selection,
+  history and persistedDocument are untouched.
+- The session has already ended (finishFreeInsertion) and cleared the
+  preview, guides, locks, auto-scroll and pending frames.
+- Distinctions:
+  - the page sheet (also an empty project) is a valid root area;
+  - a Free container gets the Free path;
+  - a Flow/Flex/Grid container gets the existing path;
+  - a structurally invalid destination keeps its existing outcome:
+    insertNode refuses, nothing is inserted, and there is no search for
+    another destination (Free: the red preview);
+  - outside every target → nothing.
+Verification:
+- Released over the Inspector (outside the Canvas, after first showing a
+  valid Free preview): nothing inserted; Redo still available; selection
+  kept; project status unchanged; no preview or guides.
+  PASS — newly verified (Chromium ×3, Firefox, WebKit).
+- Leaving a valid Free destination before release: the same test (it was
+  valid, then left). PASS — newly verified.
+- An invalid structural destination (List Item over a Free div): the red
+  preview, nothing inserted, no history. PASS — the BC-13.6 test, re-run
+  green.
+- No fallback, no Undo entry: asserted in the tests above.
+  PASS — newly verified.
+- An empty project: a drop on the page inserts into the root (one Undo
+  entry). PASS — newly verified (this test caught the gap described in
+  section 3).
+- Click-to-insert: unchanged (the BC-13.6 test, still on the
+  first-available 16 px grid, re-run green). PASS.
+- Releasing on the Workspace's grey area beside the page sheet: the same
+  code path as the Inspector case (no over, not on the sheet).
+  UNVERIFIED in the browser specifically. Code-level: identical branch.
+
+
+5. PREVIOUS FREE INSERTION-ORDER BEHAVIOR
+-----------------------------------------
+- resolveDropZone over a hovered Free child (a leaf): its upper half →
+  "before", lower half → "after"; resolveInsertionParent → the child's
+  parent with { referenceId, placement }.
+- insertNode then spliced the new node before/after that sibling, which
+  decided the paint order.
+
+
+6. D2 IMPLEMENTATION AND VERIFICATION
+-------------------------------------
+Implementation:
+- After the D1 check: parentId = resolveInsertionParent(current, target,
+  zone).
+- If the session has a placement and parentId is that container (or an
+  ancestor of it, the lagging-rect case): insert(type, container,
+  "inside", geometry). The "inside" zone resolves to the container with no
+  position, so insertNode appends.
+- Else, if parentId is a Free container: insert(type, parentId, "inside"),
+  i.e. appended (first-available geometry) — the rotated/scaled case, or an
+  invalid child that insertNode refuses anyway.
+- The hovered sibling still decides WHICH container (destination
+  detection) and acts as a snap target; it no longer decides the index.
+Verification (Chromium ×3, Firefox, WebKit; PASS — newly verified):
+- Dropped over a sibling's upper half (formerly "before") and lower half
+  (formerly "after"): appended last, the existing order
+  [first, topper, second, marg] unchanged.
+- Overlapping a plain sibling: the new element is hit-tested on top
+  (default stacking).
+- Undo restores the previous child order; one entry per drop.
+- Structure panel: rows in document order, the new element after the
+  existing ones and selected (Canvas and Structure in sync).
+- Manual reordering and the Inspector stacking controls are untouched
+  code.
+
+
+7. AUTHORED Z-INDEX PRESERVATION
+--------------------------------
+- Nothing in the insertion path reads or writes position.zIndex. The new
+  node gets the factory defaults only.
+- [VERIFIED e2e] Dropped over a sibling with position.zIndex 5:
+  - that sibling's computed z-index stays 5;
+  - the new element's is "auto";
+  - the sibling still wins the hit test (authored stacking beats document
+    order, as in Preview/Export).
+- No editor-only stacking.
+
+
+8. SPECIALIZED STRUCTURAL RESTRICTIONS AND EXCEPTIONS
+-----------------------------------------------------
+- Appending still goes through insertElement → insertNode
+  (canParentAcceptChild) → withPaginationInvariants. A child the
+  container can't hold is refused, never inserted elsewhere (the List Item
+  test).
+- Free mode requires a container that can contain children
+  (convertToFreeLayout); specialized closed containers (ul/ol/select/
+  table/tr…) accept only their allowed children, wherever appended.
+- Pagination invariants are normalized after every insert (existing).
+- Exceptions to plain append: none found. No new restriction was added.
+- [ASSUMPTION] Required-order components (e.g. table sections) as Free
+  containers: not authored in practice (no Free-layout UI for them was
+  found); if appending violated an order, insertNode's existing rules
+  apply, unchanged.
+
+
+9. NON-FREE INSERTION COMPATIBILITY
+-----------------------------------
+- Flow/Flex/Grid drops keep before/after/inside (the final branch is the
+  previous call).
+- [VERIFIED]
+  - the BC-13.6 Free→Flow and Free→Flex→Grid tests are green;
+  - the resource-panel-scrolling "drag inserts exactly what click
+    inserts" tests (2 sections) are green. They drop on the page sheet
+    below the content, so they also exercise the new root-area rule;
+  - Structure keyboard/Canvas-drag spec green (29/29 with it).
+- Click-insert, paste, duplicate: their code (handleActivateCard →
+  insert(type); the store's paste/duplicate) is untouched. PASS — the
+  previous evidence reused, plus the click test re-run.
+
+
+10. UNDO/REDO GEOMETRY, IDENTITY AND ORDERING (Requirement A)
+-------------------------------------------------------------
+PASS — newly verified (e2e, Chromium ×3 / Firefox / WebKit):
+- a Basic Card (a component subtree) dropped into a Free container;
+- appended last; one Undo entry; Undo removes the card AND every
+  descendant;
+- Redo restores the same child order, the same descendant ids (identity)
+  and the same left/top/width/height (no snapping recalculated);
+- also: Paragraph Undo/Redo left/top (BC-13.6 test, re-run).
+
+
+11. NESTED AUTO-SCROLL (Requirement B)
+--------------------------------------
+PASS — newly verified (Chromium ×3, Firefox, WebKit):
+- the scroller is a Flow container with authored overflow:auto whose
+  content overflows downwards; the Free container is inside it;
+- a stationary pointer in the edge band → the INNER scroller scrolls, the
+  Workspace doesn't (innermost priority);
+- it stops once the Free container's far edge is in view (reach);
+- the preview stays contained;
+- the drop equals the last preview;
+- Escape mid-scroll stops scrolling at once and inserts nothing;
+- authored overflow is untouched.
+Limitations found (pre-existing drop-target rule, not changed):
+- dnd-kit's pointerWithin ranks overlapping droppables by corner
+  distance. A Free container WIDER than its scroller (the horizontal
+  overflow case) always loses to the scroller, so it can't be the drop
+  target at all; the existing rule then targets the scroller (Flow).
+- The container's top 25% band means "before" (parent).
+- Nested Free containers are clamped to their scroller's content size, so
+  the "a hidden target revealed by the scroll snaps" step could only be
+  shown for the Workspace (the BC-13.6 test, re-run green). For a nested
+  scroller it is UNVERIFIED as a browser step; it is the same refresh code
+  (unit-verified below).
+
+
+12. DYNAMIC TARGET INVALIDATION (Requirement C)
+-----------------------------------------------
+PASS — newly verified through the INSERTION session (unit, jsdom with
+measured rects):
+- a snapped-to target MOVES → its axis lock is released (no stale snap,
+  no guide), the other axis's lock is kept, and the moved edge is
+  snappable in the same gesture;
+- a target becomes HIDDEN (a document change) → it is no longer a target;
+- a target becomes completely CLIPPED (an ancestor narrows; a window
+  resize) → it is no longer a target;
+- a target becomes VISIBLE through scrolling (the scroll-signature
+  refresh after the throttle) → snappable;
+- a target is DELETED → the lock is released, the gesture continues, and
+  a placement is still produced.
+PASS — browser evidence reused: "a target revealed by auto-scroll snaps"
+(BC-13.6 Workspace test, re-run green).
+Shared utilities (snapReferencesChanged, the collector, the engine) are
+unchanged: PASS — BC-13.5/13.5.1 evidence reused.
+
+
+13. DESTINATION SWITCHING AND DELETION (Requirements D, E)
+----------------------------------------------------------
+D — PASS — newly verified (e2e ×3 browsers):
+- Free → Flow (the preview goes) → back to Free (a fresh preview) →
+  outside (gone) → re-entered (back) → the drop equals the last preview;
+- plus the BC-13.6 Free → Free2 (new coordinates and containment) and
+  Free → Flex → Grid tests, re-run green. Previous-context locks and
+  guides are cleared on every switch (unit: Free→Flow clears guides and
+  preview).
+E — PASS — newly verified (unit). Policy chosen: deleting the active
+destination ENDS THE WHOLE GESTURE (interrupt):
+- the preview goes;
+- dnd-kit is cancelled through its own Escape path;
+- finish reports interrupted, so EditorApp inserts nothing anywhere;
+- nothing is recreated.
+Rationale: no silent insertion into an unrelated container. In practice
+such a deletion comes from a recognized command (Delete), which already
+interrupts first (BC-13.6 e2e).
+
+
+14. PROJECT SWITCHING AND STALE-CALLBACK PROTECTION (Requirement F)
+-------------------------------------------------------------------
+PASS — previous evidence reused (the BC-13.6 unit test "a window blur,
+entering Preview, or a project switch interrupts it", re-run green here):
+- replaceDocument → the session interrupts: preview/guides cleared,
+  frame cancelled (auto-scroll is in that loop), listeners removed;
+- finish → interrupted → EditorApp returns before any insert, so nothing
+  goes into the new project;
+- the session never writes the document, so the outgoing document can't
+  be mutated by the gesture;
+- a frame queued before cancellation never publishes (BC-13.6 unit).
+Page switching: NOT APPLICABLE (no multi-page documents). Future
+integration point: a page-switch command calls
+interruptActiveInteraction() (the session is registered there), the same
+as replaceDocument.
+
+
+15. POINTER ANCHOR CONVENTION (Requirement G)
+---------------------------------------------
+Implemented (BC-13.6, unchanged):
+- the pointer keeps the same RELATIVE spot of the component box that it
+  held on the Resource Panel card (hotspot = the pointer's fractional
+  position in the card at drag start, clamped 0..1; 0.5/0.5 fallback);
+- local position = pointer − the current container origin − hotspot ×
+  size − margin, clamped by containment, then snapped.
+Verified:
+- consistent positioning and stable entry (unit: exact position for a
+  0.25 hotspot; e2e: the preview follows the pointer 1:1);
+- nested containers: correct conversion (the nested-scroller test: the
+  drop equals the preview in a container inside a scroller);
+- no drift during scrolling (the BC-13.6 Workspace auto-scroll test:
+  under the pointer after scrolling; the origin is re-measured every
+  frame);
+- final geometry at release (unit: the final pointer processed; e2e:
+  inserted = last preview, everywhere).
+PASS — newly verified + previous evidence reused. No defect found; the
+convention is unchanged.
+
+
+16. MARGIN EXCLUSION — DECISION 25 (Requirement H)
+--------------------------------------------------
+PASS — newly verified (e2e, Chromium/Firefox/WebKit):
+- the target has margin-left 20;
+- the preview's left edge 3 px from the target's RENDERED border-box
+  left → snaps, with an achieved guide on that edge;
+- 3 px from the MARGIN edge (20 px further left) → no snap (the preview
+  stays where the pointer put it).
+- Equal-spacing gaps use the same measured border boxes (the shared
+  collector; BC-13.3 unit evidence reused; insertion equal spacing unit
+  test, BC-13.6).
+- No insertion-specific coordinate workaround: the collector's
+  getBoundingClientRect border boxes; the new component's own margin is
+  only its visual offset.
+- Fixture note: two attempts first hit genuine coincidences (a sibling's
+  edge, then its centre, 3 px away); the fixture was moved so no other
+  line is near.
+
+
+17. LARGE-PROJECT PERFORMANCE (Requirement I)
+---------------------------------------------
+PASS — previous evidence reused (BC-13.6 profiling, Chromium, a 1,000-child
+Free container). BC-13.6.1 changed only drop-time logic, nothing per
+frame:
+- no committed-document mutation while previewing (the store document is
+  untouched; Undo stays disabled);
+- no document-level updates (DocumentNodeRenderer 0 ms);
+- targets are not rebuilt per pointer event (only on destination change,
+  a throttled scroll, a document change, a resize, or a referenced
+  target changing);
+- no component subtree is mounted (an outline only);
+- no extra full-Canvas re-renders: the paragraph re-renders seen are
+  dnd-kit's own `over` changes — identical with the session
+  disconnected (883 vs 724 ms);
+- the session's own cost ≈4 ms per frame (engine ≈2 ms, equal spacing
+  ≈0.4 ms/frame); rendering dominates (P1).
+
+
+18. EXACT FOCUSED TEST COMMANDS AND RESULTS
+-------------------------------------------
+1. npx vitest run src/features/canvas/utils/freeInsertionSession.test.ts
+   src/features/editor/hooks/useInsertElement.test.ts
+   src/features/editor/components/EditorApp.test.tsx
+   src/features/editor/utils/resolveDragEndInsertion.test.ts
+   → 4 files, 80 tests passed
+   (freeInsertionSession 19 = 14 + 5 new; the deletion test changed to
+   the new policy)
+2. npx playwright test e2e/free-insertion-snapping.spec.ts
+   --project=chromium --repeat-each=3 → 51 passed (17 tests; 7 new)
+3. npx playwright test -c <temporary Firefox+WebKit config, deleted>
+   e2e/free-insertion-snapping.spec.ts → 33 passed, 1 failed (WebKit:
+   the margin test's first point was in the container's "after" band, a
+   fixture issue) → fixed → the margins test re-run on Firefox+WebKit 2/2
+   and Chromium 1/1
+4. npx playwright test e2e/resource-panel-scrolling.spec.ts
+   e2e/structure-keyboard-reorder.spec.ts --project=chromium
+   → 29 passed
+   Why: the drop handler changed (Flow drop vs click equality; Canvas
+   move drags share it)
+5. Temporary probes (deleted): over/zone logging for the empty-project,
+   switching and nested cases (they found the empty-page gap and the
+   zone/ranking facts).
+6. npx tsc --noEmit -p . → 0 errors
+7. npx eslint <the 4 changed files> → clean
+8. Prettier: none of the 4 files was Prettier-clean at HEAD; none
+   reformatted.
+First-run failures during development and causes:
+- the empty project (a real gap → fixed);
+- the drop-animation overlay on the hit-tests (polling);
+- points in the container's before/after bands;
+- coincidental snap lines in the margin fixture;
+- nested-container clamping (the test redesigned).
+Not run:
+- the full unit/browser suites;
+- the 67 BC-13.6 Chromium tests beyond those listed;
+- the BC-13.5 lifecycle specs (unchanged code);
+- Electron (no Electron-specific path);
+- a build.
+
+
+19. PREVIOUS EVIDENCE REUSED
+----------------------------
+- BC-13.6: profiling (17); the project-switch/Preview/blur interrupt unit
+  test; the revealed-target Workspace auto-scroll, invalid List Item,
+  Free→Flex→Grid, Free→Free2, Escape, Delete-interrupt and click-insert
+  e2e tests (in the same spec, re-run here).
+- BC-13.5/13.5.1: shared invalidation helper, auto-scroll planner and
+  priority, the command registry.
+- BC-13.2/13.3: engine, equal spacing, the collector's border-box
+  measurement.
+
+
+20. REMAINING LIMITATIONS AND UNRESOLVED DEFECTS
+------------------------------------------------
+- Pre-existing dnd-kit drop-target ranking (corner distance): a Free
+  container that fills or exceeds an overlapping parent/scroller can't be
+  targeted; the parent receives the drop by the existing rule.
+- The container's top/bottom 25% bands target the parent (the existing
+  zone rule), so a Free container's edge bands show no Free preview.
+- Not verified in the browser:
+  - a drop on the grey Workspace area beside the sheet (same code path
+    as the verified Inspector case);
+  - "a target revealed by scrolling" in a NESTED scroller (unit-verified
+    refresh; Workspace browser-verified);
+  - touch/pen (not simulated).
+- From BC-13.6, unchanged: the preview shows the stored default size;
+  rotated/scaled Free containers keep first-available geometry (now
+  appended).
+- P1 and C1 are still open.
+Unresolved defects: none.
+
+
+21. FINAL RECOMMENDATION
+------------------------
+READY FOR QA.
+Git working tree:
+- M: e2e/free-insertion-snapping.spec.ts, freeInsertionSession.ts and its
+  test, EditorApp.tsx;
+- ??: this report.
+Nothing staged, committed or pushed. Do not proceed to BC-13.7 before QA.

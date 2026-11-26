@@ -280,9 +280,11 @@ export function startFreeInsertion(options: FreeInsertionStart): void {
     }
     if (next.document !== previous.document && session.destination) {
       if (!findNodeById(next.document, session.destination.containerId)) {
-        // The destination was deleted: no preview, nothing can be inserted there.
-        session.destination = null;
-        session.placement = null;
+        // BC-13.6.1: the destination was deleted (or replaced) mid-drag — the
+        // whole gesture ends, nothing is inserted anywhere (never into a
+        // fallback container), the container is not recreated.
+        interrupt();
+        return;
       } else {
         session.destination.dirty = true;
         session.destination.lastRefresh = 0;
@@ -426,16 +428,17 @@ function endSession(session: Session) {
 /**
  * The drop: processes the final pointer position once more, then ends the
  * session. Returns the placement for the destination (or null: no Free
- * preview, or the destination can't accept it), and whether the drag was
- * interrupted by a command (then nothing may be inserted at all).
+ * preview, or the destination can't accept it), whether the drag was
+ * interrupted by a command (then nothing may be inserted at all), and the
+ * final pointer position.
  */
-export function finishFreeInsertion(): { placement: FreeInsertionPlacement | null; interrupted: boolean } {
+export function finishFreeInsertion(): { placement: FreeInsertionPlacement | null; interrupted: boolean; pointer: { x: number; y: number } | null } {
   const session = current;
-  if (!session) return { placement: null, interrupted: interruptedDrag };
+  if (!session) return { placement: null, interrupted: interruptedDrag, pointer: null };
   if (session.frameId !== null) cancelAnimationFrame(session.frameId);
   session.frameId = null;
   if (session.destination && session.destination.containerEl.isConnected) computeFrame(session, performance.now(), true);
-  const result = { placement: session.placement, interrupted: session.interrupted };
+  const result = { placement: session.placement, interrupted: session.interrupted, pointer: { ...session.pointer } };
   endSession(session);
   return result;
 }

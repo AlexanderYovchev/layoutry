@@ -192,15 +192,115 @@ describe("freeInsertionSession (BC-13.6)", () => {
     expect(preview()).toBeNull();
   });
 
-  it("the destination deleted mid-drag: the preview goes, nothing can be inserted there", () => {
+  it("the destination deleted mid-drag ends the whole gesture (BC-13.6.1): preview gone, dnd-kit cancelled, nothing inserted anywhere", () => {
     setup();
     begin();
     setFreeInsertionDestination("free");
     pointer(200, 200);
+    const escapes = vi.fn();
+    document.addEventListener("keydown", (event) => event.code === "Escape" && escapes());
     useEditorStore.setState((state) => ({ document: { ...state.document, children: state.document.children!.filter((c) => c.id !== "free") } }));
     flush();
     expect(preview()).toBeNull();
-    expect(finishFreeInsertion().placement).toBeNull();
+    expect(escapes).toHaveBeenCalledTimes(1);
+    expect(finishFreeInsertion()).toMatchObject({ placement: null, interrupted: true });
+  });
+
+  describe("dynamic target invalidation through the insertion session (BC-13.6.1)", () => {
+    /** Edits t's document node (a document change refreshes targets on the next frame). */
+    const editTarget = (patch: Partial<EditorElementNode>) =>
+      useEditorStore.setState((state) => ({
+        document: { ...state.document, children: state.document.children!.map((c) => (c.id !== "free" ? c : { ...c, children: c.children!.map((t) => (t.id === "t" ? { ...t, ...patch } : t)) })) },
+      }));
+
+    it("a snapped-to target that MOVES releases that lock; the new position is snappable without restarting the gesture; the other axis keeps its lock", () => {
+      setup([
+        { id: "t", tag: "div", freeLayout: { x: 300, y: 40, width: 100, height: 50 } },
+        { id: "floor", tag: "div", freeLayout: { x: 20, y: 400, width: 60, height: 40 } },
+      ]);
+      begin({ x: 0, y: 0 });
+      setFreeInsertionDestination("free");
+      pointer(298, 318); // x: left 298 → 300 (t); y: bottom 398 → 400 (floor's top)
+      expect(preview()?.rect).toMatchObject({ x: 300, y: 320 });
+      vi.spyOn(document.querySelector('[data-node-id="t"]')!, "getBoundingClientRect").mockImplementation(() => ({ left: 330, top: 40, right: 430, bottom: 90, width: 100, height: 50, x: 330, y: 40, toJSON: () => ({}) }));
+      pointer(298, 319);
+      expect(preview()?.rect).toMatchObject({ x: 298, y: 320 }); // x lock released, y lock kept
+      expect(guides()?.vertical).toBeUndefined();
+      pointer(328, 319);
+      expect(preview()?.rect.x).toBe(330); // the moved edge snaps
+    });
+
+    it("a target that becomes HIDDEN stops being a target (no stale guide)", () => {
+      setup();
+      begin({ x: 0, y: 0 });
+      setFreeInsertionDestination("free");
+      pointer(298, 200);
+      expect(preview()?.rect.x).toBe(300);
+      editTarget({ display: { display: "none" } });
+      pointer(298, 201);
+      expect(preview()?.rect.x).toBe(298);
+      expect(guides()?.vertical).toBeUndefined();
+    });
+
+    it("a target that becomes completely CLIPPED (an ancestor narrowed, window resize) stops being a target", () => {
+      const free = setup();
+      const clip = free.parentElement!; // [data-document-surface]
+      clip.style.overflowX = "hidden";
+      clip.style.overflowY = "hidden";
+      const clipRect = stubRect(clip, { left: 0, top: 0, right: 1000, bottom: 1000 });
+      Object.defineProperty(clip, "clientWidth", { value: 1000, configurable: true });
+      Object.defineProperty(clip, "clientHeight", { value: 1000, configurable: true });
+      begin({ x: 0, y: 0 });
+      setFreeInsertionDestination("free");
+      pointer(298, 200);
+      expect(preview()?.rect.x).toBe(300);
+      clipRect.mockImplementation(() => ({ left: 0, top: 0, right: 250, bottom: 1000, width: 250, height: 1000, x: 0, y: 0, toJSON: () => ({}) }));
+      Object.defineProperty(clip, "clientWidth", { value: 250, configurable: true });
+      window.dispatchEvent(new Event("resize"));
+      flush();
+      pointer(298, 201);
+      expect(preview()?.rect.x).toBe(298);
+    });
+
+    it("a target that becomes VISIBLE through scrolling becomes snappable (scroll-signature refresh)", () => {
+      const free = setup();
+      const clip = free.parentElement!;
+      clip.style.overflowX = "auto";
+      clip.style.overflowY = "auto";
+      stubRect(clip, { left: 0, top: 0, right: 250, bottom: 1000 });
+      Object.defineProperty(clip, "clientWidth", { value: 250, configurable: true });
+      Object.defineProperty(clip, "clientHeight", { value: 1000, configurable: true });
+      let now = 1000;
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+      begin({ x: 0, y: 0 });
+      setFreeInsertionDestination("free"); // t (300..400) is outside the 250px-wide scroller: not a target
+      pointer(298, 200);
+      expect(preview()?.rect.x).toBe(298);
+      // Scrolled right 100px: the container (and t) move left on screen; t is now visible.
+      Object.defineProperty(clip, "scrollLeft", { value: 100, configurable: true });
+      vi.spyOn(free, "getBoundingClientRect").mockImplementation(() => ({ left: -100, top: 0, right: 600, bottom: 500, width: 700, height: 500, x: -100, y: 0, toJSON: () => ({}) }));
+      vi.spyOn(document.querySelector('[data-node-id="t"]')!, "getBoundingClientRect").mockImplementation(() => ({ left: 200, top: 40, right: 300, bottom: 90, width: 100, height: 50, x: 200, y: 40, toJSON: () => ({}) }));
+      window.dispatchEvent(new Event("scroll"));
+      now += 300; // past the scroll-refresh throttle
+      flush();
+      pointer(198, 200); // local left 298 → snaps to t's left (300)
+      expect(preview()?.rect.x).toBe(300);
+    });
+
+    it("a target that is DELETED stops being a target; the gesture continues", () => {
+      setup();
+      begin({ x: 0, y: 0 });
+      setFreeInsertionDestination("free");
+      pointer(298, 200);
+      expect(preview()?.rect.x).toBe(300);
+      useEditorStore.setState((state) => ({ document: { ...state.document, children: state.document.children!.map((c) => (c.id !== "free" ? c : { ...c, children: [] })) } }));
+      document.querySelector('[data-node-id="t"]')!.remove();
+      flush();
+      pointer(298, 201);
+      expect(preview()?.rect.x).toBe(298);
+      expect(guides()?.vertical).toBeUndefined();
+      expect(finishFreeInsertion().placement).not.toBeNull();
+    });
   });
 
   it("a recognized command interrupts it first: the dnd-kit drag is cancelled through Escape, and the drop (if any) inserts nothing", () => {
@@ -213,7 +313,7 @@ describe("freeInsertionSession (BC-13.6)", () => {
     expect(interruptActiveInteraction()).toBe(true);
     expect(escapes).toHaveBeenCalledTimes(1);
     expect(preview()).toBeNull();
-    expect(finishFreeInsertion()).toEqual({ placement: null, interrupted: true });
+    expect(finishFreeInsertion()).toMatchObject({ placement: null, interrupted: true });
   });
 
   it("a window blur, entering Preview, or a project switch interrupts it too", () => {
@@ -239,7 +339,7 @@ describe("freeInsertionSession (BC-13.6)", () => {
     flush();
     expect(preview()).toBeNull();
     expect(guides()).toBeNull();
-    expect(finishFreeInsertion()).toEqual({ placement: null, interrupted: false });
+    expect(finishFreeInsertion()).toMatchObject({ placement: null, interrupted: false });
   });
 
   it("unrelated keys don't affect it; the Snap preference is untouched", () => {

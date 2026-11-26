@@ -40,7 +40,8 @@ import { useMoveElement } from "@/features/editor/hooks/useMoveElement";
 import { resolveDragEndInsertion } from "@/features/editor/utils/resolveDragEndInsertion";
 import { resolveDragEndMove } from "@/features/editor/utils/resolveDragEndMove";
 import { resolveInsertionParent } from "@/features/editor/utils/resolveInsertionParent";
-import { findAncestorChain } from "@/features/editor/utils/findNodeById";
+import { findAncestorChain, findNodeById } from "@/features/editor/utils/findNodeById";
+import { getLayoutMode } from "@/features/editor/types/layout";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { swallowReleaseClick } from "@/lib/swallowReleaseClick";
 
@@ -95,6 +96,14 @@ const AUTO_SCROLL_OPTIONS = {
  * Escape) keeps the selection — the same claim BC-12.3.1 added for
  * Structure drags. Module-level, so the same function is added and removed.
  */
+/** Whether a client point is on the page sheet (the document surface) — the root's drop area. */
+function isOverDocumentSurface(point: { x: number; y: number }): boolean {
+  const surface = window.document.querySelector("[data-document-surface]");
+  if (!surface) return false;
+  const rect = surface.getBoundingClientRect();
+  return point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom;
+}
+
 /** Whether ancestorId is an ancestor of nodeId. */
 function isAncestorOf(documentModel: EditorElementNode, ancestorId: string, nodeId: string): boolean {
   return findAncestorChain(documentModel, nodeId).some((ancestor) => ancestor.id === ancestorId);
@@ -245,7 +254,7 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
     window.removeEventListener("keydown", claimEscapeDuringDrag, true);
     setActiveDrag(null);
     // The final pointer position is processed first; an interrupted drag inserts nothing.
-    const { placement, interrupted } = finishFreeInsertion();
+    const { placement, interrupted, pointer } = finishFreeInsertion();
     if (interrupted) return;
 
     const moveRequest = resolveDragEndMove(event, documentModel);
@@ -257,21 +266,40 @@ export function EditorApp({ fileMenuCommands, project, overlays }: EditorAppProp
     const insertRequest = resolveDragEndInsertion(event, documentModel);
     if (!insertRequest) return;
 
-    // BC-13.6 (Decision 30): a drop into the Free container the preview was
-    // showing lands exactly where the preview was; any other drop keeps the
-    // existing placement.
-    const parentId = insertRequest.targetId
-      ? resolveInsertionParent(documentModel, insertRequest.targetId, insertRequest.zone, primarySelectedId).parentId
-      : null;
-    if (placement && parentId !== null && parentId !== placement.containerId && isAncestorOf(documentModel, parentId, placement.containerId)) {
-      // dnd-kit reported a coarser (ancestor) target than the Free container
-      // the preview was showing (its rects can lag the session's auto-scroll):
-      // the drop goes where the preview was.
+    // BC-13.6.1 D1 (owner decision B): a Resource Panel drop lands only on a
+    // real destination under the pointer, checked against the CURRENT
+    // document. Released outside every drop target (or on one that no longer
+    // exists), it inserts nothing — no selection- or root-based fallback.
+    // (Click-insert, paste and duplicate keep their own fallback; they don't
+    // come through here.)
+    const current = useEditorStore.getState().document;
+    // The page itself is a drop area: dnd-kit reports no droppable over an
+    // EMPTY page (its root has no height to hit), so a release on the page
+    // sheet means the root — that is a real destination, not a fallback.
+    const targetId = insertRequest.targetId ?? (pointer && isOverDocumentSurface(pointer) ? current.id : undefined);
+    if (!targetId || !findNodeById(current, targetId)) return;
+    const zone = insertRequest.targetId ? insertRequest.zone : "inside";
+    const parentId = resolveInsertionParent(current, targetId, zone, primarySelectedId).parentId;
+
+    // BC-13.6 (Decision 30) + BC-13.6.1 D2 (owner decision A): into a Free
+    // container the component lands where the preview was and is APPENDED to
+    // the container's children (on top in default stacking), whichever
+    // sibling was hovered. dnd-kit may report a coarser (ancestor) target
+    // than the previewed container (its rects can lag the session's
+    // auto-scroll): the drop still goes where the preview was.
+    if (placement && (parentId === placement.containerId || isAncestorOf(current, parentId, placement.containerId))) {
       insert(insertRequest.elementType, placement.containerId, "inside", placement.geometry);
       return;
     }
-    const freeGeometry = placement && parentId === placement.containerId ? placement.geometry : undefined;
-    insert(insertRequest.elementType, insertRequest.targetId, insertRequest.zone, freeGeometry);
+    const parent = findNodeById(current, parentId);
+    if (parent && getLayoutMode(parent) === "free") {
+      // A Free destination without a pointer placement (rotated/scaled, or one
+      // that can't hold this component): appended too; insertNode's structural
+      // check still refuses an invalid child.
+      insert(insertRequest.elementType, parentId, "inside");
+      return;
+    }
+    insert(insertRequest.elementType, targetId, zone);
   }
 
   function handleActivateCard(card: CatalogCardPlaceholder) {
