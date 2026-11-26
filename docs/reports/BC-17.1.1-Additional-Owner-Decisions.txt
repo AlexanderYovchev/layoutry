@@ -1,0 +1,259 @@
+BC-17.1.1 — Additional Owner Decisions
+Report 5 of 6
+======================================
+Date: 2026-11-26.
+O1–O16 are closed and are not reopened here. Only genuinely unresolved
+decisions with a user-facing, architectural, data, security,
+accessibility, scope or sequencing impact are listed.
+
+Count: 11 decisions (N1–N11).
+- Blocking BC-17.2: N9 only.
+- Blocking later checkpoints: N1 (17.13), N2 (17.14 tabs part), N3–N5
+  (17.21), N8 (17.23), N10 (17.23 ordering, and the BC-13.7 step before
+  17.2).
+
+Format per decision: question, why it is needed, options, user-facing
+consequences, technical consequences, pros/cons, recommendation,
+blocking, earliest checkpoint.
+
+
+N1 — CUSTOM PROGRESS BAR: ENTRY POINT, LABEL AND CONVERSION RULES
+Q: How does a user get a custom progress bar, and what does its internal
+   label show?
+Why: O4 requires the custom variant and conversion. The entry point and
+   the label content are product behaviour that O4 does not define.
+Options:
+ A) A "Variant: Native | Custom" switch on every Progress (conversion in
+    place), plus a "Custom Progress Bar" card.
+ B) The switch only (no new card).
+ C) A new card only (no conversion of existing progress).
+Label format (sub-question):
+ L1) None, percentage, "value / max", or custom text with {value},
+     {max}, {percent} tokens.
+ L2) Percentage only.
+User-facing:
+- A gives both discovery and conversion;
+- C never converts existing designs.
+Technical:
+- A/B need the conversion command (designed: Report 1 §3.9);
+- C still needs the variant model.
+- The token label is a typed template (escaped), not free markup.
+Pros/cons:
+- A: most complete, a slightly larger UI;
+- B: minimal UI, less discoverable;
+- C: simplest, but no path for existing projects.
+Recommendation: A with L1.
+Blocking: BC-17.13. Earliest: BC-17.13 (answer before 17.12 ends).
+
+N2 — BASIC TABS SEMANTICS
+Q: Should Basic Tabs become real ARIA tabs (tablist/tab/tabpanel,
+   aria-selected, aria-controls, arrow-key navigation, roving tabindex)
+   so "selected tab" can be styled with aria-selected?
+Why: Today the tabs are deliberately not semantic [VERIFIED,
+   interactionCompositions.ts]. O10 forbids adding ARIA only for styling.
+   Styling the selected tab therefore needs either data-state or a real
+   semantic upgrade, which changes keyboard behaviour and export
+   markup.
+Options:
+ A) Keep the visual tabs; style through data-state="active"/"inactive"
+    set by the runtime.
+ B) Upgrade to the full ARIA tabs pattern (with keyboard), then style
+    through aria-selected.
+ C) A in BC-17, with B as a separate accessibility checkpoint later.
+User-facing:
+- B changes keyboard interaction and screen-reader output (better
+  accessibility);
+- A changes nothing except styling.
+Technical:
+- B extends the interaction runtime (EXPORT-1.3 contract), Preview, the
+  export markup and BC-04 behaviours;
+- it needs new roles in the accessibility infrastructure (format 3
+  fields).
+Pros/cons:
+- A: safe and small, but the tabs stay non-semantic;
+- B: correct semantics, but more scope and risk inside a styling
+  milestone.
+Recommendation: C (A now, B as a dedicated follow-up).
+Blocking: the tabs part of BC-17.14. Earliest: BC-17.14.
+
+N3 — VECTOR EDITING EXTRAS
+Q: Which of these, which O14 does not clearly imply, are in scope?
+ (a) Dragging a segment to bend it (L→C).
+ (b) Canvas handles for arc radii and rotation (instead of numeric-only
+     editing).
+ (c) "Convert to path" for rect/ellipse/polygon/starter primitives
+     (one-way; loses parametric resize and ellipse rx/ry editing).
+Why: These affect user-facing workflows and the size of the editing
+   tools. Not every design-tool feature is approved.
+Options: include each, or exclude it.
+User-facing:
+- (c) is needed to edit the anchors of a rectangle or circle at all.
+- Without it, anchors are editable only on Pen-drawn paths and polygons
+  (polygon points as anchors).
+Technical:
+- (a) small (on top of 17.20);
+- (b) moderate (arc geometry handles);
+- (c) small (pure conversion, Report 2 §3.3).
+Recommendation:
+- include (c) as an explicit, undoable command;
+- include (a);
+- exclude (b): arcs editable numerically, endpoints on the canvas.
+Blocking: BC-17.21 (c is needed in 17.20 if approved). Earliest:
+BC-17.20.
+
+N4 — ANCHOR SNAPPING (and N4b: object-level clip/mask)
+Q: Should vector anchors snap? And are object-level <clipPath>/<mask>
+   inside an SVG in scope?
+Options (N4):
+ A) No anchor snapping.
+ B) Snap to other anchors and to object bounds in the same SVG, with
+    the Snap preference and Alt bypass.
+ C) B plus a viewBox grid.
+ D) C plus the HTML BC-13 guides.
+Options (N4b):
+ X) SVG box clip/mask only (via BC-17.9).
+ Y) Object-level clipPath/mask as typed defs.
+User-facing: snapping improves precision.
+- D mixes HTML and SVG spaces; that is confusing and not recommended.
+Technical:
+- B/C reuse the snapEngine ranking with viewBox-space producers
+  (Report 2 §5);
+- Y adds def types and references.
+Recommendation: N4 = C; N4b = X (Y later on request).
+Blocking: BC-17.21. Earliest: BC-17.21.
+
+N5 — VECTOR-OBJECT CLIPBOARD AND DUPLICATION
+Q: Should users be able to copy, cut, paste and duplicate individual
+   vector objects within and between SVGs?
+Why: It does not exist today. O16 explicitly separates geometry from
+   the CSS clipboard.
+Options:
+ A) Yes: object clipboard with fresh ids, def deduplication and an offset
+    on paste into the same SVG.
+ B) Duplicate within the same SVG only.
+ C) No (whole-SVG copy only, as today).
+Recommendation: A.
+- Without it, path editing workflows (reuse a drawn shape) are
+  incomplete.
+- It interacts with the system clipboard only through Layoutry's
+  internal payload, as BC-11 does.
+Blocking: BC-17.21. Earliest: BC-17.21.
+
+N6 — COMPOUND-STATE AUTHORING UI
+Q: Should the Inspector let users author combined states (e.g. "Checked
+   + Hover", "Current + Focus-visible")?
+Why: The architecture supports them with deterministic precedence
+   (Report 1 §4). Exposing them adds UI complexity.
+Options:
+ A) Single states only in BC-17 (the model is ready).
+ B) A curated list of combinations per profile.
+ C) Free combination of any allowed atoms.
+Recommendation: B, added in BC-17.14 (when semantic states exist).
+- Until then: A.
+- Not blocking.
+Earliest: BC-17.14.
+
+N7 — ::first-line / ::first-letter
+Q: Include typographic pseudo-elements (drop caps, first-line
+   emphasis)?
+Why: They are applicable CSS (cross-engine) but were not in O7's
+   examples. Their allowed property set is restricted by CSS.
+Options:
+ A) Include in BC-17.6 with the restricted property set.
+ B) Exclude.
+Recommendation: A (small, cross-engine).
+Not blocking. Earliest: BC-17.6.
+
+N8 — PRESET STORAGE, LINKING AND MANAGEMENT
+Q1 Storage: per project, app-level library (all projects on this
+   install), or both?
+Q2 Linking: after applying a preset and editing it, does changing the
+   preset later update every element that used it (linked, like a
+   class), or is application a detached copy?
+Q3 Built-ins: are built-in presets read-only templates you duplicate to
+   edit?
+Q4 Naming: unique names per scope? Rename and delete behaviour for
+   linked uses?
+Why: O12 requires one architecture whose presets stay editable after
+   application, but it does not define these semantics. They decide
+   data format, project portability and export output.
+Options and consequences:
+- Storage:
+  - per project: portable with the file (inside format v4
+    styleAssets.presets);
+  - app-level: not in the project file, so sharing a project loses
+    presets unless they are applied as detached copies;
+  - both: the most flexible, with two stores.
+- Linking:
+  - detached: simple; export unchanged (plain per-element CSS);
+  - linked: powerful; needs override tracking per element and a rule on
+    preset deletion (detach all uses). Export can still flatten.
+Recommendation:
+- Q1 both (project presets plus an app library; "save to library"
+  copies);
+- Q2 detached in BC-17.23, with linking as a later enhancement (keeps
+  O12's "editable after application" without override tracking);
+- Q3 yes;
+- Q4 unique per scope; deleting never changes elements.
+Blocking: BC-17.23. Earliest: BC-17.23. If Q1 includes per-project
+storage, the v4 schema container is reserved in BC-17.2 (already
+planned).
+
+N9 — RELEASE AND FORMAT-VERSION POLICY DURING BC-17
+Q: Will any build made between BC-17.2 and BC-17.26 be distributed to
+   users (desktop installer, hosted web build)?
+Why: O5 allows extending v4 during unreleased development only. If an
+   intermediate build is released, every later schema addition and the
+   Pagination conversion (Report 1 §7.4) need a new format version and
+   migration step.
+Options:
+ A) No releases until BC-17 completes: v4 grows freely; one v3→v4 step.
+ B) Releases at milestones: bump the format per release that adds
+    fields (v4, v5…), each with a migration and the BC-05 save prompt.
+ C) Releases, but BC-17 fields stay behind a hidden switch until done.
+    Not recommended: files written with the switch on would be
+    unreadable elsewhere.
+Recommendation: A, or B if releases are required. Engineering supports
+   both; A is cheaper.
+Blocking: BC-17.2 (it decides whether all foundations are reserved up
+   front and how the migration is structured). Earliest: before BC-17.2.
+
+N10 — SEQUENCING: BC-13.7 CLOSURE AND BC-14 ORDER
+Q1 Close BC-13.7 (write its two reports and re-run only its targeted
+   evidence) before BC-17.2?
+Q2 Fold BC-14 Typography Presets into BC-17.23 (after BC-17.7)?
+Why: Both are owner-level milestone-ordering choices. Report 4 §1 and §5
+   give the analysis.
+Recommendation: Q1 yes; Q2 yes.
+Blocking: Q1 before BC-17.2; Q2 before BC-17.23.
+
+N11 — MOTION PREVIEW ON THE DESIGN CANVAS
+Q: The Design canvas never runs transitions (Design Safety Invariant,
+   1.15.6.14.1). Should the Inspector offer an explicit "Play" that runs
+   an element's animation or transition temporarily on the Design
+   canvas?
+Options:
+ A) Preview mode only (today's rule extended to animations).
+ B) An explicit Play in the Motion category: it runs once on that
+    element; any edit, gesture or selection change stops it; geometry
+    measurement is unaffected.
+Recommendation: B.
+- It makes motion authoring practical without breaking the invariant,
+  because nothing runs implicitly.
+Not blocking. Earliest: BC-17.11.
+
+
+ENGINEERING DECISIONS RESOLVED WITHOUT OWNER INVOLVEMENT
+(no user-facing or data-compatibility impact beyond what is approved)
+- Selector specificity equalization with :where() (Report 1 §4).
+- CSSOM rule-level versus text-chunk updates (measured in 17.3).
+- Location of the pure rule compiler (stays with the recipes).
+- Normalized path representation (absolute M/L/C/Q/A/Z; Report 2 §3).
+- Complexity limits (provisional; measured).
+- Generalizing createFreeInteraction versus a sibling vector lifecycle
+  with the same contract.
+- Escaping implementation for pseudo content.
+- Export def-id scheme.
+- Vendor-prefix table contents (governed by O15).
+- Physical rather than logical CSS properties (N/A, no direction
+  authoring).

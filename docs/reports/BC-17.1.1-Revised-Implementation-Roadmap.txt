@@ -1,0 +1,711 @@
+BC-17.1.1 — Revised Implementation Roadmap
+Report 4 of 6
+==========================================
+Date: 2026-11-26.
+HEAD: 3868436.
+Planning only. Nothing here is approved until owner QA.
+
+
+1. PREREQUISITE: BC-13.7 CLOSURE (before BC-17.2)
+--------------------------------------------------
+Facts [VERIFIED]:
+- the BC-13.7 code, unit tests and e2e/bc13-final-audit.spec.ts are
+  committed inside 3868436 (the BC-17.1 docs commit);
+- the two BC-13.7 reports were never written;
+- the working tree is clean.
+Recommended transition sequence:
+1. BC-13.7 completion checkpoint (documentation and verification only):
+   - re-run ONLY the BC-13.7 targeted evidence:
+       npx vitest run src/features/canvas/utils/resolveFreeResizeSnap.test.ts
+       npx playwright test e2e/bc13-final-audit.spec.ts --project=chromium
+     plus any engines the BC-13.7 brief requires;
+   - write BC-13.7-Final-Regression-Audit.txt and
+     BC-13-Alignment-and-Snapping-Milestone-Summary.txt;
+   - record that the code landed in 3868436;
+   - carry P1 and C1 forward as open items.
+2. Owner closes BC-13.
+3. Owner answers the blocking Report 5 decisions for BC-17.2/17.3 (N9 at
+   minimum, see Report 5).
+4. BC-17.2 starts.
+BC-13 conflicts: none in code. The O2 pipeline must keep the BC-13
+gesture paths untouched (Report 1 §3.5). The BC-13 e2e audit spec joins
+BC-17.3's regression set.
+
+
+2. DEPENDENCY ORDERING
+----------------------
+Foundations:
+  17.2 model/registry/v4
+   └─ 17.3 stylesheet pipeline
+       └─ 17.4 Inspector foundation
+           └─ 17.5 states
+               └─ 17.6 pseudo-elements
+CSS families (each needs 17.5; 17.6 where pseudo targets are used):
+  17.7 layout/size/typography/borders
+  17.8 backgrounds/patterns
+  17.9 effects/masks      (needs 17.8 for gradient masks)
+  17.10 transforms
+  17.11 motion            (needs 17.10 so transforms animate; keyframes)
+Components:
+  17.12 native forms + native Progress       (needs 17.6, 17.8, 17.11)
+  17.13 custom Progress                      (needs 17.12)
+  17.14 runtime states + interactive comps   (needs 17.5, 17.11)
+  17.15 Pagination + navigation              (needs 17.14 role groups)
+  17.16 media & embeds                       (needs 17.9, 17.10, 17.11)
+  17.17 tables, lists, remaining             (needs 17.6, 17.8)
+SVG:
+  17.19 geometry model (needs 17.2 only; may run in parallel after 17.3)
+  17.18 SVG styling    (needs 17.5, 17.8, 17.9, 17.11)
+  17.20 vector tools   (needs 17.19)
+  17.21 advanced vector (needs 17.20, 17.10)
+  17.22 SVG verification (needs 17.18–17.21)
+Presets and closure:
+  17.23 preset core + typography presets / BC-14   (needs 17.7)
+  17.24 component/state/motion presets             (needs 17.23 and the
+                                                    component checkpoints)
+  17.25 parity, persistence, performance integration
+  17.26 final audit
+Resolved concerns from the original roadmap:
+- Media before masks: media moved after effects/masks (17.16 > 17.9).
+- Progress animation acceptance before motion: native Progress (17.12)
+  now follows motion (17.11), and the animated-stripes criterion lives
+  there.
+- SVG before gradients/effects/transforms/motion: SVG styling is now
+  17.18.
+- Vector editing: five SVG checkpoints (Report 2 §10).
+- Pagination migration: 17.15, with the timing specified in Report 1
+  §7.4.
+- Typography presets: 17.23, after the unified model and typography
+  completion (17.7).
+- Clipboard: extended incrementally in every checkpoint that adds a
+  dimension (rules in 17.5, pseudo in 17.6, keyframes in 17.11, SVG
+  object clipboard in 17.21 per N5). There is no late "clipboard
+  checkpoint" that would leave earlier features uncopyable.
+- Unassigned capabilities: all are assigned (Report 3).
+Count: original 16 checkpoints (17.2–17.13 with b-splits), revised 25
+(17.2–17.26).
+Mapping (original → revised):
+- 17.2 → 17.2 + 17.3;
+- 17.2b → 17.4;
+- 17.3 → 17.5 + 17.6;
+- 17.3b → 17.11;
+- 17.4 → 17.8;
+- 17.4b → 17.7;
+- 17.5 → 17.12 + 17.13;
+- 17.6 → 17.14 + 17.15;
+- 17.7 → 17.18–17.22;
+- 17.8 → 17.16;
+- 17.9 → 17.17;
+- 17.10 → 17.9;
+- 17.10b → 17.10;
+- 17.11 → 17.23 + 17.24;
+- 17.12 → 17.25;
+- 17.13 → 17.26.
+
+
+3. TESTING POLICY (all checkpoints)
+-----------------------------------
+- Change-focused (the standing rule):
+  - an impact map per checkpoint;
+  - unit tests for every new pure function and schema;
+  - component tests for new Inspector controls;
+  - targeted Playwright specs for the new browser behaviour;
+  - reuse earlier valid evidence.
+- Engines: Chromium always. Firefox and WebKit only where the checkpoint
+  touches engine-divergent CSS (vendor parts, backdrop, masks,
+  animation, :where(), forms). Electron smoke only where the pipeline or
+  media changes.
+- Broader runs are allowed only where justified and stated:
+  - 17.3: pipeline swap — the existing Canvas/export parity unit suite
+    plus the BC-13 audit e2e spec plus one kitchen-sink screenshot
+    parity spec × 3 engines;
+  - 17.25: integration.
+  - Nowhere else is a full suite the default.
+- Every report lists: the exact commands, the reason, the area and the
+  results.
+
+
+4. CHECKPOINT SPECIFICATIONS
+----------------------------
+Fields:
+ 1 name
+ 2 objective
+ 3 prerequisites
+ 4 decisions
+ 5 CSS capabilities
+ 6 components
+ 7 architecture
+ 8 exclusions
+ 9 risks
+10 testing
+11 acceptance
+12 reports
+13 open decisions
+
+BC-17.2 — Style-Rule Model, Capability Registry & Project Format v4
+ 2 The typed data foundation for every later checkpoint. No visible
+   change.
+ 3 BC-13.7 closed. N9 answered.
+ 4 O1, O5, O11 (identity), O13 (extensibility).
+ 5 None user-visible. Schema enums for all planned targets, states and
+   groups (Report 1 §7.2).
+ 6 All (data only).
+ 7 - StyleRule types and Zod;
+   - styleAssets container;
+   - the registry generated from elementCapabilities plus profile
+     resolution;
+   - integrity rules (unique (target, state), ids);
+   - cloneNodeWithFreshIds for rule ids;
+   - v3→v4 identity migration and version bump;
+   - frozen v3 fixtures loading unchanged.
+ 8 No rendering, no Inspector UI, no Pagination conversion (17.15).
+ 9 - Schema mistakes become persistent: mitigated by enum review in this
+     checkpoint's report.
+   - Older builds refuse v4 (intended).
+10 Unit: schema, migration, integrity, clone, registry profiles. The
+   existing project fixtures load tests (targeted).
+11 - Every v1–v3 fixture loads and saves as v4 with identical documents
+     apart from the version.
+   - Invalid rules are rejected with precise error paths.
+   - The registry returns the expected profile for all 82 components.
+12 BC-17.2 report + changelog.
+13 N9 (release policy) must be known.
+
+BC-17.3 — Shared Stylesheet Pipeline & Parity/Performance Baseline
+ 2 Move permanent authored CSS (and default presentations) from inline
+   styles and Tailwind default classes to one generated, scoped
+   stylesheet for Design, Preview and Export (O2).
+ 3 17.2.
+ 4 O2, O15 (vendor printer table, :where() check).
+ 5 Existing base CSS only, re-routed. Defaults moved into the sheet.
+ 6 All 26 document-element components (34 style= sites classified).
+ 7 - Rule compiler, StyleSheetHost, per-node IR cache, incremental
+     updates;
+   - the scope prefix;
+   - the gesture inline layer for BC-13 Free drag/resize,
+     gradient-stop drag and SVG gestures;
+   - Design safety gating of motion (C-4);
+   - the baseline perf probe captured BEFORE the switch.
+ 8 No new properties, states or UI.
+ 9 - Cascade changes (default classes vs rules, R-2).
+   - Stale rules.
+   - Gesture regressions.
+   - Editor-chrome leakage.
+   - Specificity differences in user className interplay.
+10 - Existing Canvas/export parity unit tests.
+   - A new incremental-vs-full-rebuild property test.
+   - BC-13 audit e2e plus the BC-13.5 lifecycle specs (targeted).
+   - Kitchen-sink screenshot and computed-style parity × 3 engines plus
+     an Electron smoke.
+   - The 1,000-element perf probe before and after.
+11 - Computed styles identical for the existing fixtures (Design,
+     Preview and Export); screenshots within tolerance.
+   - No gesture regression (frame time median/p95 within noise of the
+     baseline).
+   - No authored CSS remains inline outside the gesture layer.
+   - Gesture styling never reaches the saved document or the export.
+12 Report with the perf baseline table (engine, geometry, React,
+   recalculation, layout/paint, total).
+13 None.
+
+BC-17.4 — Inspector Foundation
+ 2 The unified Inspector frame (O3) on the existing sections.
+ 3 17.3.
+ 4 O3, O11.
+ 5 None new. Existing sections re-homed into the 11 categories.
+ 6 All.
+ 7 - Target/state selector components (target list = Element only until
+     17.5/17.6 add more);
+   - property search;
+   - lazy category mounting;
+   - remembered expansion (per-viewer preference);
+   - modified indicators per category;
+   - reset levels;
+   - help;
+   - placement of Protection, Component properties, Interactions and
+     Accessibility (Report 1 §6);
+   - the multi-selection intersection plumbing.
+ 8 No new CSS properties.
+ 9 Lost controls; a performance regression from the extra frame;
+   keyboard focus order.
+10 Component tests for the frame, search and lazy mounting. Targeted e2e
+   on navigation. Inspector render timing at 1,000 elements.
+11 - Every pre-existing control is reachable.
+   - Search finds every field.
+   - No irrelevant sections.
+   - Bulk (BC-10) is unchanged.
+   - Keyboard accessible.
+   - Inspector update time not worse than baseline.
+12 Report.
+13 None.
+
+BC-17.5 — Interaction States, Ancestor States & Precedence
+ 2 Author state styles for every applicable component, preview them with
+   forced state, and ship deterministic precedence.
+ 3 17.4.
+ 4 O1, O2, O3, O6, O11, O16 (rules in the clipboard).
+ 5 The state atoms hover, focus, focus-visible, focus-within, active,
+   checked, indeterminate, invalid, required, read-only,
+   placeholder-shown, disabled, open([open]), current(aria-current) —
+   for every existing group per registry, plus the outline group
+   (width/style/colour/offset), pulled forward from 17.7 so focus rings
+   can be authored. Ancestor states (component,
+   parent, nearestOfProfile).
+ 6 Buttons, links, inputs, textarea, select, checkbox, radio,
+   containers, list items, cards and alert containers (as ancestors),
+   images (parent hover).
+ 7 - :where() selector generation;
+   - the emission order (Report 1 §4);
+   - forced-state attribute (Design only);
+   - inactive-rule reporting for orphaned ancestor rules;
+   - the BC-11 clipboard per (target, state);
+   - BC-10 multi-select per (target, state);
+   - reset per state.
+ 8 Runtime data-state (17.14). Pseudo-elements (17.6). Compound-state UI
+   (N6).
+ 9 Precedence bugs; forced state leaking into export; disabled/invalid
+   interplay; focus-ring removal.
+10 - Unit: selector generation and precedence ordering.
+   - Clipboard and multi-select tests.
+   - Browser: hover/focus-visible/disabled/checked × 3 engines on a
+     small fixture.
+   - An export leak check.
+11 - Each state renders identically in Design (forced), Preview (real)
+     and Export.
+   - Disabled beats hover.
+   - Export contains no data-ly-force-state.
+   - Incompatible pastes are reported.
+   - One undo per edit.
+12 Report.
+13 N6 (non-blocking).
+
+BC-17.6 — Pseudo-Elements & Generated Content
+ 2 ::before/::after/::placeholder/::marker/::selection/::backdrop
+   targets (O7).
+ 3 17.5.
+ 4 O7, O15, O16.
+ 5 content (none/glyph/text), every group applicable per pseudo target,
+   the placeholder colour/typography, the marker colour/size/content,
+   selection colours, and the dialog backdrop colour/filters.
+ 6 All text-bearing elements, containers, buttons, links, inputs/
+   textarea, li, ul/ol, dialog-based components (modal, drawer).
+ 7 - The escaping function;
+   - the glyph allow-list;
+   - the accessibility guidance;
+   - pseudo targets in the registry;
+   - Inspector content editor.
+ 8 ::file-selector-button (no file input, O13). ::first-line/
+   ::first-letter: unassigned until owner interest; listed in Report 3
+   as "missing — not planned" pending owner input, see N7.
+ 9 Escaping bugs; content in export; accessibility expectations.
+10 - Unit: escaping (fuzz), serialization.
+   - Browser: before/after rendering × 3 engines; placeholder/marker/
+     selection/backdrop × engines that differ.
+11 Every pseudo target renders on all surfaces; the escaping fuzz has no
+   breakout; the Inspector warns about announced content.
+12 Report.
+13 N7 (non-blocking).
+
+BC-17.7 — Layout, Size, Typography & Border Completion
+ 2 Close the remaining gaps in the existing families.
+ 3 17.5.
+ 4 O3, O11, O15, O16.
+ 5 - Typography: text-transform, word-spacing, white-space, text-wrap
+     (balance/pretty where the O15 gate passes), text-overflow + line
+     clamp, text-shadow (list), decoration style/colour/thickness/
+     underline-offset, font-variant basics, inherited container
+     typography.
+   - Borders: elliptical radii (outline already delivered in 17.5),
+     border-image (gradient source).
+   - Layout: flex order, flex-basis length, grid custom track lists
+     (typed: repeat/count/length/fr/minmax) and named areas (typed),
+     auto-flow/dense, justify/align-items/self/content on grid,
+     place-*, gap units.
+   - Size: min/max in all supported units (today px numbers only
+     [VERIFIED]), the fit-content/min-content/max-content keywords.
+ 6 All text-bearing elements, containers (Flow/Flex/Grid), cards,
+   navbars, forms, tables (cells).
+ 7 Typed value extensions; keeping Free-layout geometry rules (Free
+   children keep px geometry; the new size keywords apply in
+   Flow/Flex/Grid only).
+ 8 - Logical properties (Not applicable: no direction/writing-mode
+     authoring exists).
+   - calc()/clamp()/var(): architecturally blocked by the typed-value
+     model by design.
+   - Subgrid: deferred pending the O15 gate check (Gecko/WebKit support
+     it; Chromium 117+, so likely includable — verified in this
+     checkpoint).
+ 9 Free/Flow interplay; the min/max units interplay with BC-13 resize
+   (renderedFreeSize).
+10 Unit per resolver; BC-13.7 resize test subset (min/max); browser
+   spot checks where engines differ (text-wrap, line clamp).
+11 Every listed capability is authorable and identical on all surfaces;
+   BC-13 resize honours the new min/max units.
+12 Report.
+13 None.
+
+BC-17.8 — Backgrounds, Gradients & Patterns
+ 2 Multi-layer backgrounds and the pattern system.
+ 3 17.5.
+ 4 O3, O15, O16.
+ 5 - Layers (colour/image/linear/radial/conic and repeating variants);
+   - per-layer size/position/repeat/attachment/origin/clip/blend;
+   - background-blend-mode;
+   - gradient text (background-clip:text, with the -webkit- prefix);
+   - patterns as editable layer presets (stripes, dots, checker, grid,
+     segments).
+ 6 All background-capable elements, plus progress parts (consumed in
+   17.12).
+ 7 - BackgroundSettings → a layer list with an identity migration (the
+     single background = one layer, done in memory, v4-safe);
+   - generic ordered-list editor.
+ 8 Patterns as locked templates (never).
+ 9 Layer ordering semantics (CSS draws the first on top); image assets
+   per layer (BC-07 pipeline).
+10 Unit: serialization/migration. Screenshot parity on pattern fixtures
+   × 3 engines.
+11 Existing backgrounds are unchanged. Every pattern is editable by
+   parameters. Gradient text works in Chromium plus at least one engine.
+12 Report.
+13 None.
+
+BC-17.9 — Effects, Masks & Clipping
+ 2 The complete Effects and Shape & Mask categories.
+ 3 17.8.
+ 4 O3, O15.
+ 5 - Ordered filter list (incl. drop-shadow);
+   - backdrop-filter (-webkit- prefix);
+   - mix-blend-mode, isolation;
+   - clip-path (circle/ellipse/inset/polygon, numeric editor);
+   - masks (gradient layers; image via assets; -webkit- prefixes).
+ 6 All box elements, media (consumed in 17.16), SVG box.
+ 7 FilterSettings → an ordered list (identity migration);
+   the shape-presets ↔ clip-path ownership resolution: Shape ALREADY writes
+   clip-path via getClipPathForShapePreset [VERIFIED], so a custom clip
+   path and a Shape preset are one clip-path owner: the editor makes them
+   mutually exclusive, choosing a custom clip replaces the preset.
+ 8 A canvas clip-path handle editor (later, not BC-17 unless requested).
+ 9 Ownership conflict with the existing Shape group (the "check for
+   ownership conflicts" lesson); backdrop performance.
+10 Unit. Browser × 3 engines (backdrop, mask).
+11 Effects identical on all surfaces; no Shape/clip-path conflict.
+12 Report.
+13 None.
+
+BC-17.10 — Transforms
+ 2 Complete 2-D/3-D transforms.
+ 3 17.5.
+ 4 O3, O15.
+ 5 skew, scaleX/scaleY, transform-origin, perspective, perspective-
+   origin, rotateX/Y/Z, translateZ, backface-visibility, transform-style,
+   the individual translate/rotate/scale properties.
+ 6 All box elements.
+ 7 - The transform settings extension;
+   - the BC-13 rule kept: Free move/resize stays blocked under
+     transformed ancestors (transformGeometrySafety);
+   - forced/state transforms ignored by snapping measurement.
+ 8 Lifting the BC-13 transformed-ancestor block (a new decision if ever
+   wanted).
+ 9 Snapping/geometry regressions.
+10 Unit. The BC-13 snapping/containment e2e subset. Browser × 3 engines
+   for 3-D.
+11 BC-13 subset green; transforms identical on all surfaces.
+12 Report.
+13 None.
+
+BC-17.11 — Motion: Transitions & Keyframe Animations
+ 2 The Motion category (O3), the keyframes asset, reduced motion.
+ 3 17.10.
+ 4 O2 (design safety), O3, O15, O16 (keyframe transfer).
+ 5 - Multiple transitions (property/duration/easing incl. cubic-bezier
+     and steps/delay);
+   - keyframe animations (name ref, duration, timing, delay, iteration
+     count, direction, fill mode, play state);
+   - reduced-motion behaviour;
+   - state-triggered transitions.
+ 6 All elements; progress fill (17.12), SVG objects (17.18), toasts and
+   popovers (17.14).
+ 7 - The styleAssets.keyframes editor (timeline of stops using the same
+     typed groups);
+   - TransitionSettings → a list (identity migration);
+   - the Design play/preview control (N11);
+   - clipboard keyframe deduplication and remap.
+ 8 Scroll-driven animations (O15 gate fails: no WebKit stable support
+   [UNVERIFIED, check at implementation]); view transitions.
+ 9 Design safety, animation during BC-13 gestures, keyframe-id
+   collisions.
+10 Unit: keyframe serialization and dedupe. Browser: reduced-motion
+   emulation × 3 engines.
+11 No motion on Design unless explicitly previewed; reduced motion
+   honoured in export; pasted animations keep working.
+12 Report.
+13 N11 (Design preview behaviour; non-blocking, default = Preview-only).
+
+BC-17.12 — Native Form Controls & Native Progress
+ 2 Part targets and states for native controls (O4 native).
+ 3 17.6, 17.8, 17.11.
+ 4 O4 (native), O15.
+ 5 - Progress element/track/fill (vendor parts), indeterminate state,
+     stripes and animated stripes (Chromium/WebKit fill animation;
+     Gecko ::-moz-progress-bar animation verified at implementation);
+   - checkbox/radio: accent-color, appearance:none box/indicator;
+   - select: field/arrow (appearance), option styling limits;
+   - input: placeholder, invalid/required/disabled/read-only states,
+     caret-color, the search cancel button (WebKit/Blink), number spin
+     buttons (limits documented);
+   - textarea: resize;
+   - fieldset/legend.
+ 6 progress, progressBar, all 9 input types, textarea, select, option,
+   checkbox, radio, label, form compositions (40–45).
+ 7 Vendor printer entries; automatic appearance:none only for styled
+   parts; accessibility-tree checks.
+ 8 The custom progress (17.13); file/range/date inputs (O13).
+ 9 Engine divergence; lost native semantics.
+10 Browser × 3 engines + Electron; accessibility-tree assertions.
+11 The 10 Progress appearances from BC-17.1 Report 1 §10.3 achievable
+   per stated engine; native roles unchanged.
+12 Report.
+13 None.
+
+BC-17.13 — Custom Progress Bar Variant
+ 2 The opt-in custom progress (O4 custom).
+ 3 17.12.
+ 4 O4 (custom), O1 (no artificial nodes), O15.
+ 5 Track/fill/segment/label targets, segmented progress, internal labels,
+   cross-engine animated fills, all categories on parts.
+ 6 progress, progressBar (the progress inside it).
+ 7 - The variant field;
+   - the renderer-generated internal parts;
+   - role=progressbar + aria-valuemin/max/now/valuetext;
+   - the conversion command (one history entry, target-id mapping,
+     inactive custom-only rules kept);
+   - export markup.
+ 8 Indeterminate custom animation beyond motion presets? No — included.
+   Nothing else is excluded.
+ 9 Accessibility parity with native; conversion data loss.
+10 Unit: conversion round trip, undo. Browser × 3 engines;
+   accessibility tree.
+11 Round trip native→custom→native loses nothing. Undo is exact. The
+   accessible name/value are announced equivalently [verified with the
+   accessibility tree].
+12 Report.
+13 N1 (blocking for this checkpoint).
+
+BC-17.14 — Runtime Semantic States & Interactive Components
+ 2 Open/active/expanded states styled across Design, Preview and Export
+   (O10).
+ 3 17.5, 17.11.
+ 4 O10, O6, O15.
+ 5 - expanded (existing aria-expanded), open (data-state on targets),
+     active tab (data-state or aria-selected per N2);
+   - enter/exit transitions and animations for toast/popover/dropdown/
+     drawer/modal;
+   - the dialog backdrop (from 17.6).
+ 6 dropdownButton, collapsible, basicTabs, modal, dismissibleAlert,
+   manualToast, popover, drawer, dialog, navbarWithCta.
+ 7 - One shared resolver for runtime state attributes (the Preview hook
+     and the export runtime), extending resolveTriggerAccessibility;
+   - runtime enum validation;
+   - forced-state simulation of open/active in Design.
+ 8 New interaction actions (still show/hide/toggle only).
+ 9 - The export runtime contract (EXPORT-1.3) — security review required;
+   - BC-04 interaction behaviour;
+   - focus return.
+10 Unit: the resolver. Targeted e2e Preview vs Export × 3 engines. The
+   BC-04/BC-02.5 interaction regression subset.
+11 States are identical in Preview and Export; no invalid ARIA (axe or
+   accessibility-tree check); the runtime still reads only tokens.
+12 Report.
+13 N2 (blocking for the tabs part only).
+
+BC-17.15 — Pagination Semantic Styling & Navigation Components
+ 2 Role-group targets and the O9 migration.
+ 3 17.14.
+ 4 O9, O1, O5, O11.
+ 5 - Pagination: container, page links, current page, previous/next,
+     disabled control, ellipsis, with hover/focus-visible/active;
+   - navbar/sidebar/breadcrumb role groups (links, CTA, separators,
+     current item).
+ 6 pagination, basicNavbar, navbarWithCta, centeredNavbar, breadcrumbs,
+   sidebarNavigation, nav.
+ 7 - Role classes generated on real children;
+   - the in-memory v3→v4 sub-step plus the v4-without-rule conversion
+     (Report 1 §7.4);
+   - removal of applyStateLook from setPaginationCurrentPage;
+   - preservation of all BC-09 integrity, history and interaction
+     restrictions.
+ 8 —
+ 9 Appearance drift on migration; BC-09 regressions.
+10 - Unit: migration (computed equality fixtures incl. heterogeneous
+     links), commands.
+   - The BC-09 regression subset (targeted).
+   - Browser screenshot before/after on legacy fixtures.
+11 Legacy paginations look identical; a current-page change keeps
+   styles without copying; one history entry per change; BC-09
+   behaviour unchanged.
+12 Report.
+13 N9 timing (resolved before 17.2).
+
+BC-17.16 — Media & Embeds
+ 2 Applicable styling of image/video/audio/embeds (O8).
+ 3 17.9, 17.10, 17.11.
+ 4 O8, O15.
+ 5 - Object-fit/position (exists);
+   - filters, masks and clips on media;
+   - hover zoom (transform states);
+   - poster surface;
+   - audio/video box styling; iframe box only;
+   - ::-webkit-media-controls documented as not styled (browser-
+     controlled).
+ 6 image, figure, imageCard, avatar, avatarWithText, profileCard, video,
+   audio, videoEmbed, iframe.
+ 7 The media lifecycle, muted-only autoplay, reduced motion, iframe
+   permissions, sandbox and Electron limits are untouched.
+ 8 Custom media players (O8).
+ 9 BC-07/BC-08 regressions.
+10 Targeted browser × 3 engines; Electron smoke for video.
+11 BC-07/08 security and lifecycle behaviour unchanged.
+12 Report.
+13 None.
+
+BC-17.17 — Tables, Lists & Remaining Components
+ 2 Finish the component coverage.
+ 3 17.6, 17.8.
+ 4 O1, O3, O11.
+ 5 - Table: row/alternate/cell/header/caption targets (structural
+     :nth-child), border-collapse/spacing, caption-side, table-layout;
+   - lists: list-style type/position/image (assets), marker;
+   - divider, badge, alert, stat, metadata, avatar text, fieldset,
+     footer and structural landmarks.
+ 6 table, lists, listItem, divider, badge, alerts 49–53, statCard,
+   metadataRow, footerComposition, header/nav/main/article/aside/
+   footer/section/container.
+ 7 Structural targets in the registry.
+ 8 —
+ 9 Table cell ownership with existing table sections.
+10 Unit. Targeted browser.
+11 Every Report 3 row for these components is satisfied.
+12 Report.
+13 None.
+
+BC-17.18 – BC-17.22 — SVG (full specification in Report 2 §10)
+ 17.18 SVG styling foundation
+       prereq 17.5/17.8/17.9/17.11; O14, O15, O16.
+ 17.19 Vector geometry model
+       prereq 17.2; O14, O5.
+ 17.20 Vector editing Canvas tools
+       prereq 17.19; O14, BC-13.5 lifecycle contract.
+ 17.21 Advanced vector editing
+       prereq 17.20, 17.10; O14; N3/N4/N5.
+ 17.22 SVG persistence, export and regression verification
+       prereq 17.18–17.21; O14, O15.
+ Testing:
+ - unit for the geometry (splits, conversions, limits);
+ - component tests for the overlay;
+ - targeted e2e per tool × Chromium, plus Firefox/WebKit in 17.22;
+ - the existing 1.15.5/1.15.6 SVG suites as a targeted regression in
+   17.20 and 17.22.
+ Acceptance:
+ - Report 2 criteria;
+ - every gesture rolls back exactly on Escape, pointercancel, blur and
+   commands;
+ - one undo per gesture;
+ - export `d` equals the Design `d`;
+ - no raw markup path.
+ Open decisions: N3, N4, N5 (blocking 17.21 only).
+
+BC-17.23 — Unified Preset Core & Typography Presets (absorbs BC-14)
+ 2 One preset system (O12) and its first consumer, typography presets.
+ 3 17.7 (typography completion), 17.5 (state presets need rules).
+ 4 O12, O16 (the preset payload = the clipboard payload).
+ 5 Presets for typography (BC-14 scope) and CSS categories.
+ 6 All text-bearing elements; categories everywhere.
+ 7 - PresetDefinition, application = paste with provenance;
+   - storage and linking per N8;
+   - preset management UI (create, rename, delete, apply).
+ 8 Component/state/motion presets (17.24).
+ 9 Linking semantics; storage migration.
+10 Unit: apply/merge. Component tests for the management UI.
+11 Applied presets stay editable; one undo per apply; no second preset
+   system exists.
+12 Report.
+13 N8 (blocking), N10 (ordering confirmation).
+
+BC-17.24 — Component, State & Motion Presets
+ 2 Presets for component profiles, states and motion; the 10 disabled
+   "Styles" toolbar placeholders, if the owner wants them repurposed.
+ 3 17.23 and the component checkpoints.
+ 4 O12.
+ 5 As 2.
+ 6 All registry profiles.
+ 7 Built-in preset library as data.
+ 8 —
+ 9 Preset compatibility across profiles.
+10 Unit. Targeted browser.
+11 Presets apply across compatible profiles; incompatible parts are
+   reported (O16 semantics).
+12 Report.
+13 None.
+
+BC-17.25 — Cross-Surface Parity, Persistence & Performance Integration
+ 2 Milestone-level verification.
+ 3 All of the above.
+ 4 O2, O5, O15.
+ 5 All.
+ 6 All.
+ 7 The kitchen-sink parity spec extended to every target and state;
+   save/reopen; export cleanliness; perf probe versus the 17.3 baseline.
+ 8 —
+ 9 Late discovery of divergence.
+10 A justified broad run: the parity spec × 3 engines + Electron, the perf
+   probe, and a save/reopen fixture matrix.
+11 Report 1 §9 criteria; parity criteria (Report 1 §3.6).
+12 Report.
+13 None.
+
+BC-17.26 — Final Compliance & Regression Audit
+ 2 Per-decision (O1–O16, N1–N11) compliance and closure.
+ 3 17.25.
+ 5 Audit only.
+11 Every Report 3 row resolved or explicitly deferred by an owner
+   decision.
+12 The final audit and milestone summary.
+
+
+5. BC-14 INTEGRATION RECOMMENDATION
+-----------------------------------
+- BC-14 has no code or documents in the repository [VERIFIED: only the
+  BC-17.1 reports mention it].
+Options:
+- (a) BC-14 after the BC-17 typography and preset foundations: BC-17.23
+  delivers the preset core with typography presets as its first
+  consumer.
+- (b) BC-14 first, with a pre-agreed shared format.
+- (c) BC-14 in parallel.
+Recommendation: (a). BC-14's scope becomes BC-17.23 (the label "BC-14"
+can be kept as the owner's name for that deliverable). It must follow
+17.7, because typography presets must cover the completed typography
+family (text-shadow, transform, wrapping, inherited container
+typography), or they would need a second format.
+- (b) risks two systems or a format bump.
+- (c) has the same risks plus merge conflicts.
+Not owner-approved: listed as N10.
+
+
+6. FINAL MILESTONE COMPLETION REQUIREMENTS
+------------------------------------------
+- Every Report 3 capability row is in one of these states:
+  - supported on all surfaces;
+  - browser-limited with an Inspector note;
+  - not applicable;
+  - blocked by design;
+  - deferred by an explicit owner decision.
+- Both Progress variants are shipped; SVG styling and vector path
+  editing are shipped.
+- No legacy project changes appearance; v4 migrations are tested;
+  Pagination is migrated.
+- Parity and performance criteria are met (17.25).
+- The clipboard and presets cover every rule dimension.
+- Accessibility: native semantics are kept, no invalid ARIA, reduced
+  motion is honoured.
+- The O1–O16 and N1–N11 compliance tables are in the 17.26 audit.

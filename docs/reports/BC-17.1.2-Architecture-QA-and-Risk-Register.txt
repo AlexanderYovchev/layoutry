@@ -1,0 +1,293 @@
+BC-17.1.2 — Architecture QA and Risk Register
+Report 6 of 7
+=============================================
+Date: 2026-11-26.
+HEAD: 3868436.
+
+Classifications:
+- RESOLVED
+- VERIFIED EXISTING
+- ARCHITECTURE DEFINED — IMPLEMENTATION PENDING (ADIP)
+- UNVERIFIED
+- OWNER DECISION REQUIRED (ODR)
+- BLOCKING (BC-17.2 cannot start)
+- TRACKED NONBLOCKING (TNB)
+"PASS" is not used: nothing here is implemented.
+
+
+1. QA CONCERNS FROM THE BRIEF (§6.1–6.10)
+-----------------------------------------
+Q-6.1 Capability classification, including logical properties
+  Finding:
+  - BC-17.1.1 marked logical properties and writing-mode N/A only
+    because no direction authoring exists. That reasoning was wrong.
+  - float, shape-outside and box-sizing were also misfiled.
+  Evidence: Report 2 Part D; the type field lists at HEAD.
+  Resolution:
+  - RESOLVED (reclassified, with checkpoints assigned);
+  - the logical-property representation is ODR P-2 (nonblocking,
+    BC-17.7);
+  - CSS counters are ODR P-4.
+
+Q-6.2 Styling model and target identity
+  Finding: needed stable semantic target ids, a native/custom part
+  identity, compound/ancestor representation and inactive retention.
+  Resolution: ADIP. Report 1 §4–5:
+  - global target ids with a kind;
+  - shared progress.track/fill across both variants;
+  - variant-only parts become inactive;
+  - typed examples.
+
+Q-6.3 Cascade and selector generation
+  Findings:
+  - order alone is insufficient (ancestor/compound specificity);
+  - a NEW issue was found during this checkpoint: role-group rules and
+    a child's own rules target the same element, so ordering must be
+    global (rank buckets), or the migrated Pagination "current" rule
+    would lose to the page's base.
+  Resolution: ADIP.
+  - :where() equalization to (0,1,0) [+ (0,0,1) for pseudo];
+  - global rank buckets 0–14 with group-before-own;
+  - forced-only interaction atoms on Design;
+  - expected computed results tabulated (Report 1 §6.4–6.8).
+  UNVERIFIED: :where() and cascade-layer interplay in the three
+  engines → BC-17.3 targeted test.
+
+Q-6.4 Shared compiler
+  Finding: the Canvas currently mixes Tailwind default classes with
+  inline authored styles (34 sites in 26 components).
+  Resolution: ADIP.
+  - Compiler/printer split; dependency index; failure handling; gesture
+    overrides.
+  - The update strategy (text chunks vs CSSOM vs per-subtree) is chosen
+    by MEASUREMENT in BC-17.3. No speed claim is made.
+
+Q-6.5 v4 and intermediate migration safety
+  Finding: BC-17.1.1 keyed the Pagination conversion on "no current
+  rule exists". That is unsafe after a user reset.
+  Resolution: RESOLVED in architecture.
+  - formatRevision inside v4; every schema change = R+1;
+  - newer revisions refused;
+  - the revision number is the only migration signal;
+  - the Pagination step is defined (heterogeneous siblings preserved,
+    the five look properties, the unset-equivalent values, a diagnostic
+    fallback);
+  - protected save for revision upgrades.
+  Implementation and fixtures: BC-17.2 / BC-17.15 (ADIP).
+
+Q-6.6 Runtime and accessibility
+  Findings:
+  - aria-expanded already exists (VERIFIED EXISTING);
+  - Basic Tabs are non-semantic and unmarked (VERIFIED EXISTING).
+  Resolution: ADIP.
+  - The shared runtime-state resolver; semantic Tabs (APG, automatic
+    activation); no conflicting ARIA; Canvas simulation without running
+    bindings.
+  - Legacy tabs = ODR P-1 (BC-17.14).
+
+Q-6.7 SVG reconciliation (N3–N5), pointercancel/Escape
+  Finding: F-SVG-3 VERIFIED EXISTING (unsafe):
+  - pointercancel commits;
+  - Escape restores the whole document;
+  - the sessions are not in the active-interaction registry.
+  Resolution: ADIP. The unified lifecycle (Report 3 §6) replaces it in
+  BC-17.20.
+  Also found:
+  - F-SVG-1 (a stale comment);
+  - F-SVG-2 (the jsdom letterbox fallback);
+  - F-SVG-4 (paint is not validated at the schema).
+  All are documented, not fixed (restricted checkpoint).
+
+Q-6.8 Presets
+  Resolution: ADIP (Report 1 §15).
+  - Three libraries; detached application; built-in versioning;
+    naming.
+  - History boundaries: project-library edits are in project history;
+    app-library edits are not.
+  - The BC-14 text is missing → action A-4 (blocks BC-17.23 closure
+    only).
+
+Q-6.9 Animation playback
+  Resolution: ADIP (Report 1 §16).
+  - A compile-time Design-only variant (no API mandate);
+  - the interruption list; geometry isolation (no store writes; snap
+    index refreshed after playback); multiple animations;
+    one-iteration semantics.
+  - Reduced-motion handling = ENG-PROP, owner-overridable (R-24).
+
+Q-6.10 Browser compatibility
+  Resolution: UNVERIFIED by design.
+  - Every browser note is classified V1–V5 (Report 2).
+  - Per-checkpoint engine plans are in Report 4.
+  - No browser test was run in this checkpoint.
+
+
+2. BC-13 OUTSTANDING CLOSURE TRACKING (N10.1: proceed, NOT waived)
+-------------------------------------------------------------------
+Verified state:
+- the BC-13.7 code (renderedFreeSize, sizeLimits), its 4 unit tests and
+  e2e/bc13-final-audit.spec.ts (6 tests) are in commit 3868436
+  [VERIFIED: git show --stat during BC-17.1.1; HEAD unchanged];
+- the reports BC-13.7-Final-Regression-Audit.txt and
+  BC-13-Alignment-and-Snapping-Milestone-Summary.txt do NOT exist
+  [VERIFIED: docs/reports listing].
+Tracked inventory:
+- 49 decisions D1–D49 (BC-13.1 table);
+- 5 architecture clarifications (the BC-13.7 brief's 57-entry matrix;
+  the BC-13.6 report records clarification 3/5; the clarification texts
+  live in the BC-13 briefs, not in a repository document → A-2);
+- 3 subsequent owner decisions:
+  - Option B keyboard interruption (BC-13.5.1);
+  - D1 = B (outside drops insert nothing);
+  - D2 = A (Free drops append) (BC-13.6.1).
+Open items (TNB for BC-17, OPEN for BC-13):
+- D23 — transformed targets are AABBs; no angled snapping. Implemented
+  per the BC-13.3/13.4 reports. Final audit evidence pending (BC-13.7).
+  NOT accepted as a limitation beyond D23's own definition.
+- D39 — "optimize, no caps". Performance work is tied to P1.
+- P1 — large-container rendering performance. An OPEN BC-13 owner item
+  (dedicated Canvas performance work proposed in BC-13.3). Not accepted,
+  not deferred.
+- C1 — the Free containment frame (keep or extend). An OPEN BC-13 owner
+  item.
+- Evidence gaps: the BC-13.7 targeted evidence was produced in an earlier
+  session, not re-run since the commit.
+Closure path (actions):
+- A-1: BC-13.7 completion — write the two reports, re-run only
+  resolveFreeResizeSnap.test.ts and bc13-final-audit.spec.ts (Chromium,
+  plus the engines the BC-13.7 brief requires), and record the 57-entry
+  matrix.
+- A-2: the owner supplies or confirms the 5 clarification texts for the
+  matrix.
+- A-3: the owner decides P1 and C1 (or explicitly carries them).
+- BC-13 stays OPEN until A-1..A-3.
+BC-17 checkpoints carrying BC-13 targeted regression: 17.3, 17.5, 17.7,
+17.10, 17.11, 17.20, 17.21, 17.25 (Report 4 §2).
+
+
+3. RISK REGISTER
+----------------
+Each risk gives: description; class; mitigation; owning checkpoint.
+
+Migration and data
+R-1  Schema enums designed early may need breaking changes.
+     TNB. Revision steps (R+1) allow evolution with fixtures. 17.2.
+R-2  A shape-changing conversion (background layers, filter lists,
+     transition lists, SVG paint) alters appearance.
+     ADIP. Identity steps; frozen-fixture computed parity.
+     17.8/17.9/17.11/17.18.
+R-3  A Pagination structure is not recognized during migration.
+     ADIP. Left unconverted with a diagnostic; the look-copy fallback
+     stays for that instance. 17.15.
+R-4  Development files opened by an OLDER development build.
+     RESOLVED. Refused (newer revision), never stripped.
+R-5  The decision count discrepancy (35 stated vs 36 expected).
+     ODR (A-5). Affects final acceptance; BC-17.2 is affected only if
+     the missing decision concerns the foundation.
+
+Cascade and compiler
+R-6  Interplay of the unlayered generated sheet with Tailwind layers.
+     UNVERIFIED. BC-17.3 parity across three engines.
+R-7  Global rank buckets complicate incremental updates.
+     ADIP. Bucketed chunks; the property-based rebuild test. 17.3.
+R-8  Removing the inline/Tailwind split changes default-presentation
+     precedence.
+     ADIP. Defaults at (0,0,0) in bucket 0; fixture parity. 17.3.
+R-9  Stale rules after deletion/reparenting.
+     ADIP. The dependency index; inactive rules; the rebuild test. 17.3.
+
+Performance
+R-10 Per-frame compile during gestures.
+     ADIP. The live-geometry flag; the override layer. 17.3.
+R-11 Selector matching cost of ancestor rules on large documents.
+     UNVERIFIED. Measured in 17.5 (1,000 × 3 rules).
+R-12 Inspector slowdown from the extra frame.
+     ADIP. Lazy categories; a static search index. 17.4.
+R-13 P1 (rendering) dominates.
+     TNB (BC-13 OPEN). The 17.3 baseline reports whether BC-17 criteria
+     are reachable. If not → reported as a blocker of that checkpoint.
+
+Runtime and accessibility
+R-14 Changes to the export runtime (data-state, tabs keyboard) touch
+     EXPORT-1.3 security.
+     ADIP. Tokens/keywords only; a security review in 17.14.
+R-15 The semantic Tabs upgrade changes behaviour.
+     ODR P-1.
+R-16 Generated content and screen readers.
+     ADIP. Guidance; no guarantees. 17.6.
+R-17 Removing the focus ring.
+     ADIP. An advisory. 17.5.
+
+SVG geometry
+R-18 Bending solver feel.
+     ADIP. Tuning in 17.20; the endpoint invariants are tested.
+R-19 Arc radius correction and tiny-arc handles.
+     ADIP. Effective-radius display; a minimum handle spacing. 17.21.
+R-20 CSS transform (state) versus attribute transform origin parity.
+     UNVERIFIED. 17.19 targeted test.
+R-21 File size growth from value-semantics definitions.
+     TNB. Bounded by limits; measured in 17.18.
+R-22 Modifier conflict: Alt for snap bypass versus handle unlinking.
+     RESOLVED (Report 3 §5.2).
+R-23 The SVG lifecycle defect F-SVG-3 persists until 17.20.
+     TNB. Existing behaviour; fixed in 17.20, and no new SVG gestures
+     before then (17.18/17.19 add none).
+
+Motion
+R-24 Design playback under OS reduced motion.
+     ENG-PROP (plays as authored, with a "reduced version" option);
+     owner may override. 17.11.
+R-25 Layout-affecting animations during playback disturbing the
+     overlay.
+     ADIP. Overlays hidden; gestures blocked; snap refresh after. 17.11.
+
+Browser
+R-26 Native progress styling differences (Gecko has no track
+     pseudo-element; the indeterminate parts).
+     UNVERIFIED. 17.12.
+R-27 first-letter float/initial-letter, the alternative-text syntax.
+     UNVERIFIED. 17.6.
+R-28 Scroll-driven animations, text-wrap pretty and linear() in WebKit.
+     UNVERIFIED. 17.7/17.11.
+R-29 Chromium ignoring ::-webkit-scrollbar when scrollbar-color is set.
+     ADIP. An Inspector warning. 17.7.
+
+Scope tracking (not hidden)
+R-30 Responsive variants (media/container queries, print) are outside
+     O1–O16.
+     TNB. Owner awareness only. A separate milestone if desired.
+R-31 Anchor positioning (popover-to-trigger) is outside the approved
+     relationship scope.
+     TNB. Owner awareness.
+R-32 Web fonts / custom font upload are outside O1–O16.
+     TNB. Owner awareness.
+R-33 BC-14 requirement text unavailable.
+     A-4. Blocks BC-17.23 closure only.
+
+
+4. BLOCKING VERSUS NONBLOCKING SUMMARY
+--------------------------------------
+BLOCKING BC-17.2: none identified in the architecture. Conditional on
+A-5: if the missing 20th decision concerns the foundation, it must be
+reconciled first.
+ODR (later checkpoints):
+- P-1 (17.14);
+- P-2 (17.7, logical part);
+- P-3 (17.13);
+- P-4 (17.6/17.17).
+Information actions:
+- A-1..A-3 (BC-13);
+- A-4 (BC-14 text, before 17.23);
+- A-5 (decision count).
+
+
+5. REQUIRED FOLLOW-UP ACTIONS
+-----------------------------
+A-1 BC-13.7 completion (documentation + targeted evidence) — any time.
+A-2 BC-13 clarification texts — owner.
+A-3 BC-13 P1/C1 decisions — owner.
+A-4 BC-14 requirement list — owner, before BC-17.23.
+A-5 Confirm the N-decision count (19 stated vs 20 expected) — owner,
+    before final architecture acceptance.
+A-6 Answer P-1..P-4 — owner, before their checkpoints.
+A-7 At BC-17.2: freeze the enum review in its report (R-1).

@@ -1,0 +1,511 @@
+BC-17.1.1 — SVG Styling & Vector Editing Architecture
+Report 2 of 6
+=====================================================
+Date: 2026-11-26.
+HEAD: 3868436.
+Investigation only.
+
+Evidence labels: [VERIFIED] read in source at HEAD; [REPORT] from an
+earlier report; [PROPOSED] new; [UNVERIFIED] needs a browser.
+O14 = Option B: comprehensive SVG styling AND vector path editing are
+both required BC-17 deliverables. This report does not reduce either.
+
+
+1. EXISTING SVG IMPLEMENTATION [VERIFIED]
+-----------------------------------------
+1.1 Component types
+- One document element: tag "svg" (card "SVG", matrix entry 67). It has
+  two content modes.
+  a) Starter primitive (Checkpoint 1.15.5): flat node fields
+     - svgKind ∈ rectangle | circle | triangle | star;
+     - svgViewBox {minX,minY,width,height} (default 0 0 100 100);
+     - svgFill (default #3b82f6);
+     - svgStroke (unset = none);
+     - svgStrokeWidth (default 1).
+     Geometry constants live in editor/utils/svgPrimitiveGeometry.ts.
+  b) Vector scene (Checkpoint 1.15.6): node.svgScene = { objects[] }
+     - it is an SVG-local model, deliberately NOT EditorElementNodes:
+       objects never take part in Flow/Flex/Grid/Free, the Structure
+       tree, HTML capabilities or HTML selection/resize;
+     - an empty scene is treated as absent (starter rendering);
+     - materializeSvgStarterIntoScene converts a starter into a scene.
+1.2 Objects (editor/types/svgScene.ts)
+- rect{x,y,width,height}, ellipse{cx,cy,rx,ry}, line{x1,y1,x2,y2},
+  polygon{points[]}, path{commands[]}.
+- Shared fields: id (editor-local, never exported), fill?, stroke?,
+  strokeWidth?.
+- Path commands: { M x y } | { L x y } | { Z }, absolute only, with no
+  curves. The doc comment explicitly plans "the union can grow later
+  without migrating already-authored paths".
+- Array order = paint order; there is no z-index.
+- No groups, layers, per-object transforms, opacity, dash, caps, joins,
+  fill-rule, gradients, defs, filters or masks.
+1.3 Rendering
+- SvgElement.tsx renders <svg viewBox>. Its box styling comes from
+  resolveSvgElementStyle (the shared recipe).
+- SvgVectorObjectRenderer draws the objects as real SVG elements with
+  presentation attributes (fill/stroke/stroke-width).
+- SvgVectorEditingOverlay (inside the same <svg>, in viewBox
+  coordinates, pointer-events none) draws:
+  - selection bounding boxes;
+  - a dashed draft polyline;
+  - resize handle circles for a single rect/ellipse only;
+  - non-scaling strokes (vector-effect).
+1.4 Edit mode and tools (editor/types/svgEditMode.ts, store)
+- Editor UI state, not document state: svgEditingNodeId,
+  selectedSvgObjectIds, primarySvgObjectId, activeSvgTool ∈ select |
+  rect | ellipse | line | polygon | pen, svgDraft.
+- The polygon/pen draft is click-accumulated, outside history.
+  Enter/double-click commits it (one entry); Escape discards it.
+- Rect/ellipse/line drawing: one drag inside begin/commitTransaction
+  (addSvgObjectLive), giving one history entry.
+- Move: useSvgObjectMoveSession (begin/commit; per-frame
+  translateSvgObjectsLive).
+- Resize: rect/ellipse only (useSvgObjectResizeSession).
+- Line endpoints: setSvgLineStart / setSvgLineEndpoint.
+- Polygon/path resizing is explicitly deferred. Vertex editing is
+  deliberately absent ("do NOT draw every editable vertex yet").
+1.5 Coordinates (canvas/utils/resolveSvgPointerPosition.ts)
+- All geometry is in viewBox units, rounded to 2 decimals
+  (roundSvgCoordinate).
+- Pointer → viewBox uses svg.getScreenCTM().inverse(), which is correct
+  under CSS transforms, scroll and scaling. A linear fallback is used
+  when there is no CTM (jsdom).
+  - Note: the fallback maps the full client rect and ignores the
+    preserveAspectRatio letterbox offset. It is used only without a CTM
+    (tests and detached nodes) and is low risk, but it should be
+    corrected when path editing relies on it.
+1.6 Commands (editor/commands/svgSceneCommands.ts)
+- generateSvgObjectId, materializeSvgStarterIntoScene, addSvgObject,
+  removeSvgObjects, translateSvgObjects, resizeSvgObject,
+  setSvgLineStart, setSvgLineEndpoint, setSvgObjectsFill,
+  setSvgObjectsStroke, setSvgObjectsStrokeWidth.
+- The paint setters are guarded by Parent Style Protection; geometry
+  setters are not (content).
+1.7 Serialization and validation
+- Schema: svgSceneSchema is a z.strictObject with a discriminated union.
+  - Coordinates must be finite.
+  - polygon.points and path.commands are arrays with no per-list cap;
+    only the global projectLimits apply (maxJsonValues 2,000,000;
+    maxJsonDepth notes that svgScene path commands are the deepest
+    nesting).
+- Integrity: checkDocumentIntegrity requires unique svgScene.objects ids.
+- Clone: cloneNodeWithFreshIds regenerates every vector id on duplicate
+  and paste.
+- Export (buildExportDocument.svgContent): every object becomes a real
+  element with attributes only.
+  - Paint values pass isExportableColor or "none". An invalid paint is
+    dropped with an "invalid-svg-paint" warning.
+  - `d` comes only from pathCommandsToD ("the ONE place raw d is ever
+    produced").
+  - There is no raw markup path, no script, no event handlers and no
+    external references.
+- Gap: the schema accepts fill/stroke as any string (z.string()), and
+  the Canvas renders it as an attribute value. React attributes cannot
+  execute script, but a value such as url(...) is not validated before
+  export. Recommendation: validate paint at the schema and command layer
+  as well (BC-17.18). Engineering, not an owner decision.
+1.8 Transforms
+- No per-object transforms exist.
+- The SVG element itself can carry the HTML transform group (shared
+  recipe effects).
+- getScreenCTM includes those transforms, so pointer mapping stays
+  correct.
+1.9 Lifecycle divergence (also Report 1 C-7)
+- useSvgObjectMoveSession:
+  - Escape restores the whole document and selection from the
+    transaction snapshot, then cancels;
+  - pointercancel → endSession → COMMITS if moved.
+- BC-13.5's shared lifecycle (createFreeInteraction) instead:
+  - rolls back exactly and node-scoped on Escape, pointercancel, lost
+    capture, blur, unmount and Preview;
+  - registers in the editor-owned active-interaction registry, so
+    commands cancel it first (BC-13.5.1).
+- SVG gestures are not in that registry [VERIFIED: no reference in the
+  SVG hooks]. Vector editing must not copy this divergence.
+
+
+2. SVG STYLING ARCHITECTURE [PROPOSED]
+--------------------------------------
+- The target model reuses Report 1 §3:
+  - the SVG node's registry profile has target "element" (the box, all
+    HTML groups) plus target kind "vectorObject";
+  - the Inspector target selector shows "SVG box" or "Selected object(s)"
+    while in vector edit mode.
+- Object paint is NOT moved into styleRules. Vector objects are not
+  nodes and have no generated class.
+  - Per-object paint stays typed data ON the object (the existing
+    convention), extended to:
+      fill, fillOpacity, stroke, strokeOpacity, strokeWidth,
+      strokeDasharray (number[]), strokeDashoffset,
+      strokeLinecap (butt|round|square),
+      strokeLinejoin (miter|round|bevel), strokeMiterlimit,
+      fillRule (nonzero|evenodd), opacity,
+      paint servers: fill/stroke may reference a typed gradient
+      definition (below);
+      transform (2.3).
+  - Rendering: presentation attributes, as today, on Canvas, Preview and
+    Export alike. Attributes, not CSS, so the existing "attributes only"
+    export contract holds.
+- Object STATES and MOTION (hover colour, transitions, animations):
+  objects need a selector. Each object gets a generated class derived
+  from its vector id, scoped under the SVG node's class, and only when
+  it has states or motion.
+  - The object's state rules live on the object as
+    objectRules?: [{ state, paint }], compiled by the same compiler into
+    the same stylesheet.
+  - CSS properties used: fill, stroke, stroke-width, opacity,
+    stroke-dash*, and transform with transform-box: fill-box.
+  - SVG presentation attributes have ZERO specificity, so any CSS rule
+    beats them. That gives a clean cascade: attributes = base, CSS =
+    states.
+- Gradients (paint servers):
+  - typed SvgGradientDefinition { id, kind: linear|radial, stops[],
+    coordinates (objectBoundingBox | userSpaceOnUse), spread };
+  - stored in svgScene.defs (SVG-local);
+  - emitted as <defs><linearGradient id> inside the same <svg>;
+  - the editor-local def id is never exported as is. Export ids are
+    generated per export as `ly-<svgToken>-g<n>` and are unique per
+    document, so two SVGs on one page cannot collide.
+  - References are url(#generated) only, never an external URL.
+  - It reuses the gradient-stop editor (InspectorGradientStopTrack).
+- SVG filters and Effects:
+  - CSS filter functions and the HTML Effects category apply to the SVG
+    BOX (the existing filters group).
+  - Per-object filters: only a typed, closed subset as <filter>
+    primitives (feGaussianBlur, feDropShadow, feColorMatrix
+    saturate/hueRotate), with typed numeric parameters, in defs.
+  - Recommended mapping: the Effects category on a vector object offers
+    exactly that subset, so there is one Effects UI and no separate
+    system.
+  - Clip and mask for objects: excluded in the first SVG checkpoints;
+    they arrive with BC-17.9 masks applied to the SVG box (CSS clip-path
+    and mask on the box are cross-engine). Object-level <clipPath> and
+    <mask> are listed as N4b in Report 5 (scope).
+
+
+3. VECTOR GEOMETRY MODEL [PROPOSED]
+-----------------------------------
+3.1 Representation
+Internal, absolute, normalized command set (grows the existing union):
+    M x y
+    L x y
+    C x1 y1 x2 y2 x y        (cubic Bézier)
+    Q x1 y1 x y              (quadratic Bézier)
+    A rx ry rotation largeArc sweep x y   (elliptical arc)
+    Z
+Mapping of the requested commands:
+- Move, line, close: as today.
+- Horizontal/vertical lines (H/V): NOT stored; they are an L with a
+  repeated coordinate. The printer may emit H/V as an optimization
+  without changing geometry.
+- Smooth curves (S/T): NOT stored as commands, because their meaning
+  depends on the previous segment and an edit would silently change the
+  neighbouring curve.
+  - Stored as an explicit C/Q, plus an anchor attribute
+    pointType ∈ corner | smooth | symmetric that the EDITOR enforces when
+    handles move.
+  - Same rendering, more robust editing.
+- Relative coordinates: NOT stored. There is no raw path import (no raw
+  markup), so every path is editor-authored in absolute coordinates. A
+  relative form could only appear through a future import, which would
+  normalize on import (O13-style future work, not BC-17).
+- Closed paths: Z. Multiple subpaths: every M after the first starts a
+  subpath. The model is a flat command list (as today), with a derived
+  subpath index for editing.
+- Arcs: stored as A, never converted to cubics, so authored arcs are
+  preserved exactly. Editing an arc's endpoint is supported. Radius,
+  rotation and flags are edited numerically (decision N3 covers whether
+  canvas handles for arc radii are in scope).
+Preservation:
+- existing M/L/Z data stays valid and unchanged byte for byte;
+- no load-time normalization rewrites anything;
+- primitives (rect, ellipse, line, polygon) stay parametric until the
+  user converts them (3.3).
+3.2 Anchor metadata
+- The path object gets an optional parallel array
+    anchors?: { pointType }[]
+  aligned with the end point of each drawing command.
+- Missing = corner for L, smooth for C (inferred), never written until
+  edited.
+3.3 Primitive → path conversion
+- An explicit command ("Convert to path") produces exact geometry:
+  - rect → M/L/Z;
+  - ellipse → 4 cubic segments, which is an approximation (error < 0.03%
+    of the radius, a well-known bound) — or 2 arcs, which is exact.
+    Recommended: arcs, which are exact.
+  - line → M/L;
+  - polygon → M/L…/Z;
+  - starter primitives via materialize first.
+- One history entry. The conversion is one-way (undo restores). Details
+  are in decision N3.
+3.4 Validation and limits (security, §7)
+- Every number is finite and within |v| ≤ 1e6 viewBox units.
+- Arc: rx, ry ≥ 0; flags are booleans.
+- The first command is M, and there are at least 2 drawing commands.
+- Per path: ≤ 10,000 commands. Per scene: ≤ 2,000 objects and ≤ 100,000
+  total commands.
+  - The values are provisional engineering limits, chosen so the editor
+    and schema validation stay responsive. They are not product
+    restrictions on normal use. Final values come from measurement in
+    BC-17.19.
+- Paths that violate these rules are refused on load with the existing
+  integrity error path, and refused by commands with a notice.
+- Rounding stays at 2 decimals (roundSvgCoordinate) for pointer-derived
+  values. Numeric input accepts the same precision.
+
+
+4. PATH EDITING CAPABILITIES
+----------------------------
+4.1 Required by O14 (in scope; no further decision needed)
+- An object-selection mode (exists) and a separate path-edit mode, for
+  example via double-click on a path or the "Edit path" tool.
+- Anchor selection: single, add/toggle (Shift) and marquee.
+- Moving anchors: drag, keyboard nudge (arrow = 1 unit, Shift = 10, as
+  Free nudge conventions), numeric x/y in the Inspector.
+- Bézier handles: show the handles of the selected anchors and drag
+  them; for a C segment both handles, for Q the shared control point.
+- Linked versus independent handles via pointType:
+  - smooth = collinear, lengths independent;
+  - symmetric = mirrored;
+  - corner = independent.
+  - Modifier (Alt) breaks the link for one drag.
+- Converting a point between corner/smooth/symmetric.
+- Curve editing: dragging a segment bends it (converting L→C on drag).
+  This is listed under N3, because "drag the segment" is a product
+  choice beyond handles.
+- Path command management:
+  - add an anchor on a segment (splitting the curve exactly: de
+    Casteljau for C/Q, arc split for A);
+  - delete anchors (the neighbours reconnect);
+  - open a closed path / close an open path;
+  - continue drawing from an endpoint (pen);
+  - the pen tool gains curves (drag on placement creates handles).
+- Escape cancels the active gesture with an exact rollback. A second
+  Escape leaves path-edit mode (and then vector edit mode, as today).
+- Selection preservation: the anchor selection survives a move; it is
+  remapped after insert and delete; it clears when the object leaves the
+  scene.
+- Pointer types: implemented on Pointer Events, so mouse, pen and touch
+  share one path. There is no pressure sensitivity and no multi-touch
+  gestures (an exclusion, not a decision).
+4.2 Not implied by O14 (excluded unless the owner adds them)
+- Boolean operations (union/subtract).
+- Offset/outline stroke.
+- Path simplification.
+- Freehand pencil smoothing.
+- Text on path.
+- Knife/scissors.
+- Shape builder.
+- Blend tools.
+- Symbol/component instances.
+- Auto-tracing images.
+- Raw path-data text editing.
+These are Illustrator/Figma/Inkscape features. The brief states they are
+not assumed approved.
+4.3 Ambiguous items isolated as decisions (Report 5)
+- N3: arc-radius handles on the canvas; segment dragging; whether
+  "Convert to path" may be applied to rect/ellipse/polygon (destructive
+  to parametric editing).
+- N4: anchor snapping (anchor-to-anchor, to object bounds, to a viewBox
+  grid, to the HTML BC-13 guides).
+- N5: vector-object clipboard and duplication within and between SVGs.
+
+
+5. CANVAS INTERACTION ARCHITECTURE [PROPOSED]
+---------------------------------------------
+- A dedicated vector interaction layer, separate from the HTML Free
+  layer.
+  - Reason: anchors live in viewBox space, not in the CSS box model;
+    containment, nested-container floors, aspect locks and margins
+    (BC-13 rules) do not apply.
+- Reused from BC-13 (shared, not duplicated):
+  - the gesture lifecycle: createFreeInteraction's contract
+    (begin → live → commit or exact rollback on Escape, pointercancel,
+    lost capture, blur, unmount, Preview, project switch);
+  - registration in the editor active-interaction registry, so commands
+    cancel first (BC-13.5.1 Option B).
+  - This needs createFreeInteraction to be generalized from "Free child
+    geometry" to "a gesture with a snapshot-restore function", or a
+    sibling createVectorInteraction with the same contract. That is an
+    engineering decision.
+  - The existing SVG move/resize/draw sessions migrate onto it in
+    BC-17.20. That fixes the 1.9 divergence: pointercancel rolls back,
+    and Escape restores only the SVG node, not the whole document.
+- Reused math: snapEngine's pure candidate/threshold logic can rank 1-D
+  candidates in any coordinate space. Its HTML-specific producers
+  (element rects, margins, containment) are not reused.
+  - Thresholds are defined in SCREEN pixels and converted to viewBox
+    units through the CTM scale, so snapping feels the same at any SVG
+    size.
+  - Whether anchor snapping ships is N4.
+- Overlay: it extends SvgVectorEditingOverlay (same viewBox space):
+  - anchors as small squares, handles as circles plus lines, with
+    vector-effect non-scaling-stroke;
+  - hit targets sized in screen pixels via the CTM.
+  Performance: only the edited path's anchors are drawn.
+- Keyboard:
+  - arrows nudge anchors;
+  - Delete removes the selected anchors (not the object) while in
+    path-edit mode;
+  - Enter/Escape as above;
+  - Tab cycles anchors (accessibility of the editor itself).
+- BC-13 independence: HTML snapping, guides and Free sessions are
+  inactive while vector edit mode is active (as today). Design-mode
+  forced states are off during vector gestures.
+
+
+6. COORDINATE TRANSFORMATIONS [PROPOSED]
+----------------------------------------
+Chain (pointer → object-local):
+  client → (CSS transforms of ancestors and the SVG box, scroll, future
+            Canvas zoom: all inside getScreenCTM) → viewBox user space
+          → inverse(object transform) → object-local coordinates
+- Today: client → viewBox via getScreenCTM().inverse() [VERIFIED]. This
+  already handles nested containers, scrolling, CSS transforms and any
+  future Canvas zoom implemented as a CSS transform.
+- New: per-object transforms (BC-17.21: translate, rotate, scale,
+  transform-origin as the object's bbox centre or a typed point).
+  - Stored typed, rendered as an SVG transform attribute (the base) so
+    the cascade of 2 (CSS for states) holds.
+  - transform-box: fill-box is used for CSS state transforms.
+  - Editing a transformed object's anchors maps the pointer through the
+    inverse object matrix; anchors are stored in object-local
+    coordinates.
+- viewBox versus viewport: preserveAspectRatio stays the default
+  (xMidYMid meet) and is not exposed now. Mapping via the CTM includes
+  the letterbox, so it is correct. The jsdom fallback is fixed to apply
+  the letterbox (1.5).
+- BC-13: no reuse of HTML snapping rules for anchors (§5). An SVG box
+  that is itself a Free child keeps every BC-13 rule for the BOX.
+
+
+7. HISTORY, PERSISTENCE AND CLIPBOARD [PROPOSED]
+------------------------------------------------
+- Atomic transactions:
+  - each gesture = begin/commitTransaction (existing store API), with
+    live per-frame writes through "Live" actions (the
+    translateSvgObjectsLive pattern) and one history entry;
+  - a no-op gesture records nothing (BC-13.5 rule);
+  - numeric edits = one entry each.
+- Exact undo/redo: geometry is restored from the transaction snapshot of
+  the SVG node only (node-scoped, as BC-13.5). The anchor selection is
+  restored with it (editor UI state saved alongside).
+- Cancellation: an exact rollback with no history entry. Redo is kept
+  (BC-13.5 semantics).
+- Duplication and element copy/paste of the whole SVG: existing, with
+  ids regenerated [VERIFIED]. Defs ids are regenerated the same way, and
+  references are remapped.
+- Vector-object copy/cut/paste and duplicate inside a scene or between
+  SVGs: not present today; scope in N5. If included:
+  - an object clipboard separate from the CSS clipboard (O16 states that
+    path geometry is not CSS);
+  - fresh ids;
+  - referenced defs copied and deduplicated by content;
+  - coordinates kept, or offset by a fixed amount on paste into the same
+    SVG.
+- Persistence: in project format v4 (Report 1 §7.2) the command union,
+  anchors, paint extensions, defs, objectRules and object transforms are
+  all optional. Existing v3 scenes load unchanged.
+- Invalid geometry: rejected by the schema and integrity checks on load,
+  and by commands at edit time (3.4). A partially invalid path never
+  renders half-drawn; the whole file load fails with the existing error.
+- Selection integrity: the selection is cleared on delete, undo/redo
+  and project switch (the existing svgEditMode subscription), extended
+  to anchor selection.
+
+
+8. SECURITY RESTRICTIONS [PROPOSED]
+-----------------------------------
+- Typed commands only; numbers finite and bounded (3.4); no raw `d`
+  string accepted from data.
+- Paint:
+  - colour (isExportableColor), "none", or a reference to a def by
+    editor id;
+  - the printer generates the url(#id);
+  - no external url(), no javascript:, no data URLs.
+- Defs: a closed set (linear/radial gradient, the typed filter-primitive
+  subset). Def ids are generated, never authored or exported raw; a
+  reference to a missing def is dropped with a warning.
+- Clipping/masks: only through typed CSS on the SVG box (BC-17.9);
+  object-level references per N4b.
+- No <script>, <foreignObject>, <use href> to external resources,
+  <image> or event attributes. The renderer never spreads arbitrary
+  attributes.
+- Complexity limits (3.4) bound validation, render and export time.
+- The export continues to emit attributes from typed values only.
+
+
+9. EXPORT AND PERFORMANCE REQUIREMENTS
+--------------------------------------
+- Export:
+  - `d` from the typed commands (pathCommandsToD extended), with
+    numbers printed with ≤ 2 decimals;
+  - defs emitted once per SVG, ids unique per export;
+  - paint attributes as the base, CSS for object states/motion in the
+    shared stylesheet;
+  - reduced motion respected.
+- Parity: the Design, Preview and Export geometry is identical (the same
+  `d` string). Screenshot and computed-attribute checks run per engine.
+- Performance:
+  - a path-edit frame recomputes only the edited path's `d` and the
+    overlay;
+  - no stylesheet work during the gesture (Report 1 §3.5 gesture layer);
+  - target ≤ 4 ms of engine/geometry time per frame for a 1,000-command
+    path (provisional; measured in BC-17.20).
+
+
+10. RECOMMENDED IMPLEMENTATION CHECKPOINTS
+------------------------------------------
+The original BC-17.7 is split into five (Report 4 numbering).
+- BC-17.18 SVG styling foundation:
+  - paint extensions, gradients/defs with generated ids;
+  - object opacity, object state rules and object motion;
+  - the SVG filter subset;
+  - paint validation hardening (1.7).
+  Depends on: BC-17.5 (states), BC-17.8 (gradient engine), BC-17.9
+  (effects), BC-17.11 (motion).
+- BC-17.19 Vector geometry model:
+  - the command union (C/Q/A), anchors metadata, subpaths;
+  - validation and limits;
+  - de Casteljau/arc split utilities;
+  - primitive→path conversion command;
+  - schema (v4 foundation already present), export `d`.
+  No Canvas UI beyond rendering. Depends on: BC-17.2.
+- BC-17.20 Vector editing Canvas tools:
+  - path-edit mode, anchor selection and movement, handles and point
+    types;
+  - add/delete anchors, open/close, the pen with curves;
+  - keyboard;
+  - lifecycle unification of ALL SVG gestures onto the BC-13.5 contract
+    and the active-interaction registry (fixes 1.9).
+  Depends on: BC-17.19.
+- BC-17.21 Advanced vector editing:
+  - arcs editing (numeric, plus N3 options);
+  - per-object transforms with the coordinate chain (§6);
+  - polygon/path bounding-box scaling (deferred since 1.15.6);
+  - anchor snapping (if N4 = include);
+  - vector-object clipboard (if N5 = include);
+  - segment dragging (if N3 allows).
+  Depends on: BC-17.20, BC-17.10 (transform UI patterns).
+- BC-17.22 SVG persistence, export and regression verification:
+  - the full SVG parity matrix (3 engines + Electron), save/reopen,
+    limits;
+  - security review of defs and references;
+  - performance probe;
+  - regression of the 1.15.5/1.15.6 SVG tests.
+  Depends on: BC-17.18–17.21.
+Justification:
+- the geometry model can be tested purely and lands early;
+- editing tools have the highest interaction risk and are isolated;
+- advanced items depend on transforms and on decisions;
+- styling depends on the shared state, gradient, effects and motion
+  architecture, so it comes after those.
+
+
+11. ADDITIONAL OWNER DECISIONS (details in Report 5)
+----------------------------------------------------
+N3 Vector editing extras: segment dragging, canvas arc handles, and the
+   primitive→path conversion behaviour.
+N4 Anchor snapping scope (and N4b, object-level clip/mask scope).
+N5 Vector-object clipboard and duplication.

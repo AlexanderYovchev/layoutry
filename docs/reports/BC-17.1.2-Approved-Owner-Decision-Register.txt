@@ -1,0 +1,405 @@
+BC-17.1.2 — Approved Owner Decision Register
+Report 5 of 7
+============================================
+Date: 2026-11-26.
+Authoritative source: the BC-17.1.2 brief, sections 4 and 5.
+Earlier Claude recommendations are NOT approvals. Where the owner chose
+differently (O14 = B; N2 = B; N3.2 interactive; N4.2 per object;
+N10.1 = B), the owner's choice governs.
+
+COUNT DISCREPANCY (must be confirmed by the owner)
+- The brief says there are 20 individual decisions across N1–N11 (36 in
+  total).
+- It states 19: N1.1, N1.2, N2, N3.1, N3.2, N3.3, N4.1, N4.2, N5, N6,
+  N7, N8.1, N8.2, N8.3, N8.4, N9, N10.1, N10.2, N11.
+- This register records the 35 stated decisions. No 20th decision has
+  been invented.
+- Action A-5: the owner confirms whether a 20th N decision exists (and
+  supplies it), or that the count is 35.
+
+Row legend:
+- Opt: the approved option;
+- Req: the authoritative requirement (condensed; the brief text
+  governs);
+- Arch: Report 1/3 sections;
+- Mx: capability matrix (Report 2) parts;
+- CP: checkpoint(s);
+- AC: acceptance;
+- Reg: required regression coverage;
+- Eng: remaining engineering clarification.
+Status tags: [OWNER] approved requirement, [EXIST] existing verified
+behaviour it relies on, [ENG-EV] engineering decision supported by
+evidence, [ENG-PROP] proposed engineering detail, [UNVER] unverified
+assumption.
+
+
+1. ORIGINAL DECISIONS O1–O16
+----------------------------
+O1  Opt A — Shared per-node styling rules (targets, states, typed
+    groups); base preserved; no fake nodes; no bespoke systems.
+    Arch R1 §4–5. Mx all. CP 17.2 (model), every later CP.
+    AC: one model across all 82 types; no artificial nodes; base
+    untouched by migration.
+    Reg: clone/paste/duplicate (BC-11/12), Undo/Redo.
+    Eng: none. [OWNER] + [ENG-EV] for the model shape.
+
+O2  Opt C — The shared stylesheet for Design/Preview/Export; temporary
+    inline geometry during gestures; no full regeneration per pointer
+    move.
+    Arch R1 §6, §8. Mx all. CP 17.3.
+    AC: computed parity; the override layer never persists; frame time
+    within baseline noise.
+    Reg: BC-13 lifecycle + audit specs.
+    Eng: the sheet update strategy, chosen by measurement (17.3).
+    [EXIST] live writes (setFreeChildGeometryLive), Design Safety
+    Invariant.
+
+O3  Opt A — A unified categorized Inspector: component properties,
+    target/state selectors, search, expandable categories, contextual
+    controls, indicators, resets, section clipboard, presets, help;
+    progressive disclosure.
+    Arch R1 §7. CP 17.4 (+ each family).
+    AC: all controls reachable; only applicable categories; search
+    complete.
+    Reg: existing Inspector section tests.
+    Eng: the visual design, at implementation level (owner-approved
+    latitude).
+
+O4  Opt C — Native AND custom progress. Native stays native unless
+    converted; native track/fill; custom track/fill/segments/labels.
+    Arch R1 §9. Mx A15, A16, rows 7/62. CP 17.12 (native), 17.13
+    (custom).
+    AC: native semantics unchanged; lossless conversion.
+    Reg: accessibility tree; BC-11.
+    Eng: P-3 (label formatting) is a product decision, Report 6.
+
+O5  Opt A — Format v4 in BC-17.2; appearance preserved; protected
+    migration with Save As/overwrite/cancel; older versions reject newer
+    formats; internal v4 evolution while unreleased.
+    Arch R1 §12. CP 17.2 (+ every revision step).
+    AC: frozen fixtures round-trip; newer formats/revisions refused.
+    Reg: PROJECT-1.x load/save tests; BC-05.4 prompt.
+    Eng: formatRevision mechanism [ENG-EV].
+
+O6  Opt A — Scoped ancestor states (parent hover, focus-within …);
+    no unrestricted selectors.
+    Arch R1 §4.3, §6.3. Mx A13. CP 17.5.
+    AC: scope resolution; reparenting → inactive rule, reported.
+    Reg: BC-12 moves, BC-10 multi-move.
+    Eng: none.
+
+O7  Opt B — Pseudo content: empty, glyphs, custom text (escaped);
+    accessibility guidance; no announcement guarantees.
+    Arch R1 §4.4, §10, §11. Mx A14. CP 17.6.
+    AC: escaping fuzz; guidance shown.
+    Reg: BC-11.
+    Eng: the glyph allow-list content (ENG-PROP); counters are
+    product decision P-4.
+
+O8  Opt A — Media surfaces only; no native-control internals; no custom
+    player; existing iframe/media contracts intact.
+    Arch R1 §19. Mx A15, rows 63–68. CP 17.16.
+    AC: BC-07/BC-08 unchanged.
+    Reg: the BC-08 media subset; Electron video smoke.
+    Eng: none.
+
+O9  Opt A — Pagination semantic styling replaces look copying;
+    appearance/behaviour preserved; BC-09 requirements; the current page
+    is non-navigable and runs no interactions.
+    Arch R1 §12.6. Mx A13, row 38. CP 17.15.
+    AC: before/after computed equality incl. heterogeneous siblings;
+    revision-gated idempotence.
+    Reg: the BC-09 subset.
+    Eng: none (mechanism defined). [EXIST] the look-copy paths
+    inventoried.
+
+O10 Opt A — Valid runtime semantic states via ARIA/data-state; Canvas
+    simulation; Preview/Export reflect runtime; no invalid ARIA.
+    Arch R1 §13. Mx A13. CP 17.14.
+    AC: Preview = Export; the accessibility tree is valid.
+    Reg: BC-04, BC-02.5, EXPORT-1.3 runtime.
+    Eng: none. [EXIST] aria-expanded on toggle triggers already shared.
+
+O11 Opt A — Multi-selection intersection; effective computed values;
+    atomic all-or-nothing; BC-10 contracts; never a silent subset.
+    Arch R1 §5.4. CP 17.4/17.5 (+ each family).
+    AC: no hidden partial edits.
+    Reg: BC-10 tests.
+    Eng: none.
+
+O12 Opt A — One preset architecture (typography, CSS, component,
+    state, motion); editable after application; BC-14 integrated.
+    Arch R1 §15. CP 17.23/17.24.
+    AC: one model, one schema.
+    Reg: BC-11 paste semantics.
+    Eng: see N8.4.
+
+O13 Opt A — No missing native components in BC-17; the architecture
+    accommodates them.
+    Arch R1 §5.5. Mx A14/A15 OWNER-OUT rows. CP none.
+    AC: registry extensibility demonstrated by a test profile (17.2).
+    Reg: —.
+    Eng: none.
+
+O14 Opt B — Comprehensive SVG styling AND interactive vector editing
+    (mandatory).
+    Arch R3 (all). Mx A17, row 67. CP 17.18–17.22.
+    AC: Report 3 §11–12.
+    Reg: the existing SVG suites.
+    Eng: the bending feel/arc handle tuning (ENG-PROP).
+    NOT reduced to colour/stroke editing.
+
+O15 Opt A — Chromium + at least one other engine; Electron primary;
+    vendor CSS generated; documented limits; no editor-only emulation;
+    targeted verification.
+    Arch R1 §6.2, §8.2. Mx Part E. CP every CP's browser field.
+    AC: every row classified with evidence by its checkpoint.
+    Reg: per CP.
+    Eng: none.
+
+O16 Opt A — The comprehensive CSS clipboard (base, targets, states,
+    compounds, pseudo, advanced, keyframes; target/state-aware
+    sections); BC-11 semantics; dedupe/remap; no identity/content copy;
+    pseudo content included.
+    Arch R1 §14. Mx A18. CP 17.5, 17.6, 17.11 (+ each family).
+    AC: atomic; skip notices; dedupe.
+    Reg: BC-11 tests.
+    Eng: inactive rules excluded from the CSS copy [ENG-PROP, R1 §4.8].
+
+
+2. ADDITIONAL DECISIONS N1–N11 (19 stated)
+------------------------------------------
+N1.1 Opt A — Separate Native and Custom Progress cards; Inspector
+     variant switch; conversion preserves styling, values, accessibility
+     and inactive data; non-destructive; atomic and undoable.
+     Arch R1 §9.2, §9.5–9.6, §4.8. CP 17.13.
+     AC: lossless round trip.
+     Eng: inactive data is retained, validated, excluded from the CSS
+     copy, included in element copy, cleared by Reset all, and restored
+     on reconversion (all defined, R1 §4.8).
+
+N1.2 Approved — Labels: none, percentage, value/max, templates with
+     {value}/{max}/{percent}; independent styling.
+     Arch R1 §9.7. CP 17.13.
+     AC: invalid tokens rejected; escaped.
+     Eng: rounding, number formatting, decimals and the indeterminate
+     label = PRODUCT decision P-3 (not invented).
+
+N2   Opt B — Full semantic Tabs in 17.14 (roles, aria-selected/controls,
+     roving tabindex, keyboard, selected/inactive states, appearance
+     preserved, Design simulation, parity).
+     Arch R1 §13.2. Mx row 47. CP 17.14.
+     AC: APG keyboard model; a valid accessibility tree.
+     Eng: activation policy = automatic, per the APG [ENG-EV].
+     Upgrading EXISTING Basic Tabs instances = PRODUCT decision P-1.
+     NOT reduced to adding aria-selected.
+
+N3.1 Include — Straight-segment bending to a cubic; endpoints preserved;
+     live feedback; editable handles; one undo; exact cancel.
+     Arch R3 §3.2. CP 17.20.
+     AC: endpoints are invariant (unit); exact rollback.
+     Eng: none (least-norm solver defined).
+
+N3.2 Include interactive — Numeric AND interactive Canvas arc editing of
+     rx, ry and rotation; endpoints editable; endpoint↔centre
+     conversion, radius correction, transforms, degeneracy; live,
+     atomic, cancellable.
+     Arch R3 §3.3. CP 17.21.
+     AC: round trip; handles show the effective radii.
+     Eng: handle usability on tiny arcs (ENG-PROP).
+     NOT numeric-only.
+
+N3.3 Include — Explicit primitive→path conversion preserving appearance,
+     styling, transforms, identity and references; undoable; path
+     controls replace primitive controls; no reverse.
+     Arch R3 §3.1. CP 17.20.
+     AC: pixel equality.
+     Eng: none (the line stroke materialization defined).
+
+N4.1 Opt C — Snap anchors to anchors, object bounds and a viewBox grid in
+     the same SVG; the global Snap preference; Alt bypass; never HTML
+     geometry; a single preference.
+     Arch R3 §5. CP 17.21.
+     AC: screen-constant threshold; no HTML targets.
+     Reg: BC-13 D11 preference.
+     Eng: grid default spacing (ENG-PROP).
+
+N4.2 Approved — Clipping and masking of the whole SVG AND individual
+     objects; typed definitions; ownership/reuse/remapping/clipboard/
+     deletion/persistence/undo/export defined; parity.
+     Arch R3 §2.6, §7.1–7.3. Mx A17. CP 17.19 (+ 17.21 interactive
+     geometry).
+     AC: parity; dedupe.
+     Eng: none (value semantics).
+     NOT restricted to the outer box.
+
+N5   Opt A — Vector object copy/cut/paste/duplicate within and between
+     SVGs with all styling and definitions; fresh ids; dedupe/remap;
+     offsets; cross-viewBox conversion; atomic; a separate internal
+     clipboard; keyboard routing; multi-object.
+     Arch R3 §8, §6.3. CP 17.22.
+     AC: no interference with the element or CSS clipboards.
+     Eng: none.
+
+N6   Opt B — Individual states, then curated compounds per component;
+     no free state builder; deterministic precedence; invalid
+     combinations handled.
+     Arch R1 §4.3, §6.4–6.5. CP 17.5, 17.14, 17.15.
+     AC: precedence table holds.
+     Eng: the curated list per profile (ENG-PROP, reviewed per CP).
+
+N7   Opt A — ::first-line/::first-letter in 17.6, with exact
+     allow-lists, native reflow and drop caps.
+     Arch R1 §10.3. CP 17.6.
+     AC: incompatible controls hidden.
+     Eng: browser verification [UNVER].
+
+N8.1 Opt C — App-level personal + project libraries; copy between them;
+     project presets travel with the file; a shared model; no cloud.
+     Arch R1 §15.2. CP 17.23.
+     AC: persistence in browser + Electron.
+     Eng: IndexedDB for the app library (ENG-EV: existing repository
+     pattern).
+
+N8.2 Opt A — Detached application; no links; edits/renames/deletes
+     never change elements; atomic, undoable.
+     Arch R1 §15.3. CP 17.23.
+     AC: elements unaffected by preset changes.
+     Eng: none.
+
+N8.3 Opt A — Built-ins read-only; apply or duplicate; stable identities;
+     update behaviour defined.
+     Arch R1 §15.4. CP 17.23/17.24.
+     Eng: builtinVersion (ENG-PROP).
+
+N8.4 Opt A — Unique names per library; same names across libraries
+     allowed; rename/delete allowed and never affect elements; stable
+     ids.
+     Arch R1 §15.5. CP 17.23.
+     Eng (owner asked for engineering clarification): NFC + trim +
+     whitespace collapse + case-fold comparison; 1–64 characters;
+     deletion confirmation; copy-conflict options Keep both / Replace /
+     Cancel as a PROPOSAL only.
+
+N9   Opt A — No public releases until BC-17 completes; internal builds
+     allowed; v4 evolution allowed; no silent loss across development
+     builds; safe identification.
+     Arch R1 §12.1–12.5. CP 17.2.
+     AC: the formatRevision chain; newer revisions refused.
+     Eng: none.
+
+N10.1 Opt B — Proceed with BC-17 before formal BC-13.7 closure; NOT a
+      waiver; BC-13 audit tracked; contracts preserved; no silent
+      acceptance of P1/D23/D39 findings.
+      Arch R1 §19; R4 §2; R6 BC-13 section. CP all that touch BC-13.
+      AC: BC-13 targeted sets per R4 §2.
+      Eng: none.
+
+N10.2 Opt A — BC-14 Typography Presets integrated into BC-17.23 with
+      traceability; BC-14 must not disappear.
+      Arch R1 §15.7. CP 17.23.
+      AC: the BC-14 traceability table.
+      Eng: the BC-14 requirement text is absent from the repository →
+      action A-4 (owner supplies it).
+
+N11  Opt B — Explicit on-demand Design playback; one iteration (also for
+     infinite); temporary and interruptible; no modification of
+     settings, geometry, snapping, history, dirty state, persistence or
+     export.
+     Arch R1 §16. CP 17.11.
+     AC: the interruption list; no persistence.
+     Eng: the reduced-motion handling during playback (ENG-PROP,
+     owner-overridable; R6 R-24).
+
+
+3. GENUINELY UNRESOLVED PRODUCT DECISIONS (none block BC-17.2)
+--------------------------------------------------------------
+P-1 Existing Basic Tabs instances under N2
+    Q: Are Basic Tabs already in user projects upgraded to semantic Tabs?
+    Facts [EXIST]: Basic Tabs carry no component marker (ComponentMarker
+    = "pagination" only). Existing instances are plain buttons with
+    show/hide bindings, so they can only be recognized structurally.
+    Options:
+     A) Automatic upgrade in a revision step when the structure EXACTLY
+        matches the factory pattern (tab group + panel group + one show
+        and N−1 hide bindings per tab). Non-matching instances stay
+        visual.
+        + seamless; − heuristic, and it changes markup/keyboard
+          behaviour on open.
+     B) An explicit "Convert to semantic Tabs" command offered on
+        recognized structures; new insertions are semantic.
+        + user control, no surprise; − legacy projects stay
+          non-semantic until converted.
+     C) No legacy upgrade.
+        + simplest; − legacy tabs never gain semantics.
+    Consequences: A needs a revision step and fixtures; B a command +
+    an Inspector notice.
+    Recommendation: B (preserves "existing appearance and behaviour"
+    literally and avoids heuristic markup rewrites).
+    Blocks: BC-17.14 only.
+
+P-2 Logical properties and writing modes
+    Q: How should logical CSS properties be offered alongside the
+    existing physical ones?
+    Facts: physical and logical longhands for the same side conflict by
+    order. All engines support both. writing-mode is visual styling;
+    `direction` should come from the HTML dir attribute.
+    Options:
+     A) A per-group "Physical | Logical" representation (spacing, size,
+        insets, borders, radii). Exclusive per element and group;
+        lossless conversion in horizontal-tb LTR; writing-mode and
+        text-orientation added in Typography.
+     B) writing-mode only; no logical properties.
+     C) A, plus a dir attribute (ltr/rtl/auto) on elements in component
+        properties → Accessibility/Content.
+    + A/C make the logical properties meaningful and future-proof;
+    − more Inspector states.
+    Recommendation: A (C if the owner wants RTL authoring now).
+    Blocks: the logical part of BC-17.7 only.
+
+P-3 Custom Progress label formatting (N1.2 details)
+    Q: How are label numbers formatted, and what does the label show while
+    indeterminate?
+    Options:
+     A) percent decimals setting 0–2 (default 0, round half up);
+        {value}/{max} printed as authored numbers; locale-neutral
+        formatting (no grouping, "." decimal); indeterminate → a separate
+        authored "indeterminate text" (default: no label).
+     B) As A, but locale-aware formatting using the document language
+        (the export must then embed formatting behaviour; the runtime
+        is affected).
+     C) As A, but an indeterminate label that shows the template with
+        the tokens blank.
+    Recommendation: A (deterministic, export-static; B adds runtime
+    locale behaviour).
+    Blocks: BC-17.13 only.
+
+P-4 CSS counters in pseudo-element content
+    Q: Add a typed "counter" content kind (counter-reset/increment +
+    counter()/counters() with list-style types) for numbered headings,
+    custom list numbering and step indicators?
+    Facts: applicable CSS in all engines, but not among O7's approved
+    kinds (empty, glyph, text).
+    Options:
+     A) Include in BC-17.6 (headings/containers) and BC-17.17 (lists).
+     B) Exclude from BC-17.
+    Recommendation: A. It fits the typed model with no raw CSS.
+    Blocks: nothing earlier than BC-17.6.
+
+
+4. ENGINEERING DECISIONS RESOLVED WITHOUT THE OWNER (evidence-backed)
+---------------------------------------------------------------------
+- :where() specificity equalization with global rank buckets.
+- The formatRevision migration identity.
+- Value-semantics SVG definitions.
+- Index-based anchor identity with remapping.
+- Tabs automatic activation (APG).
+- IndexedDB for the app preset library.
+- Forced-only interaction states in Design.
+- Compile-time playback variant (no API mandate).
+- Validation bounds as security limits (the projectLimits rationale).
+- Escaping rules.
+- The vendor table policy.
+- Inactive-rule handling.
+- Clipboard keyframe hashing.
+Each is documented in Reports 1/3 and verified at its checkpoint.

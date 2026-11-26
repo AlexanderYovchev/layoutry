@@ -1,0 +1,804 @@
+BC-17.1.1 — Reconciled Architecture
+Report 1 of 6
+===================================
+Date: 2026-11-26.
+Branch: main. HEAD: 3868436.
+Investigation and planning only. No production code was changed.
+
+Evidence labels used throughout:
+[VERIFIED]  read in the source at HEAD 3868436 during this checkpoint.
+[REPORT]    taken from a BC-17.1 / BC-13 report and not independently
+            re-verified here.
+[PROPOSED]  new architecture, not implemented.
+[UNVERIFIED] a claim that needs a browser or measurement to confirm.
+
+
+0. SOURCE MATERIAL
+------------------
+All four BC-17.1 reports were available and reviewed (docs/reports/,
+committed in 3868436):
+- BC-17.1-Comprehensive-Architecture-Audit.txt
+- BC-17.1-Component-CSS-Capability-Matrix.txt
+- BC-17.1-Inspector-Organization-and-Implementation-Roadmap.txt
+- BC-17.1-Owner-Decisions.txt
+No conclusion is blocked by a missing report.
+
+Source areas re-inspected for this reconciliation [VERIFIED]:
+- the style recipes: canvas/utils/elementStyleRecipes.ts,
+  resolveTransitionStyle.ts, documentDefaultStyles.ts;
+- the Canvas element components (style= / className usage);
+- the editor store's live-gesture actions (setFreeChildGeometryLive,
+  begin/commit/cancelTransaction);
+- Pagination: editor/commands/paginationCommands.ts (getStateLook/
+  applyStateLook, setPaginationCurrentPage);
+- interaction semantics: editor/utils/triggerAccessibility.ts,
+  canvas/hooks/usePreviewTriggerAria.ts,
+  export/utils/exportBehaviorAttributes.ts and exportInteractionRuntime.ts,
+  editor/factories/interactionCompositions.ts (Basic Tabs);
+- the CSS clipboard: editor/commands/styleClipboardCommands.ts
+  (STYLE_GROUP_KEYS);
+- persistence: project/types/projectFile.ts (CURRENT_PROJECT_FORMAT_VERSION
+  = 3), project/utils/projectFormatMigrations.ts,
+  project/rules/projectLimits.ts, editor/schemas/editorDocumentSchema.ts;
+- the whole SVG implementation (see Report 2);
+- the style group types (typography, background, border, display,
+  filters, flowLayout, position, sizeConstraints, spacing, transform).
+
+
+1. CORRECTIONS TO BC-17.1 FOUND DURING RECONCILIATION
+-----------------------------------------------------
+C-1 Runtime ARIA already exists for toggles [VERIFIED].
+    BC-17.1 (O10) assumed the runtime had to start setting aria-expanded.
+    It already does:
+    - resolveTriggerAccessibility (BC-02.5) gives button/link triggers
+      that TOGGLE a target an aria-expanded state;
+    - Preview applies it through usePreviewTriggerAria;
+    - Export writes the initial value (exportBehaviorAttributes) and
+      the runtime keeps it current (exportInteractionRuntime: setAttribute
+      "aria-expanded").
+    Show-only/hide-only triggers (tabs, toasts, close buttons)
+    deliberately get none. O10 therefore EXTENDS an existing, shared
+    contract rather than introducing a new one.
+C-2 Basic Tabs are explicitly NOT semantic tabs [VERIFIED].
+    interactionCompositions.ts states:
+    - no tablist/tab/tabpanel roles;
+    - no aria-selected;
+    - no arrow-key navigation;
+    - no active-tab styling.
+    Under O10 ("valid ARIA only where semantically appropriate"),
+    aria-selected may not be added to these buttons on its own. A
+    "selected tab" state must use a validated data-state attribute
+    unless the composition is upgraded to the real ARIA tabs pattern.
+    That upgrade is a behaviour change: Report 5, decision N2.
+C-3 The Canvas does not use inline styles alone [VERIFIED]. Each element
+    component combines:
+      className = documentDefaultClasses(recipe.defaults)  (Tailwind
+                  classes for legacy default presentations)
+                  + node.className (the authored class name)
+      style     = recipe.style  (authored CSS, inline)
+    Export prints the same defaults as declarations. The O2 pipeline
+    must therefore replace two mechanisms (default classes and inline
+    style), and the cascade order between them must be preserved.
+C-4 Transitions never reach the Design canvas [VERIFIED].
+    resolveTransitionStyle returns {} unless isPreview (the "Design
+    Safety Invariant", 1.15.6.14.1). The same invariant must govern
+    keyframe animations and state transitions in the stylesheet
+    pipeline. The Design stylesheet is therefore not identical to the
+    Preview/Export stylesheet; motion declarations are gated.
+C-5 Live gestures write the document on every frame [VERIFIED].
+    setFreeChildGeometryLive replaces node geometry in the store inside
+    a transaction. Under O2, a naive "regenerate the stylesheet on every
+    document change" would rebuild CSS on every drag frame. See §3.5:
+    gesture geometry goes to an inline layer and the node's geometry
+    declarations are suspended from the stylesheet while the gesture
+    runs.
+C-6 BC-13.7's code is committed [VERIFIED], not uncommitted as BC-17.1
+    said. Commit 3868436 ("docs(audit): BC-17.1 …") also contains:
+    - the resize-snap min/max fix (resolveFreeResizeSnap.ts,
+      useFreeChildResizeSession.ts);
+    - its unit tests;
+    - e2e/bc13-final-audit.spec.ts.
+    The two BC-13.7 reports still do not exist. See §11.
+C-7 SVG object moves use their own lifecycle, not BC-13.5's shared one
+    [VERIFIED]. useSvgObjectMoveSession:
+    - Escape restores the WHOLE document and selection from the
+      transaction snapshot;
+    - pointercancel COMMITS a moved gesture (endSession), where BC-13.5
+      rolls back.
+    This matters for vector editing (Report 2 §5).
+
+
+2. APPROVED DECISION TRACEABILITY
+---------------------------------
+Every decision was reconciled without weakening it. "Where" names the
+section of this report and the checkpoint (Report 4 numbering) that
+implements it.
+
+Decision | Reconciliation status | Where
+---------+-----------------------+------------------------------------------
+O1 A     | Represented in full.  | §3.1; BC-17.2
+O2 C     | Represented; refined  | §3.4–3.6; BC-17.3. The gesture layer is
+         | by C-3/C-4/C-5.       | specified, and so is committed-geometry
+         |                       | return.
+O3 A     | Represented; placement| §6; BC-17.4
+         | reconciled.           |
+O4 C     | Both variants are     | §3.9, Report 3; BC-17.12 (native),
+         | required deliverables.| BC-17.13 (custom). Open: N1.
+O5 A     | Represented; schema   | §7; BC-17.2. Open: release policy N9.
+         | foundations defined.  |
+O6 A     | Represented; scope    | §3.3, §4; BC-17.5
+         | rules defined.        |
+O7 B     | Represented.          | §3.7; BC-17.6
+O8 A     | Represented.          | Report 3; BC-17.16
+O9 A     | Represented; timing   | §7.4; BC-17.15
+         | fixed.                |
+O10 A    | Represented; corrected| §3.8; BC-17.14. Open: N2 (tabs
+         | by C-1/C-2.           | semantics).
+O11 A    | Represented; identity | §3.2; BC-17.4, BC-17.5
+         | rules defined.        |
+O12 A    | Represented.          | §8.2; BC-17.23/17.24. Open: N8, N10.
+O13 A    | Respected; extension  | §3.2; out of BC-17.
+         | path defined.         |
+O14 B    | Represented in full,  | Report 2; BC-17.18–17.22. Open: N3–N5.
+         | split into 5          |
+         | checkpoints.          |
+O15 A    | Represented as an     | §3.6, §9; every checkpoint.
+         | inclusion gate.       |
+O16 A    | Represented; spread   | §8.1; BC-17.5 onwards, keyframes in
+         | across checkpoints.   | BC-17.11.
+
+No decision was found to be technically impossible. One material
+interaction was found: O10 combined with C-2. It is isolated as N2
+rather than resolved silently.
+
+
+3. REVISED SHARED STYLING ARCHITECTURE [PROPOSED]
+-------------------------------------------------
+Layers, from data to pixels. Each layer owns one responsibility.
+
+  (1) Document model   editor feature   typed groups (base) + styleRules
+  (2) Registry         editor feature   which targets/states/groups apply
+  (3) Rule compiler    canvas utils*    node → typed style IR (selectors
+                                        + declarations), pure, per node
+  (4) Stylesheet       export feature   IR → CSS text: ordering, vendor
+      printer                           expansion, keyframes, scoping
+  (5) Surfaces         canvas / export  Design and Preview mount a
+                                        <style>; Export writes a file
+
+* The recipes already live in canvas/utils and are imported by export
+  (EXPORT-1.2). The compiler stays wherever the recipes live today, so
+  no feature boundary moves. Moving the pure recipes to a neutral
+  location is a separate engineering choice; it is not required.
+
+3.1 Document model (O1)
+- Base styling stays exactly where it is: the top-level typed groups on
+  EditorElementNode (typography, background, border, borderRadius,
+  shape, boxShadow, filters, display, position, transition, transform,
+  spacing, layout groups, size, mediaFit, svgPaint…). Nothing moves, so
+  existing documents keep their meaning.
+- New, optional per-node field:
+    styleRules?: StyleRule[]
+    StyleRule = {
+      id: string;                       // editor-local, regenerated on clone
+      target: StyleTargetId;            // "element" | registry part id
+      state: StyleStateSelector;        // see 3.3
+      groups: Partial<StyleGroups>;     // the SAME typed group types
+      content?: PseudoContent;          // pseudo-element targets only (O7)
+    }
+- There is at most one rule per (target, state) pair per node. This is
+  enforced by integrity checks, which already enforce unique ids per list
+  (checkDocumentIntegrity).
+- The base equals the implicit rule (element, default). It is never
+  duplicated into styleRules.
+- Document-level, optional:
+    styleAssets?: {
+      keyframes?: KeyframesDefinition[];  // BC-17.11
+      presets?:   PresetDefinition[];     // BC-17.23, if N8 = per-project
+    }
+  Keyframes are referenced by id from animation groups. The printer
+  emits each referenced definition once.
+- No artificial document nodes are created (O1). Real child nodes of
+  compositions stay real nodes (BC-12 untouched).
+
+3.2 Capability registry (O1, O11, O13)
+- Replaces nothing on day one: it is GENERATED from the existing
+  elementCapabilities (per-tag booleans) and extended with per-component
+  entries.
+- Keyed by a styling profile id, resolved from (tag, input type,
+  componentMarker, variant).
+- Each entry declares:
+    targets: [{ id, label, kind, selectorRecipe, groups, states,
+                browserSupport }]
+      kind ∈ element | pseudo | nativePart | roleGroup | structural
+    states:  the allowed StyleStateSelector atoms per target
+    groups:  the allowed style groups per (target, state), together with
+             any property-level allow/deny (for example, no layout
+             groups on ::placeholder)
+- Target identity across component types (O11): a target id is a GLOBAL
+  semantic id ("element", "before", "after", "placeholder", "marker",
+  "selection", "backdrop", "progress.track", "progress.fill",
+  "toggle.box", "toggle.indicator", "select.arrow",
+  "pagination.pageLink", …).
+  - Two components share a target only if their ids are equal AND the
+    target kinds are equal.
+  - Multi-selection offers the intersection of target ids; for each
+    target, the intersection of states; for each (target, state), the
+    intersection of groups.
+- State identity: canonical atom ids (§4.1). The ancestor state
+  "ancestor:hover" is a distinct atom; see 3.3.
+- New native components (O13: range, meter, date, file, color,
+  details…) are added later as registry entries plus renderers. The
+  model, compiler and Inspector need no redesign: a new target kind is
+  only required for genuinely new native parts (for example
+  range.track/range.thumb), and nativePart already covers those.
+
+3.3 State selectors (O6, O10)
+  StyleStateSelector = {
+    self?: StateAtom[];         // e.g. ["hover"] or ["checked","hover"]
+    ancestor?: { scope: AncestorScope; atom: StateAtom };  // O6
+  }
+- Default = {}.
+- AncestorScope (O6 limits) — exactly one of:
+  - "component" = the nearest ancestor carrying the same componentMarker
+    or composition root;
+  - "parent" = the direct parent;
+  - "nearestOfProfile:<id>" = the nearest ancestor of a registry profile
+    (for example the card container, a label for focus-within).
+  These generate a scoped descendant selector using the ancestor's
+  generated class. They never use free selectors, sibling combinators,
+  cross-document references or :has(). :has() is not needed for any
+  approved case; it is excluded as a scope (it is also a selector-
+  performance risk).
+- The validity of an ancestor rule is checked against the CURRENT tree.
+  A rule whose ancestor no longer exists (after a move or reparent) is
+  kept but marked inactive in the Inspector and omitted from output.
+  It is not deleted silently, and the Inspector reports it.
+- Combined self states: the model allows several atoms. Whether the UI
+  exposes combinations is decision N6. Precedence is defined either way
+  (§4).
+
+3.4 Rule compiler (O2)
+- Pure function: (node, registry entry, context) → NodeStyleIR {
+    baseDeclarations,
+    rules: [{ selectorParts, declarations, layerRank }],
+    keyframeRefs,
+    svgDefsRefs
+  }
+- It reuses the existing resolvers. Each resolver today returns React
+  CSSProperties. A thin adapter converts them into CSS declarations (the
+  export already does this conversion).
+- One compiler serves Design, Preview and Export. The surface differences
+  are passed in as context flags, never forked:
+    designSafety: true on Design → transition/animation declarations
+                  omitted (C-4);
+    forcedStates: Design only → see 3.6.
+- Generated selectors:
+  - Element class: a stable, generated per-node class (the export
+    already produces one rule per element). The editor's class can be
+    derived from the node id; it never uses node.className and never
+    writes an HTML id. Authored htmlId/className stay authoring data
+    exactly as today.
+  - Scoping: on Design/Preview, every rule is prefixed by the
+    document-surface scope ([data-document-surface], UI-1). Document
+    CSS therefore cannot reach the editor chrome. This follows CLAUDE.md:
+    editor tokens and document styles must not leak.
+  - Export: the scope prefix is omitted; class names are the export's.
+
+3.5 Stylesheet pipeline and incremental updates (O2)
+- One <style> element per surface. It is owned by a StyleSheetHost
+  component outside the node tree, so node components no longer receive
+  authored CSS as props.
+- Incremental strategy:
+  - a per-node IR cache keyed by node object identity (the store is
+    immutable: an unchanged subtree keeps its references);
+  - a change to N nodes recompiles N nodes;
+  - the CSS text is held as per-node chunks;
+  - CSSOM updates replace only the affected rules (insertRule/
+    deleteRule on a constructed or element sheet) instead of rewriting
+    the whole text. Which of the two is faster is engineering; it is
+    measured in BC-17.3.
+- Node components keep only:
+  (a) the generated class;
+  (b) editor-runtime inline styles that are not authored CSS: drag
+      opacity, text-editing outlines, cursors during editing,
+      pointer-events overrides, and the gesture geometry below.
+  These are listed per component in BC-17.3, where every style=
+  occurrence is classified. The [VERIFIED] count is:
+  - 34 occurrences in 26 document-element components (these change);
+  - 11 occurrences in 7 editor overlay components (selection, hover,
+    guides, drop and insertion previews), which are chrome and are NOT
+    affected.
+- Gesture geometry layer (O2, C-5):
+  - while a BC-13 Free drag/resize, an SVG gesture or a gradient-stop
+    drag is active, the gesture writes its live values to an INLINE
+    override on the moving node only;
+  - the compiler skips that node's geometry declarations (or the whole
+    node when cheaper) until the gesture ends;
+  - commit → the transaction commits the document → the node is
+    recompiled once → the inline override is removed in the same frame;
+  - cancel/rollback (BC-13.5 lifecycle) → the override is removed and
+    nothing is recompiled.
+  - The override never enters the document, history, Preview or Export.
+    Preview is not reachable during a gesture: BC-13.5 already ends
+    gestures on Preview.
+  - Existing behaviour is preserved: setFreeChildGeometryLive may keep
+    writing the store (snapping and containment read the model), and
+    only the CSS path changes.
+- Stale or duplicate rule prevention:
+  - rules are keyed by (nodeId, ruleId) and removed when the node or
+    rule leaves the document; the cache is keyed by the live tree;
+  - project switch, New and Open dispose the sheet.
+  - Tests: a property-based test that diffs the incremental sheet
+    against a full rebuild after random edit sequences.
+
+3.6 Forced-state simulation, Preview states, Export (O2, O10, O15)
+- Design forced state: the Inspector's state selector sets editor UI
+  state (not document data). The Design compiler then emits, for that
+  node only, an extra copy of the state rule with
+  `[data-ly-force-state~="hover"]` substituted for `:hover`, and the
+  node gets the attribute. Nothing editor-only reaches Preview or Export.
+  - Native parts that cannot be forced (for example ::-webkit-progress-
+    value while :indeterminate) are simulated only where the browser
+    allows it. Otherwise the Inspector says "preview in Preview mode".
+  - No editor-only emulation of an unsupported export result (O15).
+- Preview: real pseudo-classes; runtime attributes per 3.8.
+- Export: the same IR without the scope prefix or force variants.
+- Vendor expansion (O15) happens in the printer only, from a table:
+  ::-webkit-progress-bar/-value, ::-moz-progress-bar,
+  ::-webkit-search-cancel-button, -webkit-backdrop-filter,
+  -webkit-mask-*, ::-webkit-scrollbar*…
+  - Each vendor selector goes in its OWN rule. An unknown selector in a
+    list invalidates the whole list, so it must never be grouped with
+    others.
+  - A capability is included only if the table lists Chromium AND at
+    least one of Gecko/WebKit.
+- Parity criteria (no byte-identity required):
+  (a) computed-style equality on a fixed property list per target and
+      state, for Design-with-forced-state vs Preview-with-real-state vs
+      exported page, per engine;
+  (b) screenshot parity within a small tolerance on a kitchen-sink
+      document;
+  (c) behavioural parity: interactions, focus order, accessible names
+      and roles unchanged (accessibility-tree snapshot).
+
+3.7 Pseudo-elements and content (O7)
+- Targets: before, after, placeholder (inputs/textarea), marker
+  (li), selection (text-bearing), backdrop (dialog; the export already
+  emits a ::backdrop default), file-selector-button (deferred with O13).
+- content: PseudoContent =
+    { kind: "none" }        → content: ""   (empty decorative box)
+  | { kind: "glyph", glyph: GlyphId }   // allow-listed set, escaped
+  | { kind: "text", text: string }      // explicit custom text
+- Serialization:
+  - always a CSS string literal;
+  - every character escaped through one tested function (\", \\,
+    newlines, control characters, and </style> sequences are
+    impossible after escaping);
+  - length-limited.
+- Accessibility:
+  - the Inspector warns that generated text may or may not be announced
+    and that meaningful content belongs in real elements;
+  - the alternative-text syntax (content: "x" / "") is emitted only
+    where it is supported. It is UNVERIFIED in Gecko and is applied as
+    progressive enhancement, never relied upon.
+  - No guarantee is made about announcement or suppression.
+
+3.8 Runtime semantic states (O10)
+- Existing sources [VERIFIED]: :disabled (native), aria-current="page"
+  (BC-09), aria-expanded on toggle triggers (C-1), dialog [open].
+- New runtime-set states, through the SHARED contract (one resolver
+  used by Preview and the export runtime, as resolveTriggerAccessibility
+  is today):
+  - data-state="open" | "closed" on show/hide/toggle TARGETS
+    (dropdown menu, popover, toast, collapsible content). These are
+    already tracked as runtime visibility.
+  - data-state="active" | "inactive" on show-only triggers whose
+    first-shown target is visible (tabs), unless N2 upgrades tabs to the
+    ARIA tabs pattern (then aria-selected).
+- Validation: data-state values come from a closed enum and are written
+  by the printer and runtime only. The runtime still reads only integer
+  tokens and keywords (EXPORT-1.3 contract kept).
+- Canvas: the forced-state mechanism simulates open/active; Design keeps
+  showing hidden targets for editing as today (Preview-only hiding).
+
+3.9 Progress (O4)
+- Native: registry targets element/track/fill. Indeterminate is a state
+  atom (:indeterminate). The printer emits the vendor rules and
+  appearance:none once a track or fill rule exists. Semantics are
+  unchanged.
+- Custom: an explicit opt-in variant (BC-17.13).
+  - Rendered structure: element (role="progressbar", aria-valuemin/max/
+    now, omitted now when indeterminate, accessible name from the
+    existing accessibility fields) > internal renderer-generated parts
+    track / fill / segment / label.
+  - These parts are registry targets (kind nativePart-like "internal").
+    They are NOT document nodes (O1).
+  - Value/max/indeterminate reuse the existing progress fields.
+  - Segments = a typed count; label = a typed format.
+  - Animations use the shared motion architecture and are cross-engine.
+- Conversion native ⇄ custom: one command, one history entry.
+  - Mapping: element→element, track→track, fill→fill (identical target
+    ids), so styles carry over; data fields are shared.
+  - Custom-only rules (segments, label) are kept on the node when it
+    goes back to native and are reported as inactive (not deleted), so
+    a round trip loses nothing.
+  - Undo restores the exact prior node.
+  - Open choices are in N1.
+
+
+4. STATE PRECEDENCE AND SELECTOR CORRECTNESS [PROPOSED]
+-------------------------------------------------------
+4.1 Atoms (canonical ids)
+- Interaction: hover, focus, focus-visible, focus-within, active.
+- Form: checked, indeterminate, invalid, required, read-only,
+  placeholder-shown, disabled.
+- Semantic: current (aria-current="page"), expanded (aria-expanded=
+  "true"), open (data-state=open or [open]), active-tab (data-state=
+  active or aria-selected, per N2), selected (option:checked).
+
+4.2 The specificity problem
+Declaration order only decides between equal specificities.
+- `.x:hover` and `.x:disabled` are both (0,2,0), so order decides.
+- `.anc:hover .x` is (0,3,0) and would beat `.x:disabled` (0,2,0)
+  regardless of order.
+- A compound rule like `.x:checked:hover` (0,3,0) beats both single
+  rules.
+So order alone is NOT a sufficient policy.
+
+4.3 Policy
+Selectors are generated so that specificity is EQUALIZED and precedence
+comes from ORDER only:
+- every generated selector is wrapped as `:where(<scoped structure>)`
+  plus exactly one class of weight. The scope, the ancestor chain and
+  the state pseudo-classes all go inside :where(), which has zero
+  specificity. Example:
+      .n12:where(:hover)                       (0,1,0)
+      .n12:where(:disabled)                    (0,1,0)
+      :where(.n7:hover) .n12                   (0,1,0)
+      .n12:where([data-ly-force-state~=hover]) (0,1,0)
+- :where() is supported in Chromium 88+, Firefox 78+, Safari 14+
+  [REPORT/well-documented; included in the targeted engine check of
+  BC-17.3].
+- Vendor pseudo-elements stay outside :where() as they must, and they
+  still have a single fixed specificity per target.
+- Emission order (later wins), per target:
+    base
+    < ancestor states (in atom order)
+    < hover < focus-within < focus < focus-visible < active
+    < semantic: expanded/open < active-tab/selected/current
+    < checked/indeterminate
+    < compound self states (more atoms later; ties in atom order)
+    < invalid
+    < disabled
+  - Disabled is last, so hover never revives a disabled control.
+  - Invalid wins over focus-visible for colour, but the focus ring is
+    separate: outline lives in its own group, and an invalid rule that
+    does not author outline leaves the focus outline untouched.
+- Simultaneous states (examples):
+  - hover + focus-visible → the focus-visible declarations win per
+    property; hover declarations the focus rule does not set still
+    apply.
+  - hover + disabled → disabled wins.
+  - selected/current + hover → current wins unless a compound
+    "current+hover" rule exists (compound > single).
+  - expanded + focus-visible → focus-visible is earlier than expanded in
+    the list, so expanded colours win and the focus outline still shows
+    (separate property).
+  - ancestor hover + own hover → own hover wins (own atoms rank after
+    ancestor atoms).
+- Inline styles: only editor-runtime and gesture styles stay inline
+  (3.5). They are never authored, so authored states cannot be blocked
+  by them, except during an active gesture, which is intended.
+- !important is never generated.
+
+4.4 Combined-state authoring
+- The model and the policy above support it now, and the precedence is
+  deterministic.
+- Whether the UI exposes it is decision N6.
+- It is not a blocker for BC-17.5: single states ship first.
+
+
+5. ACCESSIBILITY AND SECURITY [PROPOSED]
+----------------------------------------
+- Native controls stay native unless the user picks a custom variant
+  (Progress) or styles a part. Appearance:none is applied only for
+  styled parts, and the Inspector says so.
+- Focus:
+  - removing a visible focus indicator (outline:none on focus-visible
+    without a replacement) shows an advisory;
+  - it is not blocked, since the owner approved design freedom.
+- Reduced motion:
+  - existing transition rule kept;
+  - animations get `@media (prefers-reduced-motion: reduce)` handling
+    in the export and are suppressed in Design (C-4).
+- Data safety:
+  - typed values only: colours validated with the existing
+    isExportableColor, numbers finite and clamped, keywords from
+    enums;
+  - no free CSS, no url() except through the existing asset pipeline
+    (BC-07);
+  - CSS strings via one escaping function;
+  - generated class and data-state values from enums or ids only;
+  - the SVG defs ids are scoped (Report 2).
+- Project-file limits (projectLimits) still bound total JSON values (2M).
+  New per-list caps are proposed for rules per node, layers per group,
+  keyframe stops and path commands (Report 2). This is engineering and
+  needs no owner decision.
+
+
+6. INSPECTOR ARCHITECTURE [PROPOSED]
+------------------------------------
+Order (one scroll, O3):
+1. Element header + Protection notice
+   - the existing InspectorElementSummary/Identity;
+   - Protection stays a header-level status with its toggle.
+2. Component properties
+   - only behaviour and content: Progress value/max, Pagination pages,
+     Video playback, Select options, Table, Link, Interactions, SVG
+     drawing mode and vector object geometry;
+   - Interactions stay here: they are behaviour, not styling.
+   - Accessibility fields (aria labels, aria-current, roles where they
+     exist) form one "Accessibility" subsection here, NOT inside any CSS
+     category, so semantics are never edited as style.
+3. Styling
+   a. Target selector (registry-driven). Real child nodes appear as
+      "Select <part>" links, never as targets.
+   b. State selector (registry-driven; the forced preview toggle).
+   c. Property search across visible categories (labels, CSS names and
+      synonyms).
+   d. Categories: Layout, Size, Spacing, Typography, Fill & Background,
+      Border & Corners, Effects, Shape & Mask, Transform, Motion,
+      Advanced.
+      - Empty categories (no applicable group for the current
+        target/state) are not rendered.
+      - Expansion is remembered per category in a per-viewer preference.
+   e. Each category header carries:
+      - the modified indicator (any field set in this target+state);
+      - Reset category (this target+state);
+      - the "⋯" CSS menu (copy/paste this category for this target+state,
+        O16);
+      - help.
+   f. Inherited values: in a non-default state or ancestor-state rule,
+      unset fields show the value that will apply (from the base or a
+      lower-precedence rule) dimmed, with "from Default". They are set
+      only on edit.
+   g. Reset levels:
+      - field;
+      - category;
+      - "Reset this state";
+      - "Reset this target";
+      - "Reset all styling" (the BC-05 reset, extended).
+      Each is one history entry.
+4. Presets (O12): a "Presets" control at the top of Styling and per
+   category (apply, save current as preset). Applied presets stay
+   editable (N8 decides linking).
+SVG (O14):
+- SVG object styling (paint, dash, caps, gradients, opacity) uses the
+  SAME categories, with the target = the selected vector object(s). The
+  Inspector is the one styling system.
+- Anchor and handle editing is a Canvas vector-edit interface with a
+  small "Path" component-properties subsection (point type, numeric
+  coordinates of the selected anchor). See Report 2.
+Multi-selection (O11):
+- the intersection rule of 3.2;
+- BC-10's effective-value comparison and mixed indicators per (target,
+  state, field);
+- all-or-nothing edits;
+- one history entry.
+- No element is silently skipped. An incompatible selection hides the
+  control and shows why.
+Performance:
+- categories mount lazily (collapsed = not mounted);
+- field components subscribe to their own (node, target, state, field)
+  slices;
+- an Inspector edit recompiles only the affected nodes (3.5).
+Verified today:
+- the sections, Bulk variants, section CSS menu, reset buttons and
+  property-state dots exist [REPORT, BC-17.1 Report 1].
+- Everything in this section beyond them is [PROPOSED].
+
+
+7. PROJECT FORMAT AND MIGRATION [PROPOSED]
+-------------------------------------------
+7.1 Today [VERIFIED]: CURRENT_PROJECT_FORMAT_VERSION = 3.
+- projectFormatMigrations.ts chains older formats upward.
+- Newer formats are refused.
+- The Zod document schema uses strict objects (svgScene is z.strictObject;
+  the node schema is asserted against the TS type). Fields from a newer
+  format are rejected or stripped, never silently honoured.
+- The BC-05.3/05.4 explicit-save upgrade of legacy files (Save As /
+  overwrite / cancel prompt) stays as it is.
+7.2 Introduce v4 in BC-17.2 with ALL schema foundations as optional
+    fields:
+  - styleRules (targets, states and content as closed enums);
+  - styleAssets.keyframes and styleAssets.presets containers;
+  - the extended svgScene vocabulary (curve commands, subpaths, per-object
+    paint extensions);
+  - the progress variant field.
+  Values may stay unused until their checkpoint, but each enum grows
+  within v4 only while v4 is unreleased.
+  Why all foundations up front: every later checkpoint then adds
+  behaviour without a format bump, and intermediate builds never write
+  data an earlier v4 build cannot read. The cost: the schema enums must
+  be designed early (an engineering risk, and they can still grow while
+  unreleased).
+7.3 Migration v3→v4 is an identity migration plus a version stamp. Base
+    styling is unchanged, so appearance is unchanged.
+    Older builds refuse v4 files ("newer version") [VERIFIED behaviour].
+7.4 Pagination (O9): the conversion of legacy appearance happens INSIDE
+    the v3→v4 migration step, in memory, at load time. The order:
+    1. load v3 → migrate (pure function) → in-memory v4 document whose
+       current page's look is expressed as a "pagination.current" rule
+       on the Pagination nav (role-group target, state = current atom);
+    2. the current link's own base look fields are replaced by the
+       non-current look (taken from a non-current sibling; if the
+       siblings differ, from the previous/next sibling;
+       STARTER_PAGE_LOOK if none);
+    3. siblings that differ from each other keep their own base fields
+       (per-link authored styling is preserved). The rule overrides only
+       the five state-look properties (background, border, boxShadow,
+       typography.color, display.cursor) that applyStateLook copies
+       [VERIFIED].
+    - The file on disk stays v3 until the user explicitly saves (BC-05
+      prompt).
+    - No intermediate format exists that loses authored styles: the v4
+      in-memory document is produced in one step from v3.
+    - Acceptance: computed styles of every pagination link are equal
+      before and after migration, and current-page changes no longer
+      call applyStateLook.
+    - Because BC-17.15 implements the rendering of role-group rules, the
+      migration step ships in BC-17.15 too. Until then v4 documents have
+      no pagination rules and setPaginationCurrentPage keeps copying,
+      which is consistent.
+    - Effect on the format: the v3→v4 migration gains a sub-step after
+      v4 has been introduced. That is safe only while v4 is unreleased
+      (O5).
+      - If v4 is released before BC-17.15, the pagination conversion
+        needs a v4→v5 step instead (N9).
+      - A v4 file written before BC-17.15 is also converted by that same
+        step, keyed on "nav component=pagination has no current rule".
+7.5 SVG geometry: existing M/L/Z paths stay valid verbatim, because the
+    command union only grows (Report 2 §3). No data rewrite.
+7.6 Presets: stored per N8. If they are app-level, they are not part of
+    the project format at all (separate store, versioned independently).
+
+
+8. CLIPBOARD AND PRESET INTEGRATION [PROPOSED]
+-----------------------------------------------
+8.1 CSS clipboard (O16), extended from styleClipboardCommands
+    (STYLE_GROUP_KEYS, 18 groups [VERIFIED]):
+  - Payload: { base groups, rules[], keyframes[] (referenced only) }.
+  - Paste:
+    - merge per (target, state, group) exactly as BC-11 merges per group;
+    - unrelated destination styles are kept;
+    - targets/states/groups the destination registry rejects are
+      skipped and listed in the notice;
+    - no ids or class names copied;
+    - atomic (one entry or nothing).
+  - Keyframes:
+    - deduplicated by canonical content hash against the destination
+      document's styleAssets;
+    - equal content → reuse the existing id;
+    - otherwise insert with a fresh id and remap the animation
+      references.
+  - Section menu = the current target+state only.
+  - Pseudo content travels with its rule.
+  - SVG path geometry is not CSS. It travels only through element
+    copy/paste (whole SVG node, ids regenerated as cloneNodeWithFreshIds
+    already does [VERIFIED]) and a vector-object clipboard (N5).
+8.2 Presets (O12): one PresetDefinition = { id, name, kind, scope
+    (category | element | component profile | state | motion |
+    typography), payload: the same shape as the clipboard payload }.
+  - Applying a preset = a paste with preset provenance.
+  - BC-14 typography presets are kind=typography of the same system.
+  - Linking/storage: N8.
+
+
+9. PERFORMANCE ARCHITECTURE [PROPOSED; nothing measured here]
+-------------------------------------------------------------
+Existing evidence [REPORT, BC-13.6/13.6.1]:
+- rendering dominates gesture cost (P1 open);
+- the Free insertion session itself costs ≈4 ms per frame;
+- structure drag start went from 578 to 44 ms at 1,000 rows (BC-12.5).
+No new measurement was taken in this checkpoint.
+
+Cost model at about 1,000 elements:
+- Rule count ≈ nodes + authored rules (+ vendor duplicates). A
+  1,000-node page with no states is about 1,000 rules, the same order as
+  today's export.
+- Generation:
+  - full build = compile all nodes once (Open, Preview start, Export);
+  - edits = per-node recompiles (3.5).
+- Browser style recalculation: class rules versus inline styles have
+  comparable matching cost for single-class selectors. :where() and
+  ancestor-state descendant selectors add matching cost only where they
+  are authored; :has() is excluded.
+- React: authored CSS is removed from node props, which should REDUCE
+  re-renders on style edits. This is [UNVERIFIED]; it must be measured.
+- Gestures: the inline gesture layer keeps the per-frame cost unchanged
+  (no stylesheet work per frame).
+- Forced states touch one node.
+- Animations run in the compositor/style engine. Design does not run
+  them (C-4).
+- SVG path editing: per-frame cost is in the vector overlay. See
+  Report 2 §9.
+
+Acceptance criteria (measured in BC-17.3, re-checked in BC-17.25):
+- Separate measurements are reported for:
+  - engine/compile time;
+  - geometry time;
+  - React render time;
+  - style recalculation;
+  - layout/paint;
+  - total frame time.
+- On a 1,000-element document versus a baseline captured at the start
+  of BC-17.3 (pre-change):
+  - live Free drag total frame time: no regression beyond measurement
+    noise (median and p95);
+  - a single Inspector edit: compile ≤ 2 ms for one node, and total
+    commit-to-paint not worse than baseline;
+  - Open / Preview start / Export: full compile time reported; no
+    regression greater than 10% versus the baseline.
+  - The numbers are provisional targets, to be confirmed against the
+    measured baseline. No element-count or selection-count limits are
+    introduced.
+P1 (BC-13 Canvas render performance) is NOT made a prerequisite. The
+baseline capture in BC-17.3 makes its interaction with O2 visible. A
+separate performance checkpoint is recommended only if the baseline
+shows the new pipeline cannot meet "no regression" without it (Report 4).
+
+
+10. TECHNICAL RISKS AND UNRESOLVED DEPENDENCIES
+-----------------------------------------------
+R-1 The O2 migration touches every element component. Mitigation: the
+    pipeline lands behind a parity harness. For one checkpoint the old
+    and new paths can be compared in tests (not shipped as a user
+    toggle).
+R-2 Cascade order between the Tailwind default classes (in the Tailwind
+    utilities layer) and the generated rules. Mitigation: the defaults
+    move into the generated sheet as the lowest-ranked declarations
+    (the export already prints them as declarations).
+R-3 :where() equalization correctness across engines; the vendor
+    pseudo-element rules interact with it. Covered by the targeted
+    engine check in BC-17.3/17.12.
+R-4 The schema enums are designed up front (7.2). They may grow only
+    while v4 is unreleased (N9).
+R-5 Pagination migration sub-step timing (7.4) depends on the release
+    policy (N9).
+R-6 Tabs semantics (C-2, N2).
+R-7 BC-13 transform geometry: Free move/resize is blocked under
+    transformed ancestors, and transforms are visual only [REPORT,
+    BC-13.1; transformGeometrySafety]. State transforms (hover scale)
+    must not affect snapping measurements; forced states must be off
+    during gestures (BC-17.10).
+R-8 The SVG lifecycle divergence (C-7) must be resolved before vector
+    editing gestures multiply (Report 2).
+R-9 BC-13.7 reports are missing (§11 and Report 4).
+
+
+11. BC-13.7 STATE AND CONFLICT ANALYSIS [VERIFIED]
+--------------------------------------------------
+- Working tree at the start of this checkpoint: CLEAN.
+- Committed in 3868436 together with the BC-17.1 reports:
+  - the authored min/max resize-snap fix (resolveFreeResizeSnap.ts:
+    renderedFreeSize, sizeLimits; useFreeChildResizeSession.ts);
+  - its 4 unit tests;
+  - e2e/bc13-final-audit.spec.ts (6 tests).
+  The commit message does not mention BC-13.7.
+- Missing: BC-13.7-Final-Regression-Audit.txt and
+  BC-13-Alignment-and-Snapping-Milestone-Summary.txt.
+- The BC-13.7 test evidence (unit and e2e passing, fail-before proven)
+  comes from the previous session [REPORT]. It was not re-run here.
+- Open BC-13 items: P1 (Canvas rendering performance), C1 (unreachable
+  padding edges stay unreachable under containment) [REPORT, BC-13.6/
+  13.6.1]. Transformed-element snapping: move/resize stays blocked under
+  transformed ancestors (by design, not a bug).
+- Conflicts with BC-17:
+  - stylesheet pipeline (O2): overlaps with the BC-13 gesture paths. The
+    gesture layer (3.5) keeps them unchanged, so there is no conflict as
+    long as BC-13.7 is closed first and its e2e spec is part of
+    BC-17.3's regression set.
+  - transforms (BC-17.10): depends on the BC-13 transform rules, with no
+    conflict in the current code. BC-17.10 must not lift the
+    transformed-ancestor block without a new decision.
+- Recommendation: Report 4 §1 (close BC-13.7 before BC-17.2).
