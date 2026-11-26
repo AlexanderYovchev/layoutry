@@ -1,0 +1,2062 @@
+BC-17.1.3 — Corrected Architecture
+Report 1 of 7
+==================================
+Milestone: BC-17 — Comprehensive Component CSS Styling and Customization.
+Date: 2026-11-26.
+Branch: main. HEAD: 9e3cc52 (the BC-17.1.1 and BC-17.1.2 reports are
+committed there).
+Status: the authoritative architecture for external QA. Nothing is
+implemented, and this document does not authorize implementation.
+
+This document is self-contained. It supersedes BC-17.1.2 Report 1 (and
+through it BC-17.1 Report 1 and BC-17.1.1 Reports 1–2) wherever they
+differ. The BC-17.1.2 reports stay as historical evidence. Sections
+marked "(CORRECTED 17.1.3)" changed in this checkpoint; every other
+section is the accepted BC-17.1.2 text, re-read and kept.
+
+Approved decisions: 41 (O1–O16, 19 N decisions, P-1–P-6; Report 5).
+No owner product decision is open.
+
+Evidence labels:
+[VERIFIED]  read in source at HEAD 9e3cc52 (or at 3868436 in BC-17.1.1/
+            17.1.2; production code is unchanged between them)
+[TESTED]    covered by tests from an earlier milestone (named), not re-run
+[OWNER]     owner-approved requirement (O1–O16, N1.1–N11, P-1–P-6)
+[ENG]       an engineering decision defended by evidence or standards
+[PROPOSED]  an engineering detail to be confirmed at implementation
+[UNVERIFIED] needs a browser check or a measurement
+[SCOPE-CANDIDATE] evaluated, not approved, not built; additive later
+            without a foundation change; no decision is required to proceed
+
+
+1. SCOPE AND PRINCIPLES
+-----------------------
+1.1 Product requirement [OWNER]. Every supported element, component,
+    native control, media element and SVG object must expose all
+    practically applicable visual CSS, through typed visual controls, on
+    Design, Preview and Export alike.
+    - Presets are starting points.
+    - No raw CSS, arbitrary selectors or raw SVG markup.
+1.2 Principles [ENG]:
+    P1 One model. Base styling and rules are typed. No fake nodes (O1).
+    P2 One compiler. Design, Preview and Export compile through the same
+       pure function and differ only in declared surface flags (O2).
+    P3 The document is the only authority. The DOM is never read back as
+       style truth.
+    P4 Editor-only behaviour never reaches Preview, Export or the saved
+       file: forced states, playback, gesture overrides and guides.
+    P5 Migrations are explicit, versioned and recorded. Absence of data
+       is never used as a migration signal (§12).
+    P6 Every capability passes O15: Chromium (Electron) plus Gecko or
+       WebKit, with documented limits.
+    P7 Existing BC-01…BC-13 contracts are preserved. Changes to them are
+       listed per checkpoint (Report 4).
+    P8 Containment (standing project rule): content never renders outside
+       its container. Every new layout mechanism (float, writing modes,
+       logical sizes, drop caps) states how it stays contained, and is
+       verified live in a browser at its checkpoint.
+    P9 The registry separates CSS APPLICABILITY (would the declaration
+       have any effect here?) from EDITOR LIMITATIONS (it would, but the
+       editor deliberately does not offer it, with a stated reason).
+       Neither is ever written as a blanket "N/A" (§5.6).
+
+
+2. EXISTING FOUNDATIONS (what BC-17 builds on) [VERIFIED]
+---------------------------------------------------------
+- Document node: EditorElementNode with typed top-level groups:
+  - typography, background (+gradient), border, borderRadius, shape,
+    boxShadow, filters;
+  - display (display, visibility, overflow/-x/-y, pointer-events, cursor,
+    user-select);
+  - position (position, offsets, z-index), transition, transform
+    (translateX/Y, rotateDeg, scale);
+  - spacing (margin/padding EdgeValues), flowLayout (flex/grid),
+    flexChild, gridChild, layout (Free geometry px);
+  - sizeConstraints (min/max, px numbers), aspect ratio, mediaFit;
+  - the SVG fields svgKind/viewBox/fill/stroke/strokeWidth and svgScene;
+  - accessibility fields (format 3: ariaCurrent, component marker
+    "pagination" only, labels), interactions (click → show | hide |
+    toggle).
+- Units: CssUnit = px | % | rem | em | vw | vh | unitless | deg.
+- Recipes: canvas/utils/elementStyleRecipes.ts composes the resolvers in a
+  fixed, documented order. Canvas and Export both use it (EXPORT-1.2).
+- Canvas application: className = documentDefaultClasses(recipe.defaults)
+  (Tailwind classes for default presentations) + node.className, and
+  style = recipe.style (authored CSS inline).
+  - 34 style= sites in 26 document-element components;
+  - 11 sites in 7 overlay components (chrome).
+- Export: one class rule per element, after a base reset and the default
+  presentations (with @media and ::backdrop), then a reduced-motion
+  block.
+- Design Safety Invariant: resolveTransitionStyle returns {} unless
+  isPreview. Transitions never run on Design.
+- Live gestures: setFreeChildGeometryLive (and the SVG "Live" actions)
+  write the store document per frame inside begin/commitTransaction.
+  [TESTED BC-13.5/13.5.1: exact rollback, active-interaction registry,
+  Option B keyboard policy]
+- Clipboard: styleClipboardCommands, 18 STYLE_GROUP_KEYS (size,
+  flexChild, gridChild, mediaFit, svgPaint, typography, background,
+  border, borderRadius, shape, boxShadow, filters, transition, transform,
+  display, position, spacing, layout). [TESTED BC-11]
+- Runtime ARIA: resolveTriggerAccessibility gives button/link toggle
+  triggers aria-expanded, shared by Preview (usePreviewTriggerAria) and
+  Export (exportBehaviorAttributes + exportInteractionRuntime, which reads
+  only tokens). [TESTED BC-02.5]
+- Basic Tabs: deliberately non-semantic (no roles, no aria-selected, no
+  arrow keys; show/hide bindings).
+- Pagination (BC-09):
+  - getPaginationParts recognizes role-labelled children (page, previous,
+    next, ellipsis; PAGINATION_ROLE_LABELS);
+  - normalizePagination enforces the invariants;
+  - the current look is copied with getStateLook/applyStateLook (five
+    properties: background, border, boxShadow, typography.color,
+    display.cursor) in setPaginationCurrentPage, normalizePagination
+    (copies of current pages, duplicate currents, a lost current) and the
+    store paths for paste, duplicate and move-out (ordinaryLookIds).
+  [TESTED BC-09.2–09.5]
+- Persistence:
+  - CURRENT_PROJECT_FORMAT_VERSION = 3, a migration chain, newer formats
+    refused;
+  - strict Zod schemas (z.strictObject) with type-equality assertions;
+  - integrity checks (unique ids, list ids);
+  - projectLimits (16 Mi characters, 20,000 nodes, depth 100,
+    2,000,000 JSON values);
+  - legacy-file save prompt (BC-05.4).
+- App-level persistence today:
+  - localStorage for per-viewer preferences, guarded (snapPreference D11,
+    panel widths);
+  - IndexedDB repositories for the browser project library and recovery;
+  - Electron uses app:// origin storage plus userData/Recovery files.
+- Resource Panel: 111 cards = 82 enabled (82 unique element types) + 29
+  disabled placeholders [VERIFIED by counting
+  creationToolbarCategories.ts seeds].
+- Electron 44.9.0 (a recent Chromium; exact version not checked).
+Re-verified or newly read in BC-17.1.3 [VERIFIED at 9e3cc52]:
+- Free geometry is physical: elementDimensionsStyle writes position
+  absolute + left/top/width/height from layout {x,y,width,height}
+  (container-local CSS px). freeLayoutFrame converts client rects with
+  localOriginInset (clientLeft/Top − scroll). No logical form exists.
+- Disabled rendering differs per surface (accessibilityAttributes.ts):
+  - a disabled <button> gets native `disabled` in Preview/Export but
+    `aria-disabled="true"` on Design (a native disabled button swallows
+    the click that selects it);
+  - a disabled <a> gets role="link" aria-disabled="true" and no href on
+    every surface.
+  So a `:disabled`-only selector would never match on Design, and never
+  match a disabled link anywhere (§6.10).
+- Active-interaction registry (editor/utils/activeInteraction.ts): ONE
+  slot. registerActiveInteraction REPLACES the previous cancel without
+  calling it. interruptActiveInteraction is called by Undo/Redo,
+  clipboard, Duplicate, Delete, Copy/Paste CSS, Preview, document
+  replacement and the project workflow, INCLUDING Save/Save As.
+- Reduced motion today:
+  - globals.css: under prefers-reduced-motion, `*, *::before, *::after`
+    get animation-duration 0.01ms !important, animation-iteration-count
+    1 !important, transition-duration 0.01ms !important; and
+    `[data-document-surface] *` gets transition-delay 0s !important.
+    This applies to the Design and Preview document surface too.
+  - Export (printExportStylesheet): an @media block giving only the
+    elements with an authored transition transition-duration 0.01ms
+    !important and transition-delay 0s !important.
+  - Both use !important by existing, tested contract (BC-02.5 B7).
+- Basic Tabs (createBasicTabsNode): root div > [controls div of N
+  buttons, panels div of N panels]. Tab i carries click bindings "show
+  panel i" + "hide every other panel". Panels 2..N start hidden via
+  initialPreviewVisibility. No marker, no role, no ARIA. They render
+  through the generic element renderers and the generic show/hide
+  runtime; no Tabs-specific renderer exists.
+- Pagination boundaries (applyBoundary): disabling a prev/next control
+  swaps ONLY the starter colours (text, border) and sets cursor
+  not-allowed when absent; customized colours are left alone.
+- Export language: `<html lang>` comes from an export option that
+  defaults to "en". The document has no language field and no `dir`
+  field.
+- Modifiers today: Ctrl/Cmd at pointerdown toggles selection, Shift adds
+  (Canvas and SVG objects alike); during a Free move Shift locks the
+  axis and Alt bypasses snapping.
+- In-repo evidence of BC-14: only the disabled "Styles" Resource Panel
+  placeholders (Font Scale "Type size presets", Font Weight "Weight
+  presets", Typography Base "Base font settings", and Color Palette,
+  Theme Toggle, Spacing Scale, Padding Preset, Shadow, Border Radius,
+  Reset). No requirement text exists (§15.7).
+
+
+3. LAYERED ARCHITECTURE
+-----------------------
+  L1 Document model      editor     typed base groups (physical AND
+                                    logical fields) + styleRules +
+                                    styleAssets (keyframes, counters,
+                                    presets) + svgScene (inline
+                                    definition values, Report 3 §2)
+  L2 Capability registry editor     profiles → targets → states → groups
+  L3 Rule compiler       canvas/utils (next to the recipes; pure)
+                                    node + registry + surface flags →
+                                    NodeStyleIR
+  L4 Stylesheet printer  export     IR → CSS text/rules: order, :where(),
+                                    vendor expansion, keyframes, escaping
+  L5 Surfaces            canvas, export
+                                    Design/Preview StyleSheetHost; Export
+                                    files
+  L6 Runtime             canvas (Preview), export (runtime script)
+                                    runtime state attributes (shared
+                                    resolver)
+Dependency direction is unchanged: the canvas and export features already
+import the editor's types; export already imports the recipes.
+
+
+4. STYLING MODEL (L1) [OWNER O1; model details ENG]
+---------------------------------------------------
+4.1 Base styling stays where it is (the top-level groups). It is the
+    implicit rule (target "element", state default) and is never
+    duplicated into styleRules.
+4.2 Rules
+    interface StyleRule {
+      id: string;                    // editor-local; regenerated on clone/paste
+      target: StyleTargetId;         // §5
+      condition: StyleCondition;     // §4.3; {} is invalid for target "element"
+      groups: StyleRuleGroups;       // Partial<the SAME typed groups>
+      content?: PseudoContent;       // only for targets of kind "pseudo" with content
+    }
+    node.styleRules?: StyleRule[]
+    Uniqueness: at most one rule per (target, canonical(condition)).
+    Integrity rejects duplicates and duplicate ids.
+4.3 Conditions (states)
+    interface StyleCondition {
+      self?: StateAtom[];            // sorted canonical order, no duplicates
+      ancestor?: { scope: AncestorScope; atom: StateAtom };
+    }
+    StateAtom (closed enum):
+      hover | focus | focus-visible | focus-within | active |
+      checked | indeterminate | invalid | required | read-only |
+      placeholder-shown | disabled |
+      current | expanded | open | selected
+    AncestorScope (closed enum + id):
+      { kind: "parent" } | { kind: "component" }
+      | { kind: "profile", profile: ProfileId }
+    - Compound = self has two or more atoms. Allowed compounds come only
+      from the registry's curated list per (profile, target) [OWNER N6].
+      There is no user-defined state builder.
+    - The ancestor form has a single atom. Ancestor + self compounds are
+      not offered in BC-17 (curation can add them later without a model
+      change).
+4.4 Pseudo content [OWNER O7, P-4] (CORRECTED 17.1.3: one final union
+    that already carries counter references, so P-4 needs no later
+    shape change)
+    type PseudoContent =
+      | { kind: "empty" }                          // content: ""
+      | { kind: "parts"; parts: ContentPart[];     // 1–16 parts
+          altText?: string }                       // the "/ alt" form; "" = decorative
+    type ContentPart =
+      | { kind: "text"; text: string }             // escaped (§11)
+      | { kind: "glyph"; glyph: GlyphId }          // allow-listed
+      | { kind: "counter"; counter: CounterRef; style: CounterStyleRef }
+      | { kind: "counters"; counter: CounterRef; separator: string;
+          style: CounterStyleRef }                 // nested numbering "1.2.3"
+    - Total text across text parts, separators and altText ≤ 200
+      characters.
+    - A prefix or suffix ("Step ", ". ") is simply a text part before or
+      after a counter part.
+    - The printer emits one `content` value from the parts, e.g.
+        content: "Step " counter(c-steps, decimal) ". ";
+      and never accepts a raw content string.
+4.5 Document assets (CORRECTED 17.1.3: counters added)
+    document.styleAssets?: {
+      keyframes?: KeyframesDefinition[];  // id, name, stops[{offset 0–100,
+                                          //   groups}], canonical hash
+      counters?:  CounterDefinition[];    // §4.11
+      presets?:   PresetDefinition[];     // the project library (§15)
+    }
+4.6 Representative example (Primary Button: hover, focus ring, disabled,
+    and a ::after arrow)
+    {
+      tag: "button", typography: {...}, background: { color: "#2563eb" },
+      styleRules: [
+        { id: "r1", target: "element", condition: { self: ["hover"] },
+          groups: { background: { color: "#1d4ed8" } } },
+        { id: "r2", target: "element", condition: { self: ["focus-visible"] },
+          groups: { outline: { width: {value:2,unit:"px"}, style: "solid",
+                               color: "#93c5fd", offset: {value:2,unit:"px"} } } },
+        { id: "r3", target: "element", condition: { self: ["disabled"] },
+          groups: { background: { color: "#94a3b8" }, display: { cursor: "not-allowed" } } },
+        { id: "r4", target: "after", condition: {},
+          content: { kind: "parts", parts: [{ kind: "glyph", glyph: "arrow-right" }],
+                     altText: "" },
+          groups: { spacing: { margin: { left: {value:6,unit:"px"} } } } }
+      ]
+    }
+    `outline` is a new group, delivered in 17.5 (Report 4).
+4.7 Reset semantics (each is one history entry):
+    - field: delete the field from the (target, condition) rule or the
+      base;
+    - category: delete the group(s);
+    - state: delete the rule;
+    - target: delete every rule of the target (and the base fields that
+      belong to the target: for target "element", the base groups);
+    - all styling: base groups + all rules + inactive rules.
+    An emptied rule (no groups and no content) is deleted automatically.
+4.8 Inactive rules
+    A rule is ACTIVE when the registry accepts (profile, target, condition,
+    group) for the node's current state. Rules stay stored but INACTIVE
+    when:
+    (a) the node's variant changes (Progress native ⇄ custom, N1.1);
+    (b) an ancestor scope no longer resolves (reparenting, deletion,
+        §6.3);
+    (c) a semantic/profile change removes a state (a tag change, for
+        example input type).
+    Inactive rules are:
+    - validated by the schema like any rule;
+    - not compiled;
+    - listed in the Inspector ("Inactive styling (n): reason") with
+      Restore-by-context, Discard and Discard all;
+    - excluded from the CSS clipboard copy (copy = what is visible);
+    - included in element copy/duplicate (whole-node clone), and in
+      Undo/Redo snapshots (they are document data);
+    - removed by "Reset all styling".
+    Inactivity is computed, never stored, so it cannot go stale.
+    Group-level inactivity (a rule whose target is active but some
+    groups are not allowed in the current variant) works the same way at
+    group granularity.
+4.9 Serialization and validation:
+    - Zod strict schemas; closed enums for targets, atoms, scopes,
+      glyphs, kinds;
+    - typed values (colours via isExportableColor, finite clamped
+      numbers, enums);
+    - a type-equality assertion like the existing ones;
+    - integrity: unique rule ids and unique (target, condition) pairs per
+      node; keyframe ids unique; animation references resolve (an
+      unresolved reference → integrity error at load, a notice at edit
+      time); counter references resolve to a CounterDefinition or to a
+      built-in counter;
+    - limits (§17).
+
+4.10 Physical and logical properties [OWNER P-2; model ENG]
+     (NEW 17.1.3 — resolves ARCH-Q2)
+4.10.1 Representation: the document stores exactly what the user
+     authored. Physical and logical forms are SEPARATE, optional fields
+     of the same typed group, never one field with a "mode" flag:
+       spacing:      margin, padding: EdgeValues (top/right/bottom/left)
+                     marginLogical?, paddingLogical?:
+                       { blockStart?, blockEnd?, inlineStart?, inlineEnd? }
+       size:         width, height, min/max width/height
+                     inlineSize?, blockSize?, minInlineSize?,
+                     maxInlineSize?, minBlockSize?, maxBlockSize?
+       position:     top/right/bottom/left
+                     insetLogical?: { blockStart?, blockEnd?,
+                                      inlineStart?, inlineEnd? }
+       border:       top/right/bottom/left sides
+                     borderLogical?: { blockStart?, blockEnd?,
+                                       inlineStart?, inlineEnd? } (each a
+                                       full side: width, style, colour)
+       borderRadius: four physical corners
+                     radiusLogical?: { startStart?, startEnd?, endStart?,
+                                       endEnd? }
+     Each logical value uses exactly the value type of its physical twin
+     (CssUnit lengths, BorderSide, corner radii), so every existing
+     validator is reused.
+     Direction-only and keyword fields (no physical twin):
+       typography.direction?: ltr | rtl            (CSS `direction`)
+       typography.unicodeBidi?: normal | embed | isolate |
+                                bidi-override | isolate-override | plaintext
+       typography.writingMode?: horizontal-tb | vertical-rl | vertical-lr
+                                (sideways-* only if O15 passes, 17.7)
+       typography.textOrientation?: mixed | upright | sideways
+       logical keyword values in existing enums: text-align start|end,
+       float/clear inline-start|inline-end (§5.6), resize block|inline.
+     HTML direction is NOT a style field: node.dir?: ltr | rtl | auto is a
+     content/semantic attribute (component properties → "Language &
+     direction"), rendered as the HTML dir attribute on all surfaces.
+4.10.2 HTML dir versus CSS direction:
+     - `dir` changes semantics: the bidi algorithm's base direction,
+       form-control and :dir() behaviour, and what assistive technology
+       is told. CSS Writing Modes recommends it for document direction.
+     - CSS `direction` only changes presentation, and is offered under
+       progressive disclosure with the advisory "Use Language & direction
+       for content that is right-to-left; this only changes layout."
+     - Both can be authored on the same element; authored CSS direction
+       overrides the dir attribute's presentational effect (normal CSS
+       behaviour, because dir maps to a UA presentational hint).
+     - dir travels with the element (element clipboard, duplicate) but
+       NOT with the CSS clipboard or presets (it is content semantics,
+       like the accessibility fields).
+4.10.3 Effective direction and writing mode (computed, never stored):
+     resolveFlowContext(node) = the nearest self-or-ancestor value of
+     writingMode (default horizontal-tb), and of direction (authored CSS
+     direction first, then dir, default ltr; dir="auto" → "content-
+     dependent"). It reads only the document model.
+     - direction and writingMode are offered on the Default condition and
+       Element target only (EDITOR LIMITATION, §5.6): a state-dependent
+       mapping would make the collision display (4.10.4) and gesture
+       field selection (4.10.6) indeterminate.
+     - This function drives the Inspector mapping hints, the gesture
+       intent rule and the Mixed comparison. It is NOT used for rendering;
+       the browser resolves the mapping itself.
+4.10.4 Conflicts on the same rendered side (deterministic):
+     - Within one (target, condition) rule, the printer emits ALL
+       physical declarations of a group first, then all logical
+       declarations. A logical and a physical longhand that map to the
+       same side share one computed value (CSS Logical Properties), so the
+       later — the logical one — wins. Rule: within a rule, LOGICAL WINS.
+       This holds in every direction and writing mode, so the outcome
+       never depends on a mapping the editor has to predict.
+     - Across rules, normal cascade order applies (§6.4 buckets): a
+       physical hover margin-left beats a logical base margin-inline-start
+       on the same side, exactly as CSS does.
+     - The printer never emits a shorthand next to longhands of the same
+       family (the existing shorthand/longhand lesson); mixed sides are
+       printed as longhands.
+     - Inspector: when resolveFlowContext determines that a physical
+       field is overridden by a logical field in the same rule, the
+       physical control shows "Overridden by Inline start (logical)" and
+       vice versa where a later rule wins. With dir="auto" the hint says
+       "Depends on the text direction".
+4.10.5 Inspector presentation (P-2: progressive disclosure, not a stored
+     mode): each side-bearing section shows the familiar physical
+     controls by default, with a per-section "Logical sides" disclosure.
+     The open/closed choice is per-viewer UI state (guarded
+     localStorage, like category expansion).
+     - Switching presentation NEVER writes the document, converts values,
+       or deletes either form.
+     - A section that already holds logical values opens its logical
+       disclosure automatically (nothing authored is ever hidden), and the
+       section's modified indicator counts both forms.
+     - An explicit command, "Convert to logical" / "Convert to physical",
+       is offered per section [PROPOSED ENG]. It rewrites values using the
+       current resolveFlowContext mapping, is one history entry, and is
+       disabled when the mapping is content-dependent. It is never run
+       implicitly.
+4.10.6 Contract participation:
+     - Mixed values (BC-10): compared per field as authored (physical
+       field to physical field, logical to logical), plus the effective
+       per-side value for the "overridden" hint.
+     - Reset: a field reset deletes that field only; a section reset
+       deletes both forms; a side reset in the physical controls leaves an
+       overriding logical field in place and says so.
+     - CSS clipboard and presets: the logical fields are part of their
+       group, so they travel with it, with BC-11 per-group merge.
+     - Persistence: ordinary optional fields (reserved at (4,0), §12.5).
+     - Export: printed as authored, in the physical-then-logical order.
+     - States and pseudo-elements: logical fields are allowed wherever
+       their physical twins are allowed (the registry lists both
+       together).
+     - Free layout (BC-13 contract, unchanged): a Free child's geometry is
+       its layout {x,y,width,height}, which is physical container-local
+       px (left/top/width/height). The registry does NOT offer logical
+       or physical insets or sizes on Free children (they are owned by
+       layout, as physical sizes and offsets already are today). Free
+       layout does not mirror in RTL containers: it is a physical canvas.
+       Snapping, containment and the BC-13.7 min/max resize continue to
+       compute in physical CSS px. [ENG]
+     - Flow/Flex/Grid resize gestures (any gesture that writes size):
+       authored intent is preserved. The gesture writes the field family
+       that currently WINS for that axis: if the effective inline
+       dimension comes from inlineSize, a horizontal drag in horizontal-tb
+       writes inlineSize; in vertical-rl/lr a horizontal drag writes
+       blockSize; with no logical field authored it writes width/height as
+       today. The overridden twin is never touched. Size mapping depends
+       only on the writing mode (never content-dependent), so this rule
+       is always determinate.
+     - Logical min/max constraints feed the BC-13.7 renderedFreeSize /
+       sizeLimits logic only for Flow children; Free children keep their
+       physical constraints. [UNVERIFIED in a vertical writing mode →
+       BC-17.7 live check]
+     - Snapping measures rendered rects, so it is unaffected by how a
+       size is authored.
+
+4.11 CSS counters [OWNER P-4; model ENG] (NEW 17.1.3)
+4.11.1 Counter definitions (document assets):
+       CounterDefinition { id: string; name: string }   // name: display
+     - Names are unique per document after the preset normalization
+       (NFC, trim, collapse whitespace, case-fold; 1–64 characters).
+     - The printed CSS identifier is derived, never authored:
+       c-<slug(name)> in [a-z0-9-], with -2, -3… on collision, never a
+       CSS-wide or reserved keyword (none, inherit, initial, unset,
+       revert, revert-layer, default, list-item). Display names never
+       reach CSS.
+       CounterRef = { kind: "document"; id } | { kind: "builtin";
+                    name: "list-item" }
+     - Elements that reference the same definition form ONE intended
+       sequence. Different definitions are different sequences even if
+       their display names look alike.
+4.11.2 Counter operations, a new typed group (allowed on element,
+       ::before, ::after and ::marker targets):
+       counters?: {
+         reset?:     { counter: CounterRef; value?: integer }[];  // default 0
+         increment?: { counter: CounterRef; value?: integer }[];  // default 1
+         set?:       { counter: CounterRef; value?: integer }[];  // default 0
+       }
+     - Integers in −1,000,000…1,000,000; positive and negative
+       increments; several counters per element; a counter may appear
+       at most once per list.
+     - Order on one element is CSS's own (CSS Lists 3): resets, then
+       increments, then sets. The Inspector states this order.
+     - Offered on the Default condition only (EDITOR LIMITATION, §5.6): a
+       hover/focus state that changes a counter renumbers unrelated
+       elements across the document; there is no approved use for it.
+4.11.3 Counter references in content: the ContentPart kinds "counter"
+     and "counters" (§4.4). CounterStyleRef = { kind: "predefined";
+     style: PredefinedCounterStyle } with a closed allow-list: decimal,
+     decimal-leading-zero, lower-roman, upper-roman, lower-alpha,
+     upper-alpha, lower-greek, disc, circle, square, none; extended
+     styles (armenian, georgian, hebrew, cjk-decimal, hiragana, katakana,
+     …) are added only where BC-17.6 verifies O15.
+4.11.4 Semantics are the browser's (nothing is rewritten in element
+     text):
+     - scope and nesting: counter-reset creates a new instance for the
+       element, its descendants and its following siblings; counters()
+       joins the nested instances;
+     - document reordering, insertion and deletion renumber natively;
+     - elements that generate no box (display:none, runtime-hidden panels
+       in Preview/Export) neither reset nor increment; visibility:hidden
+       elements do. Design shows every element, so Design numbering can
+       differ from Preview where content is runtime-hidden — expected and
+       explained in the Inspector;
+     - native lists keep their own `list-item` counter. Custom counters
+       never change native numbering unless the user explicitly targets
+       the built-in list-item counter, which is offered only on ol/ul/li
+       [UNVERIFIED cross-engine → BC-17.17];
+     - accessibility guidance (as O7): generated numbers may or may not be
+       announced; real ordered lists and headings remain the semantic
+       structure; numbering never replaces needed list semantics.
+4.11.5 Contract participation:
+     - Element clipboard / duplicate, SAME document: references keep their
+       ids (a copied step continues the same sequence). If the referenced
+       definition was deleted meanwhile, it is recreated from the payload
+       with its id.
+     - FOREIGN sources (another document, presets): each referenced
+       definition maps to the destination definition with the same
+       normalized name, or is created; the paste/apply notice states the
+       mapping ("Uses the existing counter 'Steps'"). This reuses shared
+       sequences deliberately and visibly; the Inspector can re-point a
+       reference.
+       "Same document" = the clipboard payload's session document token
+       equals the destination's (a token minted per opened document;
+       reopening a file counts as foreign, the conservative side).
+     - CSS clipboard: the counters group travels with its rule; referenced
+       definitions ride in the payload, with the same two cases.
+     - Deleting a definition: confirmation with a usage count; removes the
+       definition and every reference (operations and content parts) in
+       one history entry. "Remove unused counters" removes unreferenced
+       definitions. Unreferenced definitions print nothing.
+     - Persistence: styleAssets.counters (reserved at (4,0)); integrity
+       rejects unresolved references and duplicate names/ids.
+     - Export: printed counter properties and content; nothing is
+       precomputed.
+     - Mixed values: compared per operation list, by definition id.
+4.11.6 @counter-style rules (custom numbering symbols) [SCOPE-CANDIDATE]:
+     P-4 did not approve user-authored @counter-style. Evaluation:
+     standards support exists in Chromium, Gecko and WebKit (documented,
+     UNVERIFIED in Layoutry), so it could pass O15; it would be a typed
+     asset (system, symbols, prefix, suffix, range, pad, negative,
+     fallback), never raw CSS. Prefixes and suffixes are already covered
+     by content parts. The CounterStyleRef union can gain
+     { kind: "custom"; id } later without changing any existing data.
+     It is therefore NOT in BC-17 scope; the owner may add it before
+     BC-17.6 without architectural impact. No decision is required to
+     proceed.
+
+
+5. CAPABILITY REGISTRY (L2) [OWNER O1, O11, O13; details ENG]
+-------------------------------------------------------------
+5.1 Profiles. resolveStylingProfile(node) → ProfileId, from
+    (tag, input type, component marker, variant, structural role):
+    P-TEXT, P-CONT, P-FIELD:<type>, P-TOGGLE:checkbox|radio, P-SELECT,
+    P-PROGRESS:native|custom, P-MEDIA:image|video|audio, P-EMBED,
+    P-SVG, P-TABLE:table|section|row|cell|caption, P-LIST, P-LI,
+    P-DIALOG, P-HR, plus component overlays (pagination, tabs, …) that
+    add role-group targets.
+    The registry is generated from the existing elementCapabilities
+    booleans (DEFAULT_CAPABILITIES, TEXT_BEARING_TAGS,
+    SHAPE_CAPABLE_TAGS, background rules), so day-one behaviour is
+    identical.
+5.2 Targets. A global, stable semantic identifier, with a kind:
+    "element"                               kind element
+    "before" "after" "placeholder" "marker"
+    "selection" "backdrop" "first-line"
+    "first-letter"                          kind pseudo
+    "progress.track" "progress.fill"        kind part (shared by both
+                                            Progress variants)
+    "progress.segment" "progress.label"     kind part (custom only)
+    "toggle.box" "toggle.indicator"         kind part (checkbox/radio)
+    "select.arrow"                          kind part
+    "search.cancel" "number.spin"           kind part (browser-limited)
+    "scrollbar" "scrollbar.thumb"
+    "scrollbar.track"                       kind part
+    "table.headerRow" "table.bodyRow"
+    "table.altRow" "table.cell"
+    "table.headerCell" "table.caption"      kind structural
+    "pagination.page" "pagination.current"
+    "pagination.prevNext"
+    "pagination.disabled"
+    "pagination.ellipsis"                   kind role group
+    "tabs.tab" "tabs.panel" "tabs.list"     kind role group (semantic
+                                            Tabs only, §13.2; legacy
+                                            Basic Tabs are plain nodes)
+    "nav.link" "nav.current" "nav.cta"
+    "breadcrumb.separator"                  kind role group
+    "list.first" "list.last" "group.first"
+    "group.last"                            kind structural
+    - Names never encode the browser implementation: native versus custom
+      is decided by the compiler from the profile, not by the id (§9).
+    - Real child nodes are never targets. They are selected and styled as
+      nodes (BC-12 structure intact). The Inspector offers "Select <part>"
+      links to them.
+5.3 Per target: label, kind, allowed groups (and property-level
+    allow-lists, e.g. first-letter §10.3), allowed atoms, curated
+    compounds, browser notes, and the selector recipe id.
+5.4 Intersection for multi-selection [OWNER O11]:
+    - targets = ∩ of target ids (equal id AND equal kind);
+    - conditions = ∩ per target;
+    - groups and fields = ∩ per (target, condition).
+    Mixed values use BC-10's effective-value comparison: the value that
+    applies for that (target, condition) after precedence, not the raw
+    field. Edits are all-or-nothing and atomic. No element is skipped:
+    if any element cannot take the edit, the control is not offered, with
+    an explanation.
+5.5 Extensibility [OWNER O13]: future native components (range, meter,
+    details, date, file, color) add profiles, targets (for example
+    "range.track", "range.thumb", "details.marker") and renderers. L1, L3,
+    L4 and the Inspector need no redesign.
+5.6 Context applicability versus editor limitation (NEW 17.1.3 — ARCH-Q1,
+    P9)
+    Every registry entry for a (profile, target, condition, group,
+    field) carries a CONTEXT PREDICATE evaluated against the node's
+    current context (parent layout mode, own position, display, Free
+    child or not, target kind). A control is offered only when the
+    predicate holds. When it does not, the reason is one of two kinds,
+    and the Inspector shows it as such:
+      INAPPLICABLE  the CSS would have no effect here (a CSS fact);
+      LIMITATION    the CSS would work, but the editor does not offer it
+                    here, for a stated reason (an editor fact).
+    Authored values that become inapplicable after a context change are
+    kept and shown as inactive (§4.8 at field level), never deleted.
+    Float and clear (correcting BC-17.1.2 §10.3, which wrongly kept
+    floats "unavailable elsewhere"):
+    - Values: float none|left|right|inline-start|inline-end; clear
+      none|left|right|both|inline-start|inline-end (the logical values are
+      standards-supported in all three engines, UNVERIFIED in Layoutry →
+      BC-17.7).
+    - APPLICABLE on: element targets in normal flow — the parent lays out
+      in Flow (block/flow-root/inline-block/table-cell display), the
+      element's position is static, relative or sticky; text-bearing and
+      container profiles, images, media, SVG boxes and form controls
+      alike. Also ::first-letter (drop caps, §10.3) and ::before/::after
+      (decorative floats).
+    - INAPPLICABLE (hidden, reason shown): Flex or Grid items (float does
+      not apply to flex/grid items), position absolute/fixed (float
+      computes to none), Free children (they are absolutely positioned).
+    - Containment (P8): a float can extend below a block parent that does
+      not contain floats. So when a Flow container has at least one
+      floated child, the compiler emits `display: flow-root` for that
+      container if its own display is block (or default block); every
+      other display already contains floats or makes float inapplicable.
+      The Inspector shows "Contains floated children (automatic)" on the
+      container. A paragraph with a floated ::first-letter gets the same
+      treatment, so a tall drop cap never escapes a short paragraph. Only
+      newly authored floats can trigger it, so no existing project
+      changes appearance. [ENG; live check BC-17.7]
+    - shape-outside / shape-margin / shape-image-threshold: APPLICABLE
+      only on a floated element (the same predicate plus float ≠ none);
+      otherwise INAPPLICABLE with "Needs a float".
+    Other context predicates of note:
+    - Free children: insets and sizes (physical and logical) are a
+      LIMITATION (owned by layout geometry, BC-13).
+    - direction, writing-mode, counter operations: Default condition only
+      (LIMITATION, §4.10.3, §4.11.2).
+    - first-line/first-letter: INAPPLICABLE on inline, flex and grid
+      containers (§10.1).
+    - vector objects' self focus states: INAPPLICABLE (objects are never
+      focusable, Report 3 §7.5).
+
+
+6. CASCADE AND SELECTOR GENERATION (L3/L4) [ENG]
+------------------------------------------------
+6.1 The problem. Declaration order decides only between equal
+    specificity.
+    - `.n:hover` and `.n:disabled` are (0,2,0);
+    - `.a:hover .n` is (0,3,0);
+    - `.n:checked:hover` is (0,3,0).
+    Unequalized, ancestor and compound rules would beat disabled
+    regardless of order.
+6.2 Equalization. Every generated authored selector has the form
+      <scope-free class> <:where(everything else)> [::pseudo]
+    so authored specificity is always exactly (0,1,0), plus (0,0,1) when
+    a pseudo-element is present:
+      .n12                                       base          (0,1,0)
+      .n12:where(:hover)                         hover         (0,1,0)
+      :where(.n7:hover) .n12        → written as .n12:where(.n7:hover *)
+                                                 ancestor      (0,1,0)
+      .n12:where(:checked:hover)                 compound      (0,1,0)
+      .n12:where(:disabled)                      disabled      (0,1,0)
+      .n12::before                               pseudo base   (0,1,1)
+      .n12:where(:hover)::before                 pseudo hover  (0,1,1)
+      .n12::-webkit-progress-value               vendor part   (0,1,1)
+      .n12:where(:indeterminate)::-moz-progress-bar             (0,1,1)
+    - Ancestor form: `.n12:where(.n7:hover *)` matches .n12 when .n12 is
+      any descendant of a hovered .n7 (the scope resolver guarantees .n7
+      is the resolved ancestor, §6.3).
+    - Browser support: :where() is in Chromium 88+, Firefox 78+ and
+      Safari 14+ (standards-documented) [UNVERIFIED in Layoutry →
+      BC-17.3 targeted check].
+    - Design and Preview also need the surface scope. It is added inside
+      :where() as well:
+        .n12:where([data-document-surface] *):where(:hover)
+      The class stays the only weighted part. [ENG]
+6.3 Ancestor scope resolution (O6):
+    - resolved at compile time against the current tree: "parent" = the
+      direct parent; "component" = the nearest ancestor that is a
+      component root (pagination marker, composition root such as a
+      card, or a form); "profile" = the nearest ancestor of that profile;
+    - if nothing resolves, the rule is INACTIVE (§4.8);
+    - after a move or reparent, the dependent nodes are recompiled (the
+      compiler's dependency index records ancestor dependencies);
+    - no :has(), no sibling combinators, no cross-document references.
+6.4 Emission order (later wins per property), per node, per target:
+      0 default presentations (former Tailwind defaults) — emitted as
+        :where(.n12) (0,0,0), below every authored rule
+      1 base
+      2 ancestor-condition rules (atom order below)
+      3 hover
+      4 focus-within
+      5 focus
+      6 focus-visible
+      7 active
+      8 open / expanded
+      9 selected / current
+     10 checked / indeterminate
+     11 placeholder-shown / required / read-only
+     12 compound rules (ordered by their highest-ranked atom, then by
+        atom count, then lexically)
+     13 invalid
+     14 disabled
+    Vendor rules for a part are emitted at the position of their logical
+    (target, condition), each in its own rule (an unknown selector
+    invalidates a selector list).
+    GLOBAL ORDER: rules from different nodes can target the same element.
+    Role-group rules come from a component root; ancestor rules stay on
+    the descendant. So order is global, not per node:
+    - the printer organizes the sheet into rank buckets 0–14;
+    - inside each bucket, ROLE-GROUP rules come before the element's OWN
+      rules.
+    Consequences:
+      child base (1)  <  role-group "current" (9)  <  child's own
+      "current" rule (9, own)
+    - The migrated Pagination "current" rule (§12.6) therefore wins over
+      the current page's base, and a page's own hover loses to current.
+    - A role-group DEFAULT rule loses to a child's own base for the same
+      property; the Inspector shows "overridden by this element's own
+      styling".
+    - Role-group selectors target generated role classes on the real
+      children (`ly-r-<role>`, derived from the existing role labels —
+      for Pagination, getPaginationParts/PAGINATION_ROLE_LABELS). They
+      are written on Design, Preview and Export markup, and equalized:
+        .ly-r-page:where(.n7 *):where([aria-current="page"])   (0,1,0)
+    - Incremental updates therefore insert per-node chunks into their
+      buckets (§8.4).
+6.5 Expected computed results (property by property):
+    - hover + focus-visible → focus-visible declarations win; hover-only
+      properties still apply.
+    - hover + disabled → disabled wins (14 > 3).
+    - selected + hover → selected wins unless the curated compound
+      "selected+hover" exists (12 > 9).
+    - checked + hover with the compound authored → the compound wins
+      (12 > 10 > 3).
+    - open + hover → the "open+hover" compound if authored, otherwise
+      open (8 > 3).
+    - invalid + focus-visible → invalid wins for shared properties; a
+      focus outline authored only in focus-visible still shows.
+    - ancestor hover + own hover → own hover wins (3 > 2).
+    - expanded + focus-visible → expanded colours win (8 > 6); the
+      outline from focus-visible still shows unless expanded sets
+      outline.
+    Generated example and expected computed colour:
+      .n12{background-color:#2563eb}
+      .n12:where(:hover){background-color:#1d4ed8}
+      .n12:where(:focus-visible){outline:2px solid #93c5fd}
+      .n12:where(:disabled){background-color:#94a3b8;cursor:not-allowed}
+      A disabled button under the pointer → #94a3b8, cursor not-allowed.
+      A focused, hovered button → #1d4ed8 with the outline.
+6.6 Inline styles and !important:
+    - authored styling is never inline after BC-17.3;
+    - the remaining inline styles are editor-runtime only (§8.6);
+    - !important is never generated for AUTHORED declarations.
+      (CORRECTED 17.1.3) The reduced-motion accessibility blocks are the
+      one existing exception and keep their !important by contract: the
+      editor's global rule in globals.css and the export's
+      @media (prefers-reduced-motion: reduce) block (§13.6, §16.7). No
+      authored geometry property is ever !important, which the gesture
+      override relies on (§8.6).
+    - The gesture override uses inline styles. Inline beats every
+      non-!important stylesheet declaration, which is intended for the
+      gesture's duration only. Playback does NOT use inline styles (it is
+      a compiled Design-only variant, §16).
+6.7 Cascade layers: the Tailwind styles of the editor app are inside
+    cascade layers (@layer base/utilities). The generated document sheet
+    is unlayered and therefore beats any layered rule regardless of
+    specificity. It is scoped to the document surface, so editor chrome
+    is unaffected; and with defaults at (0,0,0) in the same unlayered
+    sheet, the default-then-authored order holds. [ENG; UNVERIFIED →
+    BC-17.3 parity]
+6.8 Forced Design states versus real browser states:
+    - Design compiles INTERACTION and RUNTIME atoms (hover, focus,
+      focus-visible, focus-within, active, open, expanded, selected,
+      ancestor atoms) ONLY in forced form:
+        .n12:where([data-ly-force~="hover"])
+      Real :hover does nothing in Design. So hovering the canvas while
+      editing never restyles or moves elements, and snapping never
+      measures a hover state.
+    - DOCUMENT-ATTRIBUTE atoms (disabled, checked default, indeterminate,
+      required, read-only, invalid, placeholder-shown, current) compile
+      in both forms. Design truthfully shows the authored document state
+      (a disabled button looks disabled), and can additionally force them
+      (preview "checked" on an unchecked box).
+    - The data-ly-force attribute exists only on Design nodes. Preview
+      and Export never contain it.
+    - Gestures, text editing and vector editing suspend forced states
+      (§8.6).
+6.9 Physical and logical declarations (NEW 17.1.3): inside one rule, the
+    printer emits a group's physical declarations before its logical
+    ones, so logical wins on a shared side (§4.10.4). Bucket order across
+    rules is unchanged.
+6.10 State atom → selector table (NEW 17.1.3 — found in this checkpoint,
+    see §2: disabled is not :disabled on every surface). The compiler maps
+    each atom to the selector that the surface's markup actually carries.
+    The mapping is per atom and target kind, never per surface, so Design,
+    Preview and Export match the same elements:
+      disabled       :is(:disabled, [aria-disabled="true"])
+                     (buttons are aria-disabled on Design and natively
+                     disabled in Preview/Export; disabled links are
+                     aria-disabled everywhere; native form controls use
+                     :disabled)
+      current        [aria-current]:not([aria-current="false"])
+      checked        :checked
+      indeterminate  :indeterminate, or [data-state="indeterminate"] for
+                     custom Progress
+      invalid        :invalid (only on fields whose validity exists;
+                     user-invalid is not used, it is engine-uneven)
+      open           [open] for dialog, [data-state="open"] otherwise
+      expanded       [aria-expanded="true"]
+      selected       [aria-selected="true"]
+      hover … active Design: [data-ly-force~="<atom>"] only (§6.8);
+                     Preview/Export: the real pseudo-class.
+    Everything sits inside :where(), so specificity stays (0,1,0).
+
+
+7. INSPECTOR ARCHITECTURE [OWNER O3; layout PROPOSED]
+------------------------------------------------------
+Order in one scrolling panel:
+1. Header: element identity + Protection status/toggle.
+2. Component properties: behaviour and content only (Progress value/max,
+   variant switch N1.1, label template N1.2, Pagination pages, Tabs,
+   Video playback, Select options, Table, Link), then:
+   - Accessibility (labels, aria-current and the other format-3 fields),
+     a separate subsection;
+   - Language & direction (the dir attribute, §4.10.2) (NEW 17.1.3);
+   - Interactions (behaviour, not styling);
+   - component commands: "Convert to Semantic Tabs" on recognized legacy
+     Basic Tabs (§13.7), "Convert to semantic styling" on legacy-mode
+     Paginations (§12.6), the Progress variant switch.
+   Semantics are never edited inside CSS categories.
+3. Styling:
+   a. Target selector (registry): Element plus parts, pseudo-elements,
+      structural targets and role groups. Real child nodes appear as
+      "Select <child>" links.
+   b. State selector: Default, then individual atoms, then the curated
+      compounds, then "Parent/ancestor" states. It forces the selected
+      state in Design (§6.8).
+   c. Property search: labels, CSS names and synonyms. It searches
+      unmounted categories through a static field index (no mounting).
+   d. Categories: Layout, Size, Spacing, Typography, Fill & Background,
+      Border & Corners, Effects, Shape & Mask, Transform, Motion,
+      Counters & Content (counter operations, counter definitions; the
+      content editor for pseudo targets), Advanced.
+      - Size, Spacing, Layout (insets) and Border & Corners each carry the
+        "Logical sides" disclosure (§4.10.5); direction, unicode-bidi,
+        writing-mode and text-orientation live in Typography → "Direction
+        & writing mode".
+      - Only categories with an applicable group for (target, condition)
+        render.
+      - Collapsed categories are not mounted (lazy).
+      - Expansion is remembered per viewer (localStorage, guarded, like
+        snapPreference).
+   e. Per category header:
+      - the modified indicator for (target, condition);
+      - Reset category;
+      - the CSS menu (copy/paste this category for this target and
+        condition; O16);
+      - Presets for the category (§15);
+      - help.
+   f. Values that apply from lower-precedence sources (the base, a lower
+      rule, default presentations) show dimmed with their source ("from
+      Default"). Editing writes only to the current (target, condition).
+   g. An "Inactive styling" notice (§4.8).
+4. Presets (whole element): apply or save (§15).
+SVG:
+- Object styling uses the same categories with target "vector object"
+  while in vector edit mode.
+- Geometry editing is a Canvas tool with a "Path" subsection in component
+  properties (Report 3).
+Motion: Play controls for N11 with the P-6 options (Play / Play as
+authored / Play with reduced motion), §16.
+Performance: field components subscribe to (node, target, condition,
+field) slices. An edit recompiles only the dependent nodes (§8.4).
+
+
+8. SHARED STYLESHEET COMPILER AND PIPELINE (L3–L5) [OWNER O2; details ENG]
+---------------------------------------------------------------------------
+8.1 Input: (node, parent context, registry entry, document assets,
+    surface flags { surface: design | preview | export, forced?: map
+    nodeId → atoms, playback?: { nodeId, mode: authored | reduced } }).
+    Output: NodeStyleIR {
+      nodeClass;
+      rules: [{ order, selector parts, declarations }];
+      keyframeRefs;
+      svgDefs;
+      diagnostics;
+    }
+    The compiler is pure, has no DOM access, and is deterministic for
+    equal input.
+8.2 Responsibilities:
+    - L3 (compiler): the recipes and resolvers (converted from
+      CSSProperties to declarations by the adapter the export already
+      uses); rule activity; the scope resolution; the ordering keys; the
+      Design-safety gate for motion (C-4); forced and playback variants
+      on Design only.
+    - L4 (printer): :where() wrapping; vendor expansion (one rule per
+      vendor selector); string escaping; keyframes emitted once per
+      referenced id; deterministic text.
+8.3 Class identity:
+    - Design and Preview: `ly-n<stable hash of node id>`, applied by the
+      node component. It never writes HTML ids, and node.className stays
+      authored data as today.
+    - Export: the export's existing class naming.
+    - The editor class is never exported.
+8.4 Caching and incremental invalidation:
+    - Per-node IR cache keyed by node object identity (the store is
+      immutable), plus a dependency index: ancestor-scope dependencies,
+      parent-context dependencies (parent layout mode and flow display
+      already feed the recipes), and keyframe dependencies.
+    - An edit recompiles changed nodes and their dependants only.
+    - Sheet update strategy: there are three candidates —
+      (a) a single <style> with per-node text chunks;
+      (b) CSSOM insertRule/deleteRule on a constructed or element sheet;
+      (c) per-subtree <style> elements.
+      The choice is made by MEASUREMENT in BC-17.3 at 1,000 elements
+      (§18). It is not asserted here.
+      - Every candidate must preserve the global rank buckets (§6.4).
+        With (a) and (c) that means one text segment or element per
+        bucket. With (b), each rule's insertion index is computed from
+        its bucket.
+    - Correctness test: random edit sequences compared with a full
+      rebuild (property-based).
+8.5 Default presentations: the documentDefaultStyles declarations
+    (already shared with export) are compiled into the sheet at order 0.
+    The Tailwind default classes are removed from the document nodes.
+8.6 Editor-runtime and temporary styles (never compiled, never saved):
+    - drag opacity, text-editing outlines, editing cursors and
+      pointer-events overrides already in the components;
+    - the gesture override: see §8.11 (CORRECTED 17.1.3 — the earlier
+      text said the compiler "skips" the geometry declarations, which was
+      ambiguous; §8.11 replaces it: the committed declarations STAY in
+      the sheet and the override wins by precedence).
+    - Forced states and playback: attributes on the node plus
+      Design-only compiled variants.
+8.7 Runtime state integration: §13.
+8.8 Export assets: images and masks through the existing asset pipeline
+    (BC-07: packaged/embedded, data-URL checks, diagnostics). SVG defs
+    per Report 3.
+8.9 Failure handling:
+    - a compile error for one node (should be impossible after
+      validation) → that node renders with its base only, and a
+      diagnostic is shown in the Export dialog and in a development
+      console notice;
+    - the sheet never stops building;
+    - Export reports diagnostics with the existing severity model
+      (error/warning/info).
+8.10 Parity criteria: (a) computed-style equality on a fixed property
+     list per (target, condition), Design-forced vs Preview-real vs
+     Export, per engine; (b) screenshot parity within tolerance on
+     kitchen-sink fixtures; (c) accessibility-tree and behaviour
+     equality. CSS text does not need to be byte-identical.
+8.11 Live gesture geometry override (NEW 17.1.3 — resolves ARCH-Q5)
+     Sources of truth during a gesture:
+     - COMMITTED geometry = the document as of gesture begin. Its compiled
+       declarations stay in the generated sheet, UNCHANGED, for the whole
+       gesture. The sheet is never mutated during pointer movement.
+     - LIVE geometry = the store's live writes inside the BC-01
+       transaction (setFreeChildGeometryLive and its siblings, unchanged),
+       so snapping, containment and every BC-13 computation keep reading
+       the store exactly as today.
+     - The OVERRIDE = inline style on the gesture's node(s), derived each
+       render from the live geometry while the node is flagged
+       live-gesture in editor UI state.
+     Precedence: an inline declaration beats every stylesheet declaration
+     that is not !important. No authored declaration is !important
+     (§6.6), and the only !important rules (reduced motion) touch no
+     geometry property, so the override always wins, in every engine,
+     whatever the committed rule's bucket.
+     Exactly which properties (the "geometry slice"):
+     - Free move/resize: left, top, width, height (Free geometry is
+       physical by contract, §4.10.6);
+     - Flow/Flex/Grid size gestures: the field family the gesture writes
+       per the intent rule (width/height, or inline-size/block-size).
+       Because a logical and a physical longhand share one computed
+       value, the inline value wins over both forms in the sheet;
+     - gradient-stop drags: background-image only (the full layer list).
+     Nothing else is overridden: authored transforms, state rules,
+     logical declarations of other sides and every unrelated style keep
+     coming from the sheet.
+     Interaction with other features:
+     - forced states are suspended on the gesture's node(s) at begin, and
+       real :hover never applies on Design (§6.8), so no state rule can
+       move a node mid-gesture;
+     - transforms: untouched; BC-13 transformGeometrySafety and the D23
+       AABB measurement are unchanged;
+     - layout-affecting animations never run on Design except playback,
+       and every gesture begin stops playback first (§16.3), so an
+       animation never coexists with an override;
+     - SVG vector gestures do not use the sheet at all: vector geometry is
+       rendered as attributes straight from the live store (Report 3 §6).
+     Compiler and cache:
+     - live writes carry the transaction's live flag. The dependency index
+       ignores a change whose only difference is the geometry slice of a
+       live-gesture node, so the compiler is not invoked per frame.
+     - geometry never feeds another node's compiled CSS (parent context is
+       the parent's layout mode, not a child's geometry), so there are no
+       dependants to invalidate.
+     Completion (commit), in ONE synchronous layout-phase task, before the
+     browser paints:
+       1. commitTransaction records exactly one history entry (BC-01);
+       2. the node's IR is recompiled and its sheet chunk replaced;
+       3. the live-gesture flag clears and the override is removed.
+     Steps 2 and 3 run in the same layout effect, sheet first, so no
+     painted frame shows the old committed geometry or no geometry at
+     all: no flicker, no jump back.
+     Cancellation (Escape, pointercancel, lost capture, blur, unmount,
+     commands, Option B): the transaction rolls back (BC-13.5, exact,
+     no history, redo kept); the override is removed in the same layout
+     task. The sheet still holds the committed declarations, which equal
+     the restored geometry, so nothing is recompiled. If rollback produced
+     a new node object, the IR cache misses once and recompiles to the
+     same text (the sheet text does not change).
+     Failure recovery:
+     - the override is DERIVED from the live-gesture flag, not left
+       behind by imperative code: when the transaction ends for any
+       reason, the next render drops it (self-healing); an unmounted node
+       takes its inline style with it;
+     - the geometry slice is compiled independently of the other groups,
+       so a diagnostic in another group never drops committed geometry
+       (§8.9);
+     - a development assertion checks after every gesture end that no
+       node keeps the live flag.
+     Guarantees: no stale geometry after commit or cancel; no flicker; one
+     history entry or none; exact cancellation and Undo/Redo (snapshots
+     unchanged); the override is never persisted, exported or measured by
+     anything other than the browser's own layout; unrelated styles are
+     untouched. Cost: no stylesheet work per pointer move; one node
+     compile at commit. [ENG; timing UNVERIFIED → BC-17.3 baseline,
+     §18]
+
+
+9. PROGRESS BAR ARCHITECTURE [OWNER O4, N1.1, N1.2]
+---------------------------------------------------
+9.1 Data:
+    - the existing progressValue/progressMax/indeterminate;
+    - new progressVariant?: "native" | "custom" (absent = native);
+    - progressSegments?: { count 1–100, gap length };
+    - progressLabel?: ProgressLabel (custom only, kept while native).
+9.2 Entry points [N1.1]: separate "Progress Bar" (native) and "Custom
+    Progress Bar" Resource Panel cards, plus an Inspector Native/Custom
+    switch.
+9.3 Native compilation:
+    - element = the <progress> box;
+    - "progress.track" →
+        Blink/WebKit: `.n::-webkit-progress-bar`
+        Gecko:        the element box itself (Gecko has no track
+                      pseudo-element);
+      Track declarations are emitted on both: the element rule
+      (background/border/radius/shadow) plus a ::-webkit-progress-bar
+      rule that reuses the track background and radius.
+    - "progress.fill" → `::-webkit-progress-value` and
+      `::-moz-progress-bar` (separate rules).
+    - Any track or fill rule adds `appearance: none` to the element
+      (plus -webkit-appearance where needed).
+    - Indeterminate: the :indeterminate condition. Blink/WebKit draw
+      their own indeterminate animation [UNVERIFIED which parts are
+      styleable while indeterminate → BC-17.12].
+    - Allowed groups on native parts: background (layers), border,
+      radius, box-shadow, filters (with limits recorded in BC-17.12).
+      Others are inactive.
+9.4 Custom rendering:
+    <div class="n" role="progressbar" aria-valuemin="0"
+         aria-valuemax="{max}" aria-valuenow="{value}"
+         aria-valuetext="{label text}" aria-label…>
+      <div class="ly-track"><div class="ly-fill"></div>[segments]</div>
+      <span class="ly-label" aria-hidden="true">{label}</span>
+    </div>
+    - The parts are renderer-generated, not document nodes (O1).
+    - Indeterminate: aria-valuenow is omitted; data-state="indeterminate"
+      is the styling hook.
+    - The accessible name comes from the existing accessibility fields;
+      a missing name keeps the BC-04-style advisory.
+9.5 Identity across variants: the shared ids "progress.track" and
+    "progress.fill" carry authored data across both variants.
+    "progress.segment" and "progress.label" are custom-only and inactive
+    on native. Groups a native part cannot take are kept but inactive at
+    group level.
+9.6 Conversion (one command, one history entry, exact Undo):
+    - values, max, indeterminate, accessibility fields and interactions
+      are preserved;
+    - all rules are kept; activity is recomputed (§4.8);
+    - native → custom → native loses nothing.
+    - The Inspector lists what became inactive. Validation is unchanged.
+      The CSS clipboard copies active styling only; element
+      copy/duplicate carries everything; Reset all also clears inactive.
+9.7 Labels [OWNER N1.2, P-3] (CORRECTED 17.1.3 — P-3 approved Option B)
+9.7.1 Model:
+    ProgressLabel = {
+      kind: "none" | "percent" | "valueMax" | "template";
+      template?: string;                 // kind "template" only, ≤ 120 chars
+      percentFormat: NumberFormat;       // used by {percent} and "percent"
+      valueFormat:   NumberFormat;       // used by {value}, {max}, "valueMax"
+      locale: LabelLocale;
+      indeterminateText?: string;        // ≤ 60 chars; default: no label
+    }
+    NumberFormat = { fractionDigits: integer 0–6; trailingZeros: "keep" |
+                     "trim"; grouping: boolean }
+    LabelLocale = { kind: "neutral" } | { kind: "tag"; tag: string }
+    Defaults: percentFormat {0, trim, grouping true}; valueFormat
+    {2, trim, grouping true}; locale {kind:"tag", tag:"en"} (the export's
+    default <html lang>). The range 0–6 is an engineering bound (labels
+    are human-scale; it keeps validation finite); the illustrative 0–4
+    from the owner prompt was not treated as a limit.
+9.7.2 Effective numbers (display only; the stored value, max and the fill
+    proportion are never changed by formatting):
+    - effectiveMax = max if finite and > 0, else 1 (the HTML progress
+      rule); an invalid max also shows an Inspector warning;
+    - effectiveValue = value clamped to [0, effectiveMax];
+    - percent = effectiveValue / effectiveMax × 100.
+    Non-finite numbers never reach this point (the schema rejects them).
+9.7.3 Formatting: Intl.NumberFormat(locale, { minimumFractionDigits:
+    keep ? d : 0, maximumFractionDigits: d, useGrouping: grouping,
+    roundingMode "halfExpand" }).
+    - {percent} and kind "percent" use style "percent" on percent/100, so
+      the locale places its own percent sign and spacing ("45%", "45 %",
+      "%45"). The value is never pre-multiplied twice.
+    - Guard: a percent that would round to 100 while effectiveValue <
+      effectiveMax is printed as the largest smaller value at that
+      precision (99 / 99.9 …), so a label never claims completion early.
+    - kind "valueMax" prints "{value} / {max}" with valueFormat.
+    - Neutral locale = ASCII digits, "." decimal separator, "," grouping
+      when grouping is on, "%" directly after the number. It is exactly
+      reproducible everywhere.
+    Locale validation: the tag must be well-formed BCP 47 (≤ 35
+    characters, the syntax checked by the schema) and is canonicalized
+    with Intl.getCanonicalLocales when authored. Fallback: Intl's own
+    lookup (region → language → the engine default); when the
+    canonicalized tag is not supported, the Inspector shows "Formatted
+    as <resolved locale>".
+9.7.4 Templates: tokens {value}, {max}, {percent}; "{{" and "}}" are
+    literal braces.
+    - Unknown tokens are rejected in the input with a validation message
+      and never saved, so stored templates contain only valid tokens.
+    - Double percent signs: "{percent}" already includes the locale's
+      percent sign. A "%" (U+0025, U+FF05, U+066A) directly before or
+      after {percent} is a validation error ("{percent} already includes
+      the percent sign"), so "{percent}%" cannot be saved.
+    - Text only: the expansion is text content, escaped by React and the
+      export printer (never markup); there are no expressions and no
+      JavaScript.
+9.7.5 Indeterminate: no numbers are shown. The label shows
+    indeterminateText if set, otherwise nothing.
+9.7.6 Where formatting happens: at COMPILE/RENDER time by one pure
+    function, formatProgressLabel(progress, label), shared by Design,
+    Preview and the export printer. The exported HTML contains the final
+    label text, so Design, Preview and Export show the identical string.
+    Layoutry has no interaction that changes a progress value at runtime,
+    so no runtime formatter is needed; if one is added later it must use
+    the same function compiled into the runtime. Engine note: Intl output
+    comes from the editor's engine and its CLDR data; a different editor
+    engine can produce different grouping characters for the same tag
+    [UNVERIFIED across Chromium/Gecko/WebKit → BC-17.13 fixtures]; the
+    neutral locale is the fully deterministic option.
+9.7.7 Accessible value: aria-valuenow = effectiveValue (unformatted),
+    aria-valuemin 0, aria-valuemax effectiveMax; aria-valuetext = the
+    formatted label text when a label is shown and the bar is
+    determinate; while indeterminate, aria-valuenow is omitted and
+    aria-valuetext = indeterminateText when set. The visible label span
+    stays aria-hidden (no double announcement).
+9.7.8 Overflow: the label follows the "progress.label" target's own
+    typography/overflow styling (default: no wrap, ellipsis) and is
+    contained in the progress box (P8).
+
+
+10. PSEUDO-ELEMENTS [OWNER O7, N7]
+----------------------------------
+10.1 Targets: before, after (all box elements that can have them, so not
+     img, input, select, textarea, progress, iframe, video or audio:
+     replaced elements do not render ::before/::after reliably);
+     placeholder (text inputs, textarea); marker (li); selection
+     (text-bearing elements); backdrop (dialog); first-line and
+     first-letter (block-level text containers: paragraph, heading, list
+     item, and containers whose display is block or flow-root).
+     - first-line/first-letter are hidden for inline, flex and grid
+       containers, where browsers do not apply them.
+10.2 Content: §4.4 (parts: text, glyphs, counter(), counters()).
+     Escaped through one function; Report 6 lists the fuzz test
+     requirement. The alternative-text syntax (`"x" / ""`) is
+     emitted only for decorative glyphs, as progressive enhancement
+     [UNVERIFIED in Gecko]. Accessibility guidance in the Inspector: "Text
+     added here may or may not be read by screen readers. Put meaningful
+     content in real text elements."
+10.3 Property allow-lists (from the CSS Pseudo-Elements specification;
+     browser behaviour [UNVERIFIED in Layoutry]):
+     - ::first-line: font properties, color, opacity, background,
+       text-decoration, text-transform, letter-spacing, word-spacing,
+       line-height, text-shadow, vertical-align.
+     - ::first-letter: the above plus margin, padding, border, border
+       radius, box-shadow, and a drop-cap layout control with three
+       options:
+       · inline (default);
+       · "initial-letter" (lines, sink) — Chromium and WebKit
+         (-webkit-initial-letter); passes O15 [UNVERIFIED];
+       · "float" (left/right/inline-start/inline-end) — the classic,
+         cross-engine drop cap. (CORRECTED 17.1.3: float is NOT limited
+         to this target; element floats follow §5.6. The paragraph
+         contains its drop cap, §5.6 containment.)
+     - ::placeholder: color, opacity, font properties, letter-spacing,
+       text-transform, text-decoration.
+     - ::marker: color, font properties, content (parts, including
+       counter(list-item)) [content on ::marker: BROWSER-limited,
+       UNVERIFIED in WebKit → BC-17.6/17.17], counter operations.
+     - ::selection: color, background-color, text-decoration,
+       text-shadow.
+     - ::backdrop: background (layers), filters/backdrop-filter, opacity.
+     - ::before/::after: every box group (including float/clear in a
+       Flow context and counter operations), plus content.
+     - Reflow: first-line follows native reflow; nothing is measured by
+       the editor.
+
+
+11. SECURITY [ENG]
+------------------
+- Typed values only.
+  - Colours via isExportableColor.
+  - Numbers finite, range-clamped and printed with bounded precision.
+  - Keywords from enums.
+  - url() only from the asset pipeline (BC-07 validation) and from
+    generated SVG def references.
+- CSS strings:
+  - one escaping function (quotes, backslash, newlines, control
+    characters, U+2028/9, and "<" as \3C so `</style>` is impossible);
+  - 200-character limit;
+  - fuzz-tested.
+- Generated identifiers (classes, def ids, keyframe names, counter
+  identifiers) are derived from internal ids or slugs through a safe
+  alphabet [a-z0-9-], never equal a CSS-wide/reserved keyword, and
+  authored display names never reach selectors.
+- (NEW 17.1.3) Generated HTML ids (SVG defs, Tabs ids/aria-controls) must
+  not collide with authored htmlIds. The generator picks a prefix that no
+  authored htmlId in the document starts with ("ly-", then "ly1-", …),
+  deterministically per export/render, so no authored id is ever renamed
+  and no migration is needed.
+- (NEW 17.1.3) Locale tags (P-3) are validated as well-formed BCP 47 by
+  the schema and canonicalized by Intl; label templates are tokens plus
+  literal text, rendered as text content only.
+- data-state, data-ly-force and playback attributes are closed enums.
+  The export runtime still reads only tokens and keywords (EXPORT-1.3
+  contract).
+- SVG: Report 3 §9.
+- Project-file limits:
+  - existing projectLimits continue to apply;
+  - new per-list validation bounds (§17) are security bounds for
+    untrusted files, set far above realistic use, consistent with
+    existing projectLimits (not UX caps).
+- Presets from libraries are validated with the same schemas as project
+  data before use.
+
+
+12. PROJECT FORMAT v4 AND MIGRATION SAFETY [OWNER O5, N9; mechanism ENG]
+-------------------------------------------------------------------------
+12.1 Version identity: the project header gains, with v4,
+       formatVersion: 4
+       formatRevision: integer ≥ 0     // a monotonic schema revision
+                                        // within v4
+     - CURRENT = (4, R), where R is defined by the build.
+     - Each revision step is a pure migration (4, r) → (4, r+1),
+       registered in the existing chain after the v3→v4 step:
+       (3) → (4,0) → (4,1) → … → (4,R).
+     - Files with formatVersion > 4, or formatVersion 4 with
+       formatRevision > R, are REFUSED with the existing "saved by a
+       newer version" path, never stripped.
+     - The schema used to validate is the CURRENT schema, after
+       migration. Migrations operate on unknown JSON typed through
+       per-step schemas, exactly as the existing chain does.
+     - N9: there are no public releases before BC-17 completes, but the
+       revision mechanism is still mandatory. Development files written
+       by earlier BC-17 builds must open in later builds without loss.
+       At the first public release, revisions are retained; no squash
+       rewrites user files.
+12.2 Project categories and their path:
+     - existing v1–v3 → the existing chain → (4,0) identity → the
+       revision steps → (4,R);
+     - initial v4 (4,0) → the revision steps;
+     - intermediate (4,k), k < R → steps k+1…R;
+     - (4,R) → no migration;
+     - (4,>R) or (>4) → refused.
+     - A step NEVER relies on the absence of data to decide whether it
+       has run. The revision number is the only signal.
+12.3 Save behaviour:
+     - a migrated document is marked "upgraded" and follows the BC-05.4
+       protected save (Save As / overwrite / cancel; the legacy file is
+       never overwritten silently);
+     - revision upgrades inside v4 use the same prompt, because an older
+       development build could not reopen the file. Wording: "This
+       project will be saved in a newer format".
+     - Cancel keeps the in-memory upgraded document unsaved; the file on
+       disk is untouched.
+12.4 Failure behaviour:
+     - a step throws or validation fails → load fails with the existing
+       integrity/load error (path included);
+     - nothing is written;
+     - the file is unchanged.
+     - Each step has frozen-fixture tests (the PROJECT-1.5 frozen
+       fixtures pattern).
+12.5 What BC-17.2 establishes at (4,0), and what later revisions add
+     (CORRECTED 17.1.3 — the BC-17.1.2 text said "anchors with ids, defs,
+     clip/mask references", contradicting Report 3; the authoritative SVG
+     model stores NO anchor ids and NO definition references.)
+     FOUNDATION at (4,0) — shapes that other foundations depend on, so a
+     later change would be incompatible:
+     - formatVersion 4 + formatRevision, the revision-step framework, the
+       v3 → (4,0) identity step;
+     - StyleRule, StyleCondition, StyleTargetId (with kinds), state atoms,
+       ancestor scopes, inactive-rule semantics, the curated-compound
+       registry schema;
+     - PseudoContent as the final parts union, including counter parts
+       (§4.4);
+     - styleAssets with keyframes, counters (CounterDefinition,
+       CounterRef) and presets containers;
+     - the counters group and the outline group;
+     - the logical twin fields of spacing, size, position, border and
+       borderRadius, and typography direction / unicodeBidi / writingMode
+       / textOrientation (§4.10.1), plus node.dir;
+     - the progress variant, segments and ProgressLabel (with
+       NumberFormat and LabelLocale, §9.7);
+     - the SVG IDENTITY contract, which is already true at HEAD and is
+       now locked: vector object ids are persistent, unique within the
+       document, regenerated on clone (existing); path commands, anchors
+       and control points have NO stored ids; definitions are inline
+       values with NO stored ids or references (Report 3 §2.4, §7.1). The
+       strict schema therefore rejects any id/ref field there.
+     ADDED BY LATER REVISION STEPS (feature-local fields, additive or
+     with an identity transformation, each R+1 with frozen fixtures):
+     - BackgroundSettings → layers (17.8); FilterSettings → ordered list
+       (17.9); TransitionSettings → list + animations (17.11);
+     - the ComponentMarker "tabs" and tabsSelectedIndex (17.14);
+     - paginationStyleMode and the Pagination conversion (17.15, §12.6);
+     - the SVG object extensions — paint, C/Q/A commands, AnchorMeta,
+       inline gradients/clips/masks/filters, object transforms,
+       objectRules, contentClip/contentMask, editorGrid — and the
+       legacy fill/stroke → paint identity mapping (17.18, Report 3 §2);
+     - leaf properties of each family (text-emphasis, scroll-snap, …)
+       when their checkpoint lands.
+     Rule: every schema change = R+1. Purely additive optional fields also
+     get a bump, so older development builds refuse rather than strip.
+12.6 Pagination semantic styling and compatibility (O9) (CORRECTED
+     17.1.3 — resolves ARCH-Q4; replaces the BC-17.1.2 "leave
+     unconverted, look-copy stays" fallback with a complete contract)
+12.6.1 Which instances exist [VERIFIED]:
+     - MARKED Paginations: component "pagination" (BC-09.3). Only these
+       have look-copy behaviour today (normalizePagination,
+       setPaginationCurrentPage, applyBoundary, ordinaryLookIds).
+     - Unmarked look-alikes (pre-BC-09.2 structures that never received
+       the marker): plain elements with NO Pagination behaviour. They have
+       nothing to migrate and are never touched.
+     Identification is the marker plus the existing role recognition
+     (getPaginationParts with PAGINATION_ROLE_LABELS and the BC-09.2
+     positional fallback, which normalizePagination already writes back as
+     role labels so it never runs again).
+12.6.2 Explicit status, never inferred: the revision step (4,k)→(4,k+1)
+     of BC-17.15 gives EVERY marked Pagination
+       paginationStyleMode: "semantic" | "legacy"
+     and from that revision on the schema REQUIRES the field on marked
+     Paginations. New Paginations are created "semantic". Neither the
+     presence nor the absence of a styling rule is ever used as a signal,
+     so a user who resets the Current-page rule is never re-migrated, and
+     the revision number guarantees the step runs once per file.
+12.6.3 Eligibility (pure, deterministic; the same function runs in the
+     migration and in the manual Convert command):
+     E1 the node is a marked Pagination that normalizePagination accepts
+        unchanged (exactly one current page, roles recognized, boundary
+        controls present, BC-09 invariants hold);
+     E2 every page's five look properties (background, border, boxShadow,
+        typography.color, display.cursor) hold values the typed rule
+        groups can carry (always true for schema-valid data; checked
+        anyway);
+     E3 role recognition is unambiguous (no child matches two roles).
+     A failure yields a reason code: "no-current-page",
+     "multiple-current-pages", "unrecognized-children", "ambiguous-roles",
+     "invariant-violation".
+12.6.4 Conversion of an eligible instance (identical for migration and
+     the Convert command):
+     1. Current page: write a role-group rule on the nav — target
+        "pagination.page", condition {self:["current"]}, groups = the
+        current page's five look properties. A property ABSENT on the
+        current page but present in the reference ordinary look gets the
+        explicit unset-equivalent value (transparent background, no
+        shadow, no border, inherited colour, auto cursor), so the rule
+        still wins over the base.
+     2. Reference ordinary look = getStateLook of the first non-current
+        page (today's rule), or STARTER_PAGE_LOOK if none. The current
+        page's BASE five properties are replaced by it.
+     3. Every other page is untouched (heterogeneous sibling styling is
+        preserved exactly); non-look properties are never touched.
+     4. Disabled boundaries: for each prev/next control whose colours are
+        exactly the starter state colours (the only case applyBoundary
+        ever swaps):
+        - its base gets the starter ENABLED colours;
+        - it gets its OWN rule, target element, condition
+          {self:["disabled"]}, groups = the starter disabled text and
+          border colours + cursor not-allowed.
+        Controls with customized colours are left exactly as they are
+        (applyBoundary never changed them, so behaviour is identical).
+        Own rules are used instead of the "pagination.disabled" role group
+        so a customized boundary is never restyled by its sibling's rule.
+        The disabled atom matches [aria-disabled="true"] (§6.10), which
+        disabled links carry on every surface.
+     5. paginationStyleMode = "semantic".
+     Result: identical computed appearance on load, for the current page,
+     every other page and both boundaries in either state.
+12.6.5 Ineligible instances (migration): paginationStyleMode = "legacy",
+     nothing else changes, loading never fails, and a load notice says
+     "1 Pagination keeps its earlier current-page styling. Select it for
+     details." Legacy instances are rare by construction (normalization
+     has enforced E1 since BC-09.3), but they are handled, not assumed
+     away.
+12.6.6 Behaviour per mode (one mode per instance, so there are never two
+     competing systems on the same Pagination):
+     SEMANTIC
+     - setPaginationCurrentPage moves only ariaCurrent (+ href rules);
+       the current look follows from the rule;
+     - normalizePagination keeps all BC-09 invariants but performs no
+       look copying (steps 2/3 of today's normalization become no-ops);
+     - boundaries toggle only `disabled`; their look follows their rules;
+     - the role-group targets are available in the Inspector.
+     LEGACY (a frozen compatibility path with one purpose: keep projects
+     the converter could not prove safe working exactly as in BC-09)
+     - today's look-copy behaviour, unchanged and covered by the existing
+       BC-09 tests;
+     - the role-group "current"/"disabled" targets are shown INACTIVE
+       with the reason, and an Inspector notice offers "Convert to
+       semantic styling"; when E1–E3 fail, it explains which check failed
+       and what to fix (for example "Two pages are marked current");
+     - no new features are added to the legacy path.
+     Lifecycle of the legacy path: it stays while any supported file can
+     contain a legacy-mode instance. Removing it requires a future
+     revision step that converts or explicitly reports every remaining
+     instance, which is a separate decision, not part of BC-17.
+12.6.7 Cross-mode operations:
+     - Copying the CURRENT page out of a semantic Pagination: its base
+       already holds the ordinary look, so ordinaryLookIds is unnecessary.
+     - Pasting a page that was current in a LEGACY Pagination into a
+       semantic one: the existing applyStateLook helper is used once, on
+       paste, to give it the ordinary look (the same normalization that
+       exists today, now a conversion helper).
+     - Copying a whole Pagination keeps its mode.
+     - BC-10 multi-move and BC-11 paste keep their BC-09 normalization in
+       both modes.
+12.6.8 Preserved BC-09 requirements in both modes: exactly one current
+     page; the current page is non-navigable and runs no authored
+     interactions; disabled boundaries render without href; the ellipsis
+     rule and aria-hidden; role labels; atomic history; the BC-09.4
+     Inspector reasons. Reset of the Current-page rule (semantic) makes
+     the current page look ordinary, by design, with no re-migration.
+     The protected save (§12.3) applies after migration.
+12.6.9 Behaviour change, by design (O9): in semantic mode a uniquely
+     styled page keeps its own look when it stops being current, instead
+     of today's look swap. Appearance on load is identical.
+12.6.10 Tests (BC-17.15): computed-style equality before/after on fixtures
+     — heterogeneous links, a missing current page (legacy path), two
+     current pages (legacy path), customized and starter boundaries,
+     reset after migration, repeated open/save, Convert after fixing a
+     legacy instance, paste across modes.
+12.7 Other conversions requiring revision steps:
+     - BackgroundSettings → layers (BC-17.8);
+     - FilterSettings → ordered list (BC-17.9);
+     - TransitionSettings → list (BC-17.11);
+     - legacy fill/stroke → paint (BC-17.18).
+     Each is an identity-preserving transformation with its own fixtures.
+     Semantic Tabs need NO migration (P-1 = manual conversion, §13.7);
+     BC-17.14's revision only adds the "tabs" marker value and
+     tabsSelectedIndex.
+
+
+13. RUNTIME SEMANTIC STATES AND ACCESSIBLE COMPONENTS [OWNER O10, N2]
+---------------------------------------------------------------------
+13.1 A single shared resolver (extending resolveTriggerAccessibility)
+     produces, for Preview and Export, the attributes per node from the
+     document plus the runtime visibility state:
+     - toggle triggers: aria-expanded (existing);
+     - show/hide/toggle targets (dropdown menu, popover, toast,
+       collapsible content): data-state="open" | "closed";
+     - dialog: native [open] (the "open" atom maps to [open] for dialog
+       and to data-state="open" for others);
+     - custom progress: data-state="indeterminate";
+     - semantic tabs: aria-selected (below).
+     The export runtime updates these attributes as it changes
+     visibility. It still reads only tokens.
+13.2 Semantic Tabs (N2, BC-17.14):
+     - Markup:
+       tablist container role="tablist" (aria-orientation when
+       vertical); each tab button role="tab", aria-selected,
+       aria-controls=<panel id>, id; tabindex 0 on the selected tab and
+       -1 on the others (roving); panels role="tabpanel",
+       aria-labelledby=<tab id>, tabindex="0" (so a panel without
+       focusable content is reachable, per the ARIA Authoring Practices
+       Guide), hidden when not selected.
+     - Keyboard (focus on a tab):
+       Left/Right (horizontal) or Up/Down (vertical) move focus to the
+       previous/next ENABLED tab, wrapping; Home/End go to the first/last
+       enabled tab. Tab leaves the tablist to the selected panel. A
+       disabled tab (aria-disabled="true") is skipped by the arrows and
+       never becomes selected.
+     - Activation contract [ENG, resolved 17.1.3; ARIA Authoring
+       Practices Guide, Tabs pattern]: AUTOMATIC activation — moving focus
+       to a tab selects it and shows its panel. The APG recommends it when
+       a panel can be shown without noticeable latency; Layoutry panels
+       are already in the DOM (show = removing hidden), so the condition
+       holds for every instance. Click, Enter and Space also select (no-ops
+       when already selected). Manual keyboard activation (arrows move
+       focus only, Enter/Space select) is not implemented. This is a
+       keyboard-interaction contract and is unrelated to P-1's MANUAL
+       CONVERSION of legacy instances (§13.7).
+     - Identity: component marker "tabs" (the ComponentMarker enum gains
+       "tabs", revision step in 17.14) on the root; roles are STRUCTURAL
+       (root.children[0] = tablist container, its children = tabs;
+       root.children[1] = panels container, its children = panels; tab i
+       ↔ panel i). No displayName dependence.
+     - ids/aria-controls/aria-labelledby: generated per render/export from
+       node ids with the collision-safe prefix (§11), never authored.
+     - Selected state: document field tabsSelectedIndex (the authored
+       initial tab); the runtime tracks it afterwards. Panels have no
+       initialPreviewVisibility; hidden is derived from the index.
+     - Structural invariants (normalizeTabs, the normalizePagination
+       pattern): tab count = panel count ≥ 1, selected index in range and
+       not disabled. Inspector commands add/remove/reorder tab+panel PAIRS.
+       If a raw structural edit (Structure drag, paste, delete) breaks the
+       pairing, the instance renders with NO tab roles (plain elements, so
+       never invalid ARIA) and the Inspector says "Tabs structure is
+       incomplete: 3 tabs, 2 panels", with fix commands.
+     - Design: all panels stay visible for editing; "selected" is
+       forceable per tab (§6.8).
+     - Preview and Export: the same shared runtime-state resolver; the
+       export runtime implements the keyboard model (token-only, the
+       EXPORT-1.3 contract; security review in 17.14).
+     - Styling targets: tabs.list, tabs.tab (atoms selected, hover,
+       focus-visible, active, disabled; compounds selected+hover,
+       selected+focus-visible), tabs.panel (atom open).
+13.3 Native semantics are never contradicted:
+     - no aria-selected on non-tab buttons;
+     - in Preview and Export, no aria-disabled where the native disabled
+       attribute applies (Design's aria-disabled on buttons is the
+       existing editor-only exception, §2);
+     - no role on native form controls;
+     - aria-current only via BC-09/navigation fields.
+13.4 Canvas simulation never executes runtime interactions. Forced
+     "open/expanded/selected" are attributes plus compiled variants
+     only; interaction bindings do not run on Design (unchanged).
+13.5 Disabled and focus (CORRECTED 17.1.3):
+     - the disabled atom compiles to :is(:disabled, [aria-disabled="true"])
+       (§6.10), so native controls, Design buttons and disabled links all
+       match on every surface;
+     - Pagination disabled boundaries keep their BC-09 semantics
+       (rendered without href, aria-disabled) and are styled per §12.6.4;
+     - focus-visible is the recommended focus-ring hook;
+     - removing a focus indicator shows an advisory (not blocked).
+13.6 Reduced motion in Preview and Export (CORRECTED 17.1.3 — the exact
+     contract, P-6 and the existing BC-02.5 contract):
+     - Transitions (existing, unchanged): duration 0.01ms, delay 0s, so
+       the end state appears at once.
+     - Animations (new in 17.11, the same principle — "the visitor sees
+       the state the motion leads to, without the motion"): each authored
+       animation is collapsed to animation-duration 0.01ms,
+       animation-delay 0s, animation-iteration-count 1, keeping its
+       authored fill-mode and direction. With fill-mode forwards/both the
+       element ends on the final keyframe of that one iteration (the 0%
+       keyframe for reverse); otherwise it returns to its base style.
+       Infinite animations therefore end too. Nothing is removed from the
+       document.
+     - Export: the existing @media (prefers-reduced-motion: reduce) block
+       gains these animation declarations for the elements (and vector
+       object classes) with authored animations, !important as today.
+     - Preview: the editor's global rule already sets animation-duration
+       and iteration-count; the [data-document-surface] rule gains
+       animation-delay 0s, so Preview predicts the export exactly.
+     - The same contract is what "Play with reduced motion" simulates on
+       Design (§16.7).
+13.7 Legacy Basic Tabs and manual conversion [OWNER P-1, N2] (NEW 17.1.3)
+13.7.1 What a legacy instance is: Basic Tabs created before BC-17.14 are
+     not a component; they are plain elements with show/hide bindings
+     (§2). They keep rendering through the generic element renderers and
+     the generic show/hide runtime, which stay permanently (every
+     composition uses them). No dedicated legacy renderer exists or is
+     needed, and nothing is migrated automatically.
+13.7.2 Recognition (pure; runs when one of the nodes is selected):
+     R1 a root element with exactly two element children, A then B;
+     R2 A has N ≥ 2 children, all <button>; B has exactly N element
+        children (the panels);
+     R3 each tab i has click bindings that are exactly: show panel i, and
+        hide every other panel of B (any order), and nothing else
+        (no toggle, no other targets, no other events);
+     R4 exactly one panel starts visible (no hidden initialPreviewVisibility),
+        all others start hidden;
+     R5 no element outside the root has a binding targeting any panel;
+     R6 no node in the instance is a component root already (no marker).
+     When R1–R2 hold but R3–R6 do not, the Inspector shows that the
+     structure resembles Tabs and why it cannot be converted, e.g. "Tab 2
+     also shows Panel 3", "Panel 1 is also opened by 'Help button'".
+13.7.3 "Convert to Semantic Tabs" (offered when R1–R6 hold): one atomic
+     command, one history entry, exact Undo:
+     - root gets component "tabs"; tabsSelectedIndex = the initially
+       visible panel's index;
+     - the show/hide bindings of the tabs are removed (the semantic
+       runtime now performs exactly that behaviour), and the panels'
+       initialPreviewVisibility fields are removed (derived from the
+       index);
+     - preserved untouched: every node, id, htmlId, className, authored
+       style (base and rules), content, accessibility field (labels on
+       tabs/panels/root are kept and still win as accessible names), and
+       any other interaction on these nodes;
+     - visual appearance is unchanged: legacy tabs had no selected
+       styling, so none is added; only roles/ARIA/tabindex attributes
+       appear;
+     - new behaviour, by design: the APG keyboard model.
+     Disabled tab buttons convert to disabled tabs.
+13.7.4 Insertion: from BC-17.14, the Resource Panel inserts semantic Tabs
+     (createSemanticTabsNode: marker, no bindings); the legacy factory is
+     no longer used for insertion.
+
+14. CSS CLIPBOARD [OWNER O16]
+-----------------------------
+- Payload v2:
+  { groups (base, per STYLE_GROUP_KEYS plus new groups), rules[] (active
+    only), keyframes[] (referenced only), sourceProfile }.
+- Copy whole: base + active rules + referenced keyframes.
+  Section copy: one category for the CURRENT (target, condition).
+- Paste:
+  - merge per (target, condition, group) as BC-11 merges per group;
+  - unrelated destination styles are kept;
+  - incompatible targets, conditions or groups are skipped and listed in
+    the notice;
+  - pseudo content travels with its rule;
+  - never copied: element identity, htmlId, className, interactions,
+    content, accessibility fields, Pagination/Progress data, vector
+    geometry;
+  - one history entry or nothing (the invalid → reject path).
+- Keyframes (the shared asset utility introduced in BC-17.11, reused by
+  presets and SVG defs):
+  - canonical content hash (stops normalized, ids excluded);
+  - an equal hash in the destination document → reuse that id;
+  - otherwise insert with a fresh id and a unique printable name;
+  - references in the pasted rules are remapped.
+- (NEW 17.1.3) Counter definitions referenced by copied rules ride in
+  the payload as counters[] and map per §4.11.5 (same document: keep ids;
+  foreign: match by normalized name or create; the notice states it).
+- (NEW 17.1.3) Logical fields travel inside their group (§4.10.6); the
+  dir attribute does not travel (content semantics).
+- Multi-selection paste (BC-10): all-or-nothing against the
+  intersection.
+- SVG geometry: the separate vector clipboard (Report 3 §8), which reuses
+  this keyframe utility for vector motion (Report 3 §8.3).
+
+
+15. PRESET ARCHITECTURE [OWNER O12, N8.1–N8.4, N10.2]
+------------------------------------------------------
+15.1 Model:
+     PresetDefinition {
+       id: string;                         // stable; "builtin:<slug>" for built-ins
+       library: "builtin" | "app" | "project";
+       name: string;                       // display only
+       kind: "typography" | "category" | "element" | "component" | "state" | "motion";
+       scope: { category?; profiles?: ProfileId[]; target?; condition? };
+       payload: ClipboardPayload v2;       // §14 shape; keyframes and
+                                           // counter definitions embedded
+       builtinVersion?: number;            // built-ins only
+       createdAt, updatedAt
+     }
+     One schema validates presets from every library.
+15.2 Libraries [N8.1]:
+     - built-in: shipped as data in the app bundle, read-only, with stable
+       ids [N8.3];
+     - app (personal):
+       · browser: an IndexedDB store (the same guarded pattern as the
+         project library);
+       · Electron: the same IndexedDB on the app:// origin, which
+         persists in userData;
+       · a JSON export/import for backup is an optional engineering
+         addition;
+       · no cloud or account storage;
+     - project: document.styleAssets.presets, travelling with the file.
+     Copying between libraries creates a new id in the destination, and
+     names are validated there.
+15.3 Application [N8.2] is detached: applying = a clipboard-style paste
+     of the payload into the element.
+     - Embedded keyframes are deduplicated into the project's
+       styleAssets.keyframes (§14).
+     - (NEW 17.1.3) Embedded counter definitions map by normalized name or
+       are created (§4.11.5), so applying a "Numbered step" preset to five
+       cards gives one shared sequence; the apply notice names the counter.
+     - (NEW 17.1.3) Presets carry logical fields as authored; applying
+       never converts physical ⇄ logical.
+     - Compatibility is checked against the registry (including §5.6
+       context predicates); skipped parts are reported.
+     - One history entry, and the project is marked dirty.
+     - Afterwards the element holds ordinary authored styling, with no
+       link. Editing, renaming, replacing or deleting the preset never
+       changes elements, so an element cannot be invalidated by a preset
+       change (it references nothing).
+15.4 Built-ins [N8.3]: read-only; apply directly or duplicate into an app
+     or project library. Application updates may change built-in content
+     under the same id (builtinVersion increments). Earlier applications
+     and duplicates are unaffected (detached). A removed built-in
+     disappears from the library only.
+15.5 Naming [N8.4; the clarifications are PROPOSED ENG]:
+     - unique per library;
+     - comparison after Unicode NFC, trimming, collapsing inner
+       whitespace and case-folding;
+     - length 1–64 characters after normalization;
+     - deletion asks for confirmation;
+     - a copy whose name conflicts in the destination: the proposed
+       options Keep both (name + " (2)"…), Replace (custom presets only,
+       never built-ins) and Cancel — a PROPOSAL, not owner-approved
+       (N8.4 note).
+     - Renaming and deletion never touch elements.
+15.6 History boundaries:
+     - project-library management (create/rename/delete/replace inside
+       the project file) changes the document → project history, dirty
+       state;
+     - app-library management is not project data → not in project
+       Undo/Redo, no dirty state, persisted immediately, with deletion
+       confirmation as the safety net;
+     - applying any preset → project history, dirty.
+15.7 BC-14 integration [N10.2]: BC-14 Typography Presets are kind
+     "typography" in BC-17.23. The original BC-14 requirement text is not
+     in the repository [VERIFIED again at 9e3cc52: the only "BC-14"
+     mentions are in the BC-17 reports; docs/roadmap has none; no
+     changelog describes BC-14]. Recovered evidence (intent, NOT
+     requirements): the disabled Resource Panel "Styles" cards — Font
+     Scale ("Type size presets"), Font Weight ("Weight presets"),
+     Typography Base ("Base font settings") and seven non-typography
+     cards. Two of those (Color Palette "Brand color tokens", Spacing Scale
+     "Consistent spacing tokens") describe TOKENS (shared variables),
+     which are not approved (var() is blocked; presets are detached).
+     Nothing is inferred from them. Traceability requires the owner to
+     supply the BC-14 requirement list before BC-17.23 (action A-4);
+     BC-14 is not closed by being scheduled.
+
+
+16. DESIGN ANIMATION PLAYBACK [OWNER N11, P-5, P-6; architecture ENG]
+    (CORRECTED 17.1.3 — P-5: editing interrupts playback instead of being
+    blocked; P-6: reduced-motion playback options. Resolves the BC-17.1.2
+    contradiction "editing gestures cannot start during playback".)
+------------------------------------------------------------------------
+16.1 Mechanism (not tied to a browser API): playback is a Design-only
+     compiler variant.
+     - The command sets editor UI state
+         playback = { token, nodeId, mode: "authored" | "reduced",
+                      requested: "follow" | "authored" | "reduced" }
+     - The compiler emits, for that node only, the node's authored
+       animation declarations with animation-iteration-count overridden to
+       1 (N11), scoped to [data-ly-playback="<mode>"]; the node gets the
+       attribute. In mode "reduced" the emitted declarations are the
+       §13.6 reduced-motion collapse instead.
+     - The same compiled keyframes serve Design, Preview and Export, so
+       what plays is exactly the authored animation (one iteration).
+     - The Web Animations API is not required. It may be used later only
+       if measurements justify it and it reads the same compiled IR.
+     - Playback is owned by a dedicated controller, NOT the single-slot
+       active-interaction registry (§2: registering there would be
+       silently replaced by the next gesture's registration, and Save
+       calls interruptActiveInteraction). stopDesignPlayback(reason) is
+       idempotent and synchronous.
+16.2 Multiple animations: all of the node's animations play together.
+     Each runs one iteration with its own delay, duration, timing,
+     direction (normal or reverse; "alternate" plays its first, forward
+     iteration; "alternate-reverse" its first, reverse one) and fill mode.
+     Playback ends when every animation has fired animationend or
+     animationcancel, or after max(delay + duration) plus a 100 ms guard.
+     The attribute is then removed and the element returns to its static
+     Design appearance (fill-mode never holds after playback ends:
+     Design's resting state is always the static authored state).
+     Transitions are never played on Design (they stay Preview-only).
+16.3 Interruption contract [OWNER P-5]: editing is never blocked. When an
+     applicable editing operation begins, the editor, synchronously and
+     before the operation reads any geometry:
+       1. stops playback (stopDesignPlayback);
+       2. removes the playback attribute, so the static authored rendering
+          applies at the next style resolution;
+       3. forces one style/layout resolution (a single
+          getBoundingClientRect on the node), so geometry is static;
+       4. lets the overlays re-measure the node (selection outline and
+          handles reappear) and lets the snap index be built from static
+          layout (BC-13 D26/D37 path; playback never fed it);
+       5. lets the operation proceed in the same user action.
+     Hook points (each calls stopDesignPlayback first):
+     - Canvas pointer input: a window-level CAPTURE pointerdown listener
+       on the Canvas surface, which runs before React's handlers
+       (16.4);
+     - gesture begin helpers: createFreeInteraction, the vector gesture
+       transaction (Report 3 §6), the Resource Panel and Structure dnd-kit
+       onDragStart (before dnd-kit measures droppables), text editing
+       entry;
+     - the store's document-mutation boundary: any document change that
+       is not playback itself (Inspector edits, nudges, delete, paste,
+       duplicate, Undo/Redo, commands, conversions) stops playback before
+       it applies — the same boundary that interrupts gestures;
+     - selection-changing store actions (Canvas, Structure, keyboard);
+     - Escape (consumed: it stops playback and does nothing else, as
+       Escape does for a live gesture);
+     - entering Preview; project New / Open / Import / Close / switch
+       (the projectWorkflow paths that already call
+       interruptActiveInteraction also call stopDesignPlayback);
+     - document visibility becoming hidden.
+     NOT interrupting (unrelated to the played node's integrity):
+     - Save and Save As. Serialization reads only the document, and
+       playback is never in the document, so saving cannot capture it.
+       Playback continues; the Save path does not need to cancel it.
+     - window blur, hovering, scrolling, Inspector scrolling, typing in a
+       search field, Tab focus moves, opening menus, and any key that is
+       not an editor command.
+     - Playback of another node: starting a new playback stops the
+       previous one first (one playback at a time).
+16.4 Hit testing and overlays during playback:
+     - The played node and its descendants hide their selection outline
+       and resize handles while playing (their geometry is animated), but
+       the node stays hit-testable.
+     - The capture-phase pointerdown handler: (a) records the pointer's
+       client position, (b) stops playback and flushes layout (16.3),
+       (c) resolves the STATIC target with document.elementFromPoint at
+       that position. If the static target is the event's target, the
+       event simply continues and the normal handlers start the edit with
+       static geometry. If it differs (the animation had moved the node),
+       the original event is stopped in capture and an identical
+       pointerdown (same pointerId, coordinates, buttons, modifiers) is
+       dispatched to the static target, so the edit starts on what is
+       actually under the pointer now. Pointer capture works because the
+       physical pointer is still down. [ENG; e2e in 17.11: animated
+       transform, layout-affecting animation, nested element, animated
+       ancestor]
+     - Stale callbacks: animationend/animationcancel listeners and the
+       guard timer check the playback token; after a stop they are no-ops.
+       Rapid Play/Stop/Play mints a new token each time.
+     - Gestures started right after interruption are normal gestures with
+       their own lifecycle; cancelling them never restarts playback.
+16.5 Integrity (unchanged N11 guarantees): playback never writes the
+     document, never creates history, never marks the project modified,
+     never persists (the attribute and variant are Design-only UI state),
+     never touches authored geometry or animation settings, never feeds
+     snapping, never overwrites edits, and never reaches Preview or Export
+     (the variant compiles only for the Design surface). The editing
+     operation that interrupts it then records its own normal history
+     entry.
+16.6 Geometry notes:
+     - layout-affecting animations (width, margin…) are rendered by the
+       browser only; nothing reads the DOM into the document;
+     - authored transforms combine with animated transforms as authored;
+     - nested and ancestor animations: only the played node's own
+       animations run; descendants move with it visually; selecting a
+       descendant is a selection change and stops playback.
+16.7 Reduced motion [OWNER P-6]:
+     Controls (presentation is an implementation-level UI choice):
+       Play                     follows the viewer's current
+                                prefers-reduced-motion
+       Play as authored         the original animation, explicitly
+       Play with reduced motion the §13.6 reduced behaviour, explicitly
+     - "Play": reads matchMedia at start → mode "reduced" if the viewer
+       prefers reduced motion, else "authored".
+     - "Play as authored" while the viewer prefers reduced motion: the
+       editor's global reduced-motion rule (globals.css, `*` with
+       !important, §2) would collapse the animation. Its selector gains an
+       exclusion for the played subtree in authored mode only:
+         *:not([data-ly-playback="authored"], [data-ly-playback="authored"] *)
+       (and the same for ::before/::after). Every other element — the
+       whole Layoutry interface, other document nodes, Preview — keeps
+       the reduced-motion rule. [VERIFIED need; selector support
+       :not() with a complex list: all three engines, UNVERIFIED in
+       Layoutry → 17.11]
+     - "Play with reduced motion": compiles the collapse (duration 0.01ms,
+       delay 0s, one iteration, authored fill and direction), i.e. exactly
+       what Preview/Export visitors with reduced motion get. Because that
+       end state would flash for 0.01ms, the reduced playback HOLDS its
+       resulting computed state for the length the authored playback would
+       have taken (minimum 500 ms) [PROPOSED], then returns to static.
+       With no forwards fill the held state is the base style, which is
+       the honest result ("nothing visible happens").
+     - The override is temporary: it applies to this one playback only;
+       it is never a project setting, never stored, never changes the OS
+       preference, never affects Preview or Export, and never relaxes the
+       reduced-motion rule for the Layoutry UI.
+     - Preference change during playback: in "Play" (follow) mode the
+       playback stops and returns to static (the next Play uses the new
+       preference); in an explicit mode it is ignored.
+     - Delays, infinite counts, direction and fill modes: per 16.2 (one
+       iteration) for authored playback and per §13.6 for reduced.
+     - Interruption and project lifecycle: identical for all modes (16.3).
+     - Normal Design editing stays static: no animation or transition runs
+       on Design outside an explicit playback.
+     - Preview keeps the existing reduced-motion contract; Export respects
+       the visitor's preference via §13.6. Both keep authored iteration
+       counts outside reduced motion.
+
+
+17. LIMITS (security bounds for untrusted files) [PROPOSED; values set at
+    implementation]
+---------------------------------------------------------------------
+- Per node: ≤ 256 style rules.
+- Per document: ≤ 1,024 keyframe definitions, ≤ 64 stops each.
+- Per group: ≤ 32 background layers, shadows, filters or transitions,
+  and ≤ 16 animations.
+- SVG: Report 3 §9.
+- Presets: ≤ 2,048 per library.
+- (NEW 17.1.3) Counters: ≤ 1,024 definitions per document; ≤ 32
+  operations per counters list; content ≤ 16 parts and ≤ 200 characters.
+- (NEW 17.1.3) Progress labels: template ≤ 120 characters, indeterminate
+  text ≤ 60, locale tag ≤ 35, fraction digits 0–6.
+These follow the existing projectLimits rationale: they bound validation
+cost for hostile input. They are not selection-count or element-count
+restrictions (BC-13 D39 "no caps" concerns interaction limits; these
+are file-validation bounds).
+
+
+18. PERFORMANCE REQUIREMENTS
+----------------------------
+Evidence [TESTED/REPORT]:
+- BC-13.6/13.6.1: rendering dominates gesture cost (P1 open); the
+  session itself costs ≈4 ms per frame.
+- BC-12.5: structure drag start went from 578 to 44 ms at 1,000 rows.
+- Nothing about the new pipeline has been measured.
+
+Benchmarks required (BC-17.3 baseline BEFORE the switch; repeated in
+BC-17.26), reporting separately: compile/engine time, geometry time,
+React render time, style recalculation, layout/paint, and total frame
+time.
+Fixtures: 1,000 elements (mixed), 1,000 elements with 3 rules each, and
+200 animated elements.
+
+Acceptance (provisional, confirmed against the baseline):
+- Live Free drag and resize: median and p95 total frame time within
+  measurement noise of the baseline (the override layer means no compile
+  per frame).
+- A single Inspector edit: compile of the dependants ≤ 2 ms (median,
+  Chromium); commit-to-paint not worse than baseline.
+- Open, Preview start and Export: a full compile reported; ≤ 10%
+  regression versus the baseline.
+- Forced state toggle and playback start: ≤ one frame of compile work for
+  one node.
+- Vector path editing: Report 3 §10.
+- No element-count or selection-count restrictions are introduced.
+Additional criteria (NEW 17.1.3; all provisional, measured at the named
+checkpoint with the named workload; none is a measured result):
+- Gesture commit (§8.11): one node compile + sheet chunk swap within the
+  same frame as the commit; no painted frame without geometry (verified
+  with a frame-by-frame trace) — 17.3, 1,000-element fixture.
+- Counter-related invalidation: editing a counter definition or
+  operation recompiles only the nodes that reference it (dependency
+  index); renumbering itself is the browser's — 17.6, 1,000 elements with
+  200 counter references; compile ≤ 2 ms median.
+- Physical/logical edits: no extra cost beyond the group's own compile —
+  17.4/17.7, the 1,000 × 3 rules fixture.
+- Playback start/stop: start ≤ one node compile; stop is synchronous and
+  leaves no attribute, listener or timer behind (leak check after 100
+  rapid Play/Stop cycles) — 17.11, 200 animated elements.
+- Interrupting pointerdown: stop + one forced layout + hit test adds
+  ≤ 1 frame before the gesture starts — 17.11.
+- Definition deduplication (SVG defs, keyframes): linear in the number of
+  definitions with hashing — 17.19/17.22, 1,000 objects with 500 equal
+  gradients.
+- Vector clipboard paste with dependencies: one transaction, no
+  per-object recompile of unrelated nodes — 17.22.
+Measurement method (every criterion): Playwright-driven Chromium in a
+production build with CPU traces (Performance panel / tracing), the
+separate timings of §18 above, 5 runs, median and p95 reported; Electron
+smoke where the checkpoint names it.
+
+P1 (BC-13 Canvas rendering performance) stays an OPEN BC-13 owner item
+(not accepted). BC-17.3's baseline shows whether the new pipeline
+changes it. If any BC-17 acceptance criterion cannot be met without P1
+work, that is reported as a blocker for that checkpoint (Report 6).
+
+
+19. EXISTING MILESTONE COMPATIBILITY
+------------------------------------
+Each contract below is preserved and has a named regression owner in
+Report 4.
+- BC-01: transactions (begin/commit/cancel, mergeHistory).
+- BC-02: Preview runtime; media lifecycle; muted-only autoplay
+  (BC-02.2.1); trigger ARIA (BC-02.5).
+- BC-04: interactions; dismissal; help.
+- BC-05: reset semantics (extended); the protected legacy save
+  (reused).
+- BC-07: image assets and validation (reused for layers and masks).
+- BC-08: embeds and the iframe sandbox/permissions (untouched).
+- BC-09: Pagination invariants (O9 migration).
+- BC-10: multi-selection intersection and effective values (extended).
+- BC-11: CSS clipboard (extended).
+- BC-12: structure drag-and-drop (no fake nodes).
+- BC-13:
+  - snapping engine, D11 Snap preference, Alt bypass;
+  - D15/D46 constraints, D21 cancellation, D23 transformed AABBs, D26/D37
+    invalidation, D27 frame policy, D38 editor-only guides, D39
+    performance;
+  - Option B keyboard, D1/D2 insertion, the BC-13.7 min/max resize fix.
+  These are protected by the gesture override layer (§8.11), forced
+  states excluded from measurement, playback interruption before any
+  gesture measures (§16.3), Free geometry staying physical (§4.10.6) and
+  the vector lifecycle reusing the Option B registry (Report 3 §6).
+  BC-13 remains OPEN (N10.1); BC-17 does not close or waive it.
+- BC-02.5 reduced motion: extended to animations with the same
+  principle (§13.6); the global editor rule gains only the authored-
+  playback exclusion (§16.7).
+- EXPORT-1.x: one class per element, the runtime contract,
+  diagnostics.
+- PROJECT-1.x: the chain, the frozen fixtures, limits, recovery.
+
+
+20. CHANGE SUMMARY VERSUS BC-17.1.2 REPORT 1 (NEW 17.1.3)
+-----------------------------------------------------------
+- Decision count: 41 (O1–O16, 19 N, P-1–P-6); no open owner decision.
+- §2: newly verified facts (Free geometry is physical; disabled markup
+  per surface; one-slot interaction registry incl. Save; reduced-motion
+  !important rules; Basic Tabs structure; boundary colour swap; export
+  lang; modifiers; BC-14 evidence).
+- §4.4/4.5: PseudoContent is a parts union with counter parts;
+  styleAssets.counters.
+- §4.10 NEW: physical + logical representation, dir vs direction,
+  effective flow context, "logical wins inside a rule", progressive
+  disclosure, Free/Flow gesture intent (P-2, ARCH-Q2).
+- §4.11 NEW: CSS counters model, identifiers, clipboard/preset mapping,
+  @counter-style as a scope candidate (P-4).
+- §5.6 NEW: context predicates; float/clear applicable in normal flow
+  with automatic float containment (ARCH-Q1, P8).
+- §6.6: the !important statement now names the existing reduced-motion
+  exception. §6.9–6.10 NEW: logical emission order; atom → selector
+  table (disabled = :disabled or aria-disabled).
+- §7: Language & direction, conversion commands, Counters & Content,
+  logical disclosures, P-6 play options.
+- §8.11 NEW: gesture override contract (ARCH-Q5).
+- §9.7: P-3 label formatting contract.
+- §10: float no longer restricted to first-letter; ::marker content.
+- §11: id-prefix collision rule; locale/template validation.
+- §12.5: foundation versus later revisions; SVG identity consistent with
+  Report 3 (no stored anchor ids, no stored definition references —
+  ARCH-Q3).
+- §12.6: Pagination compatibility contract with explicit
+  paginationStyleMode, eligibility, boundaries, legacy lifecycle
+  (ARCH-Q4).
+- §13: APG keyboard details, activation contract, disabled mapping,
+  exact reduced-motion contract, §13.7 manual Tabs conversion (P-1).
+- §16: playback rewritten — interruption instead of blocking, dedicated
+  controller, hit-testing, P-6 modes and the globals.css exclusion
+  (P-5, P-6).
+- §17–19: new limits, performance criteria with method, compatibility
+  notes.

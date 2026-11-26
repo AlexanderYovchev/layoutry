@@ -1,0 +1,1081 @@
+BC-17.1.3 — Corrected Implementation Roadmap
+Report 4 of 7
+============================================
+Date: 2026-11-26.
+HEAD: 9e3cc52.
+This is a proposed sequence. It does not authorize implementation; each
+checkpoint starts only on its own brief. Authoritative; supersedes
+BC-17.1.2 Report 4 (kept as history). Decisions: 41 (O1–O16, 19 N,
+P-1–P-6). No checkpoint waits for an owner product decision; the only
+owner INPUTS still needed are the BC-14 requirement text (A-4, before
+17.23) and the BC-13 items (A-1–A-3, which do not gate BC-17).
+
+
+00. CHANGES FROM BC-17.1.2 (17.1.3)
+-----------------------------------
+- Numbering and boundaries: UNCHANGED (25 checkpoints, 17.2–17.26). Every
+  new requirement fits an existing checkpoint's scope, so no checkpoint
+  was added, removed or renumbered.
+- Scope and acceptance updates:
+  17.2  logical twin fields, dir, direction/writing-mode fields; counters
+        group + counter definitions + content-parts union; ProgressLabel
+        with NumberFormat/LabelLocale; the SVG identity contract locked
+        (no SVG fields); the reserved-prefix id rule.
+  17.3  physical-then-logical printing; counter identifiers and content
+        printing; the atom → selector table (disabled mapping); the
+        gesture override contract (Report 1 §8.11).
+  17.4  "Logical sides" disclosures and collision hints; the Counters &
+        Content category shell (operations on the element target);
+        Language & direction subsection; context predicates with
+        INAPPL/LIMIT reasons.
+  17.6  counter() / counters() content parts, counter styles, marker
+        content, floated drop caps with containment.
+  17.7  logical properties completed, direction/dir/writing modes,
+        float/clear with containment, Flow resize intent.
+  17.11 playback interruption (P-5), reduced-motion playback (P-6), the
+        exact animation reduced-motion contract, the globals.css
+        exclusion.
+  17.13 label formatting (P-3).
+  17.14 manual legacy Tabs conversion (P-1), the activation contract,
+        structural invariants.
+  17.15 the complete Pagination compatibility contract
+        (paginationStyleMode, eligibility, boundaries, legacy lifecycle).
+  17.17 counters with native lists.
+  17.18–17.22 the reconciled SVG identity, wrapper transforms, gesture
+        transaction with compare-and-restore, modifier table, focus
+        applicability, clipboard dependencies, cross-viewBox conversion.
+  17.23–17.24 counter and logical-field behaviour in presets.
+  17.25–17.26 the new verification rows; 41-decision traceability.
+- BC-17.1.2's "17.26: 36 decisions plus P-1..P-3" and "§4: P-1..P-3
+  answered" were wrong (count and range); corrected to 41 approved
+  decisions.
+
+Field key used in every checkpoint below:
+ 1  objective
+ 2  included scope
+ 3  excluded scope
+ 4  dependencies
+ 5  architectural changes
+ 6  owner decisions
+ 7  milestone contracts affected
+ 8  acceptance criteria
+ 9  targeted tests
+ 10 browser verification
+ 11 persistence and migration
+ 12 performance
+ 13 reports
+ 14 conditions preventing closure
+Every checkpoint also writes: a report + a changelog; a test-impact map;
+the commands it ran.
+
+
+0. CHANGES FROM BC-17.1.1 AND MAPPING (BC-17.1.2, kept; still valid)
+--------------------------------------------------------------------
+The count stays at 25 (BC-17.2–BC-17.26).
+- N10.2 names BC-17.23 as the preset checkpoint, so the numbering is
+  kept stable.
+- Checkpoint boundaries changed in these places:
+  - 17.18 ⇄ 17.19 swapped. The SVG MODEL (data, commands, inline defs,
+    transforms, clip/mask data) must exist before SVG styling and the
+    tools. Old 17.19 "geometry foundation" → new 17.18 "SVG model
+    foundation" (expanded); old 17.18 "SVG object styling" → new 17.19.
+  - Old 17.21 (advanced vector) loses the vector clipboard and gains
+    N3.2 interactive arcs, N4.1 snapping with the grid, and interactive
+    clip-geometry editing.
+  - Old 17.22 (SVG verification) gains the vector clipboard (N5). Its
+    acceptance depends on the same defs, transform and cross-engine
+    parity matrix, so building it there avoids a second verification
+    pass. The two parts are separately accepted inside the checkpoint.
+  - 17.20 gains N3.1 bending, N3.3 conversion, and the lifecycle
+    unification (F-SVG-3).
+  - 17.2 gains the formatRevision mechanism, the curated compound
+    registry schema, inactive-rule semantics and all v4 foundations.
+  - 17.5 gains the curated compound-state infrastructure (N6) and the
+    outline group.
+  - 17.6 gains ::first-line/::first-letter (N7).
+  - 17.7 gains logical properties and writing-mode (representation now
+    fixed by P-2 and Report 1 §4.10).
+  - 17.11 gains N11 playback and the shared asset deduplication utility
+    (later reused by 17.19, 17.22, 17.23).
+  - 17.13 gains N1.1 (two cards, conversion) and N1.2 (labels).
+  - 17.14 gains N2 full semantic Tabs (legacy tabs: manual conversion,
+    P-1).
+  - 17.15 holds the Pagination revision step (O9).
+  - 17.23 absorbs BC-14 (N10.2).
+- Mapping (old → new):
+  - 17.2–17.17 → same numbers (with the scope changes above);
+  - 17.18 SVG styling → 17.19;
+  - 17.19 SVG geometry → 17.18 (expanded);
+  - 17.20 → 17.20;
+  - 17.21 → 17.21 (the clipboard moved out);
+  - 17.22 → 17.22 (+ the vector clipboard);
+  - 17.23–17.26 → same.
+
+Dependency order:
+  17.2 → 17.3 → 17.4 → 17.5 → 17.6
+  → {17.7, 17.8 → 17.9, 17.10} → 17.11 (needs 17.10)
+  → {17.12 → 17.13, 17.14 → 17.15, 17.16 (needs 17.9–17.11),
+     17.17 (needs 17.6, 17.8)}
+  SVG: 17.18 (needs 17.3) → 17.19 (needs 17.5, 17.8, 17.9, 17.11)
+       → 17.20 → 17.21 (needs 17.10) → 17.22
+  Presets: 17.23 (needs 17.7, 17.11) → 17.24 (needs the component
+           checkpoints)
+  Closure: 17.25 → 17.26
+Ordering rationale:
+- The asset deduplication utility lands with its first consumer
+  (keyframes, 17.11) before SVG (17.19/17.22) and presets (17.23), so
+  there is one utility, not three.
+- The CSS clipboard is extended in each checkpoint that adds a
+  dimension, so no late, incompatible extension is needed.
+- SVG definitions are inline values (Report 3 §7.1), so the vector
+  clipboard needs no separate definition-remapping architecture.
+
+Testing policy (every checkpoint): change-focused, per the standing
+rule. Full suites are never the default. Broader runs are justified
+explicitly where listed (17.3, 17.25). The engines are listed per
+checkpoint. Electron smoke runs only where the pipeline, media or
+storage changes.
+
+
+1. CHECKPOINT SPECIFICATIONS
+----------------------------
+
+BC-17.2 — Styling model, capability registry, project format v4 foundation
+ 1 The typed data foundation; no visible change.
+ 2 - StyleRule / StyleCondition / StyleTargetId types and Zod;
+   - PseudoContent as the final parts union (text, glyph, counter,
+     counters, altText) (17.1.3);
+   - styleAssets with keyframes, counters (CounterDefinition, CounterRef)
+     and presets containers (17.1.3: counters);
+   - the outline group and the counters group (17.1.3);
+   - the logical twin fields (marginLogical, paddingLogical, inlineSize…,
+     insetLogical, borderLogical, radiusLogical), typography direction /
+     unicodeBidi / writingMode / textOrientation, node.dir (17.1.3);
+   - the progress variant/segments and ProgressLabel with NumberFormat
+     and LabelLocale (17.1.3);
+   - the SVG identity contract locked (no new SVG fields; strict schema
+     keeps rejecting stored anchor/def ids) (17.1.3);
+   - the registry generated from elementCapabilities, with profiles and
+     targets for all 82 element types and the context-predicate
+     framework (INAPPL/LIMIT reasons) (17.1.3);
+   - the curated-compound list schema;
+   - inactive-rule computation (rule and field level);
+   - integrity rules (counter references resolve; unique counter names);
+   - cloneNodeWithFreshIds for rule ids;
+   - the session document token (for clipboard same/foreign decisions);
+   - (4,0) with formatRevision plus the revision-step framework;
+   - the v3→(4,0) identity step.
+ 3 Rendering, Inspector UI, any visible styling, Pagination conversion,
+   SVG field extensions (17.18).
+ 4 None (BC-13.7 is NOT a prerequisite, per N10.1; it is tracked).
+ 5 Report 1 §4 (incl. §4.10–4.11), §5 (incl. §5.6), §9.7.1, §12.1–12.5.
+ 6 O1, O5, O11, O13, N9 (revision mechanism); foundations for P-2, P-3,
+   P-4.
+ 7 PROJECT-1.x chain, frozen fixtures, limits; BC-05 save prompt; BC-11
+   clone semantics.
+ 8 - Every frozen v1–v3 fixture loads → (4,0) and round-trips with
+     identical content (apart from the version).
+   - (4,>R) and (5) are refused with the "newer version" path.
+   - Invalid rules, content parts, counter references, logical fields,
+     locale tags and label formats are rejected with exact paths.
+   - The registry resolves a profile for each of the 82 types and the
+     context predicates return the documented reasons (float in Flex,
+     insets on Free children, focus on vector objects…).
+   - Inactive computation is correct on the variant/scope fixtures.
+   - Validation time on the 20,000-node fixture is reported.
+ 9 Unit: schema, integrity, migration framework, registry, predicates,
+   clone. Existing project load/save tests (targeted files only).
+ 10 None (no rendering).
+ 11 Introduces v4. The protected save is triggered for upgraded files.
+ 12 Validation time on the 20,000-node limit fixture is reported.
+ 13 BC-17.2 report.
+ 14 Any fixture changing content; any silent strip path; the registry
+    missing a type; a foundation type that later checkpoints would have
+    to change shape (reviewed against Report 1 §12.5 in the report; R-1).
+
+BC-17.3 — Shared stylesheet compiler and rendering pipeline
+ 1 Route all permanent authored CSS and default presentations through
+   one compiler and stylesheet (Design, Preview, Export).
+ 2 - Compiler + printer (:where() equalization, order 0–14, vendor table
+     scaffold, escaping);
+   - physical-then-logical printing inside a rule (17.1.3);
+   - counter identifiers (c-<slug>) and content-parts printing (used from
+     17.6) (17.1.3);
+   - the atom → selector table, incl. disabled = :disabled or
+     aria-disabled (17.1.3);
+   - StyleSheetHost;
+   - the class identity and the collision-safe generated-id prefix;
+   - the dependency index and cache (incl. counter-reference and
+     keyframe dependencies);
+   - the update strategy chosen by measurement;
+   - the gesture override contract of Report 1 §8.11 for Free drag/resize
+     and gradient-stop drag: committed declarations stay in the sheet,
+     inline override wins, sheet-then-override swap in one layout task on
+     commit, no recompile on cancel, self-healing flag (17.1.3);
+   - the Design-safety motion gate;
+   - compiler failure handling;
+   - the 34 style= sites classified.
+ 3 New properties, states, Inspector.
+ 4 17.2.
+ 5 Report 1 §6, §8.
+ 6 O2, O15.
+ 7 - BC-13 (D21, D26, D27, D37, D38, D39, BC-13.5 lifecycle, Option B,
+     the BC-13.7 min/max fix);
+   - EXPORT-1.x output contract;
+   - BC-02 Preview;
+   - UI-1 theme isolation (data-document-surface).
+ 8 - Computed-style parity on the existing kitchen-sink fixtures
+     (Design/Preview/Export).
+   - No authored CSS remains inline outside the override layer.
+   - Gesture overrides never reach the store, the file or the export.
+   - Free drag/resize frame time within noise of the baseline (median,
+     p95).
+   - (17.1.3) A frame-by-frame trace of commit and of cancel shows no
+     frame without geometry and no frame with stale geometry; the sheet
+     is not mutated during pointer movement.
+   - (17.1.3) Disabled styling matches on Design (aria-disabled button),
+     Preview/Export (native disabled) and disabled links.
+   - Export CSS is semantically equivalent (computed parity, not byte
+     identity).
+   - The incremental sheet equals a full rebuild (property test).
+ 9 - Existing canvasExportParity unit tests;
+   - a new incremental-vs-rebuild test;
+   - e2e/bc13-final-audit.spec.ts plus the BC-13.5/13.5.1 lifecycle
+     specs (targeted);
+   - one kitchen-sink parity spec.
+   Justified broader run: the pipeline swap touches every element
+   renderer.
+ 10 Chromium, Firefox and WebKit for the parity spec and :where(); an
+    Electron smoke.
+ 11 None.
+ 12 BASELINE captured before the switch: compile, geometry, React,
+    recalculation, layout/paint, total.
+    - Candidate update strategies measured.
+    - The acceptance targets of Report 1 §18 are confirmed or revised in
+      the report.
+ 13 BC-17.3 report with the baseline table.
+ 14 - Any BC-13 contract regression;
+    - an unexplained performance regression;
+    - editor-chrome leakage;
+    - parity failure.
+
+BC-17.4 — Unified CSS Inspector foundation
+ 1 The O3 frame over the existing sections.
+ 2 - Header/Protection;
+   - Component properties (Accessibility and Interactions subsections);
+   - target and state selectors (Element/Default only at first);
+   - property search via a static index;
+   - lazy categories;
+   - remembered expansion;
+   - modified indicators;
+   - reset levels;
+   - help;
+   - the inactive-styling notice;
+   - the multi-selection intersection plumbing;
+   - (17.1.3) the per-section "Logical sides" disclosure (per-viewer UI
+     state, never a document write) with collision hints, on Spacing,
+     Size and Border & Corners, plus the explicit Convert to logical/
+     physical command;
+   - (17.1.3) the Counters & Content category shell: counter definitions
+     and counter operations on the element target (Default condition);
+   - (17.1.3) the Language & direction subsection (dir attribute);
+   - (17.1.3) context predicates surfaced as INAPPL/LIMIT reasons.
+ 3 New CSS properties beyond the logical twins and counter operations.
+ 4 17.3.
+ 5 Report 1 §7, §4.10.5, §5.6.
+ 6 O3, O11, P-2 (presentation), P-4 (operations).
+ 7 BC-10 Bulk, BC-11 section CSS menu, BC-05 resets.
+ 8 - Every pre-existing control is reachable.
+   - Search finds every field (incl. logical names and synonyms:
+     "margin-inline-start", "start margin").
+   - Only applicable categories show; hidden controls state their
+     INAPPL/LIMIT reason.
+   - Opening/closing a logical disclosure never changes the document or
+     the dirty flag; authored logical values open it automatically.
+   - Mixed values for physical and logical fields per Report 1 §4.10.6.
+   - Keyboard accessible.
+   - Inspector update time not worse than baseline.
+ 9 Component tests for the frame/search/lazy mounting; targeted e2e
+   navigation; the existing Inspector section tests for the re-homed
+   sections.
+ 10 Chromium.
+ 11 None.
+ 12 Inspector render timing at 1,000 elements versus baseline.
+ 13 Report.
+ 14 A lost control; an accessibility regression.
+
+BC-17.5 — Interactive, ancestor and compound state styling
+ 1 Author states on every applicable profile, with forced Design
+   simulation and deterministic precedence.
+ 2 - The atoms hover, focus, focus-visible, focus-within, active,
+     checked, indeterminate, invalid, required, read-only,
+     placeholder-shown, disabled, current (aria-current);
+   - ancestor scopes (parent, component, profile) with invalidation and
+     inactive rules;
+   - the curated-compound infrastructure, plus the compounds valid for
+     already-available atoms (for example checked+hover,
+     checked+focus-visible, invalid+focus);
+   - the outline group;
+   - BC-11 clipboard per (target, condition); BC-10 per (target,
+     condition);
+   - reset per state.
+ 3 Runtime atoms open/expanded/selected (17.14); pseudo-elements (17.6).
+ 4 17.4.
+ 5 Report 1 §4.3, §6.
+ 6 O1, O3, O6, O11, O16, N6.
+ 7 BC-10, BC-11; BC-13 (forced states excluded from measurement).
+ 8 - Each state renders identically: forced in Design, real in Preview,
+     and in Export.
+   - The precedence table of Report 1 §6.5 holds per property.
+   - Real :hover does nothing in Design.
+   - No data-ly-force in Preview or Export.
+   - Orphaned ancestor rules become inactive and are reported.
+   - One undo per edit.
+ 9 Unit: selector generation, ordering, curated compounds, scope
+   resolution; clipboard and multi-select tests; targeted browser state
+   specs.
+ 10 Chromium, Firefox and WebKit (:where(), :focus-visible).
+ 11 None (fields already exist in 4,0).
+ 12 The compile cost of rules at 1,000 elements × 3 rules is reported.
+ 13 Report.
+ 14 A precedence mismatch; a forced-state leak.
+
+BC-17.6 — Pseudo-element styling
+ 1 before, after, placeholder, marker, selection, backdrop, first-line,
+   first-letter.
+ 2 - The content editor (parts: text, glyph, counter, counters; altText)
+     with escaping;
+   - the glyph allow-list;
+   - the accessibility guidance (generated text and numbers);
+   - per-pseudo property allow-lists (Report 1 §10.3);
+   - the drop-cap modes, incl. the floated drop cap with paragraph
+     containment (17.1.3);
+   - (17.1.3, P-4) CSS counters: definitions management (rename, delete
+     with usage count, remove unused), operations on B/A/MK targets,
+     counter()/counters() with separators and the verified predefined
+     styles, prefixes/suffixes, nested numbering;
+   - states on pseudo targets;
+   - clipboard with content and counter definitions (same document keeps
+     ids; foreign maps by name or creates; notices).
+ 3 ::file-selector-button (O13); user-authored @counter-style
+   (SCOPE-CANDIDATE, not approved); list-item interaction (17.17).
+ 4 17.5.
+ 5 Report 1 §10, §4.4, §4.11.
+ 6 O7, N7, O15, O16, P-4.
+ 7 BC-11; BC-10 Mixed values for counter operations.
+ 8 - All targets render on all surfaces.
+   - The escaping fuzz shows no breakout (text parts, separators,
+     altText).
+   - Incompatible controls are hidden for first-line/first-letter.
+   - first-line reflows natively.
+   - Counters: numbered headings, numbered cards, steps, nested
+     documentation (1.2.3) and timelines render the same on Design,
+     Preview and Export; reordering renumbers natively; runtime-hidden
+     elements do not count in Preview/Export; copying a step within the
+     document continues its sequence; pasting into another document maps
+     by name with a notice; deleting a definition removes every
+     reference in one undoable entry; no raw CSS can be entered.
+   - A floated drop cap never extends below its paragraph (live check).
+ 9 Unit: escaping fuzz, allow-lists, content printing, counter-identifier
+   derivation, counter clipboard mapping; targeted browser.
+ 10 Chromium, Firefox and WebKit (first-letter float/initial-letter,
+    marker, placeholder, the alternative-text syntax, counters(),
+    counter-set, extended counter styles).
+ 11 None (foundations exist in (4,0)); additive bumps if needed.
+ 12 Counter-reference invalidation at 1,000 elements / 200 references
+    (Report 1 §18).
+ 13 Report.
+ 14 Escaping defect; an allow-list mismatch with a browser; a counter
+    style included without O15 evidence.
+
+BC-17.7 — Layout, dimensions, typography and border expansion
+ 1 Complete the existing families.
+ 2 - Typography: text-transform, word-spacing, white-space, text-wrap,
+     text-overflow + line clamp, text-shadow list, decoration
+     style/colour/thickness/offset, font-variant, text-indent, hyphens,
+     word-break/overflow-wrap, inherited container typography,
+     writing-mode/text-orientation.
+   - Layout: order, flex-basis lengths, grid track lists
+     (repeat/fr/minmax), named areas, auto-flow/dense, auto rows/columns,
+     grid end lines, justify/place-*, gap units, multi-column,
+     scroll-snap/scroll-behavior/overscroll, subgrid.
+   - Size: min/max in all units, min/max/fit-content.
+   - Borders: elliptical radii, border-image.
+   - (17.1.3, P-2) Logical properties completed: logical insets, logical
+     min/max, logical radii, logical keyword values (text-align
+     start/end, resize block/inline); direction and unicode-bidi
+     (Default only), the dir attribute (Language & direction),
+     writing-mode/text-orientation (Default only); the Flow resize intent
+     rule (Report 1 §4.10.6).
+   - (17.1.3, ARCH-Q1) float/clear with logical values in every
+     normal-flow context, INAPPL contexts, and automatic float
+     containment (display:flow-root on block parents).
+   - Scrollbar colour/width.
+ 3 calc()/clamp()/var() (blocked by design); container/media query
+   variants; RTL mirroring of Free layout (Free stays physical by
+   contract); state-dependent direction/writing-mode (LIMIT).
+ 4 17.5 (and the 17.2–17.4 logical foundations).
+ 5 Typed value extensions; revision steps if shapes change.
+ 6 O3, O11, O15, O16, P-2.
+ 7 BC-13 resize (D15/D46, renderedFreeSize from BC-13.7); Free children
+   keep physical px geometry; snapping unchanged; containment (P8).
+ 8 - Every listed capability is authorable and at parity.
+   - BC-13 resize honours the new min/max units.
+   - Physical + logical on the same side: the logical value wins inside a
+     rule in LTR, RTL, vertical-rl and vertical-lr; the Inspector hint is
+     correct; switching the disclosure never writes the document.
+   - A Flow resize writes the winning field family (width vs inline-size
+     vs block-size in vertical modes) and never touches the overridden
+     twin; Undo is exact.
+   - Free children never offer insets/sizes; Free gestures and snapping
+     are unchanged in RTL and vertical containers (live check).
+   - Floats wrap text, never escape their container, are hidden where
+     INAPPL, and clear works; logical float values behave per engine.
+   - dir and CSS direction coexist as documented; dir travels with the
+     element, not with the CSS clipboard.
+ 9 Unit per resolver; mapping/intent unit tests; resolveFreeResizeSnap
+   tests + bc13-final-audit resize cases (targeted); live browser checks
+   for containment (floats, writing modes) per the standing rule.
+ 10 Chromium, Firefox and WebKit for logical properties, RTL, vertical
+    writing modes, float/clear (incl. logical values), text-wrap,
+    line-clamp, subgrid, scrollbar.
+ 11 Revision step(s) where existing groups change shape; leaf fields
+    additive (bump).
+ 12 Negligible; the 1,000 × 3 rules fixture for logical printing.
+ 13 Report.
+ 14 A BC-13 resize regression; a containment escape; a document write
+    from a presentation toggle.
+
+BC-17.8 — Backgrounds, gradients and patterns
+ 1 Layers and the pattern system.
+ 2 - Layers (colour, image, linear, radial, conic, repeating variants);
+   - stop hints;
+   - per-layer size/position/repeat/attachment/origin/clip/blend;
+   - gradient text;
+   - editable pattern layer presets;
+   - layer states.
+ 3 Locked templates.
+ 4 17.5.
+ 5 BackgroundSettings → layers (a revision step).
+ 6 O3, O15, O16.
+ 7 BC-07 asset pipeline.
+ 8 Existing backgrounds are unchanged after the revision step; patterns
+   are editable by parameters.
+ 9 Unit: migration fixtures, serialization; screenshot parity on
+   patterns.
+ 10 Chromium, Firefox and WebKit (conic, background-clip:text).
+ 11 Revision step (identity).
+ 12 Paint cost note for many layers.
+ 13 Report.
+ 14 Any appearance change on legacy fixtures.
+
+BC-17.9 — Effects, clipping and masking (HTML)
+ 1 The complete Effects and Shape & Mask categories.
+ 2 - Ordered filters incl. drop-shadow;
+   - backdrop-filter;
+   - mix-blend-mode, isolation;
+   - custom clip-path (one owner with Shape presets);
+   - masks (gradient; image via BC-07).
+ 3 Canvas clip-handle editing for HTML elements.
+ 4 17.8.
+ 5 FilterSettings → ordered list (a revision step).
+ 6 O3, O15.
+ 7 BC-07.
+ 8 Effects at parity; no Shape/clip-path double ownership.
+ 9 Unit; targeted browser.
+ 10 Firefox/WebKit (backdrop -webkit-, mask prefixes).
+ 11 Revision step.
+ 12 backdrop-filter cost noted.
+ 13 Report.
+ 14 Ownership conflict; an engine gap without documentation.
+
+BC-17.10 — Transforms
+ 1 Complete 2-D/3-D transforms.
+ 2 skew, scaleX/Y, origin, perspective (+origin), rotateX/Y/Z,
+   translateZ, backface-visibility, transform-style, the individual
+   properties.
+ 3 Lifting the BC-13 transformed-ancestor block.
+ 4 17.5.
+ 5 Extension of the transform settings.
+ 6 O3, O15.
+ 7 BC-13 D23 (AABB targets), transformGeometrySafety, snapping
+   measurement.
+ 8 BC-13 snapping/containment subset unchanged; transforms at parity.
+ 9 Unit; bc13-final-audit + BC-13.3/13.4 snapping specs (targeted).
+ 10 Firefox/WebKit for 3-D.
+ 11 Additive (a revision bump).
+ 12 Negligible.
+ 13 Report.
+ 14 Any D23 regression.
+
+BC-17.11 — Transitions, animations and Design playback
+ 1 The Motion category, keyframes and N11 playback.
+ 2 - Transition list;
+   - cubic-bezier/steps;
+   - keyframe definitions (editor);
+   - animations (all longhands);
+   - state-triggered motion;
+   - reduced motion in Preview/Export with the exact animation contract
+     (0.01ms, delay 0, one iteration, authored fill/direction) in the
+     export block and the Preview surface rule (17.1.3);
+   - N11 one-iteration Design playback through the dedicated playback
+     controller (not the active-interaction slot) (17.1.3);
+   - (P-5) interruption: stop → static → layout flush → overlays and snap
+     index from static layout → the operation proceeds, at every hook of
+     Report 1 §16.3 (capture pointerdown with static re-targeting,
+     gesture begins, dnd-kit drag start, document-mutation boundary,
+     selection changes, Escape, Preview, project lifecycle); Save does
+     not interrupt (17.1.3);
+   - (P-6) Play / Play as authored / Play with reduced motion; the
+     globals.css exclusion for the authored-playback subtree; the
+     reduced-result hold; preference-change handling (17.1.3);
+   - the shared asset dedupe utility;
+   - the clipboard keyframe transfer.
+ 3 Scroll-driven animations unless the O15 gate passes; view
+   transitions; playing transitions on Design.
+ 4 17.10.
+ 5 Report 1 §13.6, §14, §16; TransitionSettings → list (a revision step).
+ 6 O2, O3, O15, O16, N11, P-5, P-6.
+ 7 Design Safety Invariant (1.15.6.14.1); BC-13 snap caches (D26/D37),
+   Option B registry (unchanged, playback not registered in it); BC-02.5
+   reduced motion (extended, not changed for transitions).
+ 8 - Design is static except during explicit playback.
+   - Playback creates no history, no dirty flag and no persisted state.
+   - Every editing operation of Report 1 §16.3 starts immediately during
+     playback: the user never has to stop playback first; the edit acts
+     on static geometry; overlays reappear; snapping is correct; the edit
+     records exactly its own normal history entry.
+   - Unrelated keys, scrolling, hover, blur and Save do not stop it.
+   - A pointerdown on a node moved by its animation edits what is under
+     the pointer after restoration (static re-targeting).
+   - 100 rapid Play/Stop cycles leave no attribute, listener or timer.
+   - "Play as authored" plays fully while the OS asks for reduced motion;
+     the Layoutry UI, other nodes and Preview stay reduced.
+   - "Play with reduced motion" shows exactly the export's reduced result.
+   - Preview/Export honour the authored settings and reduced motion.
+   - Pasted animations keep working (dedupe/remap).
+ 9 Unit: keyframe hashing/dedupe, playback state machine (tokens, stale
+   callbacks, modes), reduced-motion declarations; targeted e2e
+   (interruption per hook incl. animated transform, layout animation,
+   nested element and animated ancestor; reduced-motion emulation for
+   all three modes).
+ 10 Chromium, Firefox and WebKit (+ Electron smoke for OS reduced motion
+    where available).
+ 11 Revision step for transitions/animations.
+ 12 200 animated elements: Preview frame time reported; playback start
+    and interrupt cost (Report 1 §18).
+ 13 Report.
+ 14 A playback leak into the document or export; any edit blocked or
+    deferred by playback; the reduced-motion rule relaxed outside the
+    played subtree.
+
+BC-17.12 — Native form controls and native Progress Bar
+ 1 Parts and states of the native controls.
+ 2 - Progress track/fill (vendor rules, appearance), indeterminate;
+   - checkbox/radio box and indicator, accent-color;
+   - select field/arrow;
+   - placeholder;
+   - caret-color;
+   - search cancel / number spin (documented limits);
+   - textarea resize;
+   - fieldset/legend;
+   - form compounds.
+ 3 Customizable select (Chromium-only, fails O15); the password reveal
+   (Edge-only); missing native components (O13).
+ 4 17.6, 17.8, 17.11.
+ 5 Vendor table entries.
+ 6 O4 (native), O15.
+ 7 BC-02 forms; accessibility tree.
+ 8 Native semantics unchanged; the native Progress appearances from
+   BC-17.1 Report 1 §10.3 are achievable per documented engine.
+ 9 Targeted browser + accessibility-tree assertions.
+ 10 Chromium, Firefox and WebKit + an Electron smoke.
+ 11 None.
+ 12 Negligible.
+ 13 Report.
+ 14 An undocumented engine gap.
+
+BC-17.13 — Custom Progress Bar
+ 1 The opt-in custom variant (O4, N1.1, N1.2).
+ 2 - The two Resource Panel cards;
+   - the Inspector variant switch;
+   - the custom renderer (role=progressbar);
+   - segments, labels (none/percentage/value-max/template with tokens);
+   - (17.1.3, P-3) label formatting: precision 0–6 per token family,
+     trailing zeros, grouping, neutral or BCP 47 locale with validation
+     and fallback notice, halfExpand + the 100% guard, locale-placed
+     percent sign and the adjacent-"%" rule, indeterminate text,
+     effective max, aria-valuetext; formatProgressLabel shared by
+     Design, Preview and the export printer;
+   - all categories on the parts;
+   - the conversion command;
+   - inactive-variant retention.
+ 3 Runtime value changes (none exist); arbitrary expressions in
+   templates (never).
+ 4 17.12.
+ 5 Report 1 §9 (incl. §9.7).
+ 6 O4, N1.1, N1.2, P-3.
+ 7 Accessibility fields; BC-11.
+ 8 - native → custom → native round trip is lossless;
+   - Undo is exact;
+   - the accessibility value/name are exposed; aria-valuetext equals the
+     visible label; indeterminate omits aria-valuenow;
+   - labels are escaped; invalid tokens and "{percent}%" are rejected;
+   - the same fixture shows the identical label string on Design,
+     Preview and Export for: en, de, fr, ar (non-Latin digits), hi,
+     neutral; 0 and 6 decimals; keep/trim; grouping on/off; 99.6% at 0
+     decimals shows 99%; max ≤ 0 uses 1 with a warning;
+   - formatting never changes the stored value, max or fill.
+ 9 Unit: conversion, label templating, formatter matrix; targeted
+   browser + accessibility tree.
+ 10 Chromium, Firefox and WebKit (also: the formatter output per engine
+    is recorded for the fixture locales; differences documented).
+ 11 Additive (a revision bump) if fields beyond (4,0) are needed.
+ 12 Negligible.
+ 13 Report.
+ 14 A label string that differs between Design, Preview and Export from
+    the same editor; a double percent sign; a changed stored value.
+
+BC-17.14 — Runtime semantic states and interactive components
+ 1 open/expanded/selected states; full semantic Tabs.
+ 2 - The shared runtime-state resolver (Preview + export runtime);
+   - data-state on targets;
+   - dialog [open];
+   - enter/exit motion for dropdown, popover, toast, drawer, modal;
+   - semantic Tabs (roles, aria-selected/controls/labelledby, roving
+     tabindex, arrows/Home/End skipping disabled tabs, AUTOMATIC
+     activation per the APG, the "tabs" marker, structural roles,
+     tabsSelectedIndex, normalizeTabs pair invariants, incomplete-
+     structure fallback with no roles);
+   - semantic Tabs as the default insertion (createSemanticTabsNode);
+   - (17.1.3, P-1) legacy Basic Tabs: recognition R1–R6, the Inspector
+     explanation for near-misses, "Convert to Semantic Tabs" (atomic,
+     undoable, preserves nodes/ids/styles/content/accessibility/other
+     interactions; replaces only the show/hide bindings and the panels'
+     initialPreviewVisibility);
+   - curated compounds (open+hover, selected+hover,
+     selected+focus-visible).
+ 3 New interaction actions; automatic migration of legacy Basic Tabs
+   (excluded by P-1); manual keyboard activation.
+ 4 17.5, 17.11.
+ 5 Report 1 §13 (incl. §13.7).
+ 6 O10, N2, O6, N6, P-1.
+ 7 BC-04 interactions/dismissal, BC-02.5 trigger ARIA, EXPORT-1.3
+   runtime (security review), focus return.
+ 8 - Preview and Export runtime states are identical;
+   - there is no invalid ARIA (accessibility tree), including after raw
+     structural edits that break the tab/panel pairing;
+   - the APG keyboard model passes (automatic activation);
+   - existing appearance/behaviour is preserved for non-tab components;
+   - a legacy Basic Tabs project opens and behaves exactly as before
+     until the user converts it; conversion keeps the computed
+     appearance identical (screenshot + computed style) and Undo
+     restores the legacy structure exactly; ineligible structures
+     explain why and never convert.
+ 9 Unit: resolver, recognition, conversion, normalizeTabs; targeted e2e
+   Preview vs Export; BC-04/BC-02.5 interaction subset.
+ 10 Chromium, Firefox and WebKit.
+ 11 A revision step adding the "tabs" marker value and tabsSelectedIndex
+    (no data transformation; no legacy migration).
+ 12 Negligible.
+ 13 Report.
+ 14 A runtime-contract regression; invalid ARIA in any state; a legacy
+    instance changed without the user's command.
+
+BC-17.15 — Pagination and navigation styling
+ 1 Role-group targets and the O9 semantic styling.
+ 2 - Pagination role groups (page, current, prev/next, disabled,
+     ellipsis);
+   - nav/breadcrumb/sidebar role groups;
+   - (17.1.3, ARCH-Q4) the Pagination revision step per Report 1 §12.6:
+     paginationStyleMode on every marked Pagination, eligibility E1–E3,
+     the current-page rule with unset-equivalents, the disabled
+     boundaries' own rules (starter-coloured controls only), legacy mode
+     for ineligible instances with a load notice;
+   - semantic-mode runtime: no look copying in setPaginationCurrentPage,
+     normalizePagination, applyBoundary or the ordinaryLookIds paths;
+   - legacy mode: the BC-09 look-copy path kept frozen, role groups
+     INAPPL with reasons, "Convert to semantic styling" with explanations;
+   - cross-mode paste via the existing applyStateLook helper.
+ 3 Removing the legacy path (needs a later revision decision);
+   unmarked look-alike Paginations (no behaviour, untouched).
+ 4 17.14.
+ 5 Report 1 §12.6.
+ 6 O9, O1, O5, O11.
+ 7 BC-09 (all invariants; the current page is non-navigable and runs no
+   interactions; disabled boundaries; atomic history), BC-10 multi-move,
+   BC-11 paste.
+ 8 - Computed equality before/after on the fixtures (heterogeneous,
+     missing current, two currents, customized and starter boundaries in
+     both states, reset-after-migration, repeated open/save, paste across
+     modes, Convert after fixing a legacy instance);
+   - a semantic-mode current-page change copies nothing; a reset rule is
+     never re-migrated (revision + status, not rule absence);
+   - BC-09 behaviour is unchanged in both modes.
+ 9 Unit: the revision step and commands; the BC-09 regression subset
+   (paginationCommands tests, the BC-09 e2e specs) targeted.
+ 10 Chromium (+ Firefox/WebKit screenshot of the fixtures).
+ 11 Revision step; the protected save.
+ 12 Negligible.
+ 13 Report.
+ 14 Any appearance drift; a BC-09 regression.
+
+BC-17.16 — Media styling
+ 1 O8 media surfaces.
+ 2 Filters/masks/clips/transforms/states on image/video/audio/embeds;
+   the poster surface; documented native-control limits.
+ 3 Custom players; native control internals.
+ 4 17.9, 17.10, 17.11.
+ 5 None new.
+ 6 O8, O15.
+ 7 BC-02.2.1 muted autoplay, media lifecycle, BC-07/BC-08 security,
+   sandbox, the Electron media limits.
+ 8 BC-07/BC-08 behaviour unchanged; styling at parity.
+ 9 Targeted browser; the BC-08 media/embed subset.
+ 10 Chromium, Firefox and WebKit + an Electron video smoke.
+ 11 None.
+ 12 Negligible.
+ 13 Report.
+ 14 A media lifecycle or security regression.
+
+BC-17.17 — Tables, lists and remaining components
+ 1 Complete the component coverage.
+ 2 - Table structural targets, border-collapse/spacing, caption-side,
+     table-layout;
+   - list-style, markers;
+   - (17.1.3, P-4) counters with native lists: the built-in list-item
+     counter (ol/ul/li only), custom marker content with counter parts,
+     custom numbering that leaves native numbering intact unless
+     list-item is targeted, the "use a real list" guidance;
+   - divider, badge, alerts, stat, metadata, avatar text, fieldset,
+     footer, landmarks;
+   - group first/last.
+ 3 @counter-style (SCOPE-CANDIDATE).
+ 4 17.6, 17.8.
+ 5 Structural targets.
+ 6 O1, O3, O11, P-4.
+ 7 Table structure ownership; native list semantics (accessibility tree
+   unchanged).
+ 8 Every matrix row for these components is satisfied; list semantics
+   are unchanged by custom numbering; list-item ops behave per engine
+   (documented).
+ 9 Unit; targeted browser.
+ 10 Firefox/WebKit for table borders, list-item counter ops and ::marker
+    content.
+ 11 None.
+ 12 Negligible.
+ 13 Report.
+ 14 A row unsatisfied.
+
+BC-17.18 — SVG model foundation
+ 1 Report 3 §2–§4, §9 as data, compiler output and math.
+ 2 - The object model, commands C/Q/A, anchors meta (no stored anchor
+     ids; index remaps — Report 3 §2.4);
+   - inline gradient/clip/mask/filter data (no stored def ids or
+     references; keyframes are the only referenced kind);
+   - object transforms;
+   - objectRules data (shared StyleCondition type, vector atom set);
+   - the paint revision step;
+   - validation and limits;
+   - the geometry library (split, bounds, arcs, conversion helpers, index
+     remaps, the transform composition helper of Report 3 §8.4.3);
+   - compiler output incl. the wrapper <g> for transform-capable rules
+     (F-SVG-5) and the collision-safe def-id prefix;
+   - F-SVG-2, F-SVG-4.
+ 3 The editing UI.
+ 4 17.3.
+ 5 Report 3 §2–4, §7.1, §7.5.3.
+ 6 O14, O5.
+ 7 1.15.5/1.15.6 SVG behaviour, the export SVG contract.
+ 8 Existing SVGs render identically; the new data renders identically on
+   all surfaces; the limits are enforced; objects without
+   transform-capable rules get no wrapper (byte-identical legacy
+   markup); the remap functions keep every selection ref valid on the
+   fixture command sequences.
+ 9 Unit (math, schema, revision fixtures); the existing SVG test files
+   (targeted).
+ 10 Chromium + Firefox/WebKit attribute/defs parity.
+ 11 Revision step (paint).
+ 12 Validation bounds measured.
+ 13 Report.
+ 14 Any legacy SVG appearance change.
+
+BC-17.19 — SVG object styling
+ 1 The full per-object styling UI.
+ 2 - Paint (opacity, dash, caps/joins, miter, fill rule, paint order,
+     gradients);
+   - filters;
+   - per-object + whole-content clip/mask (numeric/presets);
+   - object states and motion: self hover/active, ancestor atoms incl.
+     focus-visible/focus-within/expanded/open/selected/current/checked/
+     disabled; NO self focus atoms (vector objects are never focusable,
+     Report 3 §7.5.2); wrapper transforms with individual properties;
+     P-5/P-6 playback behaviour inherited from 17.11;
+   - preserveAspectRatio;
+   - SVG box CSS through the HTML categories.
+ 3 Interactive clip geometry (17.21); authored focusability, links or
+   interactions on vector objects (not approved).
+ 4 17.18, 17.5, 17.8, 17.9, 17.11.
+ 5 Report 3 §7.
+ 6 O14, N4.2, O15, O16.
+ 7 Parent Style Protection on paint.
+ 8 All capabilities at parity; definitions deduplicated per export; a
+   hover/animation transform composes with (never replaces) the base
+   transform; no focus control is offered on a vector object; Design
+   forcing equals Preview real states.
+ 9 Unit + targeted browser.
+ 10 Chromium, Firefox and WebKit (CSS fill url(), transform-box,
+    individual transform properties on <g>).
+ 11 None.
+ 12 Defs compile cost.
+ 13 Report.
+ 14 A parity gap.
+
+BC-17.20 — Interactive vector editing tools
+ 1 Core path editing.
+ 2 - The shared vector gesture transaction for ALL SVG gestures
+     (Report 3 §6): ownership records, per-slice compare-and-restore,
+     registry registration, duplicate-terminal and stale-callback guards;
+     pointercancel and lost capture CANCEL (F-SVG-3 removed);
+   - path-edit mode;
+   - anchors/handles/point types; the modifier table (Report 3 §5.2:
+     Alt = snap bypass only, Mod = handle unlink, Shift = constraints);
+   - add/delete, open/close, reverse (with index remaps);
+   - Pen with curves;
+   - N3.1 bending, N3.3 conversion;
+   - keyboard routing;
+   - multi-anchor selection (Mod toggles, Shift adds);
+   - Escape semantics.
+ 3 Arcs interactive, snapping, transforms (17.21).
+ 4 17.18 (17.19 recommended but not required).
+ 5 Report 3 §2.4, §3, §5.2, §6.
+ 6 O14, N3.1, N3.3, N4.1 (Alt reserved).
+ 7 BC-13.5 lifecycle contract, the active-interaction registry, Option B.
+ 8 - Every gesture cancels exactly on Escape/pointercancel/lost capture/
+     blur/unmount/commands, with no history and redo kept;
+   - a cancelled gesture never resurrects a deleted object or SVG, never
+     overwrites an external change to its slice or any unrelated edit
+     (contract tests for each case);
+   - one undo per gesture; duplicate terminal events are no-ops;
+   - conversion is pixel-equal;
+   - bending keeps the endpoints;
+   - no modifier has two meanings in one gesture.
+ 9 Unit (math, remaps, lifecycle contract tests incl. compare-and-
+   restore); targeted e2e per tool; the existing SVG session tests.
+ 10 Chromium (cross-engine in 17.22).
+ 11 None.
+ 12 Frame-cost probe on a 10,000-command path.
+ 13 Report.
+ 14 A lifecycle contract failure.
+
+BC-17.21 — Advanced vector capabilities
+ 1 N3.2, N4.1 and transforms.
+ 2 - Interactive arcs (radius/rotation handles, flags, radius
+     correction, degeneracies);
+   - object transforms and transformed-object editing;
+   - polygon/path scaling;
+   - snapping (anchors, bounds, grid) with the global preference and the
+     Alt bypass in EVERY vector gesture, incl. handle drags;
+   - interactive clip-geometry editing.
+ 3 —
+ 4 17.20, 17.10.
+ 5 Report 3 §3.3, §4, §5.
+ 6 O14, N3.2, N4.1, N4.2.
+ 7 BC-13 D11 preference, Alt bypass, D23 philosophy.
+ 8 - Arc math round-trips;
+   - handles show the effective radii;
+   - snapping thresholds are screen-constant;
+   - Alt bypasses snapping in every row of the modifier table;
+   - there is no snapping to HTML geometry;
+   - transformed anchors follow the pointer exactly.
+ 9 Unit + targeted e2e.
+ 10 Chromium (+ the Alt/menu check on Windows Electron).
+ 11 None.
+ 12 Snap-index cost at 1,000 objects.
+ 13 Report.
+ 14 Math or interaction failures.
+
+BC-17.22 — Vector clipboard and SVG persistence/export verification
+ 1 N5, plus the SVG-wide parity closure.
+ 2 - The vector clipboard (copy/cut/paste/duplicate, multi-object,
+     keyboard routing) with dependency discovery and the payload of
+     Report 3 §8.2; keyframe dedupe/remap through the shared utility;
+   - cross-SVG conversion: proportional placement applied through the
+     object transform; wrapper-translation scaling; impossibility
+     notices (Report 3 §8.4);
+   - cross-project paste in one session;
+   - the SVG save/reopen/export matrix;
+   - the security review;
+   - the performance probe.
+ 3 Alternative placement policies unless the 17.22 brief chooses one
+   (same mechanism, different s).
+ 4 17.18–17.21.
+ 5 Report 3 §8.
+ 6 N5, O14, O15.
+ 7 The element clipboard and the CSS clipboard (must not interfere).
+ 8 - Clipboard operations are atomic and undoable (Undo removes the
+     pasted objects and the keyframes the paste inserted);
+   - identities are fresh; no dangling keyframe reference is possible;
+     identical keyframes are reused, not duplicated;
+   - the seven examples of Report 3 §8.5 render as specified on three
+     engines (user-space similarity; arcs, gradients, clips, masks and
+     motion undistorted);
+   - the full SVG parity matrix passes.
+ 9 Unit + targeted e2e; the SVG regression set (justified: the SVG
+   closure).
+ 10 Chromium, Firefox and WebKit + an Electron smoke.
+ 11 None.
+ 12 Report 3 §10 targets.
+ 13 Report.
+ 14 Any clipboard interference or parity failure.
+
+BC-17.23 — Unified preset foundation and BC-14 Typography Presets
+ 1 One preset system (O12, N8) and BC-14.
+ 2 - PresetDefinition;
+   - built-in/app/project libraries;
+   - the IndexedDB app store;
+   - copying between libraries;
+   - detached application;
+   - naming rules;
+   - management UI;
+   - history boundaries;
+   - typography presets (the BC-14 requirements, traced);
+   - category presets;
+   - (17.1.3) presets carrying logical fields as authored (no conversion
+     on apply) and counter definitions (name-mapped or created on apply,
+     with a notice); compatible animation assets (keyframes deduped);
+     context predicates honoured on apply.
+ 3 Linked presets (N8.2); cloud storage; tokens/variables (the "Color
+   Palette"/"Spacing Scale" placeholder wording is not a requirement).
+ 4 17.7, 17.11.
+ 5 Report 1 §15.
+ 6 O12, N8.1–N8.4, N10.2.
+ 7 PROJECT storage patterns; BC-11 paste semantics.
+ 8 - Applying is detached and atomic;
+   - editing/deleting a preset never changes elements;
+   - built-ins are read-only;
+   - names are unique per library;
+   - every BC-14 requirement is traced to a test.
+ 9 Unit (validation, naming, dedupe, apply); component tests; a
+   targeted e2e for library persistence (browser + Electron).
+ 10 Chromium + Electron.
+ 11 Project presets live in styleAssets (reserved in 4,0).
+ 12 Library load time.
+ 13 Report + the BC-14 traceability table.
+ 14 BC-14 requirement source missing (action A-4).
+
+BC-17.24 — Component, state and motion presets
+ 1 The remaining preset kinds and the built-in library content.
+ 2 Component-profile, state and motion presets; the decision on the 10
+   "Styles" placeholder cards (repurpose as preset entry points).
+ 3 —
+ 4 17.23 + the component checkpoints.
+ 5 Data only.
+ 6 O12, N8.3.
+ 7 —
+ 8 Compatibility reporting is correct across profiles.
+ 9 Unit; targeted browser.
+ 10 Chromium.
+ 11 None.
+ 12 —
+ 13 Report.
+ 14 —
+
+BC-17.25 — Rendering parity, persistence and performance verification
+ 1 Milestone-level verification.
+ 2 - The kitchen-sink parity across every target/condition;
+   - save/reopen from every revision fixture;
+   - export cleanliness;
+   - the performance probe versus the 17.3 baseline (all Report 1 §18
+     criteria, incl. the 17.1.3 additions);
+   - the BC-13 contract regression set;
+   - (17.1.3) the Report 2 Part E rows re-run where support may have
+     changed: logical/RTL/vertical, floats, counters, Intl labels, Tabs,
+     playback interruption and reduced-motion playback, SVG coordinate
+     conversion, clip/mask, focus applicability, motion dependencies.
+ 3 —
+ 4 All of the above.
+ 5 None.
+ 6 O2, O5, O15.
+ 7 All.
+ 8 The Report 1 §18 criteria; the parity criteria of Report 1 §8.10.
+ 9 Justified broad run: the parity spec on 3 engines + Electron, the
+   fixture matrix, the performance probe.
+ 10 Chromium, Firefox, WebKit, Electron.
+ 11 The chain from (3) and every (4,k).
+ 12 The full report.
+ 13 Report.
+ 14 Any failure.
+
+BC-17.26 — Final BC-17 milestone audit
+ 1 Compliance with all 41 approved decisions (O1–O16, 19 N, P-1–P-6);
+   closure.
+ 2 Audit, milestone summary, the 41-row traceability table (decision →
+   architecture → matrix → checkpoint → acceptance evidence).
+ 3 Closing BC-13 (it closes only on its own evidence, A-1–A-3). BC-14
+   is closed here by reference ONLY if the 17.23 traceability table
+   covers every supplied BC-14 requirement (§3).
+ 4 17.25.
+ 8 Every Report 5 row is satisfied with evidence; every matrix row is
+   resolved or carries an owner-approved deferral; the SCOPE-CANDIDATE
+   rows are listed as not built.
+ 13 Final audit + milestone summary.
+ 14 Any unresolved row.
+
+
+2. BC-13 TRACKING AND REGRESSION OWNERSHIP
+------------------------------------------
+- BC-13 remains OPEN (N10.1). The BC-13.7 completion (its two reports
+  plus re-running only its targeted evidence) is tracked as action A-1.
+  It may run between any two BC-17 checkpoints.
+- BC-17 checkpoints that touch BC-13 contracts and must run the BC-13
+  targeted set (bc13-final-audit.spec.ts plus the specific
+  BC-13.3/13.4/13.5 specs named in their reports):
+  - 17.3 (pipeline, gesture layer);
+  - 17.5 (forced states versus measurement);
+  - 17.7 (min/max units versus resize, the BC-13.7 fix);
+  - 17.10 (D23);
+  - 17.11 (playback interruption before gestures; snap caches);
+  - 17.20/17.21 (lifecycle and snapping preference reuse);
+  - 17.25.
+  (17.1.3) Also: 17.4 and 17.7 (logical sizes/insets hidden on Free
+  children; Flow resize intent; BC-13.7 min/max), 17.22 (vector paste
+  does not touch HTML snapping).
+- Tracked BC-13 inventory (unchanged; Report 6 §BC-13): 49 decisions
+  D1–D49, 5 architecture clarifications, 3 later owner decisions
+  (Option B, D1 = B, D2 = A); D23 transformed geometry and D39
+  large-document performance tracked; P1 (rendering performance) and C1
+  (containment frame) are OPEN BC-13 owner items — not accepted, not
+  deferred; the two BC-13.7 reports are missing; the BC-13.7 targeted
+  evidence has not been re-run since its commit.
+- BC-13's P1/C1 are unrelated to BC-17's P-1–P-6 decisions despite the
+  similar labels.
+
+
+3. BC-14 INTEGRATION
+--------------------
+- BC-14 is delivered in BC-17.23 (N10.2).
+- Closure path: BC-17.23's report includes a BC-14 requirement →
+  implementation → test table. The BC-14 milestone is then closed by
+  reference in BC-17.26.
+- Precondition: the owner supplies the BC-14 requirement text (A-4).
+  Without it, BC-17.23 cannot close.
+- (17.1.3) Recovery attempt: no BC-14 text exists in docs/, changelogs or
+  the roadmap at 9e3cc52; the only evidence is the disabled "Styles"
+  placeholder cards (Report 1 §15.7), which describe intent, not
+  requirements, and are not used as requirements.
+- BC-14 is not closed by being scheduled.
+
+
+4. FINAL MILESTONE COMPLETION REQUIREMENTS
+------------------------------------------
+- All 41 approved decisions (O1–O16, 19 N, P-1–P-6) are implemented and
+  audited with evidence.
+- Every capability matrix row is supported, browser-limited with a note,
+  not applicable with a reason, blocked by design with a reason, or
+  deferred by explicit owner approval.
+- Both Progress variants, semantic Tabs, the Pagination migration, SVG
+  styling, vector editing, the vector clipboard and presets are shipped.
+- Parity and performance criteria are met.
+- No legacy project changes appearance.
+- The BC-13 status is re-stated (BC-17 does not close BC-13).

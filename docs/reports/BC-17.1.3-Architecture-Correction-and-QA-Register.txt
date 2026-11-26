@@ -1,0 +1,515 @@
+BC-17.1.3 — Architecture Correction and QA Register
+Report 6 of 7
+===================================================
+Date: 2026-11-26.
+HEAD: 9e3cc52 (clean working tree at start).
+Scope: finding-by-finding reconciliation of the external QA findings on
+BC-17.1.2, the six new owner decisions, and the issues found while
+correcting. No production code was changed; no test was run (§9).
+
+Statuses used:
+RESOLVED — DOCUMENTATION CORRECTED | RESOLVED — ARCHITECTURE DEFINED |
+VERIFIED EXISTING | IMPLEMENTATION VERIFICATION PENDING | TRACKED
+NONBLOCKING | OWNER DECISION REQUIRED | BLOCKING.
+"Architecture defined" never means implemented or verified: every such
+row also carries IMPLEMENTATION VERIFICATION PENDING at its checkpoint.
+
+Field key per finding: 1 problem · 2 investigation · 3 evidence ·
+4 corrected contract · 5 documents · 6 checkpoints · 7 verification ·
+8 status · 9 blocks BC-17.2?
+
+
+1. DECISION COUNT
+-----------------
+D-COUNT
+1 BC-17.1.2 recorded 35 decisions against a claimed 36 (A-5).
+2 Compared the BC-17.1.2 decision texts with the BC-17.1.3 brief.
+3 The BC-17.1.3 brief confirms 19 N decisions and adds P-1–P-6.
+4 41 = 16 + 19 + 6; 35 is the pre-P subtotal; no missing decision.
+5 Reports 1, 4, 5, 6, 7 (all counts); Report 4 17.26 and §4 corrected
+  (they said "36 + P-1..P-3").
+6 17.26 (41-row traceability).
+7 Cross-document search for 35/36 (done, §8).
+8 RESOLVED — DOCUMENTATION CORRECTED.
+9 No.
+
+
+2. NEW OWNER DECISIONS
+----------------------
+P-1 Manual Basic Tabs conversion
+1 Legacy Basic Tabs had no defined path (BC-17.1.2 OPEN P-1).
+2 Read createBasicTabsNode and the interaction model.
+3 [VERIFIED] legacy tabs = root > [N buttons, N panels], show/hide
+  bindings, initialPreviewVisibility, no marker, generic renderers.
+4 R1 §13.7: no migration; generic rendering stays permanently;
+  recognition R1–R6 with explanations; atomic Convert command replacing
+  only bindings and panel visibility fields; semantic Tabs default for
+  insertion; structural roles; incomplete structures render without
+  roles; automatic activation (APG) as a separate keyboard contract.
+5 R1 §7, §12.7, §13.2, §13.7; R2 row 47; R4 17.14; R5 P-1.
+6 17.14.
+7 Conversion fixtures (computed appearance, Undo), recognition
+  near-misses, accessibility tree, APG keyboard on three engines.
+8 RESOLVED — ARCHITECTURE DEFINED; IMPLEMENTATION VERIFICATION PENDING.
+9 No.
+
+P-2 Physical and logical properties
+1 Logical properties were OPEN; BC-17.1.2 recommended one exclusive form.
+2 Read Free geometry (elementDimensionsStyle, freeLayoutFrame), the
+  shorthand/longhand lesson, the export lang source.
+3 [VERIFIED] Free geometry is physical left/top/width/height; no dir or
+  language field exists; CSS Logical Properties: twins share a computed
+  value, later declaration wins.
+4 R1 §4.10: separate twin fields; dir attribute vs CSS direction;
+  computed flow context; logical wins inside a rule; progressive
+  disclosure that never writes; Free children physical (LIMIT); Flow
+  resize writes the winning family; full contract participation.
+5 R1 §4.10, §5.6, §6.9, §7, §12.5, §14, §15; R2 A2; R4 17.2/3/4/7.
+6 17.2, 17.3, 17.4, 17.7.
+7 Four flow contexts × collision outcome; Flow resize intent; Free
+  gestures in RTL/vertical containers; three engines; live containment.
+8 RESOLVED — ARCHITECTURE DEFINED; IMPLEMENTATION VERIFICATION PENDING.
+9 No — but its FIELDS are part of the 17.2 foundation (reserved at
+  (4,0)) so 17.7 needs no incompatible change.
+
+P-3 Label number formatting
+1 Formatting was OPEN; BC-17.1.2 recommended locale-neutral.
+2 Checked whether progress values change at runtime and where labels
+  can be computed.
+3 [VERIFIED] interactions are show/hide/toggle only; no runtime progress
+  value change exists; the export emits static HTML.
+4 R1 §9.7: typed ProgressLabel/NumberFormat/LabelLocale; 0–6 digits;
+  halfExpand + 100% guard; locale-placed percent sign and the
+  adjacent-"%" rule; effective max; indeterminate text; compile-time
+  formatting shared by all surfaces; aria-valuetext.
+5 R1 §9.7, §11, §17; R2 A16; R4 17.13.
+6 17.2 (types), 17.13.
+7 Formatter fixture matrix per engine; accessibility tree.
+8 RESOLVED — ARCHITECTURE DEFINED; IMPLEMENTATION VERIFICATION PENDING.
+9 No.
+
+P-4 CSS counters
+1 Counters were OPEN and outside O7's content kinds.
+2 Reviewed the content model, clipboard and preset contracts.
+3 CSS Lists 3 semantics (reset → increment → set; scope; boxless
+  elements); the keyframe asset pattern.
+4 R1 §4.4 parts union; §4.11 definitions, derived identifiers,
+  operations (Default only), predefined styles, semantics, clipboard/
+  preset mapping, deletion; @counter-style evaluated as a scope
+  candidate.
+5 R1 §4.4, §4.5, §4.11, §7, §12.5, §14, §15, §17, §18; R2 A14 + rows;
+  R4 17.2/3/4/6/17/23.
+6 17.2, 17.3, 17.4, 17.6, 17.17, 17.23.
+7 The 17.6/17.17 acceptance lists on three engines.
+8 RESOLVED — ARCHITECTURE DEFINED; IMPLEMENTATION VERIFICATION PENDING.
+9 No — its model is part of the 17.2 foundation.
+
+P-5 Playback interruption
+1 BC-17.1.2 blocked gestures during playback (contradicting P-5).
+2 Read the active-interaction registry and its callers.
+3 [VERIFIED] the registry has ONE slot, registration replaces without
+  cancelling, and Save calls interruptActiveInteraction.
+4 R1 §16.1–16.6: a dedicated playback controller; synchronous stop →
+  static → layout flush → overlays/snap → proceed; hook points; capture-
+  phase static re-targeting; Save does not interrupt; stale-callback
+  tokens.
+5 R1 §16; R2 A11; R4 17.11.
+6 17.11.
+7 E2E per hook incl. animated transform, layout animation, nested,
+  animated ancestor; leak check.
+8 RESOLVED — ARCHITECTURE DEFINED; IMPLEMENTATION VERIFICATION PENDING.
+9 No.
+
+P-6 Reduced-motion playback
+1 BC-17.1.2 played as authored by default under reduced motion.
+2 Read the reduced-motion rules.
+3 [VERIFIED] globals.css forces animation-duration/iteration with
+  !important on every element under reduced motion, including the
+  document surface; the export block covers transitions only.
+4 R1 §16.7 and §13.6: three play modes; the authored mode excludes only
+  the played subtree from the globals.css rule; the exact animation
+  reduced-motion contract for Preview/Export; a reduced-result hold;
+  preference-change handling.
+5 R1 §6.6, §13.6, §16.7; R2 A11; R4 17.11.
+6 17.11.
+7 Emulated reduced motion × three modes × three engines.
+8 RESOLVED — ARCHITECTURE DEFINED; IMPLEMENTATION VERIFICATION PENDING.
+9 No.
+
+
+3. ARCHITECTURE FINDINGS (ARCH-Q1–Q5)
+-------------------------------------
+ARCH-Q1 Float and clear
+1 R1 §10.3 restricted floats to first-letter while R2 allowed Flow
+  floats.
+2 CSS applicability by context; the containment rule.
+3 CSS 2/Flexbox/Grid: float has no effect on flex/grid items and
+  computes to none for absolute/fixed; the standing containment rule.
+4 R1 §5.6: context predicates with INAPPL vs LIMIT; float/clear in every
+  normal-flow context and on B/A/FLT; logical values; automatic
+  flow-root containment for block parents and drop-cap paragraphs;
+  shape-outside needs float.
+5 R1 §1.2 (P8, P9), §5.6, §10.3; R2 A1, A9, Part D; R4 17.6, 17.7.
+6 17.6, 17.7, 17.9.
+7 Live browser checks of containment and wrapping; three engines.
+8 RESOLVED — ARCHITECTURE DEFINED (and the contradiction RESOLVED —
+  DOCUMENTATION CORRECTED); IMPLEMENTATION VERIFICATION PENDING.
+9 No.
+
+ARCH-Q2 Logical property integration
+1 No representation or conflict rule existed.
+2–3 As P-2.
+4 R1 §4.10 + §6.9: representation, compilation order, conflict rule,
+  participation in storage, registry, states, pseudo-elements, Mixed,
+  reset, CSS clipboard, presets, persistence, export; foundation fields
+  at (4,0).
+5–7 As P-2.
+8 RESOLVED — ARCHITECTURE DEFINED; IMPLEMENTATION VERIFICATION PENDING.
+9 No (resolved before 17.2; fields included in 17.2).
+
+ARCH-Q3 SVG schema inconsistency
+1 R1 §12.5 named "anchors with ids … clip/mask references"; R3 had
+  index anchors and inline values.
+2 Re-read both, the current schema and clone behaviour.
+3 [VERIFIED] object ids exist and are regenerated on clone; no anchor or
+  def ids exist today.
+4 One model (R3 §2.4 identity table, §7.1): persistent object ids;
+  derived anchors/handles with index remaps; inline definitions;
+  keyframes the only referenced kind; identity contract locked at (4,0),
+  fields at the 17.18 revision.
+5 R1 §3, §12.5; R3 §2, §2.4, §7.1, §13; R4 17.2, 17.18.
+6 17.2, 17.18.
+7 Remap unit tests; strict-schema rejection of stored ids.
+8 RESOLVED — DOCUMENTATION CORRECTED (and ARCHITECTURE DEFINED for the
+  remaps).
+9 It was a 17.2 foundation concern; now resolved — no.
+
+ARCH-Q4 Pagination fallback
+1 Unconvertible instances silently kept look copying, with no status.
+2 Read normalizePagination, applyBoundary, the role recognition.
+3 [VERIFIED] only marked Paginations copy looks; applyBoundary swaps only
+  starter colours; the BC-09.2 fallback writes role labels once.
+4 R1 §12.6: explicit paginationStyleMode; eligibility E1–E3; conversion
+  incl. boundary own-rules; legacy mode frozen with explanations and a
+  Convert command; lifecycle; cross-mode paste; no absence-based
+  signals.
+5 R1 §7, §12.5, §12.6; R2 row 38; R4 17.15.
+6 17.15.
+7 The R4 17.15 fixture list.
+8 RESOLVED — ARCHITECTURE DEFINED; IMPLEMENTATION VERIFICATION PENDING.
+9 No.
+
+ARCH-Q5 Gesture geometry overrides
+1 "The compiler skips geometry declarations" was ambiguous.
+2 Reviewed precedence, the reduced-motion !important rules, the live
+  write path.
+3 [VERIFIED] only reduced-motion rules use !important and none touches
+  geometry; live writes stay in the store.
+4 R1 §8.11: committed declarations stay; inline override wins; exact
+  property slices; no per-frame compile; sheet-then-override swap in one
+  layout task; cancel without recompile; self-healing flag; failure
+  recovery; guarantees.
+5 R1 §6.6, §8.6, §8.11; R4 17.3.
+6 17.3 (17.7 for logical size slices).
+7 Frame-by-frame traces of commit/cancel; BC-13 targeted set.
+8 RESOLVED — ARCHITECTURE DEFINED; IMPLEMENTATION VERIFICATION PENDING.
+9 No.
+
+
+4. SVG FINDINGS (SVG-Q1–Q7)
+---------------------------
+SVG-Q1 Gesture cancellation
+1 F-SVG-3: pointercancel commits; Escape restores the whole document.
+2 Re-read useSvgObjectMoveSession and activeInteraction.
+3 [VERIFIED] as F-SVG-3; the registry exists and is reusable.
+4 R3 §6.1: one gesture transaction; states; registry; cancel triggers
+  incl. pointercancel and lost capture; one commit; duplicate terminal
+  events and stale callbacks are no-ops.
+5 R3 §6; R4 17.20.
+6 17.20.
+7 Shared lifecycle contract tests.
+8 RESOLVED — ARCHITECTURE DEFINED; existing defect TRACKED NONBLOCKING
+  until 17.20 (no new SVG gesture ships earlier).
+9 No.
+
+SVG-Q2 Modifier conflicts
+1 Alt meant both snap bypass and handle unlink.
+2 Read the current modifier usage.
+3 [VERIFIED] pointerdown Ctrl/Cmd toggles, Shift adds; drag Shift locks
+  the axis, Alt bypasses snapping.
+4 R3 §5.2 modifier table: Alt = bypass only; Mod = unlink for one drag;
+  Shift = constraints; anchor selection aligned with the existing
+  convention.
+5 R3 §3.4, §5.2, §6.7; R4 17.20, 17.21.
+6 17.20, 17.21.
+7 E2E per table row; Windows Electron Alt check.
+8 RESOLVED — ARCHITECTURE DEFINED; IMPLEMENTATION VERIFICATION PENDING.
+9 No.
+
+SVG-Q3 Clipboard animation dependencies
+1 Keyframes referenced by object rules were not carried.
+2 Reviewed object rules, the keyframe asset utility.
+3 Keyframes are document assets referenced by id (R1 §4.5).
+4 R3 §8.2–8.3: dependency discovery, payload, validation, hash dedupe,
+  remap, unique names, atomic insertion before objects, Undo; R3 §7.1
+  names keyframes as the only referenced kind.
+5 R3 §7.1, §8; R4 17.22.
+6 17.22.
+7 Dependency and dedupe unit tests; e2e cross-SVG/cross-project.
+8 RESOLVED — ARCHITECTURE DEFINED; IMPLEMENTATION VERIFICATION PENDING.
+9 No.
+
+SVG-Q4 Cross-viewBox conversion
+1 One indiscriminate scale; spaces not distinguished.
+2 Worked the transform algebra.
+3 A uniform scale commutes with rotation/skew/scale, so composition into
+  the decomposed object transform is exact.
+4 R3 §8.4: space model; proportional placement (a parameter);
+  composition formula; wrapper-translation scaling; impossibility cases;
+  validation; seven examples.
+5 R3 §8.4–8.5; R2 A17; R4 17.22.
+6 17.22.
+7 Composition identity property test; the seven examples on three
+  engines.
+8 RESOLVED — ARCHITECTURE DEFINED; IMPLEMENTATION VERIFICATION PENDING.
+  The placement POLICY is an engineering default with alternatives
+  named; choosing another changes no architecture, so no owner decision
+  is required.
+9 No.
+
+SVG-Q5 Deletion and external changes during gestures
+1 Whole-snapshot restore could resurrect or overwrite.
+2 Reviewed the store mutation paths and Option B.
+3 [VERIFIED] commands already interrupt first; the snapshot restore is
+  the F-SVG-3 code.
+4 R3 §6.2–6.3: ownership records; per-slice compare-and-restore; skip
+  deleted objects/SVGs; never overwrite external changes; mutation
+  boundary interrupts first.
+5 R3 §6; R4 17.20.
+6 17.20.
+7 Contract tests for each conflict case.
+8 RESOLVED — ARCHITECTURE DEFINED; IMPLEMENTATION VERIFICATION PENDING.
+9 No.
+
+SVG-Q6 Focusability
+1 Focus atoms were offered on vector objects without a focus contract.
+2 Checked whether any vector object can be focusable.
+3 [VERIFIED] no tabindex, role, link or interaction exists on vector
+  objects.
+4 R3 §7.5.2: never focusable; self focus atoms INAPPL; focus styling via
+  focusable ancestors; editor focus/selection distinct; SVG box per HTML
+  rules.
+5 R3 §7.5; R2 A17; R1 §5.6; R4 17.19.
+6 17.19.
+7 Registry tests; Preview/Export parity of ancestor focus states.
+8 RESOLVED — ARCHITECTURE DEFINED; IMPLEMENTATION VERIFICATION PENDING.
+9 No.
+
+SVG-Q7 Model consistency
+1 Several partially different SVG models across reports.
+2 Cross-document audit (§8).
+3 R3 §13 table.
+4 One model; R1 and R3 agree topic by topic.
+5 R1, R2, R3, R4.
+6 17.18–17.22.
+7 Re-audited at each SVG checkpoint.
+8 RESOLVED — DOCUMENTATION CORRECTED.
+9 No.
+
+
+5. FINDINGS DISCOVERED DURING THIS CHECKPOINT
+--------------------------------------------
+NEW-1 Disabled selector mapping
+1 BC-17.1.2 compiled "disabled" as :disabled and said Design "truthfully
+  shows" it.
+2–3 [VERIFIED] accessibilityAttributes.ts: Design buttons get
+  aria-disabled; disabled links get aria-disabled everywhere.
+4 R1 §6.10: disabled = :is(:disabled, [aria-disabled="true"]) on every
+  surface; the full atom → selector table.
+5 R1 §6.10, §13.5; R2 A13. 6 17.3, 17.5. 7 Parity spec on the three
+  disabled markups. 8 RESOLVED — ARCHITECTURE DEFINED. 9 No.
+
+NEW-2 Global reduced-motion rule vs authored playback
+1 "Play as authored" could never play under OS reduced motion.
+2–3 [VERIFIED] globals.css `*` rule with !important.
+4 R1 §16.7 exclusion selector for the authored-playback subtree only.
+5 R1 §16.7; R2 A11. 6 17.11. 7 Emulated reduced motion e2e.
+8 RESOLVED — ARCHITECTURE DEFINED. 9 No.
+
+NEW-3 SVG CSS transform replaces the transform attribute (F-SVG-5)
+1 State/motion transforms would discard base transforms.
+2–3 SVG 2 / CSS Transforms: the attribute is a presentation hint for
+  the same property.
+4 R3 §7.5.3 wrapper <g> with individual transform properties.
+5 R3 §1, §7.5.3, §12; R2 A17. 6 17.18, 17.19. 7 Three-engine test (R-20).
+8 RESOLVED — ARCHITECTURE DEFINED; IMPLEMENTATION VERIFICATION PENDING.
+9 No.
+
+NEW-4 One-slot interaction registry
+1 Playback registered there would be silently dropped by the next
+  gesture, and Save would stop it.
+2–3 [VERIFIED] activeInteraction.ts.
+4 Dedicated playback controller (R1 §16.1); vector gestures still use the
+  registry (R3 §6.1).
+5 R1 §16; R3 §6. 6 17.11, 17.20. 7 Unit tests on the controller.
+8 RESOLVED — ARCHITECTURE DEFINED. 9 No.
+
+NEW-5 Float containment
+1 Floats can extend below their parent, violating the standing
+  containment rule.
+2–3 CSS block formatting contexts; the containment memory/rule.
+4 R1 §5.6 automatic flow-root for block parents and drop-cap paragraphs.
+5 R1 §1.2 P8, §5.6, §10.3; R2 A1. 6 17.6, 17.7. 7 Live browser check.
+8 RESOLVED — ARCHITECTURE DEFINED; IMPLEMENTATION VERIFICATION PENDING.
+9 No.
+
+NEW-6 Generated ids vs authored htmlIds
+1 Generated def/Tabs ids could collide with authored htmlIds.
+2–3 Generated ids were documented as "ly-…" only.
+4 R1 §11 collision-safe prefix chosen per render/export.
+5 R1 §11; R3 §9. 6 17.3, 17.14, 17.18. 7 Unit test with a colliding
+  htmlId. 8 RESOLVED — ARCHITECTURE DEFINED. 9 No.
+
+NEW-7 "!important is never generated"
+1 Contradicted by the existing reduced-motion blocks.
+2–3 [VERIFIED] printExportStylesheet and globals.css.
+4 R1 §6.6 reworded: never for authored declarations; reduced-motion
+  blocks keep it by contract.
+5 R1 §6.6. 6 —. 7 —. 8 RESOLVED — DOCUMENTATION CORRECTED. 9 No.
+
+NEW-8 Stale counts in the BC-17.1.2 roadmap
+1 17.26 said "36 decisions plus P-1..P-3"; §4 likewise.
+4 Corrected to 41. 5 R4 00, 17.26, §4. 8 RESOLVED — DOCUMENTATION
+  CORRECTED. 9 No.
+
+
+6. BC-13 OUTSTANDING TRACKING (N10.1: proceed, NOT waived)
+----------------------------------------------------------
+Verified state at 9e3cc52:
+- BC-13 reports present: 13.1, 13.2, 13.3, 13.4, 13.5, 13.5.1, 13.6,
+  13.6.1. ABSENT: BC-13.7-Final-Regression-Audit.txt and
+  BC-13-Alignment-and-Snapping-Milestone-Summary.txt [VERIFIED listing].
+- BC-13.7 code, unit tests and e2e/bc13-final-audit.spec.ts are in
+  3868436 (verified in BC-17.1.1/17.1.2; production code unchanged
+  since).
+Tracked inventory: 49 decisions D1–D49; 5 architecture clarifications
+(texts live in the BC-13 briefs, A-2); 3 later owner decisions (Option
+B, D1 = B, D2 = A); D23 transformed geometry (AABBs) — final audit
+evidence pending; D39 large-document performance — tied to P1; P1
+rendering performance — OPEN BC-13 owner item; C1 Free containment frame
+— OPEN BC-13 owner item; evidence gap — BC-13.7 targeted evidence not
+re-run since its commit.
+BC-17 checkpoints touching BC-13 contracts: 17.3, 17.4, 17.5, 17.7,
+17.10, 17.11, 17.20, 17.21, 17.22, 17.25 (R4 §2).
+BC-13's P1/C1 are unrelated to BC-17's P-1–P-6.
+Actions: A-1 BC-13.7 completion; A-2 clarification texts; A-3 P1/C1.
+Status: TRACKED NONBLOCKING for BC-17; BC-13 stays OPEN.
+
+
+7. BC-14 REQUIREMENT RECOVERY
+-----------------------------
+1 BC-17.23 must trace BC-14 requirements that are not in the repository.
+2 Searched docs/, changelogs, docs/roadmap and the source.
+3 [VERIFIED] no requirement text; only the "Styles" placeholder cards
+  (R1 §15.7), two of which describe tokens that are not approved.
+4 Nothing is inferred; A-4 stays: the owner supplies the BC-14
+  requirement list before BC-17.23; BC-14 is not closed by scheduling.
+5 R1 §15.7; R4 §3, 17.23. 6 17.23, 17.26. 7 Traceability table.
+8 TRACKED NONBLOCKING (blocks BC-17.23 closure only). 9 No.
+
+
+8. CROSS-DOCUMENT CONSISTENCY AUDIT (performed)
+-----------------------------------------------
+Searched the seven BC-17.1.3 reports for: 35/36 counts, "OPEN P-",
+"[OPEN", "Floats stay", "anchors with ids", "clip/mask references",
+"Alt also breaks", "Shift-click toggles", "owner may override",
+"P-1..P-3", "Physical | Logical" exclusive mode, "gestures cannot start".
+Remaining hits are only (a) sentences that describe the correction,
+(b) Report 2 Part D0, explicitly kept as BC-17.1.2 history.
+Topic agreement verified across Reports 1–5: decision count; every
+decision represented (Report 5); SVG anchor identity and definition
+ownership (R3 §13 table); logical properties (R1 §4.10 = R2 A2 = R4
+17.2/3/4/7); float/clear (R1 §5.6 = R2 A1 = R4 17.7); counter scope incl.
+@counter-style candidate (R1 §4.11 = R2 A14 = R4 17.6/17.17 = R5); Tabs
+conversion (R1 §13.7 = R2 row 47 = R4 17.14 = R5 P-1); Progress
+formatting (R1 §9.7 = R2 A16 = R4 17.13); Pagination (R1 §12.6 = R2 row
+38 = R4 17.15); interruption and reduced motion (R1 §16 = R2 A11 = R4
+17.11); gesture override (R1 §8.11 = R4 17.3); format revisions (R1
+§12.5 = R3 §2 timing = R4 17.2/17.18); browser plans (R2 Part E = R4
+field 10); BC-13 tracking (R4 §2 = §6 here); BC-14 (R1 §15.7 = R4 §3).
+
+
+9. TESTS, PROBES AND VERIFICATION GAPS
+-------------------------------------
+Executed: no tests and no probes. Only read-only git commands and file
+reads/searches (Report 7 lists them). Documentation is not verification.
+Browser verification gaps (all IMPLEMENTATION VERIFICATION PENDING, R2
+Part E): logical properties/RTL/vertical modes; float/clear incl. logical
+values and containment; counters, nested sequences, list-item, ::marker
+content, extended counter styles; Intl label output per engine;
+semantic Tabs keyboard/accessibility; playback interruption and
+reduced-motion playback incl. the :not() exclusion; SVG wrapper
+transforms, clip/mask, coordinate conversion, focus applicability,
+motion dependencies; :where()/cascade-layer interplay (BC-17.3).
+Performance gaps: every number in R1 §18 and R3 §10 is a provisional
+target, not a measurement; the first measurements are the BC-17.3
+baseline; each criterion names its checkpoint, workload and method.
+
+
+10. RISK REGISTER (carried forward and updated)
+-----------------------------------------------
+Unchanged from BC-17.1.2 (TNB/ADIP as recorded there): R-1 early enum
+shapes (mitigated by the 17.2 foundation review); R-2 shape-changing
+conversions; R-4 older dev builds (resolved); R-6 Tailwind layers;
+R-7 rank buckets; R-8 default precedence; R-9 stale rules; R-10 per-frame
+compile (now §8.11); R-11 ancestor selector cost; R-12 Inspector cost;
+R-13 P1 dominates (BC-13 OPEN); R-14 export runtime security; R-16
+generated content and AT; R-17 focus ring removal; R-18 bending feel;
+R-19 tiny arcs; R-21 value-semantics file size; R-25 layout animations
+vs overlays (now handled by interruption); R-26 native progress
+differences; R-27 first-letter/initial-letter; R-28 WebKit gaps; R-29
+scrollbar warning; R-30 responsive variants; R-31 anchor positioning;
+R-32 web fonts; R-33 BC-14 text (A-4).
+Changed:
+- R-3 Pagination not recognized → now explicit legacy mode with Convert
+  (ADIP, 17.15).
+- R-5 decision count → RESOLVED (41).
+- R-15 semantic Tabs upgrade changes behaviour → RESOLVED by P-1 (manual
+  only).
+- R-20 transform origin parity → now the wrapper/individual-property
+  parity (UNVERIFIED, 17.19).
+- R-22 modifier conflict → RESOLVED by the R3 §5.2 table (the BC-17.1.2
+  "resolution" still let Alt unlink handles).
+- R-23 F-SVG-3 until 17.20 → unchanged (TNB).
+- R-24 playback under reduced motion → RESOLVED by P-6.
+New:
+- R-34 Intl/CLDR differences between editor engines produce different
+  label strings for the same locale (UNVERIFIED; the neutral locale is
+  the deterministic option; 17.13 fixtures).
+- R-35 Static re-targeting of an interrupting pointerdown (synthetic
+  replay) may interact with dnd-kit or pointer capture in some engines
+  (UNVERIFIED; 17.11 e2e; fallback: the gesture starts on the next
+  frame on the static target).
+- R-36 Automatic flow-root on float parents changes margin collapsing
+  through that parent (only when floats are newly authored; no legacy
+  change; 17.7 live check, Inspector note).
+- R-37 Vertical writing modes and logical sizes in Flow children with
+  BC-13.7 min/max logic (UNVERIFIED; 17.7).
+- R-38 Pasted cross-viewBox objects carry a scale in their transform, so
+  their local stroke width differs from the rendered one (Inspector
+  shows both; 17.22).
+- R-39 Legacy Pagination path stays alive indefinitely if instances
+  exist (bounded: frozen, tested, convertible; removal is a later
+  decision).
+
+
+11. BLOCKING SUMMARY
+--------------------
+BLOCKING BC-17.2: none. Every foundation concern (ARCH-Q2 fields, ARCH-Q3
+SVG identity, P-3/P-4 types, formatRevision) is defined and placed in
+BC-17.2's scope.
+OWNER DECISION REQUIRED: none.
+Owner INPUTS (not decisions): A-4 BC-14 text (before 17.23); A-1–A-3
+BC-13 closure (not gating BC-17).
+Engineering actions: A-7 freeze the enum/foundation review in the 17.2
+report (R-1).

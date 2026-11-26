@@ -1,0 +1,752 @@
+BC-17.1.3 — Corrected CSS Capability Matrix
+Report 2 of 7
+===========================================
+Date: 2026-11-26.
+HEAD: 9e3cc52.
+Authoritative. Supersedes BC-17.1.2 Report 2 (kept as history). Rows
+changed in this checkpoint are marked (17.1.3); Part D lists every
+change. Decisions referenced: 41 (O1–O16, 19 N, P-1–P-6); no row depends
+on an open owner decision any more.
+
+Inventory [VERIFIED]: creationToolbarCategories.ts has 111 card seeds.
+- 82 are enabled, and their elementType values are 82 unique types.
+- 29 are disabled placeholders (no elementType).
+- This is unchanged from BC-17.1.
+Field types were re-read at HEAD:
+- typography, background, border, display, filters, flowLayout,
+  position, sizeConstraints (px numbers), spacing, transform
+  (translateX/Y, rotateDeg, scale).
+- CssUnit = px | % | rem | em | vw | vh | unitless | deg.
+
+STATUS CODES
+FULL      supported (authorable; Design, Preview and Export)
+PARTIAL   supported with a named gap
+NOT-EXP   implemented but not exposed for authoring
+MISSING   missing implementation; a checkpoint is assigned
+BROWSER   browser-restricted; included under O15 with a documented limit
+          (combined as MISSING+BROWSER when also missing)
+EXCLUDED  fails the O15 gate (Chromium only, or a single engine);
+          documented, not built
+BLOCKED   architecturally blocked by design (reason given)
+N/A       not applicable (the CSS cannot apply; reason given)
+OWNER-OUT outside BC-17 by an explicit owner decision (O8, O13)
+UNVER     the classification needs a browser check at the assigned
+          checkpoint
+(17.1.3) Context columns, per Report 1 §5.6:
+INAPPL    the CSS has no effect in that context (a CSS fact); hidden
+          there with the reason
+LIMIT     the CSS would work in that context, but the editor does not
+          offer it there (an editor fact, reason given)
+SCOPE-CAND evaluated, not approved, not built; additive later with no
+          foundation change; no decision needed to proceed
+(The former OPEN code is gone: P-1–P-6 are approved.)
+
+VERIFICATION CLASSES (column "V")
+V1 verified existing support (earlier milestone tests)
+V2 standards-supported, not yet verified in Layoutry
+V3 browser-specific; targeted tests required
+V4 known unsupported in at least one engine (documented)
+V5 architecture-dependent future support
+
+ROW FORMAT
+capability — status — targets — states — groups — browser/architecture
+note — checkpoint — V — decisions
+"states: all" = every atom the registry allows for that target
+(Report 1 §4.3).
+Targets: E element; B/A ::before/::after; PH placeholder; MK marker;
+SEL selection; BD backdrop; FL/FLT first-line/first-letter; part ids per
+Report 1 §5.2; VO vector object.
+
+
+PART A — CAPABILITY REGISTER
+============================
+
+A1 LAYOUT (group "display", "position", "flowLayout", "flexChild",
+"gridChild")
+- display — FULL — E,B/A — all — display — — kept; states 17.5 — V1 —
+  O1.
+- visibility — FULL — E,B/A — all — display — — 17.5 — V1.
+- overflow/-x/-y — FULL — E — all — display — the shorthand/longhand
+  rule — 17.5 — V1.
+- position, offsets, z-index — FULL — E,B/A — all — position — Free
+  children: offsets LIMIT (owned by layout geometry, BC-13) — 17.6
+  (pseudo) — V1.
+- inset shorthand — covered by the four offsets (no separate control;
+  the printer may emit inset when all four are set). Logical insets: A2.
+- Flex container: direction/wrap/justify/align-items/align-content/
+  gaps — FULL — E — all — flowLayout — — — V1.
+- Flex child: grow/shrink/align-self — FULL; basis — PARTIAL
+  (FlexBasis subset) — E — all — flexChild — — 17.7 — V1/V2.
+- order — MISSING — E — all — flexChild/gridChild — — 17.7 — V2.
+- Grid templates (columns/rows) — PARTIAL (GridTrackPreset counts only)
+  → typed track lists (repeat, fr, minmax, px/%/auto) — MISSING —
+  17.7 — V2.
+- Named grid areas (template-areas + child grid-area) — MISSING — typed
+  names [a-z0-9-] — 17.7 — V2.
+- grid-auto-flow/dense, grid-auto-rows/columns — MISSING — 17.7 — V2.
+- Grid child start/span — FULL; explicit end lines — MISSING — 17.7.
+- justify-items/self, place-items/self/content — MISSING — 17.7 — V2.
+- subgrid — MISSING+UNVER (standard in all three engines) — 17.7 — V3.
+- Gaps in non-px units — MISSING — 17.7 — V2.
+- float / clear (17.1.3, ARCH-Q1) — MISSING — targets E (every profile
+  in normal flow: text, containers, images, media, SVG box, form
+  controls), B/A, FLT (drop caps, N7) — Default and all states — layout
+  group — values none/left/right/inline-start/inline-end (clear also
+  both) — context: APPLICABLE when the parent lays out in Flow and the
+  element is static/relative/sticky; INAPPL for Flex/Grid items,
+  absolute/fixed elements and Free children (float computes to none or
+  has no effect) — containment: a block parent with floated children
+  automatically gets display:flow-root, and a paragraph with a floated
+  first-letter likewise (Report 1 §5.6, P8) — logical values V3 (Gecko,
+  WebKit, recent Chromium; UNVER) — 17.7 (FLT: 17.6) — V2/V3 — P-2.
+- Free-layout geometry (x/y/w/h px) — FULL — E — states not offered
+  (geometry stays authored per BC-13). Forced states never affect
+  geometry measurement — V1.
+- Multi-column (columns, column-gap, column-rule, column-span) —
+  MISSING — E (containers, text) — 17.7 — V2.
+- scroll-snap-type/align/stop, scroll-behavior, overscroll-behavior,
+  scroll-margin/padding — MISSING — E (scroll containers) — 17.7 — V2.
+- zoom — BLOCKED — the CSS zoom property rescales the box coordinate
+  space that BC-13 Free geometry and snapping compute in CSS px (D35).
+  Supporting it needs a coordinate-model change; revisit with Canvas
+  zoom work.
+- contain, content-visibility, will-change — N/A for visual authoring
+  (rendering/performance hints; content-visibility:hidden duplicates
+  display/visibility semantics without a visual difference). Listed so
+  nothing is hidden.
+- Anchor positioning (position-anchor, anchor()) — not in approved scope
+  (an element-to-element relationship model, beyond O6's ancestor
+  scope). Engines: Chromium; WebKit recent; Gecko no [UNVER].
+  TRACKED in Report 6 (R-31).
+- Responsive variants (media/container queries, print) — not a styling
+  property of an element. No responsive authoring model exists (BC-13
+  D24 "active viewport only"). TRACKED (Report 6 R-30); no BC-17
+  checkpoint.
+
+A2 LOGICAL PROPERTIES, DIRECTION AND WRITING MODES (17.1.3 — P-2
+approved Option B: physical AND logical; model in Report 1 §4.10)
+Physical controls stay the default presentation; logical controls sit
+behind a per-section "Logical sides" disclosure; the two forms are
+separate stored fields; inside a rule logical declarations print after
+physical ones and win on a shared side; switching presentation never
+changes the document.
+- Logical margins (margin-block-start/-end, margin-inline-start/-end)
+  and padding (padding-block-*/-inline-*) — MISSING — E, B/A (where the
+  physical twin is allowed), all states — spacing — schema 17.2, compile
+  17.3, Inspector 17.4, completion 17.7 — V2 — P-2.
+- Logical sizes (inline-size, block-size, min/max-inline-size,
+  min/max-block-size) — MISSING — E, B/A — all — size — context: Free
+  children LIMIT (geometry owned by layout, physical, BC-13); Flow/Flex/
+  Grid resize gestures write the winning field family (Report 1
+  §4.10.6) — 17.2/17.3/17.4/17.7 — V2 (vertical-mode resize: V3).
+- Logical insets (inset-block-start/-end, inset-inline-start/-end) —
+  MISSING — E, B/A — all — position — context: positioned elements;
+  Free children LIMIT — 17.7 — V2.
+- Logical borders (border-block-*/border-inline-* sides: width, style,
+  colour) — MISSING — E, B/A — all — border — 17.2/17.4/17.7 — V2.
+- Logical corner radii (border-start-start-radius, -start-end, -end-start,
+  -end-end) — MISSING — E, B/A — all — borderRadius — 17.7 — V2.
+- Logical keyword values: text-align start/end; float/clear
+  inline-start/inline-end (A1); resize block/inline (A12) — MISSING —
+  17.7 — V2/V3.
+- direction (ltr, rtl) and unicode-bidi — MISSING (17.1.3: previously
+  N/A) — E (text-bearing, containers) — Default condition only (LIMIT:
+  a state-dependent mapping would make the Inspector's collision hints
+  and gesture field choice indeterminate) — typography — with the
+  advisory that dir is the semantic mechanism — 17.7 — V2.
+- HTML dir attribute (ltr, rtl, auto) — MISSING — every element —
+  component properties → Language & direction (content semantics, not a
+  style group; travels with the element, not with the CSS clipboard or
+  presets) — 17.7 — V2.
+- writing-mode (horizontal-tb, vertical-rl, vertical-lr) and
+  text-orientation (mixed, upright, sideways) — MISSING — E — Default
+  only (LIMIT, as direction) — typography — sideways-rl/-lr only if O15
+  passes (V3) — containment checked live (P8) — 17.7 — V2/V3.
+- Effective direction/writing mode: computed from the document model
+  (nearest self-or-ancestor value; dir="auto" = content-dependent) for
+  hints and gesture intent only; rendering is the browser's.
+- Mixed values, reset, CSS clipboard, presets, persistence, export,
+  states, pseudo-elements: per Report 1 §4.10.6 (both forms
+  participate; nothing is converted implicitly).
+
+A3 SIZE
+- width/height (Flow/Flex/Grid, CssUnit) — FULL — V1.
+- min/max width/height — PARTIAL (px numbers only) — all units —
+  MISSING — 17.7. Must keep the BC-13.7 renderedFreeSize behaviour.
+  V1/V2.
+- min-content/max-content/fit-content(), stretch — MISSING (stretch:
+  -webkit-fill-available / -moz-available prefixes; UNVER) — 17.7 — V3.
+- aspect-ratio — FULL — V1.
+- object-fit/object-position — FULL — V1.
+- box-sizing — N/A as a control: border-box is the baseline (BC-05).
+  Changing it per element would invalidate the geometry contract of BC-13
+  resize. BLOCKED by contract; documented.
+- Dynamic viewport units (svh, lvh, dvh, svw…) — MISSING (all three
+  engines) — 17.7 — V2.
+- (17.1.3) Logical sizes and min/max — A2.
+- Container query units (cqw…) — N/A until container queries exist (see
+  A1, responsive variants).
+- calc()/clamp()/min()/max()/var() — BLOCKED — typed values only; no
+  expression model (approved principle: no raw CSS).
+- interpolate-size / calc-size() — EXCLUDED (Chromium only).
+
+A4 SPACING
+- margin/padding per side, linked — FULL — V1.
+- On pseudo targets — MISSING — 17.6.
+- Logical forms — see A2.
+
+A5 TYPOGRAPHY
+- font-family/size/weight/style, color, text-align, line-height,
+  letter-spacing, text-decoration-line — FULL — V1.
+- Inherited container typography (containers have no typography
+  resolver) — MISSING — 17.7 — V2.
+- text-transform, word-spacing, text-indent — MISSING — 17.7 — V2.
+- white-space (+ white-space-collapse, text-wrap-mode) — MISSING —
+  17.7 — V2.
+- text-wrap balance — MISSING+BROWSER (all three engines, recent);
+  text-wrap pretty — MISSING+UNVER (Chromium, WebKit; Gecko no) —
+  passes O15 if WebKit is confirmed — 17.7 — V3.
+- text-overflow ellipsis; line clamp (-webkit-line-clamp with
+  display:-webkit-box) — MISSING+BROWSER (prefixed in all engines) —
+  17.7 — V3.
+- text-shadow (list) — MISSING — 17.7 — V2.
+- text-decoration-style/-color/-thickness, text-underline-offset/
+  -position — MISSING — 17.7 — V2.
+- font-variant (caps, numeric, ligatures), font-kerning,
+  font-stretch/width, font-optical-sizing — MISSING — 17.7 — V2.
+- font-feature-settings / font-variation-settings — MISSING — a typed
+  allow-list of OpenType tags (no free strings) — 17.7 — V2.
+- hyphens (auto needs lang; documented), word-break, overflow-wrap,
+  line-break — MISSING — 17.7 — V2/V3.
+- vertical-align (inline, table cells) — MISSING — 17.7 / 17.17 — V2.
+- (17.1.3) text-align start/end (logical values) — MISSING — 17.7 — V2.
+- text-emphasis (style/colour/position) — MISSING+BROWSER (-webkit- in
+  WebKit) — 17.7 — V3.
+- Gradient text (background-clip:text) — MISSING+BROWSER (-webkit-
+  prefix) — 17.8 — V3.
+- Custom font upload/web fonts — TRACKED (Report 6 R-32). Not covered by
+  any of O1–O16; fontFamily selects from the existing list. No BC-17
+  checkpoint unless the owner adds it.
+- Typography presets — MISSING — 17.23 (BC-14) — O12, N10.2.
+- writing-mode — A2.
+
+A6 FILL & BACKGROUND
+- background-color — FULL — V1. For native progress it is NOT-EXP (the
+  capability excludes it) → replaced by part targets in 17.12.
+- Single image/size/position/repeat/attachment — FULL — V1.
+- linear/radial gradient (single) — FULL — V1.
+- Multiple layers — MISSING — 17.8 — V2.
+- conic-gradient — MISSING — 17.8 — V2.
+- repeating-linear/radial/conic — MISSING — 17.8 — V2.
+- Colour hints, colour interpolation space (in oklch…) — MISSING+UNVER
+  (interpolation spaces: all three engines, recent) — 17.8 — V3.
+- background-origin/clip — MISSING — 17.8 — V2.
+- background-blend-mode — MISSING — 17.8 — V2.
+- Patterns (stripes, dots, checker, grid, segments) — MISSING — editable
+  layer presets — 17.8 — V2.
+- image-set() resolution variants — N/A (assets are single images;
+  BC-07).
+- States and parts — 17.5 / 17.6 / 17.12.
+
+A7 BORDER & CORNERS
+- Per-side width/style/colour — FULL — V1.
+- Per-corner radius — FULL; elliptical radii — MISSING — 17.7 — V2.
+- outline (width/style/colour/offset) — MISSING — 17.5 (with states;
+  focus rings) — V2.
+- border-image (gradient; image via assets; slice/width/outset/repeat)
+  — MISSING — 17.7 — V2.
+- box-decoration-break — MISSING+BROWSER (-webkit- in WebKit) — 17.7 —
+  V3.
+- border-collapse/spacing, caption-side, empty-cells — MISSING — 17.17
+  — V2.
+- corner-shape (squircle) — EXCLUDED (Chromium only).
+
+A8 EFFECTS
+- box-shadow list — FULL — V1.
+- opacity — FULL — V1.
+- filter functions (blur, brightness, contrast, saturate, grayscale,
+  hue-rotate, invert, sepia) — PARTIAL (a fixed order, not a user
+  list) — 17.9 — V1/V2.
+- drop-shadow() — MISSING — 17.9 — V2.
+- backdrop-filter — MISSING+BROWSER (-webkit- in WebKit) — 17.9 — V3.
+- mix-blend-mode, isolation — MISSING — 17.9 — V2.
+
+A9 SHAPE & MASK
+- Shape presets (clip-path via getClipPathForShapePreset) — FULL — V1.
+- Custom clip-path (circle/ellipse/inset/polygon/path()) — MISSING — one
+  clip-path owner with Shape — 17.9 — V2 (path(): UNVER in WebKit).
+- mask-image/size/position/repeat/origin/clip/composite/mode — MISSING+
+  BROWSER (-webkit- prefixes in WebKit) — 17.9 — V3.
+- mask-border (-webkit-mask-box-image) — MISSING+BROWSER, low priority:
+  Chromium and WebKit support the prefixed form, so it passes O15 —
+  17.9 — V3.
+- shape-outside / shape-margin / shape-image-threshold — MISSING — E,
+  FLT — context: APPLICABLE only on a floated element (A1 predicate +
+  float ≠ none), otherwise INAPPL "Needs a float" — 17.9 — V2.
+
+A10 TRANSFORM
+- translateX/Y, rotate, uniform scale — FULL — V1.
+- scaleX/Y, skewX/Y, transform-origin — MISSING — 17.10 — V2.
+- perspective(+origin), rotateX/Y/Z, translateZ, transform-style,
+  backface-visibility — MISSING — 17.10 — V3.
+- Individual translate/rotate/scale properties — MISSING — 17.10 — V2.
+- Free move/resize under transformed ancestors — BLOCKED by the BC-13
+  contract (transformGeometrySafety). Kept.
+
+A11 MOTION
+- One transition (Preview only) — FULL — V1.
+- Transition list, cubic-bezier/steps/linear() easing — MISSING — 17.11
+  — V2 (linear(): UNVER WebKit).
+- Keyframe animations (name, duration, timing, delay, iteration,
+  direction, fill mode, play state, composition) — MISSING — 17.11 — V2.
+- Reduced motion: FULL for transitions (V1); MISSING for animations —
+  17.11. (17.1.3) Contract: each animation collapses to 0.01ms, delay 0,
+  one iteration, authored fill/direction kept (Report 1 §13.6), in the
+  export block and the Preview surface rule — V2.
+- Design playback (N11) — MISSING — 17.11 — one iteration; a Design-only
+  compiled variant.
+- (17.1.3) Playback interruption (P-5) — MISSING — 17.11 — every editing
+  operation stops playback and proceeds (Report 1 §16.3); Save does not
+  interrupt — V2 (e2e).
+- (17.1.3) Reduced-motion playback options (P-6) — MISSING — 17.11 —
+  Play / Play as authored / Play with reduced motion; the globals.css
+  reduced-motion rule gains an exclusion for the authored-playback
+  subtree only (Report 1 §16.7) — V3 (:not() with a selector list,
+  emulated reduced motion in three engines).
+- transition-behavior allow-discrete — MISSING+UNVER (Chromium, WebKit;
+  Gecko recent) — 17.11 — V3.
+- Scroll-driven animations — MISSING+UNVER (Chromium; WebKit recent
+  [UNVER]; Gecko behind a flag). Included at 17.11 if two engines are
+  confirmed, otherwise EXCLUDED with evidence — V3.
+- View transitions — N/A (navigation-level, not element styling).
+
+A12 ADVANCED / INTERACTION
+- cursor keywords, pointer-events, user-select — FULL — V1.
+- Custom image cursors (url via assets + hotspot) — MISSING — 17.7 — V2.
+- accent-color, caret-color, color-scheme — MISSING — 17.12 — V2.
+- appearance — MISSING (automatic for styled parts + explicit) — 17.12
+  — V3.
+- resize — MISSING+UNVER (whether authorable today) — 17.12 — V2.
+- scrollbar-color/-width — MISSING+BROWSER (Gecko, Chromium; WebKit no)
+  — 17.7 — V3.
+- ::-webkit-scrollbar parts — MISSING+BROWSER (Chromium, WebKit) — 17.7
+  — V3. Note: Chromium ignores ::-webkit-scrollbar when scrollbar-color
+  or scrollbar-width is set, so the Inspector warns.
+- image-rendering — MISSING — 17.16 — V2.
+- object-view-box — EXCLUDED (Chromium only).
+- touch-action — N/A (behaviour, not visual).
+- caret-shape — EXCLUDED (Chromium only; UNVER).
+
+A13 STATES
+- Atoms hover, focus, focus-visible, focus-within, active, checked,
+  indeterminate, invalid, required, read-only, placeholder-shown,
+  disabled — MISSING — 17.5 — V2. (17.1.3) Selectors per Report 1 §6.10;
+  disabled = :is(:disabled, [aria-disabled="true"]) because Design
+  buttons and disabled links are aria-disabled [VERIFIED markup].
+- current (aria-current) — NOT-EXP (the attribute exists, BC-09) —
+  17.5 / 17.15.
+- expanded (aria-expanded on toggle triggers, Preview + Export) —
+  NOT-EXP [VERIFIED] — 17.14.
+- open, selected — MISSING — 17.14 (selected via semantic Tabs, N2).
+- Ancestor states — MISSING — 17.5 — O6.
+- Curated compounds — MISSING — 17.5 (form/basic), 17.14 (runtime),
+  17.15 (navigation) — N6.
+- Pagination current look — PARTIAL (five-property copy) → 17.15 — O9.
+- :visited — MISSING+BROWSER (privacy-limited to colour properties) —
+  17.5 — V3.
+
+A14 PSEUDO-ELEMENTS
+- ::before/::after (+content) — MISSING — 17.6 — O7.
+- ::placeholder — MISSING — 17.6 / 17.12.
+- ::marker — MISSING — 17.6 / 17.17. (17.1.3) Marker content (parts incl.
+  counter(list-item)) — MISSING+BROWSER (content on ::marker: Chromium,
+  Gecko; WebKit UNVER) — V3.
+- ::selection — MISSING — 17.6.
+- ::backdrop — NOT-EXP (a default exists in export) — 17.6 / 17.14.
+- ::first-line, ::first-letter — MISSING — 17.6 — N7 (allow-lists in
+  Report 1 §10.3); initial-letter: MISSING+BROWSER (Chromium,
+  -webkit- WebKit) — V3.
+- (17.1.3, P-4 approved Option B) CSS counters — model Report 1 §4.11:
+  - named document counter definitions, multiple independent counters,
+    safe generated identifiers (c-<slug>) — MISSING — 17.2 schema,
+    17.6 — V2;
+  - counter-reset / counter-increment / counter-set with start values
+    and positive/negative steps, several per element — MISSING — E,
+    B/A, MK — Default condition only (LIMIT: state-dependent counters
+    renumber unrelated elements) — counters group — 17.4 (controls),
+    17.6 — V2;
+  - counter() and counters() in content parts with text prefixes/
+    suffixes and predefined styles (decimal, decimal-leading-zero,
+    lower/upper-roman, lower/upper-alpha, lower-greek, disc, circle,
+    square, none) — MISSING — B/A, MK — 17.6 — V2; extended predefined
+    styles (armenian, georgian, hebrew, cjk-decimal, kana…) — MISSING+
+    UNVER — included per style only when O15 passes — V3;
+  - nested numbering (counters() with a separator) — MISSING — 17.6 —
+    V2;
+  - interaction with native list numbering (built-in list-item counter,
+    offered on ol/ul/li only) — MISSING+UNVER — 17.17 — V3;
+  - pseudo-element integration and independent styling of the generated
+    number — via the B/A/MK targets — 17.6 — V2;
+  - hidden elements (display:none and runtime-hidden panels do not
+    count; Design shows all elements) — browser semantics, explained —
+    17.6 — V2;
+  - clipboard/duplicate (same document keeps the sequence; foreign
+    sources map by name or create), CSS clipboard, presets, persistence,
+    export — 17.6/17.23 — V2.
+  - User-authored @counter-style rules — SCOPE-CAND (not approved by
+    P-4; standards support in all three engines, UNVER; additive later
+    through CounterStyleRef without a data change; Report 1 §4.11.6).
+- ::file-selector-button, ::-webkit-slider-*, ::details-content —
+  OWNER-OUT (O13).
+- ::cue (captions) — OWNER-OUT (O8: native media).
+
+A15 NATIVE PARTS
+- progress track/fill (::-webkit-progress-bar/-value,
+  ::-moz-progress-bar; Gecko track = the element box) — MISSING+BROWSER
+  — 17.12 — V3.
+- toggle box/indicator (appearance:none + ::before/::after) — MISSING —
+  17.12 — V3.
+- select arrow (appearance:none + a background layer) — MISSING — 17.12
+  — V3.
+- Customizable select (appearance: base-select, ::picker) — EXCLUDED
+  (Chromium only).
+- search cancel (::-webkit-search-cancel-button) — MISSING+BROWSER
+  (Chromium, WebKit) — 17.12 — V3.
+- number spin (::-webkit-inner/outer-spin-button) — MISSING+BROWSER
+  (Chromium, WebKit; Gecko: hide via appearance:textfield) — 17.12 — V3.
+- password reveal (::-ms-reveal) — EXCLUDED (Edge only; not in
+  Electron).
+- media controls internals — OWNER-OUT (O8).
+- iframe content — N/A (cross-origin, sandbox).
+
+A16 CUSTOM PROGRESS (O4, N1.1, N1.2)
+- track, fill, segment, label parts; segments; the label kinds and
+  tokens; animated fills; the conversion — MISSING — 17.13 — V2/V3.
+- (17.1.3, P-3 approved Option B) Label number formatting — MISSING —
+  17.13: decimal precision 0–6 per token family (percent / value-max),
+  keep or trim trailing zeros, grouping on/off, locale = neutral or a
+  BCP 47 tag (validated, canonicalized, Intl fallback), halfExpand
+  rounding with a "never 100% early" guard, locale-placed percent sign
+  ({percent} includes it; an adjacent "%" is rejected), indeterminate
+  text, effective max for max ≤ 0, aria-valuetext = the label —
+  formatted at compile/render time, identical text on Design, Preview
+  and Export (Report 1 §9.7) — V2; cross-engine Intl/CLDR output for the
+  same tag — UNVER (fixtures) — V3.
+
+A17 SVG (detail: Report 3)
+- SVG box: every HTML group per A1–A12 (clip/mask on the box: 17.9) —
+  PARTIAL/MISSING as listed.
+- Starter primitive fill/stroke/width — FULL — V1.
+- Object fill/stroke/width — FULL — V1.
+- fill/stroke opacity, opacity, dasharray/offset, linecap/join,
+  miterlimit, fill-rule, paint-order — MISSING — 17.19 — V2.
+- Gradients (linear/radial; spread; units) — MISSING — 17.19 — V2.
+- Conic gradients for vector objects — N/A (SVG paint has none).
+- Object filters (feGaussianBlur, feDropShadow, feColorMatrix) —
+  MISSING — 17.19 — V2.
+- Per-object and whole-content clip/mask — MISSING — 17.19 (+
+  interactive geometry 17.21) — N4.2 — V2.
+- Object transforms — MISSING — data 17.18, editing 17.21 — V2.
+- Object states/motion — MISSING — 17.19 — V3 (individual transform
+  properties on a generated wrapper <g>, so state transforms compose
+  with the base transform attribute; Report 3 §7.5.3).
+  (17.1.3, SVG-Q6) Allowed atoms on vector objects: self hover, active;
+  ancestor hover, active, focus-visible, focus-within, expanded, open,
+  selected, current, checked, disabled. Self focus, focus-visible and
+  focus-within — INAPPL (vector objects are never focusable; no authored
+  tabindex/role/interaction exists for them). Focus styling of a graphic
+  is authored through the focusable ancestor.
+- (17.1.3) Vector motion dependencies — keyframes referenced by object
+  rules are document assets, carried, deduplicated and remapped by the
+  vector clipboard — MISSING — 17.22 — V2.
+- (17.1.3) Cross-viewBox paste — proportional placement applied through
+  the object transform (no geometry rewrite) — MISSING — 17.22 — V2.
+- preserveAspectRatio — PARTIAL (default only) — 17.19 — V2.
+- Path commands C/Q/A, subpaths, anchors — MISSING — 17.18/17.20 — O14.
+- Bending (N3.1), arcs (N3.2), conversion (N3.3), snapping (N4.1),
+  vector clipboard (N5) — MISSING — 17.20/17.21/17.22.
+- Raw markup, path-data text — BLOCKED (security).
+- Stored H/V/S/T or relative commands — N/A as storage (normalized;
+  equivalent geometry is fully supported).
+
+A18 PRESETS AND CLIPBOARD
+- Base CSS clipboard (18 groups) — FULL — V1 (BC-11).
+- Rules/compounds/pseudo/keyframes in the clipboard — MISSING —
+  17.5/17.6/17.11 — O16.
+- Presets (all kinds, three libraries) — MISSING — 17.23/17.24 — O12,
+  N8.
+
+
+PART B — COMPONENT TABLE (82 supported element types)
+=====================================================
+Profiles (groups = the categories available on target E):
+- P-TEXT: Layout, Size, Spacing, Typography, Fill, Border, Effects,
+  Shape, Transform, Motion, Advanced. Targets E, B/A, SEL, FL/FLT (when
+  block-level). States S-INT, S-ANC.
+- P-CONT: as P-TEXT, plus flex/grid container groups and inherited
+  typography (17.7). Targets E, B/A, SEL. States S-INT, focus-within,
+  S-ANC.
+- P-FIELD: Size, Spacing, Typography, Fill, Border, Effects, Transform,
+  Motion, Advanced (caret, accent, color-scheme). Targets E, PH (no
+  B/A: replaced element). States S-INT, S-FORM.
+- P-TOGGLE: Size, Fill, Border, Effects, Motion, accent-color. Targets
+  E, toggle.box, toggle.indicator. States S-INT, checked, indeterminate
+  (checkbox), disabled, invalid, required; compounds checked+hover,
+  checked+focus-visible.
+- P-MEDIA: Size, Media fit, Border, Effects, Shape & Mask, Transform,
+  Motion. Target E (no B/A). States S-INT, S-ANC.
+S-INT = hover, focus, focus-visible, active (plus focus-within on
+containers). S-FORM = invalid, required, read-only, placeholder-shown,
+disabled.
+Every row also gets the shared families 17.5–17.11 unless noted.
+
+ #  type — targets beyond E — states — component checkpoints — decisions
+ 1 container — P-CONT — 17.7 — O1,O6
+ 2 section — P-CONT — 17.7
+ 3 heading — P-TEXT (+FL/FLT); counters (numbered headings via B +
+   counter parts) — 17.6/17.7 — N7, P-4
+ 4 paragraph — P-TEXT (+FL/FLT, floated drop cap contained) — 17.6/17.7
+   — N7, P-4
+ 5 divider <hr> — B/A — S-ANC — 17.17
+ 6 figure — P-CONT (children real) — 17.16
+ 7 progress — progress.track/fill (native), + segment/label (custom) —
+   indeterminate, S-ANC — label formatting (custom only) — 17.12/17.13
+   — O4, N1.1, N1.2, P-3
+ 8 link — P-TEXT — + current, expanded (toggle trigger), :visited —
+   17.5/17.14
+ 9 unorderedList — P-CONT, list markers; custom counters; list-item
+   counter ops — 17.17 — P-4
+10 orderedList — as 9 (native numbering kept unless list-item is
+   targeted explicitly) — 17.17 — P-4
+11 listItem — P-TEXT, MK (marker content with counter parts) (+FL/FLT)
+   — 17.6/17.17 — P-4
+12 button — P-TEXT — + disabled, expanded — 17.5/17.14
+13 dialog — P-CONT, BD — open — 17.6/17.14
+14 table — table.headerRow/bodyRow/altRow/cell/headerCell/caption
+   (structural; the rows and cells are also real nodes) — S-ANC (row
+   hover) — 17.17
+15 header — P-CONT
+16 nav — P-CONT; nav.link/nav.current role groups when it holds links —
+   17.15
+17 main — P-CONT
+18 article — P-CONT
+19 aside — P-CONT
+20 footer — P-CONT
+21 footerComposition — P-CONT — 17.17
+22 primaryButton — as 12 — 17.5
+23 secondaryButton — as 12
+24 outlineButton — as 12
+25 ghostButton — as 12
+26 buttonGroup — P-CONT; group.first/last — 17.17
+27 dropdownButton — P-CONT; trigger expanded; menu open; open+hover —
+   17.14 — O10,N6
+28 basicCard — P-CONT; ancestor source for its children — 17.5 — O6
+29 imageCard — as 28; the image's parent-hover zoom — 17.10/17.16
+30 horizontalCard — as 29
+31 profileCard — as 28; avatar — 17.16
+32 featureCard — as 28
+33 pricingCard — as 28; CTA button states
+34 basicNavbar — P-CONT; nav.link, nav.current — 17.15
+35 navbarWithCta — as 34 + nav.cta — 17.15
+36 centeredNavbar — as 34
+37 breadcrumbs — P-CONT; nav.link, breadcrumb.separator (real p nodes;
+   the role group styles them together), current — 17.15
+38 pagination — P-CONT; pagination.page/current/prevNext/disabled/
+   ellipsis — current, hover, focus-visible, active; compounds
+   current+hover, current+focus-visible — 17.15 — O9. (17.1.3) Semantic
+   mode only; legacy-mode instances keep BC-09 look copying, show the
+   role groups INAPPL with the reason, and offer "Convert to semantic
+   styling" (Report 1 §12.6).
+39 sidebarNavigation — as 34 — 17.15
+40 labeledTextField — label (P-CONT, focus-within) > p + input P-FIELD —
+   17.12
+41 searchBar — form P-CONT > search input (search.cancel BROWSER) +
+   button — 17.12
+42 newsletterSignup — as 41 (email: invalid; invalid+focus) — 17.12
+43 contactForm — form P-CONT; fields; textarea — 17.12
+44 loginForm — as 43 + checkbox P-TOGGLE — 17.12
+45 labeledSelectField — label > p + select (select.arrow) — 17.12
+46 collapsible — P-CONT; trigger expanded; content open; indicator via
+   B/A with ancestor(expanded) — 17.14
+47 basicTabs → (17.14) Tabs. Two kinds of instance (17.1.3, P-1):
+   - semantic Tabs (all new insertions): marker "tabs"; tabs.list/tab/
+     panel role groups — selected, open, hover, focus-visible, active,
+     disabled; compounds selected+hover, selected+focus-visible; APG
+     keyboard, automatic activation — 17.14 — N2;
+   - legacy Basic Tabs (existing projects): plain nodes with show/hide
+     bindings, unchanged; every node styleable as a node (P-CONT /
+     button profiles); tabs.* role groups INAPPL (no tab semantics
+     exist); "Convert to Semantic Tabs" when the structure is eligible
+     (Report 1 §13.7) — 17.14 — P-1.
+48 modal — trigger + dialog (BD, open) — 17.14
+49 infoAlert — P-CONT; B icon slot — 17.17
+50 successAlert — as 49
+51 warningAlert — as 49
+52 errorAlert — as 49
+53 dismissibleAlert — as 49 + close button — 17.14
+54 manualToast — open, enter/exit motion — 17.14
+55 popover — open; arrow via B — 17.14
+56 drawer — dialog BD, open, slide motion — 17.14
+57 badge — P-CONT; B dot — 17.17
+58 avatar — P-MEDIA — 17.16
+59 avatarWithText — P-CONT > img + texts — 17.16
+60 statCard — P-CONT — 17.17
+61 metadataRow — P-CONT; B separator — 17.17
+62 progressBar — P-CONT > row + progress (7) — 17.12/17.13
+63 image — P-MEDIA; image-rendering — 17.16
+64 video — P-MEDIA; poster surface; controls OWNER-OUT (O8) — 17.16
+65 videoEmbed — iframe box only — 17.16
+66 audio — box only; controls OWNER-OUT — 17.16
+67 svg — E (box, floatable in Flow) + VO (no self focus atoms) — Report
+   3 — 17.18–17.22 — O14, N3–N5
+68 iframe — box only — 17.16
+69 form — P-CONT; focus-within, invalid — 17.12
+70 label — P-CONT; focus-within; ancestor source for its field — 17.12
+71 input (text) — P-FIELD — 17.12
+72 emailInput — P-FIELD (invalid) — 17.12
+73 passwordInput — P-FIELD (reveal EXCLUDED) — 17.12
+74 numberInput — P-FIELD + number.spin BROWSER — 17.12
+75 searchInput — P-FIELD + search.cancel BROWSER — 17.12
+76 urlInput — as 72
+77 telInput — as 71
+78 textarea — P-FIELD; resize — 17.12
+79 select — E, select.arrow; S-INT, disabled, invalid; option styling
+   BROWSER (the closed picker is not styleable cross-engine) — 17.12
+80 checkboxInput — P-TOGGLE (indeterminate) — 17.12
+81 radioInput — P-TOGGLE — 17.12
+82 fieldset — P-CONT > legend (P-TEXT); disabled — 17.12
+
+Internal targets versus real children:
+- Real children of every composition remain nodes: selectable and
+  styled as nodes. A role group styles a SET of real children from the
+  component root. It never replaces per-child styling.
+  - Ordering is global by rank (Report 1 §6.4): within a rank, the
+    role-group rule comes before the child's own rule.
+  - So a child's own rule of the same rank wins, and a higher-rank
+    role-group state (e.g. current) wins over the child's base.
+- Internal targets = pseudo-elements, native parts, custom-progress
+  parts, structural targets, role groups and vector objects. None are
+  document nodes.
+
+
+PART C — DISABLED PLACEHOLDERS (29)
+==================================
+- Menu, Panel, the 9 Layout cards, Gallery, Video Background, Icon,
+  Submit Button, Reset Button, Error Message, Helper Text, Form Row:
+  not components today. They are outside BC-17 styling scope until
+  built; the registry accommodates them (O13 path).
+- The 10 "Styles" cards: proposed preset entry points (17.24), subject
+  to the owner's preference at that checkpoint.
+
+
+PART D — CHANGES FROM BC-17.1.2 REPORT 2 (17.1.3)
+=================================================
+- Status codes: OPEN removed (P-1–P-6 approved); INAPPL, LIMIT and
+  SCOPE-CAND added so context restrictions and editor limitations are
+  never written as blanket N/A (Report 1 §5.6).
+- float/clear (ARCH-Q1): from "Flow parents only, hidden elsewhere" plus a
+  first-letter-only exception in Report 1 → applicable on every normal-
+  flow element and B/A/FLT, with logical values, INAPPL contexts named,
+  and automatic float containment (P8).
+- shape-outside: APPLICABLE only with float (predicate stated).
+- A2 rewritten (P-2): logical margins, padding, sizes, min/max, insets,
+  borders, radii, logical keyword values; direction and unicode-bidi
+  from N/A → MISSING (Default only, LIMIT); the dir attribute as content
+  semantics; writing-mode/text-orientation Default only.
+- Counters (P-4): the OPEN row replaced by full rows; @counter-style is a
+  SCOPE-CAND; ::marker content BROWSER row.
+- Progress labels (P-3): formatting row.
+- Motion (P-5, P-6): exact reduced-motion contract for animations;
+  playback interruption and reduced-motion playback rows.
+- States: the disabled selector mapping (:disabled or aria-disabled).
+- SVG (SVG-Q6, F-SVG-5): vector-object atom list without self focus;
+  wrapper transforms; motion dependencies; cross-viewBox paste.
+- Component rows 3, 4, 7, 9–11, 38, 47, 67 updated (counters, drop-cap
+  containment, label formatting, Pagination modes, semantic vs legacy
+  Tabs, SVG float/focus).
+- Free children: offsets and sizes, physical and logical, marked LIMIT.
+
+PART D0 — EARLIER CHANGES (BC-17.1.1 → BC-17.1.2), kept as history
+=================================================================
+- Logical properties: N/A → MISSING+OPEN (P-2). Applicable regardless of
+  authored direction.
+- writing-mode/text-orientation: N/A → MISSING (17.7).
+- direction/unicode-bidi: kept N/A, now with the standards reason (use
+  the dir attribute), and the dir attribute is routed to P-2 option C.
+- float/clear: N/A → MISSING (17.7, Flow parents) + FLT drop caps
+  (17.6).
+- shape-outside: N/A → MISSING (17.9).
+- box-sizing: N/A → BLOCKED by contract (BC-05/BC-13), with the reason.
+- zoom: newly listed, BLOCKED (BC-13 coordinate model).
+- outline: moved to 17.5.
+- New rows (previously missing from the matrix):
+  - dynamic viewport units;
+  - font-feature/variation settings;
+  - font-kerning/stretch/optical-sizing;
+  - text-emphasis;
+  - box-decoration-break;
+  - colour interpolation spaces;
+  - mask-border;
+  - custom cursors;
+  - color-scheme;
+  - image-rendering;
+  - transition-behavior;
+  - linear() easing;
+  - :visited;
+  - counters (P-4).
+- New EXCLUDED rows, recorded so nothing is silently absent:
+  - customizable select;
+  - corner-shape;
+  - object-view-box;
+  - interpolate-size;
+  - caret-shape;
+  - ::-ms-reveal.
+- Anchor positioning, responsive variants and web fonts: listed as
+  TRACKED outside the approved scope, not N/A.
+- The SVG rows are re-aligned to the new checkpoint split (Report 4 §0)
+  and to N3.2/N4.1/N4.2/N5.
+- The component table now names the state and compound sets and the
+  decisions per row.
+
+
+PART E — VERIFICATION PLAN (by checkpoint)
+=========================================
+- V1 rows: re-verified only when their checkpoint touches them.
+- V2 rows: Chromium tests at their checkpoint, plus one other engine
+  where the checkpoint's browser field says so (Report 4).
+- V3 rows (targeted tests at the checkpoint):
+  - progress parts, toggles, select, search/number parts (17.12);
+  - first-letter/initial-letter, marker, placeholder (17.6);
+  - backdrop-filter, masks (17.9);
+  - gradient text, interpolation spaces (17.8);
+  - text-wrap, line clamp, scrollbar (17.7);
+  - scroll-driven animation, transition-behavior (17.11);
+  - CSS transforms on SVG children (17.19).
+- V4/EXCLUDED rows: the evidence is recorded in the checkpoint report;
+  the row is re-checked in 17.25 in case support has changed.
+- (17.1.3) Additional targeted verification, per checkpoint:
+  - logical properties in RTL and vertical-rl/lr, physical+logical
+    collision outcome, Flow resize intent in vertical mode, float/clear
+    incl. logical values, float containment, writing-mode containment
+    (17.7: Chromium, Firefox, WebKit; live browser per P8);
+  - counters: nested sequences, counters() separators, hidden elements,
+    list-item interaction, ::marker content, extended counter styles
+    (17.6, 17.17: three engines);
+  - Intl label formatting for the fixture locales, the 100% guard,
+    aria-valuetext (17.13: three engines + accessibility tree);
+  - semantic Tabs keyboard model and accessibility tree; conversion of
+    legacy fixtures (17.14: three engines);
+  - playback interruption (animated transform, layout animation, nested,
+    animated ancestor), reduced-motion playback with emulated
+    prefers-reduced-motion, the globals.css exclusion selector (17.11:
+    three engines);
+  - SVG wrapper transforms + individual transform properties, clip/mask
+    per object, cross-viewBox paste examples, keyframe dependencies, no
+    self focus atoms (17.19, 17.22: three engines + Electron).
+- Evidence classes stay distinct: V1 = existing verified behaviour; V2 =
+  standards-supported, not yet verified here; V3 = browser-specific,
+  targeted test required; V4 = known unsupported (documented); V5 =
+  future support. "Proposed implementation" is never reported as V1.
+- No browser verification was executed in BC-17.1.2 or BC-17.1.3. Every
+  browser note above is standards and documentation knowledge, not a
+  Layoutry test result.

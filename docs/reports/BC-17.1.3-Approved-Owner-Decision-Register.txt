@@ -1,0 +1,266 @@
+BC-17.1.3 — Approved Owner Decision Register
+Report 5 of 7
+============================================
+Date: 2026-11-26.
+HEAD: 9e3cc52.
+Authoritative sources: the BC-17.1.2 brief (O1–O16 and the N decision
+texts) and the BC-17.1.3 brief (the count correction and P-1–P-6).
+Earlier Claude recommendations are NOT approvals. Where the owner chose
+differently (O14 = B; N2 = B; N3.2 interactive; N4.2 per object;
+N10.1 = B; P-2 = B, both forms, where BC-17.1.2 recommended one exclusive
+form per group; P-3 = B, locale-aware, where it recommended locale-
+neutral; P-5 = B, interrupt, where BC-17.1.2 blocked gestures during
+playback; P-6 = B, reduced by default, where BC-17.1.2 proposed playing
+as authored by default), the owner's choice governs.
+
+DECISION COUNT (resolves BC-17.1.2 action A-5)
+- O1–O16 ....................................... 16
+- N1.1, N1.2, N2, N3.1, N3.2, N3.3, N4.1, N4.2,
+  N5, N6, N7, N8.1, N8.2, N8.3, N8.4, N9, N10.1,
+  N10.2, N11 ..................................... 19
+- P-1–P-6 ......................................  6
+- TOTAL ......................................... 41
+The BC-17.1.2 brief's "20 additional decisions / 36 in total" was a
+documentation error in the brief (confirmed by the owner in the
+BC-17.1.3 brief). 35 was the correct subtotal before P-1–P-6. There is no
+missing decision. A-5 is RESOLVED — DOCUMENTATION CORRECTED.
+
+Row legend
+- Opt: approved option. Req: the approved requirement (condensed; the
+  brief text governs).
+- Arch: Report 1 (R1) / Report 3 (R3) sections. Mx: Report 2 parts/rows.
+- CP: checkpoints. AC: acceptance evidence required at closure (BC-17.26
+  traces each row to it).
+- Eng: engineering detail that is NOT owner-approved (an ENG-PROP or
+  ENG-EV choice made to satisfy the requirement; changeable by a later
+  brief without reopening the decision).
+
+
+1. ORIGINAL DECISIONS O1–O16
+----------------------------
+O1  Opt A — Shared per-node styling rules (targets, states, typed groups);
+    base preserved; no fake nodes; no bespoke systems.
+    Arch R1 §4–5. Mx all. CP 17.2 (+ every later CP).
+    AC one model across the 82 types; no artificial nodes; base untouched
+    by migrations.
+    Eng the StyleRule/condition shape, the parts union (§4.4), counters
+    and logical fields as groups (§4.10–4.11).
+O2  Opt C — Shared stylesheet for Design/Preview/Export; temporary inline
+    geometry during gestures; no full regeneration per pointer move.
+    Arch R1 §6, §8 (incl. §8.11). Mx all. CP 17.3.
+    AC computed parity; the override never persists; no sheet mutation
+    during pointer moves; frame time within baseline noise.
+    Eng the update strategy (measured in 17.3); the §8.11 precedence/
+    swap contract.
+O3  Opt A — Unified categorized Inspector with progressive disclosure.
+    Arch R1 §7. CP 17.4 (+ each family).
+    AC all controls reachable; only applicable categories; search
+    complete; INAPPL/LIMIT reasons shown.
+    Eng the visual design (implementation latitude).
+O4  Opt C — Native AND custom Progress. Arch R1 §9. Mx A15, A16, rows 7/62.
+    CP 17.12, 17.13. AC native semantics unchanged; lossless conversion.
+O5  Opt A — Format v4 in BC-17.2; appearance preserved; protected
+    migration; newer formats refused; internal v4 evolution.
+    Arch R1 §12. CP 17.2 (+ every revision step).
+    AC frozen fixtures round-trip; newer revisions refused; no silent
+    strip. Eng formatRevision.
+O6  Opt A — Scoped ancestor states; no unrestricted selectors.
+    Arch R1 §4.3, §6.3. Mx A13. CP 17.5. AC scope resolution; inactive on
+    reparent, reported.
+O7  Opt B — Pseudo content (empty, glyphs, custom text, escaped) with
+    accessibility guidance. Arch R1 §4.4, §10, §11. Mx A14. CP 17.6.
+    AC escaping fuzz; guidance shown. Eng glyph allow-list content.
+O8  Opt A — Media surfaces only; existing media/iframe contracts intact.
+    Arch R1 §19. Mx A15, rows 63–68. CP 17.16. AC BC-07/BC-08 unchanged.
+O9  Opt A — Pagination semantic styling replaces look copying; appearance
+    and BC-09 behaviour preserved.
+    Arch R1 §12.6 (CORRECTED 17.1.3). Mx A13, row 38. CP 17.15.
+    AC before/after computed equality; explicit paginationStyleMode;
+    revision-gated idempotence; legacy instances preserved and
+    convertible. Eng eligibility E1–E3, boundary own-rules, legacy path
+    lifecycle.
+O10 Opt A — Valid runtime semantic states; Canvas simulation; parity; no
+    invalid ARIA. Arch R1 §13 (incl. §6.10 selector table). Mx A13.
+    CP 17.14. AC Preview = Export; valid accessibility tree.
+O11 Opt A — Multi-selection intersection; effective values; atomic.
+    Arch R1 §5.4, §4.10.6. CP 17.4/17.5 (+ families). AC no hidden
+    partial edits; physical/logical Mixed rules.
+O12 Opt A — One preset architecture; editable after application; BC-14
+    integrated. Arch R1 §15. CP 17.23/17.24. AC one model, one schema.
+O13 Opt A — No missing native components in BC-17; extensible registry.
+    Arch R1 §5.5. Mx OWNER-OUT rows. CP 17.2 (test profile).
+O14 Opt B — Comprehensive SVG styling AND interactive vector editing.
+    Arch R3 (all). Mx A17, row 67. CP 17.18–17.22. AC R3 §11–12.
+    NOT reduced to colour/stroke editing.
+O15 Opt A — Chromium + at least one other engine; Electron primary;
+    vendor CSS; documented limits; targeted verification.
+    Arch R1 §6.2, §8.2. Mx Part E. CP every CP's browser field.
+O16 Opt A — Comprehensive CSS clipboard (base, targets, states,
+    compounds, pseudo, keyframes; sections); BC-11 semantics.
+    Arch R1 §14 (+ counters, logical fields). Mx A18. CP 17.5, 17.6,
+    17.11 (+ families). Eng inactive rules excluded from the CSS copy.
+
+
+2. ADDITIONAL DECISIONS N1–N11 (19)
+-----------------------------------
+N1.1 Opt A — Separate Native/Custom Progress cards; variant switch;
+     lossless conversion. Arch R1 §9.2, §9.5–9.6, §4.8. CP 17.13.
+N1.2 Approved — Labels none / percentage / value-max / templates with
+     {value} {max} {percent}; independent styling. Arch R1 §9.7. CP 17.13.
+     (Formatting details: P-3.)
+N2   Opt B — Full semantic Tabs (roles, aria-selected/controls, roving
+     tabindex, keyboard, selected/inactive states, Design simulation,
+     parity). Arch R1 §13.2. Mx row 47. CP 17.14.
+     Eng activation = AUTOMATIC per the APG (R1 §13.2, ENG-EV; separate
+     from P-1). NOT reduced to adding aria-selected.
+N3.1 Include — Straight-segment bending. Arch R3 §3.2. CP 17.20.
+N3.2 Include interactive — Numeric AND Canvas arc editing (rx, ry,
+     rotation). Arch R3 §3.3. CP 17.21. NOT numeric-only.
+N3.3 Include — Primitive→path conversion preserving appearance and
+     identity. Arch R3 §3.1, §2.4. CP 17.20.
+N4.1 Opt C — Snapping to anchors, bounds and a viewBox grid; the global
+     preference; Alt bypass. Arch R3 §5 (CORRECTED: Alt = bypass only,
+     modifier table). CP 17.21. AC Alt bypasses in every vector gesture.
+N4.2 Approved — Whole-SVG AND per-object clipping and masking. Arch R3
+     §2.6, §7.1–7.3. CP 17.19, 17.21. NOT restricted to the outer box.
+N5   Opt A — Vector object clipboard with all styling and definitions;
+     fresh ids; dedupe/remap; cross-viewBox conversion; atomic; separate.
+     Arch R3 §8 (CORRECTED: dependencies incl. keyframes; coordinate
+     model). CP 17.22. Eng the proportional placement policy (a
+     parameter; R3 §8.4.2).
+N6   Opt B — Individual states, then curated compounds; no free builder.
+     Arch R1 §4.3, §6.4–6.5. CP 17.5, 17.14, 17.15.
+N7   Opt A — ::first-line/::first-letter with allow-lists and drop caps.
+     Arch R1 §10.3 (float no longer restricted to this target). CP 17.6.
+N8.1 Opt C — App-level personal + project libraries; no cloud.
+     Arch R1 §15.2. CP 17.23. Eng IndexedDB.
+N8.2 Opt A — Detached application. Arch R1 §15.3. CP 17.23.
+N8.3 Opt A — Protected built-ins; stable ids. Arch R1 §15.4. CP 17.23/24.
+     Eng builtinVersion.
+N8.4 Opt A — Unique names per library; rename/delete never affect
+     elements. Arch R1 §15.5. CP 17.23. Eng normalization, 1–64 chars,
+     copy-conflict options (PROPOSAL).
+N9   Opt A — No public release until BC-17 completes; v4 evolution with
+     no silent loss across development builds. Arch R1 §12.1–12.5.
+     CP 17.2.
+N10.1 Opt B — Proceed before formal BC-13 closure; NOT a waiver.
+     Arch R1 §19; R4 §2; R6 BC-13. CP all BC-13-touching CPs.
+N10.2 Opt A — BC-14 Typography Presets in BC-17.23 with traceability.
+     Arch R1 §15.7. CP 17.23. Precondition A-4 (requirement text).
+N11  Opt B — On-demand Design playback; one iteration; temporary; no
+     document/history/dirty/persistence/export effect. Arch R1 §16.
+     CP 17.11. (Interruption: P-5; reduced motion: P-6.)
+
+
+3. FINAL QA DECISIONS P-1–P-6 (all approved Option B)
+------------------------------------------------------
+P-1 Manual conversion of existing Basic Tabs.
+    Req existing instances unchanged unless the user converts; new Tabs
+    semantic by default from 17.14; an explicit "Convert to Semantic
+    Tabs" command preserving appearance, content, compatible styling,
+    interactions and accessibility; atomic, undoable; structural
+    eligibility with explanations; no automatic migration; legacy
+    rendering kept while projects depend on it; N2 requirements for new
+    Tabs.
+    Arch R1 §13.7 (recognition R1–R6, conversion, insertion), §13.2
+    (activation contract — a separate concept). Mx row 47. CP 17.14.
+    AC legacy projects open unchanged; conversion keeps computed
+    appearance; exact Undo; ineligible structures explained; no invalid
+    ARIA. Eng recognition rules; binding replacement; structural roles;
+    normalizeTabs.
+P-2 Physical AND logical CSS properties (+ direction, writing modes).
+    Req physical controls stay; logical properties included; progressive
+    disclosure; presentation changes never write the document, convert
+    or delete; deterministic conflicts; full contract participation;
+    Free-layout geometry investigated.
+    Arch R1 §4.10 (+ §5.6, §6.9, §7, §12.5). Mx A2, A1, A5, A12. CP 17.2
+    (schema), 17.3 (printing), 17.4 (presentation), 17.7 (completion).
+    AC "logical wins inside a rule" in four flow contexts; no document
+    write from presentation; Flow resize intent; Free layout unchanged
+    and physical. Eng separate twin fields; emission order; Default-only
+    direction/writing-mode (LIMIT); Free children LIMIT; explicit
+    Convert command (PROPOSED).
+P-3 Customizable label number formatting.
+    Req precision, locale formatting, grouping, applying to labels only;
+    the existing label modes and tokens; consistent per-token formatting;
+    the listed edge cases; no double "%"; Design/Preview/Export
+    consistency; typed model; no expressions.
+    Arch R1 §9.7. Mx A16, row 7. CP 17.13.
+    AC identical strings on all surfaces from one editor; fixture matrix;
+    stored values unchanged; aria-valuetext. Eng range 0–6 (the owner's
+    0–4 was illustrative), defaults, halfExpand + 100% guard, neutral
+    locale, compile-time formatting.
+P-4 Comprehensive visual CSS counter controls.
+    Req named, multiple, reset/increment/set, counter()/counters(),
+    nesting, start values, ± increments, predefined styles, prefixes/
+    suffixes, pseudo integration and styling; real CSS counter
+    behaviour; the listed contracts; safe identifiers; no raw
+    expressions; semantics not replaced; @counter-style evaluated
+    separately.
+    Arch R1 §4.4, §4.11. Mx A14, rows 3, 4, 9–11. CP 17.2, 17.3, 17.4,
+    17.6, 17.17.
+    AC the 17.6/17.17 acceptance lists. Eng document counter definitions
+    with derived identifiers; Default-only operations (LIMIT); same-
+    document identity vs foreign name mapping; @counter-style =
+    SCOPE-CANDIDATE (not approved, not built, additive later).
+P-5 Interrupt playback when editing.
+    Req editing never blocked; stop → static → geometry → selection/
+    snapping → proceed; the listed operations; unrelated keys don't
+    interrupt; save serializes authored state only; all N11 guarantees;
+    the blocked-gesture contradiction resolved; overlays/hit targets
+    restored.
+    Arch R1 §16.1–16.6. Mx A11. CP 17.11.
+    AC the 17.11 acceptance list. Eng dedicated playback controller (not
+    the one-slot registry), hook points, capture-phase static
+    re-targeting, Save does not interrupt.
+P-6 Explicit reduced-motion playback override.
+    Req reduced motion respected by default; Play / Play as authored /
+    Play with reduced motion; the override temporary and Design-only;
+    Preview/Export contracts unchanged; the listed edge cases; one
+    iteration (N11).
+    Arch R1 §16.7, §13.6. Mx A11. CP 17.11.
+    AC the 17.11 acceptance list. Eng the globals.css exclusion selector
+    (required by the verified !important rule), the exact animation
+    reduced-motion contract, the reduced-result hold (PROPOSED).
+
+
+4. ENGINEERING DECISIONS MADE WITHOUT THE OWNER (evidence-backed, NOT
+   approvals; listed so none hides inside a requirement)
+-----------------------------------------------------------------------
+- :where() equalization with global rank buckets; the atom → selector
+  table (disabled = :disabled or aria-disabled).
+- formatRevision; paginationStyleMode as the explicit status.
+- Value-semantics SVG definitions; keyframes the only referenced kind.
+- Index-based anchor identity with remaps.
+- The wrapper model for SVG state transforms (F-SVG-5).
+- Compare-and-restore vector rollback.
+- Modifier table (Alt = snap bypass only).
+- Proportional cross-viewBox placement through the object transform.
+- Vector objects never focusable; focus via ancestors.
+- Tabs automatic activation (APG).
+- Physical-then-logical emission; Default-only direction/writing mode;
+  Free children physical.
+- Float containment via flow-root.
+- Counter identifiers, clipboard mapping, Default-only operations.
+- Label formatting range, rounding, guard, compile-time formatting.
+- Playback controller, hook points, Save not interrupting, the
+  globals.css exclusion.
+- IndexedDB app presets; validation bounds as security limits; escaping;
+  the collision-safe generated-id prefix.
+Each is documented in Reports 1/3 and verified at its checkpoint.
+
+
+5. SCOPE CANDIDATES (not approved, not built, no decision required)
+------------------------------------------------------------------
+- User-authored @counter-style rules (R1 §4.11.6).
+- Alternative cross-viewBox placement policies (R3 §8.4.2) — the default
+  satisfies N5; a different s may be chosen in the 17.22 brief.
+- Tracked outside O1–O16 (unchanged from BC-17.1.2): responsive variants,
+  anchor positioning, web fonts.
+
+
+6. OPEN OWNER PRODUCT DECISIONS
+-------------------------------
+None. The remaining owner INPUTS are information, not decisions about
+BC-17 scope: A-4 (the BC-14 requirement text, before BC-17.23) and the
+BC-13 closure items A-1–A-3 (which do not gate BC-17).
