@@ -1,0 +1,455 @@
+BC-13.4 — Resize Snapping & Geometry Constraints
+================================================
+Date: 2026-11-23
+Milestone: BC-13 (Alignment & Snapping Guides)
+Status: implemented, focused validation passed, NOT committed (waiting for
+ChatGPT/owner QA)
+Baseline: 39556eb (BC-13.3).
+
+Legend:
+- [VERIFIED] executed test or measurement;
+- [DESIGN] the intended contract;
+- [ASSUMPTION] not verified.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+- All eight Free resize handles now snap through the BC-13.2/13.3 engine.
+  There is no second engine. A new pure adapter, resolveFreeResizeSnap,
+  only decides:
+  - which edges participate;
+  - how a delta changes the rectangle;
+  - whether the result is valid.
+- Shared with dragging, unchanged:
+  - the 6 screen-px threshold;
+  - hysteresis locks and deterministic ranking;
+  - the same target collection (nested, Flex/Grid, locked; hidden and
+    offscreen excluded);
+  - the same coordinate frame and guide overlay;
+  - the global Snap preference;
+  - Alt/Option semantics.
+- Only the edges the handle controls can snap. The opposite edge stays
+  anchored: W/N change position and size; E/S change size only.
+- Every snapped rectangle is validated before it is applied or drawn:
+  - finite values;
+  - the minimum size;
+  - the unchanged containment rule;
+  - the nested-container scaling floor;
+  - the locked aspect ratio.
+  An invalid candidate is rejected: never applied, never shown as achieved.
+- Ratio-locked corners:
+  - both axes are honoured only when ONE ratio-preserving rectangle
+    satisfies both;
+  - otherwise one axis wins deterministically, with no oscillation, and
+    only its guide is shown.
+- Fixed in the resize path (the brief's "final pointer position"): the
+  pointer-up position is now processed before the commit. Previously a
+  release between frames, or a release with no pointermove, committed stale
+  geometry.
+- One resize = one Undo step, exact Undo/Redo, no history for a no-op.
+  Escape restores and clears the guides. pointercancel behaves as before
+  (commits; BC-13.5).
+- Tests:
+  - unit: 19 files / 221 tests passed (27 + 15 new);
+  - Chromium: 12/12 (new spec, run twice) and 10/10 (BC-13.3 drag and
+    BC-13.2 coordinate specs, rerun after the shared extraction);
+  - Firefox + WebKit: 12/12;
+  - typecheck and ESLint clean.
+- Performance: snapping adds under 0.1 ms per frame at 1,000 targets. The
+  cost is the existing Canvas re-render (BC-13.3 P1).
+- Recommendation: READY FOR QA.
+
+
+2. FILES CHANGED
+----------------
+Created:
+- src/features/canvas/utils/resolveFreeResizeSnap.ts: the pure resize
+  adapter (edges, adjust/validation, coupled corners).
+- src/features/canvas/utils/resolveFreeResizeSnap.test.ts: 27 tests.
+- src/features/canvas/utils/createFreeSnapContext.ts: the pointer-down
+  snap measurement, extracted from the BC-13.3 move hook (now shared by
+  move and resize).
+- src/features/canvas/hooks/useSnapGuidePublisher.ts: change-only guide
+  publishing, extracted from the move hook (shared).
+- e2e/free-snap-resizing.spec.ts: 6 browser tests.
+- docs/reports/BC-13.4-Resize-Snapping-and-Geometry-Constraints.txt.
+- changelogs/2026-11-23-resize-snapping-BC-13.4.txt (gitignored).
+Modified:
+- src/features/canvas/hooks/useFreeChildResizeSession.ts:
+  - snap context at pointer-down;
+  - the engine per frame;
+  - Alt (pointer and key);
+  - guides (and their cleanup on up, cancel and Escape);
+  - the final pointer position.
+- src/features/canvas/hooks/useFreeChildResizeSession.test.tsx: +15
+  session tests (a queued rAF stub); the existing 11 are unchanged and
+  pass.
+- src/features/canvas/hooks/useFreeChildMoveSession.ts: uses the two
+  extracted pieces; identical behaviour (BC-13.3 specs rerun green).
+Not changed:
+- the engine (snapEngine.ts);
+- the equal spacing (snapEqualSpacing.ts);
+- the collector;
+- the guide builder;
+- the overlay;
+- the store;
+- computeFreeChildResizeResult (the existing resize rules).
+
+
+3. EXISTING RESIZE BEHAVIOR DISCOVERED (before changes)
+-------------------------------------------------------
+[VERIFIED by reading and by the unchanged existing tests]
+- Handles:
+  - FreeChildResizeHandles → ResizeHandleDots: eight
+    [data-resize-handle] dots in CanvasOverlay;
+  - pointer capture on the dot;
+  - the dot's onClick stops propagation, so a click after a resize never
+    reaches selection.
+- Session (useFreeChildResizeSession):
+  - start geometry from the handle props (node.freeLayout);
+  - parentBounds = measureFreeContainerBounds (the content-box size from
+    the padding edge, C1);
+  - rAF-throttled live writes (setFreeChildGeometryLive, or
+    applyFreeContainerChildGeometriesLive for a nested Free container,
+    which scales its children);
+  - begin/commit/cancelResizeTransaction;
+  - Escape restores the snapshot;
+  - a click without a move cancels the transaction;
+  - pointercancel = pointerup (commits).
+- Geometry (computeFreeChildResizeResult, pure):
+  - "e"/"s" grow from a fixed left/top; "w"/"n" move the anchor against a
+    fixed right/bottom;
+  - clamp(min, containment), where containment beats the minimum.
+- Constraints:
+  - one generic minimum, 4×4 (DEFAULT_RESIZE_CONSTRAINTS), for every tag;
+  - NO maximum dimensions exist;
+  - nested Free containers have a scaling floor
+    (deriveFlooredContainerOuterSize, MIN_FREE_CONTAINER_SCALE).
+- Aspect ratio:
+  - corners only: getEffectiveAspectRatioLocked = the node's override,
+    else the tag default (Image);
+  - side handles never lock;
+  - ratio = start width / start height; height is derived from width,
+    re-clamped, then width re-derived if needed.
+- Modifiers: resizing has NO Shift or Alt behaviour (none existed).
+- Transforms:
+  - blocked under a rotated or scaled ancestor (transformGeometrySafety);
+  - the element's own transform does not block it.
+- Component-specific rules: none beyond the Image ratio default. A nested
+  Free container scales its children.
+- Defect found: endSession committed the last frame's pointer, ignoring
+  the pointer-up position. A quick release, or a release with no
+  pointermove, committed stale geometry or nothing. Fixed for resize
+  (section 10).
+
+
+4. SHARED SNAPPING-ENGINE INTEGRATION
+-------------------------------------
+[DESIGN; VERIFIED]
+At pointer-down (once):
+- measureFreeContainerFrame;
+- createFreeSnapContext: the same collectFreeSnapTargets and
+  buildSnapIndex as dragging, plus the visual offset (margin/translate);
+- the per-axis snap availability (section 8).
+Per frame:
+1. proposal = computeFreeChildResizeResult (existing clamps and ratio,
+   unchanged);
+2. resolveFreeResizeSnap(proposal) calls resolveSnap with:
+   - edges = only the controlled ones;
+   - spacing = equal-spacing candidates for those axes;
+   - enabled = Snap on AND not Alt;
+   - the previous lock;
+   - adjust = move that one edge (plus the ratio-coupled dimension) and
+     validate;
+3. live write;
+4. guides via buildFreeSnapGuides (the BC-13.3 builder and overlay),
+   published only when they change.
+Not done per frame: re-measuring the DOM, rebuilding the index, or
+re-rendering anything else for snap metadata.
+
+
+5. EIGHT-HANDLE SUPPORT MATRIX
+------------------------------
+[VERIFIED: unit (each handle, exact geometry and anchoring) + browser]
+
+Handle | Snapping edges     | Anchored           | Browser test
+-------|--------------------|--------------------|-------------
+N      | top                | bottom             | yes
+S      | bottom             | top                | yes
+E      | right              | left               | yes
+W      | left               | right              | yes
+NE     | top + right        | bottom + left      | unit
+NW     | top + left         | bottom + right     | unit
+SE     | bottom + right     | top + left         | yes
+SW     | bottom + left      | top + right        | unit
+
+- Unlocked corners snap X and Y independently (unit + browser SE).
+- The handle's own centre never snaps during a resize. Target centre
+  lines (element or parent) are valid targets for the moving edge
+  (tested).
+- Equal spacing:
+  - E/S use "one gap before a pair" (end edge);
+  - W/N use "one gap after a pair" (start edge);
+  - the centred mode doesn't apply (no centre edge).
+  Unit-tested; there is no browser test.
+
+
+6. GEOMETRY VALIDATION AND CONTAINMENT
+--------------------------------------
+[VERIFIED: unit + browser]
+isValidFreeResizeGeometry checks:
+- every value is finite (no NaN or Infinity);
+- width ≥ minWidth and height ≥ minHeight;
+- x, y ≥ 0;
+- x + width ≤ containment width, and y + height ≤ containment height
+  (EPS 1e-6).
+A candidate failing any of these, or the nested-container floor (when
+the floor would change the size), returns null from adjust. The engine
+then drops it: no snap, no guide (exactness rule D15/D46).
+- Never negative sizes or anchor jumps (an anchored edge isn't in the
+  edges list; the adjust keeps it fixed).
+- No CSS other than freeLayout is written.
+Containment (C1, unchanged policy):
+- Free containers have default padding (≈33px). A child's reachable
+  area is the content-box size from the padding edge, so the parent's
+  right/bottom padding-box edges are never reachable.
+- Those candidates are rejected and draw no guide (unit test with a
+  4px-away unreachable edge; browser test pulling past the padding edge).
+- Found during browser testing: a target inside the container's right
+  padding band is also unreachable. The e2e fixture first placed one there
+  and correctly got no snap.
+- This is the existing containment rule producing a valid "no snap", not
+  a resize bug. It belongs to the C1 owner decision.
+
+
+7. ASPECT-RATIO BEHAVIOR
+------------------------
+[VERIFIED: unit + browser (Chromium/Firefox/WebKit)]
+- The existing policy is kept:
+  - corners lock when getEffectiveAspectRatioLocked;
+  - side handles never lock;
+  - ratio = start width / start height;
+  - the anchors are the handle's opposite corner.
+- A snapped corner derives the coupled dimension from the ratio, anchored
+  on the opposite corner, and validates both.
+- X and Y are each resolved on their own:
+  - compatible (one ratio rectangle lands on both lines) → both applied
+    and both drawn;
+  - otherwise one winner:
+    - the closer one;
+    - the previous winner is kept unless the other is ≥1px closer (no
+      oscillation);
+    - a tie goes to x;
+  - only the winner's guide is drawn, and the ratio is exact.
+- A coupled snap whose derived dimension would leave the container is
+  rejected (tested).
+- Shift: resizing never had Shift semantics. It still has none; the
+  BC-13.3 drag axis lock is not applied (tested). The ratio lock remains
+  the Inspector override plus the tag default.
+- Browser case found while testing (correct behaviour): with a 2:1 lock,
+  the bottom edge was 3px from a line while the right edge was 4px from
+  another, so the bottom won and the right edge did not snap. The fixture
+  was adjusted to test a pure X snap; the coupled choice is covered by the
+  unit tests.
+
+
+8. COORDINATE AND TRANSFORM HANDLING
+------------------------------------
+[VERIFIED unless marked]
+- Same frame as BC-13.2/13.3:
+  - padding-box origin;
+  - target border boxes;
+  - parent padding box.
+- Margins:
+  - the visual box = stored + offset (margin/translate), and the size is
+    the stored size, so margins never enlarge it;
+  - unit test: margin 8 → width 192 for a right edge at 300;
+  - browser test: margin 8/4 in a padded (10/40/30/20) container with a
+    6px border → the right edge on the rendered padding-box centre, and
+    the guide exactly there.
+- Scroll: targets are a pointer-down snapshot (as for dragging); scrolling
+  during a resize is BC-13.5.
+- Zoom: the engine's scale seam (1); no zoom exists.
+- Transforms (D23):
+  - target transforms: measured AABBs (collector, as in BC-13.3);
+  - the resized element's own translate: a constant offset (fine);
+  - its own rotate/scale: the visible AABB changes non-linearly with size
+    (around the transform origin), so it cannot be mapped back safely →
+    snapping is OFF for that resize. The resize itself is unchanged
+    (tested; documented as unsupported);
+  - rotated/scaled ancestors are still blocked (existing rule).
+- An axis whose rendered size doesn't follow the stored size (e.g. a box
+  rendering taller than its stored height because of content) doesn't
+  snap on that axis (tested), instead of drawing a guide that's off.
+
+
+9. GUIDE AND MEASUREMENT BEHAVIOR
+---------------------------------
+[VERIFIED]
+- The BC-13.3 overlay and builder are unchanged:
+  - the winning guide per axis;
+  - solid only when achieved;
+  - CSS-px distance labels;
+  - spacing gaps;
+  - fixed 1px lines and 10px labels;
+  - pointer-events:none;
+  - editor-only (Preview/Export untouched; the BC-13.3 tests still
+    apply).
+- No guide on an axis the handle can't control: edges only come from the
+  controlled list. The ratio-coupled exception is when both are genuinely
+  achieved.
+- Guides are drawn from the FINAL written box (after the nested-container
+  floor), so achieved means really aligned.
+- Cleared on pointer-up, pointercancel and Escape (tested); reset at every
+  pointer-down.
+- Labels sit at the middle of the gap between the boxes. [ASSUMPTION]
+  This rarely overlaps a handle dot; no specific avoidance was added.
+- Snap off or Alt:
+  - geometry is untouched;
+  - nearby guides are drawn dashed (achieved=false);
+  - releasing Alt snaps immediately, with no pointer move (tested in unit
+    and all three browsers);
+  - the preference is never changed by Alt.
+
+
+10. UNDO/REDO AND CANCELLATION BEHAVIOR
+---------------------------------------
+[VERIFIED]
+- The transaction is unchanged: begin at pointer-down, live writes,
+  commit at pointer-up.
+  - One resize = one Undo; Undo restores the exact original; Redo the
+    exact snapped final (whole-document snapshots, no recalculation).
+  - No history for a click without movement (the existing test, plus a
+    new same-position release test).
+  - Toggling Snap creates no history (BC-13.3).
+- Final pointer position (fixed, resize path only): on pointerup, if the
+  release position differs from the last processed one, it becomes the
+  final pointer (and counts as movement), and the release's Alt state
+  applies. The final frame is computed from it before the commit.
+  Tested: a release 7px past a pending frame commits the snapped release
+  geometry, and a release with no pointermove commits.
+- Escape: restores, clears guides, records nothing (tested).
+- pointercancel: unchanged (commits the last geometry, R4, BC-13.5), now
+  also clearing guides; no partial-commit regression.
+- Selection is unaffected (the handle swallows its own click).
+
+
+11. PERFORMANCE OBSERVATIONS
+----------------------------
+[VERIFIED] Measured in Chromium dev mode with a temporary probe (deleted):
+- the setup: an east resize in a 1,000-child Free container, 30 moves,
+  each followed by 2 frames;
+- snap ON: pointer-down + first move ≈300–345 ms; per move median 183 ms,
+  p90 ≈290 ms;
+- snap OFF: per move median 167 ms, p90 266 ms (detection still runs);
+- the difference is within run-to-run noise; a warm-up run gave 167 ms.
+CPU profile, inclusive time over the whole gesture (31 frames):
+- resolveFreeResizeSnap 2.3 ms in total, of which:
+  - resolveSnap 0.6 ms;
+  - equal spacing 1.7 ms;
+- createFreeSnapContext 19.9 ms, once at pointer-down (collector 18.7 ms,
+  index 1.1 ms);
+- guide building ≈0 ms;
+- the overlay ≈0 ms.
+Versus:
+- setFreeChildGeometryLive 72.7 ms;
+- ParagraphElement ≈1,255 ms;
+- DocumentNodeRenderer ≈596 ms.
+Conclusion:
+- resize snapping costs under 0.1 ms per frame;
+- the frame time is the pre-existing Canvas re-render of the container's
+  children on every live write (BC-13.3 P1 / R3);
+- no broad rendering work was done here, per the brief.
+
+
+12. EXACT FOCUSED TEST COMMANDS AND RESULTS
+-------------------------------------------
+Impact map:
+- the resize session and resolver → resize, engine, collector, frame, and
+  scaling unit tests, plus the overlay folder;
+- the move hook extraction → the move session tests and the BC-13.3/13.2
+  e2e specs;
+- the store guide state → useEditorStore.snap.
+Commands:
+1. npx vitest run src/features/canvas/utils/resolveFreeResizeSnap.test.ts
+   src/features/canvas/utils/snapEngine.test.ts
+   src/features/canvas/utils/collectFreeSnapTargets.test.ts
+   src/features/canvas/utils/freeLayoutFrame.test.ts
+   src/features/canvas/utils/computeFreeChildResizeResult.test.ts
+   src/features/canvas/utils/computeFreeChildMoveResult.test.ts
+   src/features/canvas/utils/measureFreeContainerBounds.test.ts
+   src/features/canvas/utils/computeContainerChildScaling.test.ts
+   src/features/canvas/hooks/useFreeChildResizeSession.test.tsx
+   src/features/canvas/hooks/useFreeChildMoveSession.test.tsx
+   src/features/canvas/components/overlay
+   src/features/editor/stores/useEditorStore.snap.test.ts
+   → 19 files, 221 tests passed
+2. npx playwright test e2e/free-snap-resizing.spec.ts --project=chromium
+   --repeat-each=2 → 12 passed
+3. npx playwright test e2e/free-snap-dragging.spec.ts
+   e2e/free-snap-coordinates.spec.ts --project=chromium → 10 passed
+4. npx playwright test -c <temporary Firefox+WebKit config, deleted>
+   e2e/free-snap-resizing.spec.ts → 12 passed
+5. The temporary perf/profile probe (section 11), deleted
+6. npx tsc --noEmit -p . → 0 errors
+7. npx eslint <all 8 new/modified .ts/.tsx files> → clean
+Validation-only issues:
+- Fixture geometry: unreachable targets inside the default padding band;
+  an unintended parent-centre line 6px away; a coupled-axis winner. In
+  each case the code was right and the fixture was corrected.
+Not run: full unit, browser and Electron suites (policy; no
+Electron-specific path); a build.
+Prettier: none of the 3 modified files was Prettier-clean at HEAD, so
+none was reformatted.
+
+
+13. KNOWN LIMITATIONS AND DEFERRED REQUIREMENTS
+-----------------------------------------------
+- No snapping while resizing an element with its own rotate/scale (it
+  resizes as before).
+- No snapping on an axis whose rendered size doesn't follow its stored
+  size.
+- No maximum-dimension rules exist in the product; none were invented.
+- Equal spacing for resize: two-neighbour patterns among direct siblings
+  only (as for dragging); no browser test.
+- Pointer-down target snapshot; scroll during a resize, target changes
+  during a gesture, pointercancel restore → BC-13.5.
+- The same stale final-pointer pattern exists in the Free MOVE session
+  (BC-13.3). It is not changed here (resize scope); recommended for
+  BC-13.5's lifecycle hardening.
+- Pre-existing, not changed: for a nested Free container resized from the
+  W/N side below its scaling floor, the floor grows the size while x/y
+  stay at the proposal. The far edge can then shift right/down. Snapping
+  never produces this (candidates the floor would change are rejected),
+  but plain resizing still does. [ASSUMPTION: not reproduced live.]
+- Distance-label/handle overlap avoidance: not specifically handled.
+
+
+14. UNRESOLVED OWNER DECISIONS
+------------------------------
+C1 (from BC-13.2), now with resize evidence: default Free-container
+   padding makes the parent's right/bottom padding-box edges, and targets
+   inside that band, unreachable for resize too. Keep (no false guides)
+   or extend the containment to the padding box?
+P1 (from BC-13.3): large-container rendering performance (it dominates
+   resize frames too).
+Optional: should the Free move session get the same final-pointer fix
+   now, or in BC-13.5 (recommended)?
+
+
+15. FINAL RECOMMENDATION
+------------------------
+READY FOR QA.
+- All eight handles use the shared engine.
+- Only the controlled edges move, and anchors hold.
+- Ratio, minimum size, containment and the scaling floor are enforced.
+- Guides reflect the achieved geometry.
+- Alt and Snap off work.
+- Undo/Redo are exact; no-ops record nothing.
+Do not proceed to BC-13.5 before QA.
+Git working tree:
+- M: useFreeChildMoveSession.ts, useFreeChildResizeSession.ts and its
+  test;
+- ??: createFreeSnapContext.ts, resolveFreeResizeSnap.ts and its test,
+  useSnapGuidePublisher.ts, e2e/free-snap-resizing.spec.ts, this report.
+Nothing staged, committed or pushed.

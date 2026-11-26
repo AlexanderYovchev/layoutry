@@ -7,35 +7,31 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { useSnapGuidePublisher } from "@/features/canvas/hooks/useSnapGuidePublisher";
 import { buildFreeSnapGuides } from "@/features/canvas/utils/buildFreeSnapGuides";
-import { collectFreeSnapTargets } from "@/features/canvas/utils/collectFreeSnapTargets";
+import { createFreeSnapContext, type FreeSnapContext } from "@/features/canvas/utils/createFreeSnapContext";
 import {
   clampFreeChildAxis,
   computeRawFreeChildMovePosition,
   type FreeChildMoveStart,
 } from "@/features/canvas/utils/computeFreeChildMoveResult";
-import { clientRectToLocal, freeChildRenderedRect, measureFreeContainerFrame, type Rect } from "@/features/canvas/utils/freeLayoutFrame";
+import { measureFreeContainerFrame, type Rect } from "@/features/canvas/utils/freeLayoutFrame";
 import {
   ALL_EDGES,
-  buildSnapIndex,
   NO_SNAP_LOCK,
   resolveSnap,
   SNAP_EPSILON,
   translateBox,
   type SnapAdjust,
-  type SnapIndex,
   type SnapLock,
   type SnapResult,
   type SnapSourceEdges,
-  type SnapTarget,
 } from "@/features/canvas/utils/snapEngine";
 import { computeEqualSpacingCandidates } from "@/features/canvas/utils/snapEqualSpacing";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { describeStyleLockNotice, getStyleProtection } from "@/features/editor/rules/styleProtection";
 import { TRANSFORM_ANCESTOR_BLOCKED_NOTICE, getTransformBlockingAncestor } from "@/features/editor/rules/transformGeometrySafety";
-import { getElementSpacing } from "@/features/editor/types/spacing";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
-import type { ActiveSnapGuides } from "@/features/editor/types/snap";
 
 export interface UseFreeChildMoveSessionResult {
   isDragging: boolean;
@@ -46,23 +42,6 @@ export interface UseFreeChildMoveSessionResult {
   onPointerMove: (event: ReactPointerEvent<Element>) => void;
   onPointerUp: (event: ReactPointerEvent<Element>) => void;
   onPointerCancel: (event: ReactPointerEvent<Element>) => void;
-}
-
-/** BC-13.3: everything snapping needs for one drag, measured once at pointer-down. */
-interface SnapContext {
-  containerId: string;
-  index: SnapIndex;
-  rectById: Map<string, Rect>;
-  /** Direct Free siblings: the boxes equal spacing is measured among. */
-  siblingTargets: SnapTarget[];
-  parentRect: Rect;
-  /**
-   * visual box = stored geometry + this offset: the element's own margin
-   * (freeChildStyle) and, for a transformed element, the difference between
-   * its untransformed box and its visible axis-aligned bounds (D23). A drag
-   * only translates, so the offset is constant for the whole gesture.
-   */
-  offset: Rect;
 }
 
 /** Below this pointer displacement (px) Shift has no dominant axis yet. */
@@ -96,28 +75,19 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
   const setActiveSnapGuides = useEditorStore((state) => state.setActiveSnapGuides);
   const [isDragging, setIsDragging] = useState(false);
   const startRef = useRef<FreeChildMoveStart | null>(null);
-  const snapRef = useRef<SnapContext | null>(null);
+  const snapRef = useRef<FreeSnapContext | null>(null);
   const latestPointerRef = useRef({ x: 0, y: 0 });
   const modifiersRef = useRef({ alt: false, shift: false });
   const lockRef = useRef<SnapLock>(NO_SNAP_LOCK);
   const shiftAnchorRef = useRef<{ x: number; y: number } | null>(null);
   const shiftUsedRef = useRef(false);
   const lastPositionRef = useRef<{ x: number; y: number } | null>(null);
-  const guidesKeyRef = useRef("null");
   const frameRef = useRef<number | null>(null);
   // Checkpoint 5.7: a plain click (pointerdown + pointerup with no move) must
   // not push a history entry — see endSession.
   const didMoveRef = useRef(false);
 
-  const publishGuides = useCallback(
-    (guides: ActiveSnapGuides | null) => {
-      const key = JSON.stringify(guides);
-      if (key === guidesKeyRef.current) return;
-      guidesKeyRef.current = key;
-      setActiveSnapGuides(guides);
-    },
-    [setActiveSnapGuides],
-  );
+  const { publish: publishGuides, reset: resetGuides } = useSnapGuidePublisher();
 
   const resetSessionState = useCallback(() => {
     startRef.current = null;
@@ -125,8 +95,8 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
     lockRef.current = NO_SNAP_LOCK;
     shiftAnchorRef.current = null;
     lastPositionRef.current = null;
-    guidesKeyRef.current = "null";
-  }, []);
+    resetGuides();
+  }, [resetGuides]);
 
   const commit = useCallback(() => {
     frameRef.current = null;
@@ -259,23 +229,7 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
 
       snapRef.current = null;
       if (frame && containerEl && containerId && targetEl && movingNode?.freeLayout) {
-        const collected = collectFreeSnapTargets(containerEl, frame, store.document, containerId, nodeId);
-        const rendered = freeChildRenderedRect(movingNode.freeLayout, getElementSpacing(movingNode).margin);
-        const visible = clientRectToLocal(targetEl.getBoundingClientRect(), frame);
-        // A transformed element (D23): snap its visible axis-aligned bounds.
-        // Untransformed: the measured box equals rendered (margin included).
-        const stored = movingNode.freeLayout;
-        const offset: Rect = { x: visible.x - stored.x, y: visible.y - stored.y, width: visible.width - stored.width, height: visible.height - stored.height };
-        // Degenerate measurements (e.g. jsdom, or not laid out): fall back to margin only.
-        const measured = visible.width > 0 || visible.height > 0;
-        snapRef.current = {
-          containerId,
-          index: buildSnapIndex(collected.targets),
-          rectById: collected.rectById,
-          siblingTargets: collected.siblingTargets,
-          parentRect: collected.parentRect,
-          offset: measured ? offset : { x: rendered.x - movingNode.freeLayout.x, y: rendered.y - movingNode.freeLayout.y, width: 0, height: 0 },
-        };
+        snapRef.current = createFreeSnapContext(containerEl, frame, store.document, containerId, { ...movingNode, freeLayout: movingNode.freeLayout }, targetEl);
       }
 
       startRef.current = {
@@ -292,10 +246,10 @@ export function useFreeChildMoveSession(nodeId: string): UseFreeChildMoveSession
       lockRef.current = NO_SNAP_LOCK;
       shiftAnchorRef.current = null;
       lastPositionRef.current = { x: startX, y: startY };
-      guidesKeyRef.current = "null";
+      resetGuides();
       setIsDragging(true);
     },
-    [nodeId],
+    [nodeId, resetGuides],
   );
 
   const onPointerMove = useCallback(

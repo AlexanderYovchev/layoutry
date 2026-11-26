@@ -7,18 +7,24 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { useSnapGuidePublisher } from "@/features/canvas/hooks/useSnapGuidePublisher";
+import { buildFreeSnapGuides } from "@/features/canvas/utils/buildFreeSnapGuides";
 import { computeContainerChildScaling, deriveFlooredContainerOuterSize } from "@/features/canvas/utils/computeContainerChildScaling";
 import {
   computeFreeChildResizeResult,
   type FreeChildResizeSession,
 } from "@/features/canvas/utils/computeFreeChildResizeResult";
-import { measureFreeContainerBounds } from "@/features/canvas/utils/measureFreeContainerBounds";
+import { createFreeSnapContext, type FreeSnapContext } from "@/features/canvas/utils/createFreeSnapContext";
+import { measureFreeContainerFrame } from "@/features/canvas/utils/freeLayoutFrame";
+import { resolveFreeResizeSnap } from "@/features/canvas/utils/resolveFreeResizeSnap";
+import { NO_SNAP_LOCK, SNAP_EPSILON, type SnapAxis, type SnapLock } from "@/features/canvas/utils/snapEngine";
 import { resolveContainerScalingSnapshot, type ContainerScalingSnapshot } from "@/features/canvas/utils/resolveContainerScalingSnapshot";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { getEffectiveAspectRatioLocked } from "@/features/editor/rules/elementCapabilities";
 import { describeStyleLockNotice, getStyleProtection } from "@/features/editor/rules/styleProtection";
 import { findNodeById } from "@/features/editor/utils/findNodeById";
-import { getResizeConstraintsForTag, type ElementResizeConstraints } from "@/features/editor/types/layout";
+import { getResizeConstraintsForTag, type ElementResizeConstraints, type FreeLayoutGeometry } from "@/features/editor/types/layout";
+import { getTransformSettings, hasNonIdentityRotateOrScale } from "@/features/editor/types/transform";
 import { TRANSFORM_ANCESTOR_BLOCKED_NOTICE, getTransformBlockingAncestor } from "@/features/editor/rules/transformGeometrySafety";
 import { RESIZE_HANDLE_CURSORS, type ResizeDirection } from "@/features/editor/types/resize";
 
@@ -42,6 +48,9 @@ export interface UseFreeChildResizeSessionResult {
 
 const UNBOUNDED = { width: Infinity, height: Infinity };
 
+/** Rendered and stored sizes closer than this (px) are treated as the same. */
+const SIZE_TRACKING_TOLERANCE_PX = 0.5;
+
 /**
  * Resize handles for a Free container's direct child (Checkpoint 3.4.4)
  * — the Free-mode counterpart to useResizeSession, sharing its exact
@@ -58,17 +67,39 @@ const UNBOUNDED = { width: Infinity, height: Infinity };
  * attribute plus a live document lookup for the override. The resize
  * floor itself (getResizeConstraintsForTag) is no longer tag-dependent
  * (Checkpoint 1.12.1) — every tag shares the same small, generic minimum.
+ *
+ * BC-13.4 — snapping through the shared engine (resolveFreeResizeSnap):
+ * - targets and the snap index are measured once at pointer-down
+ *   (createFreeSnapContext: the same eligibility as dragging);
+ * - only the edges the handle controls snap; the opposite edge stays
+ *   anchored;
+ * - every candidate is validated (minimum size, containment, the container
+ *   scaling floor, a locked corner's ratio);
+ * - Alt/Option or Snap off: nothing is applied, nearby alignment is still
+ *   shown. Shift has no resize meaning (unchanged).
+ * The order per frame is: proposed geometry (existing clamps and ratio) →
+ * snapping → live write → guides. Snapping is unavailable when resizing an
+ * element with its own rotate/scale (its visible bounds don't map linearly
+ * back to the stored box), and on an axis whose rendered size doesn't
+ * follow the stored size.
  */
 export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSessionResult {
   const setFreeChildGeometryLive = useEditorStore((state) => state.setFreeChildGeometryLive);
   const applyFreeContainerChildGeometriesLive = useEditorStore(
     (state) => state.applyFreeContainerChildGeometriesLive,
   );
+  const setActiveSnapGuides = useEditorStore((state) => state.setActiveSnapGuides);
   const [activeDirection, setActiveDirection] = useState<ResizeDirection | null>(null);
   const sessionRef = useRef<FreeChildResizeSession | null>(null);
   const constraintsRef = useRef<ElementResizeConstraints>(getResizeConstraintsForTag());
   const containerScalingRef = useRef<ContainerScalingSnapshot | null>(null);
   const latestPointerRef = useRef({ x: 0, y: 0 });
+  const snapRef = useRef<FreeSnapContext | null>(null);
+  const snapAxesRef = useRef({ x: false, y: false });
+  const altRef = useRef(false);
+  const lockRef = useRef<SnapLock>(NO_SNAP_LOCK);
+  const coupledWinnerRef = useRef<SnapAxis | null>(null);
+  const { publish: publishGuides, reset: resetGuides } = useSnapGuidePublisher();
   const frameRef = useRef<number | null>(null);
   // Checkpoint 5.7 bug fix (found via this checkpoint's own real-browser
   // undo/redo verification — a plain click, no drag, on a resize handle
@@ -83,28 +114,68 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
     frameRef.current = null;
     const session = sessionRef.current;
     if (!session) return;
-    const result = computeFreeChildResizeResult(
+    const proposal = computeFreeChildResizeResult(
       session,
       latestPointerRef.current.x,
       latestPointerRef.current.y,
       constraintsRef.current,
     );
+    const containerScaling = containerScalingRef.current;
+    const flooredSize = (geometry: FreeLayoutGeometry) =>
+      containerScaling
+        ? deriveFlooredContainerOuterSize(
+            geometry.width,
+            geometry.height,
+            containerScaling.startContentBounds,
+            containerScaling.outerToContentInset,
+          )
+        : { width: geometry.width, height: geometry.height };
+
+    let result = proposal;
+    const context = snapRef.current;
+    if (context) {
+      const snapped = resolveFreeResizeSnap({
+        direction: session.direction,
+        proposal,
+        offset: context.offset,
+        axes: snapAxesRef.current,
+        containment: session.parentBounds,
+        constraints: constraintsRef.current,
+        aspectRatio:
+          session.aspectRatioLocked && session.startWidth > 0 && session.startHeight > 0
+            ? session.startWidth / session.startHeight
+            : null,
+        // A nested Free container can't shrink below its scaling floor: a
+        // candidate the floor would change isn't exact, so it's rejected.
+        accept: containerScaling
+          ? (geometry) => {
+              const size = flooredSize(geometry);
+              return Math.abs(size.width - geometry.width) <= SNAP_EPSILON && Math.abs(size.height - geometry.height) <= SNAP_EPSILON;
+            }
+          : undefined,
+        index: context.index,
+        siblingTargets: context.siblingTargets,
+        enabled: useEditorStore.getState().snapEnabled && !altRef.current,
+        lock: lockRef.current,
+        coupledWinner: coupledWinnerRef.current,
+      });
+      result = snapped.geometry;
+      lockRef.current = snapped.result.lock;
+      coupledWinnerRef.current = snapped.coupledWinner;
+      const size = flooredSize(result);
+      const finalVisual = { x: result.x + context.offset.x, y: result.y + context.offset.y, width: size.width, height: size.height };
+      publishGuides(buildFreeSnapGuides(context.containerId, snapped.result, finalVisual, context.rectById, context.parentRect));
+    }
 
     // Checkpoint 3.4.4: this Free child is itself a Free container with
     // children (see resolveContainerScalingSnapshot) — mirrors
     // useResizeSession's identical branch, just writing freeLayout
     // instead of dimensions for the container's own self-update.
-    const containerScaling = containerScalingRef.current;
     if (containerScaling) {
-      const flooredSize = deriveFlooredContainerOuterSize(
-        result.width,
-        result.height,
-        containerScaling.startContentBounds,
-        containerScaling.outerToContentInset,
-      );
+      const floored = flooredSize(result);
       const newContentBounds = {
-        width: flooredSize.width - containerScaling.outerToContentInset.width,
-        height: flooredSize.height - containerScaling.outerToContentInset.height,
+        width: floored.width - containerScaling.outerToContentInset.width,
+        height: floored.height - containerScaling.outerToContentInset.height,
       };
       const childGeometries = computeContainerChildScaling(
         containerScaling.children,
@@ -114,14 +185,14 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
       );
       applyFreeContainerChildGeometriesLive(
         containerScaling.containerId,
-        { freeLayout: { ...result, width: flooredSize.width, height: flooredSize.height } },
+        { freeLayout: { ...result, width: floored.width, height: floored.height } },
         childGeometries,
       );
       return;
     }
 
     setFreeChildGeometryLive(nodeId, result);
-  }, [nodeId, setFreeChildGeometryLive, applyFreeContainerChildGeometriesLive]);
+  }, [nodeId, publishGuides, setFreeChildGeometryLive, applyFreeContainerChildGeometriesLive]);
 
   const scheduleCommit = useCallback(() => {
     if (frameRef.current !== null) return;
@@ -158,7 +229,11 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
         constraintsRef.current = getResizeConstraintsForTag();
 
         const containerEl = targetEl?.parentElement?.closest<HTMLElement>("[data-node-id]") ?? null;
-        const parentBounds = containerEl ? measureFreeContainerBounds(containerEl) : UNBOUNDED;
+        const containerId = containerEl?.getAttribute("data-node-id") ?? null;
+        // BC-13.2 frame: the unchanged containment rule and the snapping
+        // boundaries (padding box) from one measurement.
+        const frame = containerEl ? measureFreeContainerFrame(containerEl) : null;
+        const parentBounds = frame ? frame.containment : UNBOUNDED;
         containerScalingRef.current = resolveContainerScalingSnapshot(
           targetEl ?? null,
           start.startWidth,
@@ -166,6 +241,23 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
         );
 
         const aspectRatioLocked = resolveAspectRatioLocked(nodeId, tag);
+
+        snapRef.current = null;
+        const node = findNodeById(store.document, nodeId);
+        if (frame && containerEl && containerId && targetEl && node?.freeLayout && !hasNonIdentityRotateOrScale(getTransformSettings(node))) {
+          const context = createFreeSnapContext(containerEl, frame, store.document, containerId, { ...node, freeLayout: node.freeLayout }, targetEl);
+          snapRef.current = context;
+          // An axis whose rendered size doesn't follow the stored size (e.g.
+          // content taller than the box) can't be snapped exactly.
+          snapAxesRef.current = {
+            x: !context.measured || Math.abs(context.offset.width) <= SIZE_TRACKING_TOLERANCE_PX,
+            y: !context.measured || Math.abs(context.offset.height) <= SIZE_TRACKING_TOLERANCE_PX,
+          };
+        }
+        altRef.current = event.altKey;
+        lockRef.current = NO_SNAP_LOCK;
+        coupledWinnerRef.current = null;
+        resetGuides();
 
         sessionRef.current = {
           direction,
@@ -184,7 +276,7 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
         document.body.style.cursor = RESIZE_HANDLE_CURSORS[direction];
         document.body.style.userSelect = "none";
       },
-    [nodeId],
+    [nodeId, resetGuides],
   );
 
   const onHandlePointerMove = useCallback(
@@ -192,6 +284,7 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
       if (!sessionRef.current) return;
       didMoveRef.current = true;
       latestPointerRef.current = { x: event.clientX, y: event.clientY };
+      altRef.current = event.altKey;
       scheduleCommit();
     },
     [scheduleCommit],
@@ -205,6 +298,17 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
         cancelAnimationFrame(frameRef.current);
         frameRef.current = null;
       }
+      // BC-13.4: the release position is the final one. A pointer that moved
+      // and was released between frames (or with no pointermove event at all)
+      // must not commit the previous frame's stale geometry.
+      if (event.type === "pointerup") {
+        const latest = latestPointerRef.current;
+        if (event.clientX !== latest.x || event.clientY !== latest.y) {
+          latestPointerRef.current = { x: event.clientX, y: event.clientY };
+          didMoveRef.current = true;
+        }
+        altRef.current = event.altKey;
+      }
       // A plain click (pointerdown immediately followed by pointerup, no
       // pointermove in between) has nothing to commit — see didMoveRef's
       // own doc comment. Cancelling (not committing) the transaction here
@@ -217,16 +321,38 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
       } else {
         useEditorStore.getState().cancelResizeTransaction();
       }
+      setActiveSnapGuides(null);
 
       event.currentTarget.releasePointerCapture(event.pointerId);
       sessionRef.current = null;
       containerScalingRef.current = null;
+      snapRef.current = null;
+      resetGuides();
       setActiveDirection(null);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     },
-    [commit],
+    [commit, resetGuides, setActiveSnapGuides],
   );
+
+  // Alt pressed or released without moving the pointer still updates the
+  // frame. Its default is prevented while resizing (Firefox would otherwise
+  // toggle its menu bar on release).
+  useEffect(() => {
+    if (activeDirection === null) return;
+    function handleModifier(event: KeyboardEvent) {
+      if (event.key !== "Alt") return;
+      event.preventDefault();
+      altRef.current = event.altKey;
+      scheduleCommit();
+    }
+    window.addEventListener("keydown", handleModifier, true);
+    window.addEventListener("keyup", handleModifier, true);
+    return () => {
+      window.removeEventListener("keydown", handleModifier, true);
+      window.removeEventListener("keyup", handleModifier, true);
+    };
+  }, [activeDirection, scheduleCommit]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -244,9 +370,12 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
         useEditorStore.setState({ document: snapshot.document, selection: snapshot.selection });
       }
       store.cancelResizeTransaction();
+      store.setActiveSnapGuides(null);
 
       sessionRef.current = null;
       containerScalingRef.current = null;
+      snapRef.current = null;
+      resetGuides();
       setActiveDirection(null);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
@@ -254,7 +383,7 @@ export function useFreeChildResizeSession(nodeId: string): UseFreeChildResizeSes
 
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
-  }, []);
+  }, [resetGuides]);
 
   return {
     activeDirection,
