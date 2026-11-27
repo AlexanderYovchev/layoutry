@@ -1,8 +1,14 @@
-import type { ExportDiagnosticCode } from "@/features/export/types/exportDiagnostic";
+/**
+ * The problems a value check can report. Each is also an export diagnostic
+ * code (ExportDiagnosticCode), so the export reports them unchanged.
+ */
+export type CssValueIssueCode =
+  "invalid-css-value" | "invalid-color" | "invalid-font-family";
 
 /**
  * Safety and validity checks for one CSS value before it is written into a
- * stylesheet (EXPORT-1.2). On the Canvas, React hands every value to the
+ * stylesheet (EXPORT-1.2; shared by every surface since BC-17.3, because the
+ * Design and Preview surfaces now print a text stylesheet too). On the Canvas, React hands every value to the
  * CSSOM one property at a time, so no value can ever escape its own
  * declaration. A text stylesheet has no such protection: `red; } body { …`
  * or `</style><script>` in a free-text field would inject CSS or markup.
@@ -32,12 +38,14 @@ const NAMED_COLORS: ReadonlySet<string> = new Set(
 const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 // Functional color notations, with arguments limited to the characters
 // those notations use (numbers, units, keywords, separators, nested calls).
-const FUNCTIONAL_COLOR = /^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix)\([a-z0-9\s.,%/+#()-]*\)$/i;
+const FUNCTIONAL_COLOR =
+  /^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix)\([a-z0-9\s.,%/+#()-]*\)$/i;
 
 /** True for any color syntax a browser accepts that is also inert as text: hex, functional notations, named colors and keywords. */
 export function isExportableColor(value: string): boolean {
   const trimmed = value.trim();
-  if (NAMED_COLORS.has(trimmed.toLowerCase()) || HEX_COLOR.test(trimmed)) return true;
+  if (NAMED_COLORS.has(trimmed.toLowerCase()) || HEX_COLOR.test(trimmed))
+    return true;
   return FUNCTIONAL_COLOR.test(trimmed) && hasBalancedParentheses(trimmed);
 }
 
@@ -47,7 +55,12 @@ const UNQUOTED_FAMILY = /^-?[a-z_][a-z0-9_-]*(?: +-?[a-z_][a-z0-9_-]*)*$/i;
 /** A comma-separated list of quoted family names or identifier sequences, e.g. `"Fira Sans", Arial, sans-serif`. */
 export function isExportableFontFamily(value: string): boolean {
   const families = value.split(",").map((family) => family.trim());
-  return families.length > 0 && families.every((family) => QUOTED_FAMILY.test(family) || UNQUOTED_FAMILY.test(family));
+  return (
+    families.length > 0 &&
+    families.every(
+      (family) => QUOTED_FAMILY.test(family) || UNQUOTED_FAMILY.test(family),
+    )
+  );
 }
 
 function hasBalancedParentheses(value: string): boolean {
@@ -78,7 +91,11 @@ const STRUCTURALLY_UNSAFE = /[;{}<>\\!@\u0000-\u001f\u007f]|\/\*|\*\//;
 
 /** Structural injection check every printed value must pass. */
 export function isStructurallySafeCssValue(value: string): boolean {
-  return !STRUCTURALLY_UNSAFE.test(value) && hasBalancedParentheses(value) && hasBalancedQuotes(value);
+  return (
+    !STRUCTURALLY_UNSAFE.test(value) &&
+    hasBalancedParentheses(value) &&
+    hasBalancedQuotes(value)
+  );
 }
 
 const COLOR_PROPERTIES: ReadonlySet<string> = new Set([
@@ -89,11 +106,17 @@ const COLOR_PROPERTIES: ReadonlySet<string> = new Set([
   "border-right-color",
   "border-bottom-color",
   "border-left-color",
+  // BC-17.3: the logical border colours (BC-17.2 borderLogical) are validated the same way.
+  "border-block-start-color",
+  "border-block-end-color",
+  "border-inline-start-color",
+  "border-inline-end-color",
   "outline-color",
   "text-decoration-color",
 ]);
 
-export type CssValueCheck = { ok: true } | { ok: false; code: ExportDiagnosticCode; message: string };
+export type CssValueCheck =
+  { ok: true } | { ok: false; code: CssValueIssueCode; message: string };
 
 /**
  * Validates one declaration (url() values excluded — see
@@ -101,15 +124,30 @@ export type CssValueCheck = { ok: true } | { ok: false; code: ExportDiagnosticCo
  * dropped by the caller, which is also what the browser does on the Canvas
  * with a value it cannot parse — so dropping it costs no fidelity.
  */
-export function validateCssDeclarationValue(property: string, value: string): CssValueCheck {
+export function validateCssDeclarationValue(
+  property: string,
+  value: string,
+): CssValueCheck {
   if (!isStructurallySafeCssValue(value)) {
-    return { ok: false, code: "invalid-css-value", message: `The ${property} value contains characters that could break out of the stylesheet, so it was not exported.` };
+    return {
+      ok: false,
+      code: "invalid-css-value",
+      message: `The ${property} value contains characters that could break out of the stylesheet, so it was not exported.`,
+    };
   }
   if (COLOR_PROPERTIES.has(property) && !isExportableColor(value)) {
-    return { ok: false, code: "invalid-color", message: `"${value}" is not a valid CSS color, so ${property} was not exported.` };
+    return {
+      ok: false,
+      code: "invalid-color",
+      message: `"${value}" is not a valid CSS color, so ${property} was not exported.`,
+    };
   }
   if (property === "font-family" && !isExportableFontFamily(value)) {
-    return { ok: false, code: "invalid-font-family", message: `"${value}" is not a valid font-family list, so it was not exported.` };
+    return {
+      ok: false,
+      code: "invalid-font-family",
+      message: `"${value}" is not a valid font-family list, so it was not exported.`,
+    };
   }
   return { ok: true };
 }

@@ -4,8 +4,7 @@ import { useNativeFormValueEditing } from "@/features/canvas/hooks/useNativeForm
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
-import { resolveControlElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
@@ -42,7 +41,7 @@ export function TextareaElement({ node, parentId, parentLayoutMode, parentFlowDi
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const editable = useNativeFormValueEditing(node, { commitOnEnter: false });
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
-  const recipe = resolveControlElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, parentFlowDisplay);
 
   return (
     <textarea
@@ -55,12 +54,13 @@ export function TextareaElement({ node, parentId, parentLayoutMode, parentFlowDi
       {...documentNodeAttributes(node, parentId)}
       {...(isPreview ? undefined : editable.editableProps)}
       className={cn(
-        documentDefaultClasses(recipe.defaults),
+        nodeStyle.className,
         editable.isEditing && "cursor-text",
         isDragging && "opacity-40",
-        node.className,
+        nodeStyle.authoredClassName,
       )}
-      style={recipe.style}
+      style={nodeStyle.style}
+      {...nodeStyle.overrideAttributes}
       {...(isPreview || editable.isEditing ? undefined : listeners)}
     />
   );

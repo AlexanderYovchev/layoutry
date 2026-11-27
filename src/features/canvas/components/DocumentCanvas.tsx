@@ -1,6 +1,7 @@
 "use client";
 
 import { CanvasInteractionBoundary } from "@/features/canvas/components/CanvasInteractionBoundary";
+import { useDocumentStyleSheet } from "@/features/canvas/hooks/useDocumentStyleSheet";
 import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 
@@ -20,19 +21,35 @@ import { useEditorStore } from "@/features/editor/stores/useEditorStore";
  * theme. The border and shadow are the editor's frame around the page,
  * so they do follow the theme. Editor-only: the attribute lives on this
  * DOM wrapper, never in the document model, so it can't reach export.
+ *
+ * BC-17.3: `data-ly-sheet` is this surface's scope token; the generated
+ * document stylesheet (useDocumentStyleSheet) styles only descendants of
+ * the element carrying it, so its rules can never reach editor chrome.
  */
 export function DocumentCanvas() {
   const document = useEditorStore((state) => state.document);
+  const { scope, surface, styleRef, initialCss } = useDocumentStyleSheet();
 
   return (
-    <div
-      data-document-surface=""
-      // Sheet chrome (shadow, border, rounding, presentation width/height)
-      // first; the page's own surface (background, font, text color, color
-      // scheme) comes from the shared defaults HTML/CSS export also emits.
-      className={`animate-fade-in-up border-line shadow-page relative min-h-500 w-full max-w-360 shrink-0 rounded-md border ${documentDefaultClasses(["page-surface"])}`}
-    >
-      <CanvasInteractionBoundary document={document} />
-    </div>
+    <>
+      {/* The generated document stylesheet: server-rendered with the first document so the page is styled before hydration; afterwards the host owns its rules through the CSSOM and React never changes its text. */}
+      <style
+        ref={styleRef}
+        data-ly-document-styles={surface}
+        data-ly-sheet={scope}
+      >
+        {initialCss}
+      </style>
+      <div
+        data-document-surface=""
+        data-ly-sheet={scope}
+        // Sheet chrome (shadow, border, rounding, presentation width/height)
+        // first; the page's own surface (background, font, text color, color
+        // scheme) comes from the shared defaults HTML/CSS export also emits.
+        className={`animate-fade-in-up border-line shadow-page relative min-h-500 w-full max-w-360 shrink-0 rounded-md border ${documentDefaultClasses(["page-surface"])}`}
+      >
+        <CanvasInteractionBoundary document={document} />
+      </div>
+    </>
   );
 }

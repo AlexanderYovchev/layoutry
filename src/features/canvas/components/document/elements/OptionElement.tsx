@@ -1,7 +1,8 @@
 "use client";
 
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { resolveOptionElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
+import { cn } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
 /**
@@ -29,14 +30,21 @@ import type { DocumentElementProps } from "@/features/canvas/types/documentRende
  * dropdown rendering — a documented browser-styling limitation, not
  * something this component can fully control.
  */
-export function OptionElement({ node, parentId }: DocumentElementProps) {
+export function OptionElement({
+  node,
+  parentId,
+  parentLayoutMode,
+  parentFlowDisplay,
+}: DocumentElementProps) {
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, parentFlowDisplay);
   return (
     <option
       value={node.value}
       id={node.htmlId}
-      className={node.className}
+      className={cn(nodeStyle.className, nodeStyle.authoredClassName)}
       {...documentNodeAttributes(node, parentId)}
-      style={resolveOptionElementStyle(node).style}
+      style={nodeStyle.style}
+      {...nodeStyle.overrideAttributes}
     >
       {node.text}
     </option>

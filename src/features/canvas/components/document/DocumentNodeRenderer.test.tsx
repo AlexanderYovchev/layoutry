@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { DocumentNodeRenderer } from "./DocumentNodeRenderer";
+import { installDocumentStyles } from "../../../../../test/documentStyles";
 
 const initialStoreState = useEditorStore.getState();
 
@@ -343,10 +344,11 @@ describe("DocumentNodeRenderer", () => {
     const { container } = render(
       <DocumentNodeRenderer node={tree} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />,
     );
+    installDocumentStyles(tree);
 
     const button = container.querySelector('[data-node-id="button-1"]') as HTMLElement;
-    expect(button.style.width).toBe("80px");
-    expect(button.style.height).toBe("30px");
-    expect(button.style.position).toBe("absolute");
+    expect(getComputedStyle(button).width).toBe("80px");
+    expect(getComputedStyle(button).height).toBe("30px");
+    expect(getComputedStyle(button).position).toBe("absolute");
   });
 });

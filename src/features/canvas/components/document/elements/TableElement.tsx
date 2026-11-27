@@ -3,9 +3,7 @@
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
-import { resolveControlElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
-import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -37,8 +35,7 @@ import type { DocumentElementProps } from "@/features/canvas/types/documentRende
 export function TableElement({ node, parentId, parentLayoutMode, parentFlowDisplay, children }: DocumentElementProps) {
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
-  const isPreview = useEditorStore((state) => state.editorMode === "preview");
-  const recipe = resolveControlElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, parentFlowDisplay);
 
   return (
     <table
@@ -46,11 +43,12 @@ export function TableElement({ node, parentId, parentLayoutMode, parentFlowDispl
       ref={mergeRefs<HTMLTableElement>(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
       className={cn(
-        documentDefaultClasses(recipe.defaults),
+        nodeStyle.className,
         isDragging && "opacity-40",
-        node.className,
+        nodeStyle.authoredClassName,
       )}
-      style={recipe.style}
+      style={nodeStyle.style}
+      {...nodeStyle.overrideAttributes}
       {...listeners}
     >
       {children}

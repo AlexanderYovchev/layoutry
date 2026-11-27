@@ -37,7 +37,10 @@ export type ExportDiagnosticCode =
   | "embedded-image-invalid"
   | "embedded-image-type-mismatch"
   | "video-embed-invalid"
-  | "video-embed-needs-website";
+  | "video-embed-needs-website"
+  // BC-17.3: the shared stylesheet compiler (canvas/styling).
+  | "style-compile-failed"
+  | "style-target-not-rendered";
 
 export interface ExportDiagnostic {
   code: ExportDiagnosticCode;

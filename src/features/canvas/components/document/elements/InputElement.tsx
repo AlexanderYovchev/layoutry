@@ -6,8 +6,7 @@ import { useNativeFormValueEditing } from "@/features/canvas/hooks/useNativeForm
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
-import { resolveControlElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
 import { getInputType, isToggleInputType, sanitizeTelValue } from "@/features/editor/types/input";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
@@ -83,7 +82,7 @@ export function InputElement({ node, parentId, parentLayoutMode, parentFlowDispl
   });
   const checkedResyncRef = useRef<HTMLInputElement | null>(null);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
-  const recipe = resolveControlElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, parentFlowDisplay);
 
   useEffect(() => {
     if (!isToggle) return;
@@ -105,12 +104,13 @@ export function InputElement({ node, parentId, parentLayoutMode, parentFlowDispl
       {...documentNodeAttributes(node, parentId)}
       {...(isPreview ? undefined : isToggle ? { onMouseDown: preventCheckedToggle, onClick: preventCheckedToggle } : editable.editableProps)}
       className={cn(
-        documentDefaultClasses(recipe.defaults),
+        nodeStyle.className,
         !isToggle && editable.isEditing && "cursor-text",
         isDragging && "opacity-40",
-        node.className,
+        nodeStyle.authoredClassName,
       )}
-      style={recipe.style}
+      style={nodeStyle.style}
+      {...nodeStyle.overrideAttributes}
       {...(isPreview || (!isToggle && editable.isEditing) ? undefined : listeners)}
     />
   );

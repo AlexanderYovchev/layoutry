@@ -5,8 +5,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
-import { resolveControlElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
 import { getSelectedOptionValue } from "@/features/editor/types/select";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
@@ -66,7 +65,7 @@ export function SelectElement({ node, parentId, parentLayoutMode, parentFlowDisp
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const selectRef = useRef<HTMLSelectElement | null>(null);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
-  const recipe = resolveControlElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, parentFlowDisplay);
 
   const selectedValue = getSelectedOptionValue(node);
 
@@ -98,11 +97,12 @@ export function SelectElement({ node, parentId, parentLayoutMode, parentFlowDisp
       {...documentNodeAttributes(node, parentId)}
       {...(isPreview ? undefined : { onMouseDown: preventSelectActivation, onClick: preventSelectActivation })}
       className={cn(
-        documentDefaultClasses(recipe.defaults),
+        nodeStyle.className,
         isDragging && "opacity-40",
-        node.className,
+        nodeStyle.authoredClassName,
       )}
-      style={recipe.style}
+      style={nodeStyle.style}
+      {...nodeStyle.overrideAttributes}
       {...(isPreview ? undefined : listeners)}
     >
       {children}

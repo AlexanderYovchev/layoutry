@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { SvgElement } from "./SvgElement";
 import type { EditorElementNode } from "@/features/editor/types/document";
+import { generatedStyleOf, installDocumentStyles } from "../../../../../../test/documentStyles";
 
 const baseProps = { parentId: "page-root", parentLayoutMode: "flow" as const, parentFlowDisplay: "block" as const };
 
@@ -91,20 +92,22 @@ describe("SvgElement", () => {
   });
 
   it("applies CSS background/border/border-radius to the same <svg> box, independent of fill/stroke", () => {
+    const node: EditorElementNode = {
+      id: "svg-1",
+      tag: "svg",
+      background: { color: "#eeeeee" },
+      borderRadius: { topLeft: { value: 8, unit: "px" } },
+    };
     const { container } = render(
       <SvgElement
-        node={{
-          id: "svg-1",
-          tag: "svg",
-          background: { color: "#eeeeee" },
-          borderRadius: { topLeft: { value: 8, unit: "px" } },
-        }}
+        node={node}
         {...baseProps}
       />,
     );
+    installDocumentStyles(node);
     const svg = container.querySelector("svg") as unknown as HTMLElement;
-    expect(svg.style.backgroundColor).toBe("rgb(238, 238, 238)");
-    expect(svg.style.borderTopLeftRadius).toBe("8px");
+    expect(getComputedStyle(svg).backgroundColor).toBe("rgb(238, 238, 238)");
+    expect(getComputedStyle(svg).borderTopLeftRadius).toBe("8px");
   });
 });
 
@@ -314,21 +317,27 @@ describe("SvgElement — CSS Transition Foundation (Checkpoint 1.15.6.14.1)", ()
 
   it("applies the authored transition to the outer <svg> box only in Preview, never in Design", () => {
     const transition = { property: "opacity" as const, durationMs: 200, timingFunction: "ease" as const, delayMs: 0 };
-    const { container } = render(<SvgElement node={{ id: "svg-1", tag: "svg", transition }} {...baseProps} />);
+    const node: EditorElementNode = { id: "svg-1", tag: "svg", transition };
+    const { container } = render(<SvgElement node={node} {...baseProps} />);
+    installDocumentStyles(node);
     const designElement = container.querySelector('[data-node-id="svg-1"]') as HTMLElement;
-    expect(designElement.style.transitionProperty).toBe("");
+    expect(generatedStyleOf(designElement).transitionProperty).toBe("");
 
     useEditorStore.setState({ editorMode: "preview" });
-    const { container: previewContainer } = render(<SvgElement node={{ id: "svg-1", tag: "svg", transition }} {...baseProps} />);
+    const node2: EditorElementNode = { id: "svg-1", tag: "svg", transition };
+    const { container: previewContainer } = render(<SvgElement node={node2} {...baseProps} />);
+    installDocumentStyles(node2);
     const previewElement = previewContainer.querySelector('[data-node-id="svg-1"]') as HTMLElement;
-    expect(previewElement.style.transitionProperty).toBe("opacity");
+    expect(getComputedStyle(previewElement).transitionProperty).toBe("opacity");
   });
 });
 
 describe("SvgElement — CSS Transform Foundation (Checkpoint 1.15.6.14.3)", () => {
   it("applies the authored Transform to the outer <svg> box identically in Design and Preview", () => {
-    const { container } = render(<SvgElement node={{ id: "svg-1", tag: "svg", transform: { rotateDeg: 15 } }} {...baseProps} />);
+    const node: EditorElementNode = { id: "svg-1", tag: "svg", transform: { rotateDeg: 15 } };
+    const { container } = render(<SvgElement node={node} {...baseProps} />);
+    installDocumentStyles(node);
     const designElement = container.querySelector('[data-node-id="svg-1"]') as HTMLElement;
-    expect(designElement.style.transform).toBe("rotate(15deg)");
+    expect(getComputedStyle(designElement).transform).toBe("rotate(15deg)");
   });
 });

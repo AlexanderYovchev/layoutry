@@ -143,6 +143,8 @@ describe("replaceDocument — the atomic restoration contract", () => {
       "future",
       "transactionSnapshot",
       "historyMergeSnapshot",
+      // BC-17.3: the live geometry gesture belongs to the open transaction.
+      "liveGesture",
       "editorNotice",
       // BC-07.2: advanced (not zeroed) by every load, so work started against the old document can tell.
       "documentSessionId",

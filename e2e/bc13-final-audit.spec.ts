@@ -1,7 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 import { gotoApp } from "./support/gotoApp";
 import { importDocument } from "./support/parityFixtures";
+import { installDeclaredStyle } from "./support/declaredStyle";
 import type { EditorElementNode } from "../src/features/editor/types/document";
+
+// BC-17.3: stored geometry lives in the generated document sheet, not inline (see support/declaredStyle.ts).
+test.beforeEach(({ page }) => installDeclaredStyle(page));
 
 /*
  * BC-13.7 — final-audit gaps that had no browser evidence:
@@ -19,7 +23,7 @@ const SURFACE = "[data-document-surface]";
 const node = (page: Page, id: string) => page.locator(`${SURFACE} [data-node-id="${id}"]`);
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 const vertical = (page: Page) => page.locator('[data-canvas-overlay="snap-guide-vertical"]');
-const stored = (page: Page, id: string) => node(page, id).evaluate((el) => ({ left: el.style.left, top: el.style.top, width: el.style.width, marginLeft: el.style.marginLeft }));
+const stored = (page: Page, id: string) => node(page, id).evaluate((el) => ({ left: window.__lyDeclaredStyle(el).left, top: window.__lyDeclaredStyle(el).top, width: window.__lyDeclaredStyle(el).width, marginLeft: window.__lyDeclaredStyle(el).marginLeft }));
 
 const p = (id: string, x: number, y: number, width: number, height: number, extra: Partial<EditorElementNode> = {}): EditorElementNode => ({
   id,

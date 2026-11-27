@@ -3,7 +3,7 @@
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { resolveTableStructureElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -17,7 +17,8 @@ import type { DocumentElementProps } from "@/features/canvas/types/documentRende
  * holding only `<th>`/`<td>` children per insertionRules.ts's own
  * constrained-nesting rule.
  */
-export function TableRowElement({ node, parentId, parentLayoutMode, children }: DocumentElementProps) {
+export function TableRowElement({ node, parentId, parentLayoutMode, parentFlowDisplay, children }: DocumentElementProps) {
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, parentFlowDisplay);
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
 
@@ -26,8 +27,9 @@ export function TableRowElement({ node, parentId, parentLayoutMode, children }: 
       id={node.htmlId}
       ref={mergeRefs<HTMLTableRowElement>(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
-      className={cn(isDragging && "opacity-40", node.className)}
-      style={resolveTableStructureElementStyle(node).style}
+      className={cn(nodeStyle.className, isDragging && "opacity-40", nodeStyle.authoredClassName)}
+      style={nodeStyle.style}
+      {...nodeStyle.overrideAttributes}
       {...listeners}
     >
       {children}

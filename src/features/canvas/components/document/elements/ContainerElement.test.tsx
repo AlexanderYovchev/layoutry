@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
-import { ContainerElement } from "./ContainerElement";
+import { ContainerElement } from "./ContainerElement";
+import { generatedStyleOf, installDocumentStyles } from "../../../../../../test/documentStyles";
+import type { EditorElementNode } from "@/features/editor/types/document";
 
 describe("ContainerElement", () => {
   it("renders a div-tagged node as a real <div>", () => {
@@ -64,15 +66,19 @@ describe("ContainerElement", () => {
   });
 
   it("gives ul/ol visible native markers, overriding Tailwind Preflight's list-style: none reset (Checkpoint 1.6)", () => {
+    const node: EditorElementNode = { id: "list-1", tag: "ul", children: [] };
     const { container: ulContainer } = render(
-      <ContainerElement node={{ id: "list-1", tag: "ul", children: [] }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
+      <ContainerElement node={node} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
     );
+    installDocumentStyles(node);
+    const node2: EditorElementNode = { id: "list-2", tag: "ol", children: [] };
     const { container: olContainer } = render(
-      <ContainerElement node={{ id: "list-2", tag: "ol", children: [] }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
+      <ContainerElement node={node2} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
     );
+    installDocumentStyles(node2);
 
-    expect(ulContainer.querySelector('[data-node-id="list-1"]')?.className).toContain("list-disc");
-    expect(olContainer.querySelector('[data-node-id="list-2"]')?.className).toContain("list-decimal");
+    expect(generatedStyleOf(ulContainer.querySelector<HTMLElement>('[data-node-id="list-1"]')!).listStyleType).toBe("disc");
+    expect(generatedStyleOf(olContainer.querySelector<HTMLElement>('[data-node-id="list-2"]')!).listStyleType).toBe("decimal");
   });
 
   it("renders every semantic sectioning tag as its genuine native element (Checkpoint 1.8)", () => {
@@ -105,17 +111,21 @@ describe("ContainerElement", () => {
   it("applies the same style resolvers to a semantic sectioning element as to a div (e.g. background) — same component, only the DOM tag differs", () => {
     const backgroundNode = { background: { color: "#3366ff" } };
 
+    const node: EditorElementNode = { id: "div-1", tag: "div", ...backgroundNode };
     const { container: divContainer } = render(
-      <ContainerElement node={{ id: "div-1", tag: "div", ...backgroundNode }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
+      <ContainerElement node={node} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
     );
+    installDocumentStyles(node);
+    const node2: EditorElementNode = { id: "footer-1", tag: "footer", ...backgroundNode };
     const { container: footerContainer } = render(
-      <ContainerElement node={{ id: "footer-1", tag: "footer", ...backgroundNode }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
+      <ContainerElement node={node2} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
     );
+    installDocumentStyles(node2);
 
     const divEl = divContainer.querySelector('[data-node-id="div-1"]') as HTMLElement;
     const footerEl = footerContainer.querySelector('[data-node-id="footer-1"]') as HTMLElement;
-    expect(footerEl.style.backgroundColor).not.toBe("");
-    expect(footerEl.style.backgroundColor).toBe(divEl.style.backgroundColor);
+    expect(getComputedStyle(footerEl).backgroundColor).not.toBe("");
+    expect(getComputedStyle(footerEl).backgroundColor).toBe(getComputedStyle(divEl).backgroundColor);
   });
 
   it("renders its children regardless of which semantic tag it resolves to", () => {
@@ -136,27 +146,31 @@ describe("ContainerElement", () => {
   it("applies the same style resolvers to a section as to a div (e.g. background) — same component, only the DOM tag differs", () => {
     const backgroundNode = { background: { color: "#3366ff" } };
 
+    const node: EditorElementNode = { id: "div-1", tag: "div", ...backgroundNode };
     const { container: divContainer } = render(
       <ContainerElement
-        node={{ id: "div-1", tag: "div", ...backgroundNode }}
+        node={node}
         parentId="page-root"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
+    installDocumentStyles(node);
+    const node2: EditorElementNode = { id: "section-1", tag: "section", ...backgroundNode };
     const { container: sectionContainer } = render(
       <ContainerElement
-        node={{ id: "section-1", tag: "section", ...backgroundNode }}
+        node={node2}
         parentId="page-root"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
+    installDocumentStyles(node2);
 
     const divEl = divContainer.querySelector('[data-node-id="div-1"]') as HTMLElement;
     const sectionEl = sectionContainer.querySelector('[data-node-id="section-1"]') as HTMLElement;
-    expect(sectionEl.style.backgroundColor).not.toBe("");
-    expect(sectionEl.style.backgroundColor).toBe(divEl.style.backgroundColor);
+    expect(getComputedStyle(sectionEl).backgroundColor).not.toBe("");
+    expect(getComputedStyle(sectionEl).backgroundColor).toBe(getComputedStyle(divEl).backgroundColor);
   });
 
   it("renders a form-tagged node as a real <form>, not a div standing in for one (Checkpoint 1.10)", () => {
@@ -289,21 +303,24 @@ describe("ContainerElement", () => {
   });
 
   it("renders the authored HTML id and appends the authored class alongside required editor classes (Checkpoint 1.15.1)", () => {
+    const node: EditorElementNode = { id: "container-1", tag: "div", children: [], htmlId: "hero", className: "hero-section featured" };
     const { container } = render(
       <ContainerElement
-        node={{ id: "container-1", tag: "div", children: [], htmlId: "hero", className: "hero-section featured" }}
+        node={node}
         parentId="page-root"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
+    installDocumentStyles(node);
 
     const element = container.querySelector('[data-node-id="container-1"]') as HTMLElement;
     expect(element).toHaveAttribute("id", "hero");
     expect(element.className).toContain("hero-section");
     expect(element.className).toContain("featured");
-    // Layoutry's own required editor chrome is still present alongside it.
-    expect(element.className).toContain("flex");
+    // Layoutry's own generated class (its default flex layout) is still present alongside it.
+    expect(element).toHaveClass("ly-n-container-1");
+    expect(generatedStyleOf(element).display).toBe("flex");
   });
 
   it("omits the id attribute entirely when htmlId is unset — never a synthesized default", () => {
@@ -318,17 +335,19 @@ describe("ContainerElement", () => {
 
 describe("ContainerElement — Advanced Container Shapes (Checkpoint 1.15.4)", () => {
   it("applies the mapped clip-path for a non-rectangle shape preset", () => {
+    const node: EditorElementNode = { id: "container-1", tag: "div", shape: "hexagon", children: [] };
     const { container } = render(
       <ContainerElement
-        node={{ id: "container-1", tag: "div", shape: "hexagon", children: [] }}
+        node={node}
         parentId="page-root"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
+    installDocumentStyles(node);
 
     const element = container.querySelector('[data-node-id="container-1"]') as HTMLElement;
-    expect(element.style.clipPath).toBe("polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)");
+    expect(getComputedStyle(element).clipPath).toBe("polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)");
   });
 
   it("applies no clip-path at all for an unset shape (ordinary rectangle)", () => {
@@ -346,26 +365,28 @@ describe("ContainerElement — Advanced Container Shapes (Checkpoint 1.15.4)", (
   });
 
   it("preserves background/border-radius on the same box a non-rectangle shape is applied to", () => {
+    const node: EditorElementNode = {
+      id: "container-1",
+      tag: "section",
+      shape: "circle",
+      background: { color: "#ff0000" },
+      borderRadius: { topLeft: { value: 12, unit: "px" } },
+      children: [],
+    };
     const { container } = render(
       <ContainerElement
-        node={{
-          id: "container-1",
-          tag: "section",
-          shape: "circle",
-          background: { color: "#ff0000" },
-          borderRadius: { topLeft: { value: 12, unit: "px" } },
-          children: [],
-        }}
+        node={node}
         parentId="page-root"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
+    installDocumentStyles(node);
 
     const element = container.querySelector('[data-node-id="container-1"]') as HTMLElement;
-    expect(element.style.clipPath).toBe("circle(50% at 50% 50%)");
-    expect(element.style.backgroundColor).toBe("rgb(255, 0, 0)");
-    expect(element.style.borderTopLeftRadius).toBe("12px");
+    expect(getComputedStyle(element).clipPath).toBe("circle(50% at 50% 50%)");
+    expect(getComputedStyle(element).backgroundColor).toBe("rgb(255, 0, 0)");
+    expect(getComputedStyle(element).borderTopLeftRadius).toBe("12px");
   });
 });
 
@@ -387,14 +408,16 @@ describe("ContainerElement — CSS Transition Foundation (Checkpoint 1.15.6.14.1
 
   it("emits the authored transition CSS longhands in Preview", () => {
     useEditorStore.setState({ editorMode: "preview" });
+    const node: EditorElementNode = { id: "container-1", tag: "div", transition };
     const { container } = render(
-      <ContainerElement node={{ id: "container-1", tag: "div", transition }} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
+      <ContainerElement node={node} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />,
     );
+    installDocumentStyles(node);
     const element = container.querySelector('[data-node-id="container-1"]') as HTMLElement;
-    expect(element.style.transitionProperty).toBe("opacity");
-    expect(element.style.transitionDuration).toBe("200ms");
-    expect(element.style.transitionTimingFunction).toBe("ease");
-    expect(element.style.transitionDelay).toBe("0ms");
+    expect(getComputedStyle(element).transitionProperty).toBe("opacity");
+    expect(getComputedStyle(element).transitionDuration).toBe("200ms");
+    expect(getComputedStyle(element).transitionTimingFunction).toBe("ease");
+    expect(getComputedStyle(element).transitionDelay).toBe("0ms");
   });
 });
 
@@ -405,30 +428,34 @@ describe("ContainerElement — CSS Transform Foundation (Checkpoint 1.15.6.14.3)
   });
 
   it("emits the authored transform CSS identically in Design (no isPreview gating, unlike Transition)", () => {
+    const node: EditorElementNode = { id: "container-1", tag: "div", transform: { translateX: 20, rotateDeg: 15, scale: 1.2 } };
     const { container } = render(
       <ContainerElement
-        node={{ id: "container-1", tag: "div", transform: { translateX: 20, rotateDeg: 15, scale: 1.2 } }}
+        node={node}
         parentId="page-root"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
+    installDocumentStyles(node);
     const element = container.querySelector('[data-node-id="container-1"]') as HTMLElement;
-    expect(element.style.transform).toBe("translate(20px, 0px) rotate(15deg) scale(1.2)");
+    expect(getComputedStyle(element).transform).toBe("translate(20px, 0px) rotate(15deg) scale(1.2)");
   });
 
   it("emits the identical transform CSS in Preview too", () => {
     useEditorStore.setState({ editorMode: "preview" });
+    const node: EditorElementNode = { id: "container-1", tag: "div", transform: { rotateDeg: 15 } };
     const { container } = render(
       <ContainerElement
-        node={{ id: "container-1", tag: "div", transform: { rotateDeg: 15 } }}
+        node={node}
         parentId="page-root"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
+    installDocumentStyles(node);
     const element = container.querySelector('[data-node-id="container-1"]') as HTMLElement;
-    expect(element.style.transform).toBe("rotate(15deg)");
+    expect(getComputedStyle(element).transform).toBe("rotate(15deg)");
   });
 
   it("emits no transform CSS for a node with no authored Transform", () => {

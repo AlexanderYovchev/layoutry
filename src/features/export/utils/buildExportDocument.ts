@@ -1,28 +1,23 @@
 import type { CSSProperties } from "react";
 import { isNavigableLink, resolveAccessibilityAttributes, resolveDerivedAccessibilityAttributes } from "@/features/editor/rules/accessibilityAttributes";
 import {
+  compileBaseDeclarations,
+  compileNodeStyle,
   DOCUMENT_DEFAULT_STYLE_IDS,
-  resolveAudioElementStyle,
-  resolveBoxElementStyle,
-  resolveContainerElementStyle,
-  resolveControlElementStyle,
+  hasInnerMediaElement,
+  printStyleRule,
   resolveDialogAccessibleDescription,
   resolveDialogAccessibleName,
-  resolveDialogElementStyle,
-  resolveImageElementStyle,
-  resolveLegacyBodyElementStyle,
-  resolveOptionElementStyle,
-  resolvePageRootElementStyle,
-  resolveSvgElementStyle,
-  resolveTableCellElementStyle,
-  resolveTableStructureElementStyle,
-  resolveTextElementStyle,
-  resolveVideoOrIframeElementStyle,
+  resolveNodeStyleRecipe,
+  validatedDeclarations,
   type CssDeclaration,
   type DocumentDefaultStyleId,
   type ElementStyleContext,
-  type ElementStyleRecipe,
+  type NodeStyleRecipe,
+  type StyleDiagnostic,
+  type StyleIrRule,
 } from "@/features/canvas";
+import { counterCssIdentifiers } from "@/features/editor/types/counters";
 import { canParentAcceptChild } from "@/features/editor/rules/insertionRules";
 import { editorElementNodeSchema } from "@/features/editor/schemas/editorDocumentSchema";
 import { getFlowLayoutSettings } from "@/features/editor/types/flowLayout";
@@ -50,11 +45,10 @@ import type { FlowDisplayMode } from "@/features/editor/types/flowLayout";
 import type { ExportDiagnostic, ExportDiagnosticCode, ExportDiagnosticSeverity } from "@/features/export/types/exportDiagnostic";
 import type { ExportAsset, ExportAttribute, ExportDocument, ExportElement, ExportInteraction, ExportNode } from "@/features/export/types/exportIr";
 import { buildExportBehaviors } from "@/features/export/utils/buildExportBehaviors";
-import { escapeCssString, stripNullCharacters } from "@/features/export/utils/escapeMarkup";
+import { stripNullCharacters } from "@/features/export/utils/escapeMarkup";
 import { checkExportUrl, type ExportUrlContext } from "@/features/export/utils/exportUrlPolicy";
 import { createEmbeddedImagePackager, type EmbeddedImagePackager } from "@/features/export/utils/packageEmbeddedImages";
-import { serializeStyleObject } from "@/features/export/utils/serializeStyleObject";
-import { isExportableColor, validateCssDeclarationValue } from "@/features/export/utils/validateExportCssValue";
+import { isExportableColor } from "@/features/canvas/styling/cssValueSafety";
 
 /*
  * Builds the Export IR from an authored document (EXPORT-1.2). It mirrors
@@ -88,6 +82,13 @@ interface BuildState {
   packager: EmbeddedImagePackager;
   /** BC-07.3: write valid embedded images as files in assets/ ("separate" exports). */
   packageImages: boolean;
+  /** BC-17.3: each node's parent and placement, for the shared compiler. */
+  placements: Map<string, { parent: EditorElementNode | undefined; placement: Placement }>;
+  /** BC-17.3: document counter definition id → printed identifier. */
+  counterIdentifiers: ReadonlyMap<string, string>;
+  /** BC-17.3: node id → its exported element, and its genuine inner media element. */
+  elements: Map<string, ExportElement>;
+  innerElements: Map<string, ExportElement>;
 }
 
 export interface BuildExportOptions {
@@ -178,32 +179,36 @@ function checkedUrl(state: BuildState, nodeId: string, property: string, url: st
   return undefined;
 }
 
-const CSS_URL_VALUE = /^url\(("(?:[^"\\]|\\[\s\S])*")\)$/;
+function reportStyle(state: BuildState): (diagnostic: StyleDiagnostic) => void {
+  return (diagnostic) => report(state, diagnostic.severity, diagnostic.code, diagnostic.message, diagnostic.nodeId, diagnostic.property);
+}
 
-/** The authored style object as validated CSS declarations, in cascade order. */
-function exportDeclarations(state: BuildState, nodeId: string, style: CSSProperties): CssDeclaration[] {
-  const declarations: CssDeclaration[] = [];
-  for (const [property, value] of serializeStyleObject(style)) {
-    if (property === "background-image" && value.startsWith("url(")) {
-      // resolveBackgroundStyle writes url(<JSON string>); re-check the URL
-      // and re-serialize it with CSS (not JSON) string escaping.
-      const match = CSS_URL_VALUE.exec(value);
-      let raw: unknown;
-      try {
-        raw = match ? JSON.parse(match[1]) : undefined;
-      } catch {
-        raw = undefined;
-      }
-      const url = typeof raw === "string" ? checkedUrl(state, nodeId, property, raw, "image") : undefined;
-      if (url !== undefined) declarations.push([property, `url(${escapeCssString(url)})`]);
-      else if (typeof raw !== "string") report(state, "warning", "invalid-css-value", "The background image value could not be read, so it was not exported.", nodeId, property);
-      continue;
-    }
-    const check = validateCssDeclarationValue(property, value);
-    if (check.ok) declarations.push([property, value]);
-    else report(state, "warning", check.code, check.message, nodeId, property);
-  }
-  return declarations;
+/** The export's URL policy for background images, for the shared compiler. */
+function resolveUrl(state: BuildState): (nodeId: string, property: string, url: string) => string | undefined {
+  return (nodeId, property, url) => checkedUrl(state, nodeId, property, url, "image");
+}
+
+/**
+ * BC-17.3: the element's own validated declarations, from the SAME shared
+ * compiler the Canvas and Preview use (value validation, url() policy and
+ * the BC-17.2 foundation fields). An inner media element carries only its
+ * recipe's inner style.
+ */
+function exportDeclarations(state: BuildState, node: EditorElementNode, style: CSSProperties, inner: boolean): CssDeclaration[] {
+  const declarations = inner
+    ? validatedDeclarations(node.id, style, reportStyle(state), resolveUrl(state))
+    : (() => {
+        const context = state.placements.get(node.id);
+        return compileBaseDeclarations(
+          node,
+          context?.parent,
+          style,
+          { parentLayoutMode: context?.placement.parentLayoutMode ?? "flow", isPreview: true, counterIdentifiers: state.counterIdentifiers },
+          reportStyle(state),
+          resolveUrl(state),
+        );
+      })();
+  return declarations.map(([property, value]) => [property, value]);
 }
 
 /** The authored HTML id and class tokens, validated — applied to the node's genuine element. */
@@ -257,19 +262,22 @@ function makeElement(
   attributes: ExportAttribute[],
   classNames: string[],
   children: ExportNode[],
+  inner = false,
 ): ExportElement {
   for (const id of recipe.defaults) state.usedDefaults.add(id);
-  return {
+  const element: ExportElement = {
     kind: "element",
     tag,
     sourceNodeId: node.id,
     styleKey,
     defaultStyles: [...recipe.defaults],
-    declarations: exportDeclarations(state, node.id, recipe.style),
+    declarations: exportDeclarations(state, node, recipe.style, inner),
     attributes,
     authoredClassNames: classNames,
     children,
   };
+  (inner ? state.innerElements : state.elements).set(node.id, element);
+  return element;
 }
 
 function svgPaint(state: BuildState, nodeId: string, name: "fill" | "stroke", value: string | undefined): ExportAttribute[] {
@@ -338,7 +346,7 @@ function buildChildren(state: BuildState, node: EditorElementNode): ExportNode[]
     if (node.tag !== "page" && !canParentAcceptChild(node.tag, child.tag)) {
       report(state, "warning", "invalid-nesting", `A <${child.tag}> inside a <${node.tag}> is not a structure the editor creates; it was exported as authored.`, child.id);
     }
-    const element = buildNode(state, child, placement);
+    const element = buildNode(state, child, placement, node);
     // BC-09.4: attributes derived from the parent component (a Pagination ellipsis is aria-hidden), as in Preview.
     for (const [name, value] of resolveDerivedAccessibilityAttributes(child, node)) element.attributes.push({ name, value });
     children.push(element);
@@ -360,34 +368,35 @@ function buildSelect(state: BuildState, node: EditorElementNode, styleKey: strin
   for (const child of node.children ?? []) {
     if (child.tag !== "option") {
       report(state, "warning", "invalid-nesting", `A <${child.tag}> inside a <select> is not a structure the editor creates; it was exported as authored.`, child.id);
-      options.push(buildNode(state, child, childPlacement(node)));
+      options.push(buildNode(state, child, childPlacement(node), node));
       continue;
     }
     const optionKey = `node-${state.nextIndex++}`;
+    state.placements.set(child.id, { parent: node, placement: childPlacement(node) });
     const optionIdentity = identity(state, child);
     // The Canvas sets select.value to the selected option's value, which
     // selects the FIRST option carrying that value — mirrored here.
     const isSelected = !selectionApplied && selectedValue !== undefined && (child.value ?? child.text ?? "") === selectedValue;
     if (isSelected) selectionApplied = true;
     options.push(
-      makeElement(state, child, "option", optionKey, resolveOptionElementStyle(child), [...optionIdentity.attributes, ...attribute("value", child.value), ...attribute("selected", isSelected)], optionIdentity.classNames, text(state, child, child.text)),
+      makeElement(state, child, "option", optionKey, resolveNodeStyleRecipe(child, context), [...optionIdentity.attributes, ...attribute("value", child.value), ...attribute("selected", isSelected)], optionIdentity.classNames, text(state, child, child.text)),
     );
     ignoreChildren(state, child);
   }
-  return makeElement(state, node, "select", styleKey, resolveControlElementStyle(node, context), [...own.attributes, ...attribute("name", node.name)], own.classNames, options);
+  return makeElement(state, node, "select", styleKey, resolveNodeStyleRecipe(node, context), [...own.attributes, ...attribute("name", node.name)], own.classNames, options);
 }
 
 function buildMediaFrame(
   state: BuildState,
   node: EditorElementNode,
   styleKey: string,
-  recipe: { defaults: DocumentDefaultStyleId[]; style: CSSProperties; innerStyle: CSSProperties },
+  recipe: NodeStyleRecipe,
   inner: { tag: string; attributes: ExportAttribute[] } | undefined,
 ): ExportElement {
   const children: ExportNode[] = [];
   if (inner) {
     const own = identity(state, node);
-    children.push(makeElement(state, node, inner.tag, `${styleKey}-media`, { defaults: [], style: recipe.innerStyle }, [...own.attributes, ...inner.attributes], own.classNames, []));
+    children.push(makeElement(state, node, inner.tag, `${styleKey}-media`, { defaults: [], style: recipe.innerStyle ?? {} }, [...own.attributes, ...inner.attributes], own.classNames, [], true));
   }
   ignoreChildren(state, node);
   // The outer frame is a layout box only: the authored id/class belong to the genuine inner element.
@@ -397,12 +406,12 @@ function buildMediaFrame(
 function buildElement(state: BuildState, node: EditorElementNode, styleKey: string, context: ElementStyleContext): ExportElement {
   const { tag } = node;
 
-  if (tag === "page") return makeElement(state, node, "div", styleKey, resolvePageRootElementStyle(), [], [], buildChildren(state, node));
-  if (tag === "body") return makeElement(state, node, "div", styleKey, resolveLegacyBodyElementStyle(), [], [], buildChildren(state, node));
+  if (tag === "page") return makeElement(state, node, "div", styleKey, resolveNodeStyleRecipe(node, context), [], [], buildChildren(state, node));
+  if (tag === "body") return makeElement(state, node, "div", styleKey, resolveNodeStyleRecipe(node, context), [], [], buildChildren(state, node));
 
   if (CONTAINER_TAGS.has(tag)) {
     const own = identity(state, node);
-    return makeElement(state, node, tag, styleKey, resolveContainerElementStyle(node, context), own.attributes, own.classNames, buildChildren(state, node));
+    return makeElement(state, node, tag, styleKey, resolveNodeStyleRecipe(node, context), own.attributes, own.classNames, buildChildren(state, node));
   }
 
   if (TEXT_TAGS.has(tag)) {
@@ -412,7 +421,7 @@ function buildElement(state: BuildState, node: EditorElementNode, styleKey: stri
     if (tag === "a" && isNavigableLink(node)) extra.push({ name: "href", value: checkedUrl(state, node.id, "href", getLinkHref(node), "link") ?? "#" });
     if (tag === "button") extra.push({ name: "type", value: "button" });
     ignoreChildren(state, node);
-    return makeElement(state, node, tag, styleKey, resolveTextElementStyle(node, context), [...own.attributes, ...extra], own.classNames, text(state, node, node.text));
+    return makeElement(state, node, tag, styleKey, resolveNodeStyleRecipe(node, context), [...own.attributes, ...extra], own.classNames, text(state, node, node.text));
   }
 
   if (tag === "input") {
@@ -426,52 +435,52 @@ function buildElement(state: BuildState, node: EditorElementNode, styleKey: stri
       ...attribute("value", node.value),
       ...attribute("checked", node.checked === true),
     ];
-    return makeElement(state, node, "input", styleKey, resolveControlElementStyle(node, context), attributes, own.classNames, []);
+    return makeElement(state, node, "input", styleKey, resolveNodeStyleRecipe(node, context), attributes, own.classNames, []);
   }
 
   if (tag === "textarea") {
     const own = identity(state, node);
     ignoreChildren(state, node);
     const attributes = [...own.attributes, ...attribute("name", node.name), ...attribute("placeholder", node.placeholder)];
-    return makeElement(state, node, "textarea", styleKey, resolveControlElementStyle(node, context), attributes, own.classNames, text(state, node, node.value));
+    return makeElement(state, node, "textarea", styleKey, resolveNodeStyleRecipe(node, context), attributes, own.classNames, text(state, node, node.value));
   }
 
   if (tag === "select") return buildSelect(state, node, styleKey, context);
 
   if (tag === "table") {
     const own = identity(state, node);
-    return makeElement(state, node, "table", styleKey, resolveControlElementStyle(node, context), own.attributes, own.classNames, buildChildren(state, node));
+    return makeElement(state, node, "table", styleKey, resolveNodeStyleRecipe(node, context), own.attributes, own.classNames, buildChildren(state, node));
   }
 
   if (TABLE_STRUCTURE_TAGS.has(tag)) {
     const own = identity(state, node);
-    return makeElement(state, node, tag, styleKey, resolveTableStructureElementStyle(node), own.attributes, own.classNames, buildChildren(state, node));
+    return makeElement(state, node, tag, styleKey, resolveNodeStyleRecipe(node, context), own.attributes, own.classNames, buildChildren(state, node));
   }
 
   if (TABLE_CELL_TAGS.has(tag)) {
     const own = identity(state, node);
     ignoreChildren(state, node);
-    return makeElement(state, node, tag, styleKey, resolveTableCellElementStyle(node, context), own.attributes, own.classNames, text(state, node, node.text));
+    return makeElement(state, node, tag, styleKey, resolveNodeStyleRecipe(node, context), own.attributes, own.classNames, text(state, node, node.text));
   }
 
   if (tag === "option") {
     // Only reachable for an option outside a <select> (buildSelect handles the normal case).
     const own = identity(state, node);
-    return makeElement(state, node, "option", styleKey, resolveOptionElementStyle(node), [...own.attributes, ...attribute("value", node.value)], own.classNames, text(state, node, node.text));
+    return makeElement(state, node, "option", styleKey, resolveNodeStyleRecipe(node, context), [...own.attributes, ...attribute("value", node.value)], own.classNames, text(state, node, node.text));
   }
 
   if (tag === "hr" || tag === "progress") {
     const own = identity(state, node);
     ignoreChildren(state, node);
     const extra = tag === "progress" ? [...attribute("value", getProgressValue(node)), ...attribute("max", getProgressMax(node))] : [];
-    return makeElement(state, node, tag, styleKey, resolveBoxElementStyle(node, context), [...own.attributes, ...extra], own.classNames, []);
+    return makeElement(state, node, tag, styleKey, resolveNodeStyleRecipe(node, context), [...own.attributes, ...extra], own.classNames, []);
   }
 
   if (tag === "img") {
     const src = checkedUrl(state, node.id, "src", node.src, "image");
     if (src === undefined && !node.src) report(state, "warning", "missing-media-source", "The image has no source, so its exported frame is empty (the Canvas shows a placeholder icon there).", node.id, "src");
     // alt mirrors the Canvas, which uses the element's display name.
-    return buildMediaFrame(state, node, styleKey, resolveImageElementStyle(node, context), src === undefined ? undefined : { tag: "img", attributes: [{ name: "src", value: src }, { name: "alt", value: node.displayName ?? "" }] });
+    return buildMediaFrame(state, node, styleKey, resolveNodeStyleRecipe(node, context), src === undefined ? undefined : { tag: "img", attributes: [{ name: "src", value: src }, { name: "alt", value: node.displayName ?? "" }] });
   }
 
   if (tag === "video" || tag === "audio") {
@@ -480,7 +489,7 @@ function buildElement(state: BuildState, node: EditorElementNode, styleKey: stri
     const attributes = [...attribute("src", src), ...attribute("poster", poster), ...attribute("controls", getMediaControls(node)), ...attribute("autoplay", getEffectiveAutoplay(node)), ...attribute("muted", node.muted === true), ...attribute("loop", node.loop === true)];
     // Muted-only autoplay (BC-02.2.1), the same rule Preview follows.
     if (node.autoplay === true && !getEffectiveAutoplay(node)) report(state, "warning", "unmuted-autoplay", "Autoplay was left out because the media is not muted. Layoutry only autoplays muted media; the controls still start it.", node.id, "autoplay");
-    const recipe = tag === "video" ? resolveVideoOrIframeElementStyle(node, context) : resolveAudioElementStyle(node, context);
+    const recipe = tag === "video" ? resolveNodeStyleRecipe(node, context) : resolveNodeStyleRecipe(node, context);
     return buildMediaFrame(state, node, styleKey, recipe, { tag, attributes });
   }
 
@@ -497,7 +506,7 @@ function buildElement(state: BuildState, node: EditorElementNode, styleKey: stri
     //   player whenever the embed is hidden (exportInteractionRuntime.ts).
     // A missing or invalid source exports the empty layout box, never a
     // fallback iframe.
-    const recipe = resolveVideoOrIframeElementStyle(node, context);
+    const recipe = resolveNodeStyleRecipe(node, context);
     const config = resolveVideoEmbedPlayerConfig(node, { hostOrigin: EXPORTED_PAGE_ORIGIN, reducedMotion: false, fullscreenAllowed: true });
     const frameChecked = config ? checkExportUrl(config.src, "frame").ok && checkExportUrl(config.stillSrc, "frame").ok : false;
     if (!config || !frameChecked) {
@@ -535,13 +544,13 @@ function buildElement(state: BuildState, node: EditorElementNode, styleKey: stri
     // never navigate or read the exported page. checkedUrl has already
     // refused every scheme the policy refuses.
     const { sandbox } = resolveIframeSourcePolicy(src, EXPORTED_PAGE_ORIGIN);
-    return buildMediaFrame(state, node, styleKey, resolveVideoOrIframeElementStyle(node, context), { tag: "iframe", attributes: [{ name: "sandbox", value: sandbox }, ...attribute("src", src), ...attribute("title", node.title)] });
+    return buildMediaFrame(state, node, styleKey, resolveNodeStyleRecipe(node, context), { tag: "iframe", attributes: [{ name: "sandbox", value: sandbox }, ...attribute("src", src), ...attribute("title", node.title)] });
   }
 
   if (tag === "svg") {
     const own = identity(state, node);
     ignoreChildren(state, node);
-    return makeElement(state, node, "svg", styleKey, resolveSvgElementStyle(node, context), [...own.attributes, { name: "viewBox", value: formatSvgViewBox(resolveSvgViewBox(node)) }], own.classNames, svgContent(state, node, styleKey));
+    return makeElement(state, node, "svg", styleKey, resolveNodeStyleRecipe(node, context), [...own.attributes, { name: "viewBox", value: formatSvgViewBox(resolveSvgViewBox(node)) }], own.classNames, svgContent(state, node, styleKey));
   }
 
   if (tag === "dialog") {
@@ -550,17 +559,18 @@ function buildElement(state: BuildState, node: EditorElementNode, styleKey: stri
     // interaction runtime re-opens it modally, as Preview does.
     const isOpen = getInitialPreviewVisibility(node) !== "hidden";
     const attributes = [...own.attributes, ...attribute("aria-label", resolveDialogAccessibleName(node)), ...attribute("aria-description", resolveDialogAccessibleDescription(node)), ...attribute("open", isOpen)];
-    return makeElement(state, node, "dialog", styleKey, resolveDialogElementStyle(node, context), attributes, own.classNames, buildChildren(state, node));
+    return makeElement(state, node, "dialog", styleKey, resolveNodeStyleRecipe(node, context), attributes, own.classNames, buildChildren(state, node));
   }
 
   // FallbackElement: an unrendered tag becomes a plain, unstyled <div> around its children.
   report(state, "warning", "unsupported-element", `<${tag}> has no renderer, so it was exported as a plain <div>, matching the Canvas.`, node.id);
-  const empty: ElementStyleRecipe = { defaults: [], style: {} };
+  const empty: NodeStyleRecipe = { defaults: [], style: {} };
   return makeElement(state, node, "div", styleKey, empty, [], [], buildChildren(state, node));
 }
 
-function buildNode(state: BuildState, node: EditorElementNode, placement: Placement): ExportElement {
+function buildNode(state: BuildState, node: EditorElementNode, placement: Placement, parent?: EditorElementNode): ExportElement {
   const styleKey = `node-${state.nextIndex++}`;
+  state.placements.set(node.id, { parent, placement });
   const element = buildElement(state, node, styleKey, { ...placement, isPreview: true });
 
   // Preview starts with authored-hidden nodes removed; `hidden` reproduces
@@ -572,6 +582,59 @@ function buildNode(state: BuildState, node: EditorElementNode, placement: Placem
     state.interactions.push({ triggerNodeId: node.id, targetNodeId: binding.targetId, trigger: binding.trigger, action: binding.action });
   }
   return element;
+}
+
+/**
+ * BC-17.3: every node's state, pseudo-element, part and role-group rules,
+ * from the same compiler the Canvas and Preview use, once every element has
+ * its class (role groups and ancestor scopes name other nodes' classes). An
+ * element a printed rule targets or names always carries its class. Rules
+ * are returned in document order; the printer sorts them by order key.
+ */
+function compileExportStyleRules(state: BuildState, document: EditorElementNode): StyleIrRule[] {
+  const rules: StyleIrRule[] = [];
+  const classFor = (nodeId: string) => {
+    const element = state.elements.get(nodeId);
+    if (!element) return undefined;
+    element.ruleTarget = true;
+    return `ly-${element.styleKey}`;
+  };
+  const visit = (node: EditorElementNode, ancestors: EditorElementNode[]) => {
+    const element = state.elements.get(node.id);
+    const context = state.placements.get(node.id);
+    if (element && context && (node.styleRules?.length ?? 0) > 0) {
+      const inner = hasInnerMediaElement(node) ? state.innerElements.get(node.id) : undefined;
+      const ir = compileNodeStyle({
+        node,
+        ancestors,
+        parentLayoutMode: context.placement.parentLayoutMode,
+        parentFlowDisplay: context.placement.parentFlowDisplay,
+        surface: "export",
+        nodeClass: `ly-${element.styleKey}`,
+        ...(inner ? { innerClass: `ly-${inner.styleKey}` } : {}),
+        classFor,
+        counterIdentifiers: state.counterIdentifiers,
+        includeDefaults: false,
+        resolveUrl: resolveUrl(state),
+        onDiagnostic: reportStyle(state),
+        only: "rules",
+      });
+      for (const rule of ir.rules) {
+        try {
+          printStyleRule(rule);
+        } catch (error) {
+          report(state, "warning", "invalid-css-value", `A style rule could not be printed safely, so it was not exported (${error instanceof Error ? error.message : String(error)}).`, node.id);
+          continue;
+        }
+        rules.push(rule);
+        if (rule.selector.subject === ir.innerClass && inner) inner.ruleTarget = true;
+        else element.ruleTarget = true;
+      }
+    }
+    for (const child of node.children ?? []) visit(child, [...ancestors, node]);
+  };
+  visit(document, []);
+  return rules;
 }
 
 /**
@@ -602,14 +665,20 @@ export function buildExportDocument(document: EditorElementNode, limits: Project
     nodeIds: collectNodeIds(parsed.data),
     packager: createEmbeddedImagePackager(),
     packageImages: options.packageImages === true,
+    placements: new Map(),
+    counterIdentifiers: counterCssIdentifiers(parsed.data.styleAssets?.counters ?? []),
+    elements: new Map(),
+    innerElements: new Map(),
   };
   const root = buildNode(state, parsed.data, { parentLayoutMode: "flow", parentFlowDisplay: "block" });
+  const styleRules = compileExportStyleRules(state, parsed.data);
   const behaviors = buildExportBehaviors(parsed.data, state.diagnostics);
   return {
     ok: true,
     document: {
       root,
       defaultStyles: DOCUMENT_DEFAULT_STYLE_IDS.filter((id) => state.usedDefaults.has(id)),
+      styleRules,
       interactions: state.interactions,
       behaviors,
       assets: state.assets,

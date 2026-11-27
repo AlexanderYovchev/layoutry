@@ -7,6 +7,10 @@ import {
   replaceText,
   selectOnCanvas,
 } from "./support/inspector";
+import { installDeclaredStyle } from "./support/declaredStyle";
+
+// BC-17.3: authored CSS lives in the generated document sheet, not inline (see support/declaredStyle.ts).
+test.beforeEach(({ page }) => installDeclaredStyle(page));
 
 /**
  * BC-01.5 — unset Line height and Letter spacing show what the Canvas
@@ -148,7 +152,10 @@ test.describe("unset values match the Canvas", () => {
       page
         .locator(`[data-node-id="${select.selectId}"]`)
         .first()
-        .evaluate((element) => (element as HTMLElement).style.lineHeight);
+        .evaluate(
+          (element) =>
+            window.__lyDeclaredStyle(element, { authored: true }).lineHeight,
+        );
     await select.selectSelect();
     await field(page, "Line height").click();
     await clickInspectorChrome(page);

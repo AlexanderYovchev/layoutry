@@ -4,9 +4,7 @@ import { useEditableText } from "@/features/canvas/hooks/useEditableText";
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
-import { resolveTableCellElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
-import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -41,8 +39,7 @@ export function TableCellElement({ node, parentId, parentLayoutMode }: DocumentE
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const editable = useEditableText(node);
-  const isPreview = useEditorStore((state) => state.editorMode === "preview");
-  const recipe = resolveTableCellElementStyle(node, { parentLayoutMode, parentFlowDisplay: "block", isPreview });
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, "block");
 
   const Tag = node.tag as TableCellTag;
 
@@ -53,12 +50,13 @@ export function TableCellElement({ node, parentId, parentLayoutMode }: DocumentE
       {...documentNodeAttributes(node, parentId)}
       {...editable.editableProps}
       className={cn(
-        documentDefaultClasses(recipe.defaults),
+        nodeStyle.className,
         editable.isEditing && "outline-none",
         isDragging && "opacity-40",
-        node.className,
+        nodeStyle.authoredClassName,
       )}
-      style={recipe.style}
+      style={nodeStyle.style}
+      {...nodeStyle.overrideAttributes}
       {...(editable.isEditing ? undefined : listeners)}
     >
       {node.text}

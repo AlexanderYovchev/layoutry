@@ -7,8 +7,7 @@ import { usePreviewMediaPlayback } from "@/features/canvas/hooks/usePreviewMedia
 import { RuntimeHiddenContext } from "@/features/canvas/components/document/previewRuntimeContext";
 import { MediaInteractionShield } from "@/features/canvas/components/document/elements/MediaInteractionShield";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
-import { resolveVideoOrIframeElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
 import { getEffectiveAutoplay, getMediaControls } from "@/features/editor/types/video";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
@@ -62,14 +61,15 @@ export function VideoElement({ node, parentId, parentLayoutMode, parentFlowDispl
   const mediaRef = useRef<HTMLVideoElement>(null);
   const isHidden = useContext(RuntimeHiddenContext);
   usePreviewMediaPlayback(mediaRef, { isPreview, autoplay: getEffectiveAutoplay(node), hidden: isHidden });
-  const recipe = resolveVideoOrIframeElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, parentFlowDisplay);
 
   return (
     <div
       ref={mergeRefs(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
-      className={cn(documentDefaultClasses(recipe.defaults), isDragging && "opacity-40")}
-      style={recipe.style}
+      className={cn(nodeStyle.className, isDragging && "opacity-40")}
+      style={nodeStyle.style}
+      {...nodeStyle.overrideAttributes}
       {...listeners}
     >
       <video
@@ -81,8 +81,7 @@ export function VideoElement({ node, parentId, parentLayoutMode, parentFlowDispl
         muted={node.muted}
         loop={node.loop}
         id={node.htmlId}
-        className={node.className}
-        style={recipe.innerStyle}
+        className={cn(nodeStyle.innerClassName, nodeStyle.authoredClassName)}
       />
       <MediaInteractionShield />
     </div>

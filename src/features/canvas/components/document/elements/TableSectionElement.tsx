@@ -3,7 +3,7 @@
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { resolveTableStructureElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -31,7 +31,8 @@ type TableSectionTag = "thead" | "tbody" | "tfoot";
  * browser itself ignores, so it's correctly left out entirely rather
  * than included-but-inert (see this checkpoint's report, section J).
  */
-export function TableSectionElement({ node, parentId, parentLayoutMode, children }: DocumentElementProps) {
+export function TableSectionElement({ node, parentId, parentLayoutMode, parentFlowDisplay, children }: DocumentElementProps) {
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, parentFlowDisplay);
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
 
@@ -42,8 +43,9 @@ export function TableSectionElement({ node, parentId, parentLayoutMode, children
       id={node.htmlId}
       ref={mergeRefs<HTMLElement>(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
-      className={cn(isDragging && "opacity-40", node.className)}
-      style={resolveTableStructureElementStyle(node).style}
+      className={cn(nodeStyle.className, isDragging && "opacity-40", nodeStyle.authoredClassName)}
+      style={nodeStyle.style}
+      {...nodeStyle.overrideAttributes}
       {...listeners}
     >
       {children}

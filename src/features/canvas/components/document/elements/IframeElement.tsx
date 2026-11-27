@@ -7,8 +7,7 @@ import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegi
 import { MediaInteractionShield } from "@/features/canvas/components/document/elements/MediaInteractionShield";
 import { VideoEmbedFrame } from "@/features/canvas/components/document/elements/VideoEmbedFrame";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
-import { resolveVideoOrIframeElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { isVideoEmbedNode } from "@/features/editor/types/videoEmbed";
 import { resolveIframeSourcePolicy } from "@/lib/iframeSandbox";
@@ -67,7 +66,7 @@ export function IframeElement({ node, parentId, parentLayoutMode, parentFlowDisp
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
-  const recipe = resolveVideoOrIframeElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, parentFlowDisplay);
   const hostOrigin = useHostOrigin();
   const isVideoEmbed = isVideoEmbedNode(node);
   const previewShown = usePreviewFrameShown(node.id, isPreview);
@@ -78,12 +77,13 @@ export function IframeElement({ node, parentId, parentLayoutMode, parentFlowDisp
     <div
       ref={mergeRefs(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
-      className={cn(documentDefaultClasses(recipe.defaults), isDragging && "opacity-40")}
-      style={recipe.style}
+      className={cn(nodeStyle.className, isDragging && "opacity-40")}
+      style={nodeStyle.style}
+      {...nodeStyle.overrideAttributes}
       {...listeners}
     >
       {isVideoEmbed ? (
-        <VideoEmbedFrame node={node} isPreview={isPreview} innerStyle={recipe.innerStyle} />
+        <VideoEmbedFrame node={node} isPreview={isPreview} innerClassName={cn(nodeStyle.innerClassName, nodeStyle.authoredClassName)} />
       ) : showGenericFrame ? (
         <iframe
           key={`${policy.sandbox}|${isPreview ? "preview" : "design"}`}
@@ -91,8 +91,7 @@ export function IframeElement({ node, parentId, parentLayoutMode, parentFlowDisp
           src={policy.src}
           title={node.title}
           id={node.htmlId}
-          className={node.className}
-          style={recipe.innerStyle}
+          className={cn(nodeStyle.innerClassName, nodeStyle.authoredClassName)}
         />
       ) : null}
       <MediaInteractionShield />

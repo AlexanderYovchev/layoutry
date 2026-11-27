@@ -20,6 +20,7 @@ import { VideoElement } from "@/features/canvas/components/document/elements/Vid
 import type { DocumentElementComponent } from "@/features/canvas/types/documentRenderer";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import type { FlowDisplayMode } from "@/features/editor/types/flowLayout";
+import { installDocumentStyles } from "../../../../../test/documentStyles";
 
 /**
  * Checkpoint 1.15.6.1.1, Workstream C — the literal Creation Catalog x
@@ -109,11 +110,12 @@ describe("Resize Compatibility Matrix (Checkpoint 1.15.6.1.1, Workstream C)", ()
       const { container } = render(
         <Component node={resized} parentId="parent-1" parentLayoutMode="flow" parentFlowDisplay={parentFlowDisplay} />,
       );
+      installDocumentStyles(resized, { parentFlowDisplay });
 
       const rendered = container.querySelector('[data-node-id="n1"]') as HTMLElement;
       expect(rendered).not.toBeNull();
-      expect(rendered.style.width).toBe("222px");
-      expect(rendered.style.height).toBe("111px");
+      expect(getComputedStyle(rendered).width).toBe("222px");
+      expect(getComputedStyle(rendered).height).toBe("111px");
     });
 
     it("keeps its own authored Free geometry exactly when its Free container retains a stale (inactive) Grid flowLayout — rendered through the real DocumentNodeRenderer tree, not with a contradictory prop combination forced directly onto the leaf component", () => {
@@ -129,14 +131,15 @@ describe("Resize Compatibility Matrix (Checkpoint 1.15.6.1.1, Workstream C)", ()
       const { container } = render(
         <DocumentNodeRenderer node={freeContainer} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />,
       );
+      installDocumentStyles(freeContainer);
 
       const rendered = container.querySelector('[data-node-id="n1"]') as HTMLElement;
       expect(rendered).not.toBeNull();
-      expect(rendered.style.position).toBe("absolute");
-      expect(rendered.style.width).toBe("80px");
-      expect(rendered.style.height).toBe("40px");
-      expect(rendered.style.left).toBe("10px");
-      expect(rendered.style.top).toBe("20px");
+      expect(getComputedStyle(rendered).position).toBe("absolute");
+      expect(getComputedStyle(rendered).width).toBe("80px");
+      expect(getComputedStyle(rendered).height).toBe("40px");
+      expect(getComputedStyle(rendered).left).toBe("10px");
+      expect(getComputedStyle(rendered).top).toBe("20px");
     });
   });
 });

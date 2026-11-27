@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { RuntimeHiddenContext } from "@/features/canvas/components/document/previewRuntimeContext";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { IframeElement } from "./IframeElement";
+import { generatedStyleOf, installDocumentStyles } from "../../../../../../test/documentStyles";
+import type { EditorElementNode } from "@/features/editor/types/document";
 
 const initialState = useEditorStore.getState();
 
@@ -56,10 +58,12 @@ describe("IframeElement (Checkpoint 1.15)", () => {
     expect(shieldIndex).toBeGreaterThan(iframeIndex);
   });
 
-  it("neutralizes the iframe tag's own default border via inline style, since the outer wrapper owns the visible border", () => {
-    render(<IframeElement node={{ id: "iframe-1", tag: "iframe" }} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+  it("neutralizes the iframe tag's own default border via its generated rule, since the outer wrapper owns the visible border", () => {
+    const node: EditorElementNode = { id: "iframe-1", tag: "iframe" };
+    render(<IframeElement node={node} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+    installDocumentStyles(node);
     const iframe = document.querySelector("iframe") as HTMLIFrameElement;
-    expect(iframe.getAttribute("style")).toMatch(/border:\s*0/);
+    expect(generatedStyleOf(iframe).borderWidth).toMatch(/^0(px)?$/);
   });
 
   it("applies authored HTML id/class to the real inner <iframe>, not the editor wrapper div (Checkpoint 1.15.1)", () => {

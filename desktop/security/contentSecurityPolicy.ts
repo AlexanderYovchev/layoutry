@@ -5,7 +5,8 @@
  * - script-src 'unsafe-inline': the Next.js static export emits inline
  *   bootstrap <script> blocks. Scripts may otherwise only come from the
  *   bundle itself — never from a remote host, and never via eval.
- * - style-src 'unsafe-inline': React `style` props and Next's font CSS.
+ * - style-src 'unsafe-inline': React `style` props, Next's font CSS and the
+ *   Canvas's generated document stylesheet (a <style> element, BC-17.3).
  * - img-src / media-src http: https: data: blob:: user-authored images,
  *   backgrounds, video and audio may point anywhere; they are passive
  *   content and simply fail to load offline.

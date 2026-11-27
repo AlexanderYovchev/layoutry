@@ -2,6 +2,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { TableCellElement } from "./TableCellElement";
+import { installDocumentStyles } from "../../../../../../test/documentStyles";
+import type { EditorElementNode } from "@/features/editor/types/document";
 
 const initialState = useEditorStore.getState();
 
@@ -94,28 +96,32 @@ describe("TableCellElement (Checkpoint 1.14)", () => {
   it("supports CSS Transition — Preview-only, same as any other ordinary box (Checkpoint 1.15.6.14.1)", () => {
     const transition = { property: "opacity" as const, durationMs: 200, timingFunction: "ease" as const, delayMs: 0 };
     useEditorStore.setState({ editorMode: "preview" });
+    const node: EditorElementNode = { id: "th-1", tag: "th", text: "Alpha", transition };
     render(
       <table>
         <tbody>
           <tr>
-            <TableCellElement node={{ id: "th-1", tag: "th", text: "Alpha", transition }} parentId="tr-1" parentLayoutMode="flow" parentFlowDisplay="block" />
+            <TableCellElement node={node} parentId="tr-1" parentLayoutMode="flow" parentFlowDisplay="block" />
           </tr>
         </tbody>
       </table>,
     );
+    installDocumentStyles(node);
     expect(screen.getByText("Alpha")).toHaveStyle({ transitionProperty: "opacity" });
   });
 
   it("supports CSS Transform — identically in Design, same as any other ordinary box (Checkpoint 1.15.6.14.3)", () => {
+    const node: EditorElementNode = { id: "th-1", tag: "th", text: "Alpha", transform: { rotateDeg: 15 } };
     render(
       <table>
         <tbody>
           <tr>
-            <TableCellElement node={{ id: "th-1", tag: "th", text: "Alpha", transform: { rotateDeg: 15 } }} parentId="tr-1" parentLayoutMode="flow" parentFlowDisplay="block" />
+            <TableCellElement node={node} parentId="tr-1" parentLayoutMode="flow" parentFlowDisplay="block" />
           </tr>
         </tbody>
       </table>,
     );
+    installDocumentStyles(node);
     expect(screen.getByText("Alpha")).toHaveStyle({ transform: "rotate(15deg)" });
   });
 });

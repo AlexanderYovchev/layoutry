@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import type { EditorElementNode } from "@/features/editor/types/document";
 import { ParagraphElement } from "./ParagraphElement";
+import { generatedStyleOf, installDocumentStyles } from "../../../../../../test/documentStyles";
 
 const initialState = useEditorStore.getState();
 
@@ -41,53 +43,44 @@ describe("ParagraphElement", () => {
   });
 
   it("uses the prose reading-measure default when not resized", () => {
-    render(<ParagraphElement node={{ id: "p-1", tag: "p", text: "Body copy." }} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+    const node = { id: "p-1", tag: "p", text: "Body copy." };
+    render(<ParagraphElement node={node} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+    installDocumentStyles(node);
 
     const paragraph = screen.getByText("Body copy.");
-    expect(paragraph.className).toContain("max-w-prose");
-    expect(paragraph.style.width).toBe("");
+    expect(getComputedStyle(paragraph).maxWidth).toBe("65ch");
+    expect(generatedStyleOf(paragraph).width).toBe("");
   });
 
   it("drops the prose max-width and applies the explicit size once resized — parent-dependent width still wins via maxWidth: 100%", () => {
-    render(
-      <ParagraphElement
-        node={{
-          id: "p-1",
-          tag: "p",
-          text: "Body copy.",
-          dimensions: { preferredWidth: 800, preferredHeight: 120, offsetX: 0, offsetY: 0 },
-        }}
-        parentId="section-1"
-        parentLayoutMode="flow"
-        parentFlowDisplay="block"
-      />,
-    );
+    const node: EditorElementNode = {
+      id: "p-1",
+      tag: "p",
+      text: "Body copy.",
+      dimensions: { preferredWidth: 800, preferredHeight: 120, offsetX: 0, offsetY: 0 },
+    };
+    render(<ParagraphElement node={node} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+    installDocumentStyles(node);
 
     const paragraph = screen.getByText("Body copy.");
-    expect(paragraph.className).not.toContain("max-w-prose");
-    expect(paragraph.style.width).toBe("800px");
-    expect(paragraph.style.maxWidth).toBe("100%");
-    expect(paragraph.style.overflow).toBe("hidden");
+    expect(getComputedStyle(paragraph).width).toBe("800px");
+    expect(getComputedStyle(paragraph).maxWidth).toBe("100%");
+    expect(getComputedStyle(paragraph).overflow).toBe("hidden");
   });
 
   it("defers to an explicit overflow value instead of the legacy resize-clip default (Checkpoint 5.4)", () => {
-    render(
-      <ParagraphElement
-        node={{
-          id: "p-1",
-          tag: "p",
-          text: "Body copy.",
-          dimensions: { preferredWidth: 800, preferredHeight: 120, offsetX: 0, offsetY: 0 },
-          display: { overflowY: "auto" },
-        }}
-        parentId="section-1"
-        parentLayoutMode="flow"
-        parentFlowDisplay="block"
-      />,
-    );
+    const node: EditorElementNode = {
+      id: "p-1",
+      tag: "p",
+      text: "Body copy.",
+      dimensions: { preferredWidth: 800, preferredHeight: 120, offsetX: 0, offsetY: 0 },
+      display: { overflowY: "auto" },
+    };
+    render(<ParagraphElement node={node} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+    installDocumentStyles(node);
 
     const paragraph = screen.getByText("Body copy.");
-    expect(paragraph.style.overflow).toBe("");
-    expect(paragraph.style.overflowY).toBe("auto");
+    expect(generatedStyleOf(paragraph).overflow).toBe("");
+    expect(getComputedStyle(paragraph).overflowY).toBe("auto");
   });
 });

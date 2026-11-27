@@ -1,7 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 import { gotoApp } from "./support/gotoApp";
 import { importDocument } from "./support/parityFixtures";
+import { installDeclaredStyle } from "./support/declaredStyle";
 import type { EditorElementNode } from "../src/features/editor/types/document";
+
+// BC-17.3: stored geometry lives in the generated document sheet, not inline (see support/declaredStyle.ts).
+test.beforeEach(({ page }) => installDeclaredStyle(page));
 
 /*
  * BC-13.5 — the Free drag/resize lifecycle in a real browser: Escape (drag,
@@ -80,13 +84,13 @@ test("Escape during a Free drag restores the exact position, keeps the selection
   await open(page);
   await node(page, "mover").click();
   await expect(row(page, "mover")).toHaveAttribute("aria-selected", "true");
-  const stored = await node(page, "mover").evaluate((el) => ({ left: el.style.left, top: el.style.top }));
+  const stored = await node(page, "mover").evaluate((el) => ({ left: window.__lyDeclaredStyle(el).left, top: window.__lyDeclaredStyle(el).top }));
   const { rect, point } = await press(page, "mover");
   await page.mouse.move(point.x + 90, point.y + 70, { steps: 8 });
   await expect.poll(async () => (await node(page, "mover").boundingBox())!.x).toBeGreaterThan(rect.x + 60);
   await page.keyboard.press("Escape");
   await page.mouse.up();
-  expect(await node(page, "mover").evaluate((el) => ({ left: el.style.left, top: el.style.top }))).toEqual(stored); // the exact stored position
+  expect(await node(page, "mover").evaluate((el) => ({ left: window.__lyDeclaredStyle(el).left, top: window.__lyDeclaredStyle(el).top }))).toEqual(stored); // the exact stored position
   await expect(row(page, "mover")).toHaveAttribute("aria-selected", "true");
   await expect(button(page, "Undo")).toBeDisabled();
 });
@@ -148,7 +152,7 @@ test("Workspace auto-scroll: holding near the bottom edge keeps scrolling with t
 test("Escape stops auto-scroll at once and restores the element; nothing is recorded", async ({ page }) => {
   await open(page);
   const workspace = (await page.locator('main[aria-label="Workspace"]').boundingBox())!;
-  const before = await node(page, "mover").evaluate((el) => ({ left: el.style.left, top: el.style.top }));
+  const before = await node(page, "mover").evaluate((el) => ({ left: window.__lyDeclaredStyle(el).left, top: window.__lyDeclaredStyle(el).top }));
   const { point } = await press(page, "mover");
   await page.mouse.move(point.x, workspace.y + workspace.height - 6, { steps: 8 });
   await page.waitForTimeout(400);
@@ -158,7 +162,7 @@ test("Escape stops auto-scroll at once and restores the element; nothing is reco
   await page.waitForTimeout(300);
   expect((await workspaceScroll(page)).top).toBe(at);
   await page.mouse.up();
-  expect(await node(page, "mover").evaluate((el) => ({ left: el.style.left, top: el.style.top }))).toEqual(before);
+  expect(await node(page, "mover").evaluate((el) => ({ left: window.__lyDeclaredStyle(el).left, top: window.__lyDeclaredStyle(el).top }))).toEqual(before);
   await expect(button(page, "Undo")).toBeDisabled();
 });
 
@@ -209,7 +213,7 @@ test("a nested horizontal scroller scrolls first (the Workspace doesn't), only u
 test("Delete during a drag removes the element; Undo brings it back at its committed position (never the half-dragged one)", async ({ page }) => {
   await open(page);
   await node(page, "mover").click();
-  const before = await node(page, "mover").evaluate((el) => ({ left: el.style.left, top: el.style.top }));
+  const before = await node(page, "mover").evaluate((el) => ({ left: window.__lyDeclaredStyle(el).left, top: window.__lyDeclaredStyle(el).top }));
   const { point } = await press(page, "mover");
   await page.mouse.move(point.x + 120, point.y + 90, { steps: 8 });
   await page.keyboard.press("Delete");
@@ -218,26 +222,26 @@ test("Delete during a drag removes the element; Undo brings it back at its commi
   await expect(node(page, "mover")).toHaveCount(0);
   await button(page, "Undo").click();
   await expect(node(page, "mover")).toHaveCount(1);
-  expect(await node(page, "mover").evaluate((el) => ({ left: el.style.left, top: el.style.top }))).toEqual(before);
+  expect(await node(page, "mover").evaluate((el) => ({ left: window.__lyDeclaredStyle(el).left, top: window.__lyDeclaredStyle(el).top }))).toEqual(before);
   await expect(button(page, "Undo")).toBeDisabled();
 });
 
 test("a (simulated) pointercancel mid-drag rolls back instead of committing", async ({ page }) => {
   await open(page);
-  const before = await node(page, "mover").evaluate((el) => ({ left: el.style.left, top: el.style.top }));
+  const before = await node(page, "mover").evaluate((el) => ({ left: window.__lyDeclaredStyle(el).left, top: window.__lyDeclaredStyle(el).top }));
   const { point } = await press(page, "mover");
   await page.mouse.move(point.x + 100, point.y + 50, { steps: 8 });
-  await expect.poll(async () => node(page, "mover").evaluate((el) => el.style.left)).not.toBe(before.left);
+  await expect.poll(async () => node(page, "mover").evaluate((el) => window.__lyDeclaredStyle(el).left)).not.toBe(before.left);
   await node(page, "mover").dispatchEvent("pointercancel", { pointerId: 1, bubbles: true, pointerType: "touch" });
   await page.mouse.up();
-  expect(await node(page, "mover").evaluate((el) => ({ left: el.style.left, top: el.style.top }))).toEqual(before);
+  expect(await node(page, "mover").evaluate((el) => ({ left: window.__lyDeclaredStyle(el).left, top: window.__lyDeclaredStyle(el).top }))).toEqual(before);
   await expect(button(page, "Undo")).toBeDisabled();
   await expect(page.locator('[data-canvas-overlay^="snap-guide"]')).toHaveCount(0);
 });
 
 /* ---------------- BC-13.5.1 ---------------- */
 
-const stored = (page: Page, id: string) => node(page, id).evaluate((el) => ({ left: el.style.left, top: el.style.top, width: el.style.width, height: el.style.height }));
+const stored = (page: Page, id: string) => node(page, id).evaluate((el) => ({ left: window.__lyDeclaredStyle(el).left, top: window.__lyDeclaredStyle(el).top, width: window.__lyDeclaredStyle(el).width, height: window.__lyDeclaredStyle(el).height }));
 const px = (value: string) => Number.parseFloat(value);
 
 /** Presses a resize handle of the selected element; the button stays down. */

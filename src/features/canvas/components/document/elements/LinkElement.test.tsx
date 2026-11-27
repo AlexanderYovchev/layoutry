@@ -2,6 +2,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { LinkElement } from "./LinkElement";
+import { generatedStyleOf, installDocumentStyles } from "../../../../../../test/documentStyles";
+import type { EditorElementNode } from "@/features/editor/types/document";
 
 const initialState = useEditorStore.getState();
 
@@ -43,25 +45,27 @@ describe("LinkElement", () => {
   });
 
   it("applies the preferred size and clips overflow once resized — same shared resolver pipeline as every other primitive", () => {
+    const node: EditorElementNode = {
+      id: "link-1",
+      tag: "a",
+      text: "Learn more",
+      href: "/about",
+      dimensions: { preferredWidth: 200, preferredHeight: 40, offsetX: 0, offsetY: 0 },
+    };
     render(
       <LinkElement
-        node={{
-          id: "link-1",
-          tag: "a",
-          text: "Learn more",
-          href: "/about",
-          dimensions: { preferredWidth: 200, preferredHeight: 40, offsetX: 0, offsetY: 0 },
-        }}
+        node={node}
         parentId="section-1"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
+    installDocumentStyles(node);
 
     const link = screen.getByRole("link", { name: "Learn more" });
-    expect(link.style.width).toBe("200px");
-    expect(link.style.height).toBe("40px");
-    expect(link.style.overflow).toBe("hidden");
+    expect(getComputedStyle(link).width).toBe("200px");
+    expect(getComputedStyle(link).height).toBe("40px");
+    expect(getComputedStyle(link).overflow).toBe("hidden");
   });
 
   it("is not editable until double-clicked (Checkpoint 1.3 architecture reused)", () => {
@@ -95,38 +99,44 @@ describe("LinkElement", () => {
 
   describe("Legacy underline chrome (Checkpoint 1.15.6.10.3)", () => {
     it("renders underlined by default when no decoration is authored — the legacy fallback", () => {
-      render(<LinkElement node={{ id: "link-1", tag: "a", text: "Learn more", href: "/about" }} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
-      expect(screen.getByRole("link", { name: "Learn more" }).className).toContain("underline");
+      const node: EditorElementNode = { id: "link-1", tag: "a", text: "Learn more", href: "/about" };
+      render(<LinkElement node={node} parentId="section-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+      installDocumentStyles(node);
+      expect(generatedStyleOf(screen.getByRole("link", { name: "Learn more" })).textDecorationLine).toBe("underline");
     });
 
     it("yields the legacy underline class entirely once a real decoration is authored", () => {
+      const node: EditorElementNode = { id: "link-1", tag: "a", text: "Learn more", href: "/about", typography: { textDecorationLine: "underline" } };
       render(
         <LinkElement
-          node={{ id: "link-1", tag: "a", text: "Learn more", href: "/about", typography: { textDecorationLine: "underline" } }}
+          node={node}
           parentId="section-1"
           parentLayoutMode="flow"
           parentFlowDisplay="block"
         />,
       );
+      installDocumentStyles(node);
       const link = screen.getByRole("link", { name: "Learn more" });
       // The class-level legacy underline is gone; the real underline now
       // comes from resolveTypographyStyle's own inline style instead.
       expect(link.className).not.toContain("underline");
-      expect(link.style.textDecorationLine).toBe("underline");
+      expect(getComputedStyle(link).textDecorationLine).toBe("underline");
     });
 
     it("authoring 'none' actually removes the underline — not the same as leaving it unset", () => {
+      const node: EditorElementNode = { id: "link-1", tag: "a", text: "Learn more", href: "/about", typography: { textDecorationLine: "none" } };
       render(
         <LinkElement
-          node={{ id: "link-1", tag: "a", text: "Learn more", href: "/about", typography: { textDecorationLine: "none" } }}
+          node={node}
           parentId="section-1"
           parentLayoutMode="flow"
           parentFlowDisplay="block"
         />,
       );
+      installDocumentStyles(node);
       const link = screen.getByRole("link", { name: "Learn more" });
       expect(link.className).not.toContain("underline");
-      expect(link.style.textDecorationLine).toBe("none");
+      expect(getComputedStyle(link).textDecorationLine).toBe("none");
     });
 
     it("never renders the w-fit class — removed unconditionally, not made conditional", () => {
@@ -136,15 +146,17 @@ describe("LinkElement", () => {
     });
 
     it("stays inline-block regardless of authored decoration", () => {
+      const node: EditorElementNode = { id: "link-1", tag: "a", text: "Learn more", href: "/about", typography: { textDecorationLine: "overline" } };
       render(
         <LinkElement
-          node={{ id: "link-1", tag: "a", text: "Learn more", href: "/about", typography: { textDecorationLine: "overline" } }}
+          node={node}
           parentId="section-1"
           parentLayoutMode="flow"
           parentFlowDisplay="block"
         />,
       );
-      expect(screen.getByRole("link", { name: "Learn more" }).className).toContain("inline-block");
+      installDocumentStyles(node);
+      expect(generatedStyleOf(screen.getByRole("link", { name: "Learn more" })).display).toBe("inline-block");
     });
   });
 });

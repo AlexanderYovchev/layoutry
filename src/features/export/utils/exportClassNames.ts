@@ -25,7 +25,7 @@ export function elementStyleClassName(element: ExportElement): string {
 export function exportElementClassNames(element: ExportElement): string[] {
   return [
     ...element.defaultStyles.map(defaultStyleClassName),
-    ...(element.declarations.length > 0 ? [elementStyleClassName(element)] : []),
+    ...(element.declarations.length > 0 || element.ruleTarget === true ? [elementStyleClassName(element)] : []),
     ...element.authoredClassNames,
   ];
 }

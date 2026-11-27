@@ -3,6 +3,10 @@ import type { EditorElementNode } from "../src/features/editor/types/document";
 import { gotoApp } from "./support/gotoApp";
 import { canvasNode, computed, selectOnCanvas } from "./support/inspector";
 import { importDocument } from "./support/parityFixtures";
+import { installDeclaredStyle } from "./support/declaredStyle";
+
+// BC-17.3: authored CSS lives in the generated document sheet, not inline (see support/declaredStyle.ts).
+test.beforeEach(({ page }) => installDeclaredStyle(page));
 
 /*
  * BC-05.2 — CSS reset in the real editor: representative properties from
@@ -378,7 +382,9 @@ test.describe("BC-05.2 Layout, Flex item and Grid item resets", () => {
     // The authored template (the computed one also counts the implicit track the spanning cell needs).
     expect(
       await canvasNode(page, "grid").evaluate(
-        (element) => (element as HTMLElement).style.gridTemplateColumns,
+        (element) =>
+          window.__lyDeclaredStyle(element, { authored: true })
+            .gridTemplateColumns,
       ),
     ).toMatch(/^repeat\(2, minmax\(0(px)?, 1fr\)\)$/);
 

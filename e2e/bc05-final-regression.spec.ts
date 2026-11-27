@@ -3,6 +3,10 @@ import type { EditorElementNode } from "../src/features/editor/types/document";
 import { gotoApp } from "./support/gotoApp";
 import { canvasNode, computed, selectOnCanvas } from "./support/inspector";
 import { importDocument } from "./support/parityFixtures";
+import { installDeclaredStyle } from "./support/declaredStyle";
+
+// BC-17.3: authored CSS lives in the generated document sheet, not inline (see support/declaredStyle.ts).
+test.beforeEach(({ page }) => installDeclaredStyle(page));
 
 /*
  * BC-05.4 — final BC-05 regression in the real editor:
@@ -405,7 +409,9 @@ test.describe("BC-05.4 Canvas / Preview / Export parity matrix", () => {
     // Grid: the reset template is the default 2 equal columns everywhere.
     expect(
       await canvasNode(page, "gridBox").evaluate(
-        (element) => (element as HTMLElement).style.gridTemplateColumns,
+        (element) =>
+          window.__lyDeclaredStyle(element, { authored: true })
+            .gridTemplateColumns,
       ),
     ).toMatch(/^repeat\(2, minmax\(0(px)?, 1fr\)\)$/);
     expect(code).toContain("repeat(2, minmax(0, 1fr))");

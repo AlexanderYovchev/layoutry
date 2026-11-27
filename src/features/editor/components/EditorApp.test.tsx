@@ -224,7 +224,7 @@ describe("EditorApp", { timeout: 15000 }, () => {
       expect(selectedRows, tag).toHaveLength(1);
       expect(selectedRows[0], tag).toHaveAttribute("title", structureLabel);
     }
-  }, 15000);
+  }, 30000); // BC-17.3: the Canvas now has a real generated stylesheet, and jsdom's getComputedStyle (every role query) walks its rules — ~1.8x slower in jsdom only; Chromium is not (see BC-17.3 Report 2)
 
   it("clicking the Form catalog card inserts a real <form>, selects it, and syncs Structure (Checkpoint 1.10)", async () => {
     const user = userEvent.setup();
@@ -368,7 +368,7 @@ describe("EditorApp", { timeout: 15000 }, () => {
       .filter((row) => row.getAttribute("aria-selected") === "true");
     expect(selectedRows).toHaveLength(1);
     expect(selectedRows[0]).toHaveAttribute("title", "Textarea");
-  }, 15000); // multi-round real userEvent interaction — see Checkpoint 1.8's identical fix for the same resource-contention flake under full-suite parallel load
+  }, 30000); // multi-round real userEvent interaction — see Checkpoint 1.8's identical fix; BC-17.3: doubled, the jsdom cascade over the generated stylesheet makes it ~2x slower in jsdom only
 
   it("clicking Select inserts a real <select> with three genuine <option> children, syncing Structure with their own names (Checkpoint 1.13)", async () => {
     const user = userEvent.setup();

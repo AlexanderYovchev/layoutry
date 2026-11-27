@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { CssDeclaration } from "@/features/canvas";
+import type { CssDeclaration } from "@/features/canvas/types/documentDefaultStyle";
 
 /**
  * React's own list of style properties whose numeric values are written
@@ -38,10 +38,19 @@ export function hyphenateStyleName(name: string): string {
 export function serializeStyleObject(style: CSSProperties): CssDeclaration[] {
   const declarations: CssDeclaration[] = [];
   for (const [name, raw] of Object.entries(style)) {
-    if (raw === null || raw === undefined || typeof raw === "boolean" || raw === "") continue;
+    if (
+      raw === null ||
+      raw === undefined ||
+      typeof raw === "boolean" ||
+      raw === ""
+    )
+      continue;
     let value: string;
     if (typeof raw === "number") {
-      value = raw === 0 || UNITLESS_PROPERTIES.has(name) || name.startsWith("--") ? String(raw) : `${raw}px`;
+      value =
+        raw === 0 || UNITLESS_PROPERTIES.has(name) || name.startsWith("--")
+          ? String(raw)
+          : `${raw}px`;
     } else {
       value = String(raw).trim();
     }

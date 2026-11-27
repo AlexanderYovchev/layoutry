@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { DialogElement } from "./DialogElement";
+import { generatedStyleOf, installDocumentStyles } from "../../../../../../test/documentStyles";
 
 const initialState = useEditorStore.getState();
 
@@ -248,12 +249,14 @@ describe("DialogElement (Checkpoint 1.15.6.9)", () => {
   describe("Checkpoint 1.15.6.11.3 — explicit-position centering split (Drawer feasibility)", () => {
     it("Modal case (no authored position): Preview still applies margin:auto exactly as before, with no explicit height override", () => {
       useEditorStore.setState({ editorMode: "preview" });
+      const node: EditorElementNode = { id: "dialog-1", tag: "dialog", children: [] };
       const { container } = render(
-        <DialogElement node={{ id: "dialog-1", tag: "dialog", children: [] }} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
+        <DialogElement node={node} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />,
       );
+      installDocumentStyles(node);
       const dialog = container.querySelector("dialog")!;
-      expect(dialog.style.margin).toBe("auto");
-      expect(dialog.style.height).toBe("");
+      expect(getComputedStyle(dialog).margin).toBe("auto");
+      expect(generatedStyleOf(dialog).height).toBe("");
     });
 
     it("Drawer case (authored position:fixed): Preview does NOT apply margin:auto, and instead explicitly forces height:auto to defeat the UA's height:fit-content", () => {
@@ -264,14 +267,15 @@ describe("DialogElement (Checkpoint 1.15.6.9)", () => {
         position: { position: "fixed", top: { value: 0, unit: "px" }, right: { value: 0, unit: "px" }, bottom: { value: 0, unit: "px" }, left: "auto" },
       };
       const { container } = render(<DialogElement node={node} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+      installDocumentStyles(node);
       const dialog = container.querySelector("dialog")!;
-      expect(dialog.style.margin).not.toBe("auto");
-      expect(dialog.style.height).toBe("auto");
-      expect(dialog.style.position).toBe("fixed");
-      expect(dialog.style.top).toBe("0px");
-      expect(dialog.style.right).toBe("0px");
-      expect(dialog.style.bottom).toBe("0px");
-      expect(dialog.style.left).toBe("auto");
+      expect(generatedStyleOf(dialog).margin).not.toBe("auto");
+      expect(getComputedStyle(dialog).height).toBe("auto");
+      expect(getComputedStyle(dialog).position).toBe("fixed");
+      expect(getComputedStyle(dialog).top).toBe("0px");
+      expect(getComputedStyle(dialog).right).toBe("0px");
+      expect(getComputedStyle(dialog).bottom).toBe("0px");
+      expect(getComputedStyle(dialog).left).toBe("auto");
     });
 
     it("Drawer case in Design: the authored Position is entirely deferred to Preview — the box stays an ordinary static, in-flow, fully editable element, never floating fixed over the app's own chrome", () => {
@@ -282,23 +286,25 @@ describe("DialogElement (Checkpoint 1.15.6.9)", () => {
         position: { position: "fixed", top: { value: 0, unit: "px" }, right: { value: 0, unit: "px" }, bottom: { value: 0, unit: "px" }, left: "auto" },
       };
       const { container } = render(<DialogElement node={node} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+      installDocumentStyles(node);
       const dialog = container.querySelector("dialog")!;
-      expect(dialog.style.margin).not.toBe("auto");
-      expect(dialog.style.height).toBe("");
-      expect(dialog.style.position).toBe("static");
-      expect(dialog.style.top).toBe("");
-      expect(dialog.style.right).toBe("");
-      expect(dialog.style.bottom).toBe("");
-      expect(dialog.style.left).toBe("");
+      expect(generatedStyleOf(dialog).margin).not.toBe("auto");
+      expect(generatedStyleOf(dialog).height).toBe("");
+      expect(getComputedStyle(dialog).position).toBe("static");
+      expect(generatedStyleOf(dialog).top).toBe("");
+      expect(generatedStyleOf(dialog).right).toBe("");
+      expect(generatedStyleOf(dialog).bottom).toBe("");
+      expect(generatedStyleOf(dialog).left).toBe("");
     });
 
     it("a Dialog with position explicitly authored as 'static' is treated the same as no authored position at all — margin:auto still applies", () => {
       useEditorStore.setState({ editorMode: "preview" });
       const node: EditorElementNode = { id: "dialog-1", tag: "dialog", position: { position: "static" } };
       const { container } = render(<DialogElement node={node} parentId="page-1" parentLayoutMode="flow" parentFlowDisplay="block" />);
+      installDocumentStyles(node);
       const dialog = container.querySelector("dialog")!;
-      expect(dialog.style.margin).toBe("auto");
-      expect(dialog.style.height).toBe("");
+      expect(getComputedStyle(dialog).margin).toBe("auto");
+      expect(generatedStyleOf(dialog).height).toBe("");
     });
   });
 });

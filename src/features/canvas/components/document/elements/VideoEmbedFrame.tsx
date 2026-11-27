@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { VideoEmbedPlaceholder } from "@/features/canvas/components/document/elements/VideoEmbedPlaceholder";
 import { useFullscreenElement } from "@/features/canvas/hooks/useFullscreenElement";
 import { useHostOrigin } from "@/features/canvas/hooks/useHostOrigin";
@@ -13,7 +13,7 @@ import { resolveVideoEmbedPlayerConfig, type VideoEmbedPlayerConfig } from "@/li
 interface VideoEmbedFrameProps {
   node: EditorElementNode;
   isPreview: boolean;
-  innerStyle: CSSProperties;
+  innerClassName: string;
 }
 
 /**
@@ -46,7 +46,7 @@ interface VideoEmbedFrameProps {
  * stayed fullscreen, or the next fullscreen request never completed). While
  * releasing, the player is inside its hidden (or Design) wrapper.
  */
-export function VideoEmbedFrame({ node, isPreview, innerStyle }: VideoEmbedFrameProps) {
+export function VideoEmbedFrame({ node, isPreview, innerClassName }: VideoEmbedFrameProps) {
   const previewShown = usePreviewFrameShown(node.id, isPreview);
   const hostOrigin = useHostOrigin();
   const reducedMotion = usePrefersReducedMotion();
@@ -64,13 +64,13 @@ export function VideoEmbedFrame({ node, isPreview, innerStyle }: VideoEmbedFrame
   const config = shown ? resolveVideoEmbedPlayerConfig(node, { hostOrigin, reducedMotion, fullscreenAllowed: true }) : undefined;
   if (!config) return <VideoEmbedPlaceholder node={node} isPreview={isPreview} />;
 
-  return <VideoEmbedPlayerFrame key={`${config.src}|${config.sandbox}|${config.allow ?? ""}`} config={config} node={node} innerStyle={innerStyle} />;
+  return <VideoEmbedPlayerFrame key={`${config.src}|${config.sandbox}|${config.allow ?? ""}`} config={config} node={node} innerClassName={innerClassName} />;
 }
 
 interface VideoEmbedPlayerFrameProps {
   config: VideoEmbedPlayerConfig;
   node: EditorElementNode;
-  innerStyle: CSSProperties;
+  innerClassName: string;
 }
 
 /**
@@ -88,7 +88,7 @@ interface VideoEmbedPlayerFrameProps {
  * document. Relying on the browser to notice the removal left the desktop
  * window stuck in fullscreen intermittently.
  */
-function VideoEmbedPlayerFrame({ config, node, innerStyle }: VideoEmbedPlayerFrameProps) {
+function VideoEmbedPlayerFrame({ config, node, innerClassName }: VideoEmbedPlayerFrameProps) {
   const [desktop] = useState(getDesktopVideoEmbedFrames);
   const [token] = useState(() => (desktop ? createVideoEmbedFrameToken() : undefined));
   const [registered, setRegistered] = useState(false);
@@ -130,8 +130,7 @@ function VideoEmbedPlayerFrame({ config, node, innerStyle }: VideoEmbedPlayerFra
       referrerPolicy={config.referrerPolicy}
       loading={config.loading}
       id={node.htmlId}
-      className={node.className}
-      style={innerStyle}
+      className={innerClassName}
     />
   );
 }

@@ -4,9 +4,7 @@ import { Image as ImageIcon } from "lucide-react";
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
-import { resolveImageElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
-import { useEditorStore } from "@/features/editor/stores/useEditorStore";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -28,15 +26,15 @@ import type { DocumentElementProps } from "@/features/canvas/types/documentRende
 export function ImageElement({ node, parentId, parentLayoutMode, parentFlowDisplay }: DocumentElementProps) {
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
-  const isPreview = useEditorStore((state) => state.editorMode === "preview");
-  const recipe = resolveImageElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, parentFlowDisplay);
 
   return (
     <div
       ref={mergeRefs(dropRef, dragRef)}
       {...documentNodeAttributes(node, parentId)}
-      className={cn(documentDefaultClasses(recipe.defaults), isDragging && "opacity-40")}
-      style={recipe.style}
+      className={cn(nodeStyle.className, isDragging && "opacity-40")}
+      style={nodeStyle.style}
+      {...nodeStyle.overrideAttributes}
       {...listeners}
     >
       {node.src ? (
@@ -45,8 +43,7 @@ export function ImageElement({ node, parentId, parentLayoutMode, parentFlowDispl
           src={node.src}
           alt={node.displayName ?? ""}
           id={node.htmlId}
-          className={node.className}
-          style={recipe.innerStyle}
+          className={cn(nodeStyle.innerClassName, nodeStyle.authoredClassName)}
         />
       ) : (
         <ImageIcon aria-hidden="true" className="size-8 text-zinc-300 dark:text-zinc-700" />

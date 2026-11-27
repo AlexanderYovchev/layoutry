@@ -2,6 +2,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { HeadingElement } from "./HeadingElement";
+import { installDocumentStyles } from "../../../../../../test/documentStyles";
+import type { EditorElementNode } from "@/features/editor/types/document";
 
 const initialState = useEditorStore.getState();
 
@@ -65,73 +67,81 @@ describe("HeadingElement", () => {
   });
 
   it("applies the preferred width/height and clips overflow once resized — universal resize, Checkpoint 3.4.3", () => {
+    const node: EditorElementNode = {
+      id: "heading-1",
+      tag: "h1",
+      text: "Title",
+      dimensions: { preferredWidth: 400, preferredHeight: 60, offsetX: 0, offsetY: 0 },
+    };
     render(
       <HeadingElement
-        node={{
-          id: "heading-1",
-          tag: "h1",
-          text: "Title",
-          dimensions: { preferredWidth: 400, preferredHeight: 60, offsetX: 0, offsetY: 0 },
-        }}
+        node={node}
         parentId="section-1"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
+    installDocumentStyles(node);
 
     const heading = screen.getByText("Title");
-    expect(heading.style.width).toBe("400px");
-    expect(heading.style.height).toBe("60px");
-    expect(heading.style.maxWidth).toBe("100%");
-    expect(heading.style.maxHeight).toBe("100%");
-    expect(heading.style.overflow).toBe("hidden");
+    expect(getComputedStyle(heading).width).toBe("400px");
+    expect(getComputedStyle(heading).height).toBe("60px");
+    expect(getComputedStyle(heading).maxWidth).toBe("100%");
+    expect(getComputedStyle(heading).maxHeight).toBe("100%");
+    expect(getComputedStyle(heading).overflow).toBe("hidden");
   });
 
   it("an explicit CSS min-width survives being a Flex child (Checkpoint 5.7 fix — resolveFlexOrGridChildStyle's own containment default of min-width:0 must not silently override a real user constraint)", () => {
+    const node: EditorElementNode = { id: "heading-1", tag: "h1", text: "Title", sizeConstraints: { minWidth: 250 } };
     render(
       <HeadingElement
-        node={{ id: "heading-1", tag: "h1", text: "Title", sizeConstraints: { minWidth: 250 } }}
+        node={node}
         parentId="section-1"
         parentLayoutMode="flow"
         parentFlowDisplay="flex"
       />,
     );
+    installDocumentStyles(node, { parentFlowDisplay: "flex" });
 
     const heading = screen.getByText("Title");
-    expect(heading.style.minWidth).toBe("250px");
+    expect(getComputedStyle(heading).minWidth).toBe("250px");
   });
 
   it("still defaults to min-width: 0 as a Flex child when no explicit constraint is set (the pre-existing shrink-past-content-size containment guarantee)", () => {
+    const node: EditorElementNode = { id: "heading-1", tag: "h1", text: "Title" };
     render(
       <HeadingElement
-        node={{ id: "heading-1", tag: "h1", text: "Title" }}
+        node={node}
         parentId="section-1"
         parentLayoutMode="flow"
         parentFlowDisplay="flex"
       />,
     );
+    installDocumentStyles(node, { parentFlowDisplay: "flex" });
 
     const heading = screen.getByText("Title");
-    expect(heading.style.minWidth).toBe("0px");
+    expect(getComputedStyle(heading).minWidth).toBe("0px");
   });
 
   it("defers to an explicit overflow value instead of the legacy resize-clip default (Checkpoint 5.4)", () => {
+    const node: EditorElementNode = {
+      id: "heading-1",
+      tag: "h1",
+      text: "Title",
+      dimensions: { preferredWidth: 400, preferredHeight: 60, offsetX: 0, offsetY: 0 },
+      display: { overflow: "visible" },
+    };
     render(
       <HeadingElement
-        node={{
-          id: "heading-1",
-          tag: "h1",
-          text: "Title",
-          dimensions: { preferredWidth: 400, preferredHeight: 60, offsetX: 0, offsetY: 0 },
-          display: { overflow: "visible" },
-        }}
+        node={node}
         parentId="section-1"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
+    installDocumentStyles(node);
 
     const heading = screen.getByText("Title");
-    expect(heading.style.overflow).toBe("visible");
+    expect(getComputedStyle(heading).overflow).toBe("visible");
   });
 });

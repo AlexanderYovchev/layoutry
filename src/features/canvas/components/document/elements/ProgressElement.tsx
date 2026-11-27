@@ -3,9 +3,8 @@
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { resolveBoxElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
 import { getProgressMax, getProgressValue } from "@/features/editor/types/progress";
-import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
@@ -49,8 +48,7 @@ import type { DocumentElementProps } from "@/features/canvas/types/documentRende
 export function ProgressElement({ node, parentId, parentLayoutMode, parentFlowDisplay }: DocumentElementProps) {
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
-  const isPreview = useEditorStore((state) => state.editorMode === "preview");
-  const recipe = resolveBoxElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, parentFlowDisplay);
 
   return (
     <progress
@@ -59,8 +57,9 @@ export function ProgressElement({ node, parentId, parentLayoutMode, parentFlowDi
       {...documentNodeAttributes(node, parentId)}
       value={getProgressValue(node)}
       max={getProgressMax(node)}
-      className={cn(isDragging && "opacity-40", node.className)}
-      style={recipe.style}
+      className={cn(nodeStyle.className, isDragging && "opacity-40", nodeStyle.authoredClassName)}
+      style={nodeStyle.style}
+      {...nodeStyle.overrideAttributes}
       {...listeners}
     />
   );

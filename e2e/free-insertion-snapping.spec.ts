@@ -1,7 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 import { gotoApp } from "./support/gotoApp";
 import { importDocument } from "./support/parityFixtures";
+import { installDeclaredStyle } from "./support/declaredStyle";
 import type { EditorElementNode } from "../src/features/editor/types/document";
+
+// BC-17.3: stored geometry lives in the generated document sheet, not inline (see support/declaredStyle.ts).
+test.beforeEach(({ page }) => installDeclaredStyle(page));
 
 /*
  * BC-13.6 (Decision 30) — dragging a Resource Panel component into a Free
@@ -101,13 +105,13 @@ test("a Paragraph dragged into a Free container: live preview at the pointer, no
   expect(inserted.x).toBeCloseTo(last.x, 0);
   expect(inserted.y).toBeCloseTo(last.y, 0);
   expect(inserted.width).toBeCloseTo(last.width, 0);
-  const style = await node(page, added[0]!).evaluate((el) => ({ left: el.style.left, top: el.style.top }));
+  const style = await node(page, added[0]!).evaluate((el) => ({ left: window.__lyDeclaredStyle(el).left, top: window.__lyDeclaredStyle(el).top }));
 
   await button(page, "Undo").click();
   await expect(node(page, added[0]!)).toHaveCount(0);
   await expect(button(page, "Undo")).toBeDisabled();
   await button(page, "Redo").click();
-  expect(await node(page, added[0]!).evaluate((el) => ({ left: el.style.left, top: el.style.top }))).toEqual(style);
+  expect(await node(page, added[0]!).evaluate((el) => ({ left: window.__lyDeclaredStyle(el).left, top: window.__lyDeclaredStyle(el).top }))).toEqual(style);
 });
 
 test("snapping: 3px from an element's left edge the preview snaps to it with an achieved guide, and the drop keeps it; Alt bypasses (dashed guide)", async ({ page }) => {
@@ -242,7 +246,7 @@ test("click-to-insert is unchanged: the first-available placement, not a pointer
   await tile(page, "Paragraph").click();
   const added = (await childIds(page, "free")).filter((id) => id !== "anchor");
   expect(added).toHaveLength(1);
-  const style = await node(page, added[0]!).evaluate((el) => ({ left: el.style.left, top: el.style.top }));
+  const style = await node(page, added[0]!).evaluate((el) => ({ left: window.__lyDeclaredStyle(el).left, top: window.__lyDeclaredStyle(el).top }));
   // The existing first-available slot (resolveFreeInsertionPosition: a 16px step grid from the top-left, skipping occupied slots), not where anything was pointed at.
   expect(Number.parseFloat(style.left) % 16).toBe(0);
   expect(Number.parseFloat(style.top) % 16).toBe(0);
@@ -277,12 +281,12 @@ test("between Free containers the preview moves to the new one (fresh targets, n
   expect(added).toHaveLength(1);
   expect(await childIds(page, "free2")).toEqual([]);
   expect((await childIds(page, "free")).filter((id) => id !== "anchor")).toEqual([]);
-  expect(await node(page, added[0]!).evaluate((el) => el.style.position)).not.toBe("absolute");
+  expect(await node(page, added[0]!).evaluate((el) => window.__lyDeclaredStyle(el).position)).not.toBe("absolute");
 });
 
 /* ---------------- BC-13.6.1 ---------------- */
 
-const styleOf = (page: Page, id: string) => node(page, id).evaluate((el) => ({ left: el.style.left, top: el.style.top, width: el.style.width, height: el.style.height, zIndex: getComputedStyle(el).zIndex }));
+const styleOf = (page: Page, id: string) => node(page, id).evaluate((el) => ({ left: window.__lyDeclaredStyle(el).left, top: window.__lyDeclaredStyle(el).top, width: window.__lyDeclaredStyle(el).width, height: window.__lyDeclaredStyle(el).height, zIndex: getComputedStyle(el).zIndex }));
 const descendantIds = (page: Page, id: string) => node(page, id).evaluate((el) => [el.getAttribute("data-node-id"), ...[...el.querySelectorAll("[data-node-id]")].map((c) => c.getAttribute("data-node-id"))]);
 const tree = (page: Page) => page.getByRole("tree", { name: "Page structure" });
 

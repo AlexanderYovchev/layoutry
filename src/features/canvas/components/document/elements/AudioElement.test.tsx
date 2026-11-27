@@ -2,6 +2,8 @@ import { render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { AudioElement } from "./AudioElement";
+import { installDocumentStyles } from "../../../../../../test/documentStyles";
+import type { EditorElementNode } from "@/features/editor/types/document";
 
 const initialState = useEditorStore.getState();
 
@@ -149,15 +151,17 @@ describe("AudioElement (Checkpoint 1.15.6.12.3)", () => {
   });
 
   it("applies a CSS background to the wrapper — unlike Video/Image, Audio's native control bar does not always fill its box", () => {
+    const node: EditorElementNode = { id: "audio-1", tag: "audio", background: { color: "#ff0000" } };
     render(
       <AudioElement
-        node={{ id: "audio-1", tag: "audio", background: { color: "#ff0000" } }}
+        node={node}
         parentId="page-1"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
+    installDocumentStyles(node);
     const wrapper = document.querySelector("[data-node-id='audio-1']") as HTMLElement;
-    expect(wrapper.getAttribute("style")).toMatch(/background-color/);
+    expect(getComputedStyle(wrapper).backgroundColor).toBe("rgb(255, 0, 0)");
   });
 });

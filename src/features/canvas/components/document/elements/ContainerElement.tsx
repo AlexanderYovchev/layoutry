@@ -3,8 +3,7 @@
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
-import { resolveContainerElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import { accessibilityProps } from "@/features/editor/rules/accessibilityAttributes";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
@@ -69,7 +68,7 @@ export function ContainerElement({
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
 
-  const recipe = resolveContainerElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, parentFlowDisplay);
 
   // Container (div), Section (section), Unordered/Ordered List (ul/ol),
   // the semantic sectioning family (header/nav/main/article/aside/
@@ -106,8 +105,9 @@ export function ContainerElement({
       {...accessibilityProps(node, { nativeDisabled: isPreview })}
       {...(node.tag === "form" ? { onSubmit: preventEditorFormSubmission } : undefined)}
       {...(node.tag === "label" && !isPreview ? { onClick: preventEditorLabelActivation } : undefined)}
-      className={cn(documentDefaultClasses(recipe.defaults), isDragging && "opacity-40", node.className)}
-      style={recipe.style}
+      className={cn(nodeStyle.className, isDragging && "opacity-40", nodeStyle.authoredClassName)}
+      style={nodeStyle.style}
+      {...nodeStyle.overrideAttributes}
       {...listeners}
     >
       {children}

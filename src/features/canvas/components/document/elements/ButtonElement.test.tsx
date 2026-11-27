@@ -3,6 +3,8 @@ import type { FormEvent } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { ButtonElement } from "./ButtonElement";
+import { installDocumentStyles } from "../../../../../../test/documentStyles";
+import type { EditorElementNode } from "@/features/editor/types/document";
 
 const initialState = useEditorStore.getState();
 
@@ -70,64 +72,70 @@ describe("ButtonElement", () => {
   });
 
   it("applies the preferred size and clips overflow once resized — universal resize, Checkpoint 3.4.3", () => {
+    const node: EditorElementNode = {
+      id: "button-1",
+      tag: "button",
+      text: "Go",
+      dimensions: { preferredWidth: 200, preferredHeight: 50, offsetX: 0, offsetY: 0 },
+    };
     render(
       <ButtonElement
-        node={{
-          id: "button-1",
-          tag: "button",
-          text: "Go",
-          dimensions: { preferredWidth: 200, preferredHeight: 50, offsetX: 0, offsetY: 0 },
-        }}
+        node={node}
         parentId="section-1"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
+    installDocumentStyles(node);
 
     const button = screen.getByRole("button", { name: "Go" });
-    expect(button.style.width).toBe("200px");
-    expect(button.style.height).toBe("50px");
-    expect(button.style.overflow).toBe("hidden");
+    expect(getComputedStyle(button).width).toBe("200px");
+    expect(getComputedStyle(button).height).toBe("50px");
+    expect(getComputedStyle(button).overflow).toBe("hidden");
   });
 
   it("defers to an explicit unified overflow value instead of the legacy resize-clip default (Checkpoint 5.4)", () => {
+    const node: EditorElementNode = {
+      id: "button-1",
+      tag: "button",
+      text: "Go",
+      dimensions: { preferredWidth: 200, preferredHeight: 50, offsetX: 0, offsetY: 0 },
+      display: { overflow: "visible" },
+    };
     render(
       <ButtonElement
-        node={{
-          id: "button-1",
-          tag: "button",
-          text: "Go",
-          dimensions: { preferredWidth: 200, preferredHeight: 50, offsetX: 0, offsetY: 0 },
-          display: { overflow: "visible" },
-        }}
+        node={node}
         parentId="section-1"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
+    installDocumentStyles(node);
 
     const button = screen.getByRole("button", { name: "Go" });
-    expect(button.style.overflow).toBe("visible");
+    expect(getComputedStyle(button).overflow).toBe("visible");
   });
 
   it("defers to an explicit overflowX/overflowY axis instead of the legacy resize-clip default (Checkpoint 5.4)", () => {
+    const node: EditorElementNode = {
+      id: "button-1",
+      tag: "button",
+      text: "Go",
+      dimensions: { preferredWidth: 200, preferredHeight: 50, offsetX: 0, offsetY: 0 },
+      display: { overflowY: "auto" },
+    };
     render(
       <ButtonElement
-        node={{
-          id: "button-1",
-          tag: "button",
-          text: "Go",
-          dimensions: { preferredWidth: 200, preferredHeight: 50, offsetX: 0, offsetY: 0 },
-          display: { overflowY: "auto" },
-        }}
+        node={node}
         parentId="section-1"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
+    installDocumentStyles(node);
 
     const button = screen.getByRole("button", { name: "Go" });
-    expect(button.style.overflow).toBe("");
-    expect(button.style.overflowY).toBe("auto");
+    expect(getComputedStyle(button).overflow).toBe("");
+    expect(getComputedStyle(button).overflowY).toBe("auto");
   });
 });

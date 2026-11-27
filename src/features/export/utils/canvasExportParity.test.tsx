@@ -1,22 +1,27 @@
 import { render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { DocumentNodeRenderer } from "@/features/canvas/components/document/DocumentNodeRenderer";
-import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
+import { getDocumentDefaultStyle } from "@/features/canvas/utils/documentDefaultStyles";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { buildExportDocument } from "@/features/export/utils/buildExportDocument";
 import type { ExportAttribute, ExportElement } from "@/features/export/types/exportIr";
-import { cn } from "@/lib/utils";
 import { catalogDocument, VISUAL_PARITY_DOCUMENTS } from "../../../../test/fixtures/export/exportFixtureDocuments";
+import { generatedStyleOf, installDocumentStyles } from "../../../../test/documentStyles";
 
 /**
  * Drift guard (EXPORT-1.2): renders each fixture with the real Canvas
  * components in Preview mode and checks, node by node, that export chose
- * the same tag, the same inline styles (through the same CSSOM), the same
- * default classes, the same attributes and the same text. Because both
- * sides call the shared element style recipes, a failure here means the
- * export's per-tag mapping or layout context has diverged from the
- * Canvas's.
+ * the same tag, the same effective declarations (through the same CSSOM),
+ * the same classes, the same attributes and the same text.
+ *
+ * BC-17.3: the Canvas no longer carries default classes or inline authored
+ * styles — the generated Preview stylesheet (the shared compiler) holds
+ * both. So each Canvas element is compared by what that installed sheet
+ * declares for it (defaults, then its own base rule, in cascade order)
+ * against the export's default presentations followed by its own
+ * declarations. Its inline style must be empty (no live gesture), and it
+ * carries its generated class plus exactly the exported authored classes.
  */
 
 const initialStoreState = useEditorStore.getState();
@@ -44,8 +49,15 @@ function longhandValues(style: CSSStyleDeclaration): Record<string, string> {
 }
 
 /** The Canvas inline style minus editor-only declarations (SVG's drag-to-draw `user-select: none`). */
-function canvasStyle(element: Element): Record<string, string> {
+function canvasInlineStyle(element: Element): Record<string, string> {
   const values = longhandValues((element as HTMLElement).style);
+  if (element.tagName.toLowerCase() === "svg") delete values["user-select"];
+  return values;
+}
+
+/** What the installed Preview sheet declares for the Canvas element (inline style excluded: it must be empty). */
+function canvasStyle(element: Element): Record<string, string> {
+  const values = longhandValues(generatedStyleOf(element as HTMLElement));
   if (element.tagName.toLowerCase() === "svg") delete values["user-select"];
   return values;
 }
@@ -63,10 +75,21 @@ function withoutReactToggleValue(element: Element, attributes: Record<string, st
   return attributes;
 }
 
+/** The export element's default presentations (table order; @media skipped, as on the Canvas side), then its own declarations. */
 function exportedStyle(element: ExportElement): Record<string, string> {
   const probe = document.createElement("div");
+  for (const id of element.defaultStyles) for (const [property, value] of getDocumentDefaultStyle(id).declarations) probe.style.setProperty(property, value);
   for (const [property, value] of element.declarations) probe.style.setProperty(property, value);
-  return longhandValues(probe.style);
+  // Read back through a stylesheet rule, exactly as generatedStyleOf reads the Canvas side (the CSSOM lists
+  // shorthands differently for inline and rule declarations).
+  const sheet = document.createElement("style");
+  sheet.textContent = `.parity-probe { ${probe.style.cssText} }`;
+  document.head.appendChild(sheet);
+  const rule = sheet.sheet?.cssRules[0];
+  const read = document.createElement("div").style;
+  if (rule instanceof CSSStyleRule) for (const name of Array.from(rule.style)) read.setProperty(name, rule.style.getPropertyValue(name), rule.style.getPropertyPriority(name));
+  sheet.remove();
+  return longhandValues(read);
 }
 
 function classTokens(value: string | null): string[] {
@@ -101,6 +124,7 @@ function elementText(element: ExportElement): string {
 
 function compareElement(canvas: Element, exported: ExportElement, label: string) {
   expect(canvas.tagName.toLowerCase(), `${label} tag`).toBe(exported.tag);
+  expect(canvasInlineStyle(canvas), `${label} inline style`).toEqual({});
   expect(canvasStyle(canvas), `${label} style`).toEqual(exportedStyle(exported));
   expect(withoutReactToggleValue(canvas, canvasAttributes(canvas)), `${label} attributes`).toEqual(exportAttributes(exported.attributes));
 }
@@ -108,6 +132,7 @@ function compareElement(canvas: Element, exported: ExportElement, label: string)
 function assertParity(documentNode: EditorElementNode) {
   useEditorStore.setState({ editorMode: "preview", runtimeVisibility: {} });
   const { container } = render(<DocumentNodeRenderer node={documentNode} parentId={null} parentLayoutMode="flow" parentFlowDisplay="block" />);
+  installDocumentStyles(documentNode, { surface: "preview" });
 
   const built = buildExportDocument(documentNode);
   if (!built.ok) throw new Error(JSON.stringify(built.diagnostics));
@@ -126,7 +151,7 @@ function assertParity(documentNode: EditorElementNode) {
 
     compareElement(canvas, element, nodeId);
     const authored = isMediaFrame ? [] : element.authoredClassNames;
-    expect(classTokens(canvas.getAttribute("class")), `${nodeId} classes`).toEqual(classTokens(cn(documentDefaultClasses(element.defaultStyles), ...authored)));
+    expect(classTokens(canvas.getAttribute("class")), `${nodeId} classes`).toEqual([`ly-n-${nodeId}`, ...authored].sort());
 
     if (isMediaFrame && element.children[0].kind === "element") {
       const inner = element.children[0];
@@ -134,7 +159,7 @@ function assertParity(documentNode: EditorElementNode) {
       expect(canvasInner, `${nodeId} inner media`).not.toBeNull();
       if (canvasInner) {
         compareElement(canvasInner, inner, `${nodeId} inner`);
-        expect(classTokens(canvasInner.getAttribute("class"))).toEqual(classTokens(inner.authoredClassNames.join(" ")));
+        expect(classTokens(canvasInner.getAttribute("class"))).toEqual([`ly-ni-${nodeId}`, ...inner.authoredClassNames].sort());
       }
     } else if (isEmptyImageFrame) {
       // The Canvas's placeholder icon is editor-only and never exported.
@@ -161,7 +186,8 @@ describe("Canvas/export parity", () => {
     assertParity(build());
   });
 
-  it("every catalog entry exports exactly what the Canvas renders", () => {
+  // BC-17.3: ~270 elements compared through the jsdom cascade over a real generated sheet; a larger budget than the default 5 s.
+  it("every catalog entry exports exactly what the Canvas renders", { timeout: 20000 }, () => {
     assertParity(catalogDocument());
   });
 });

@@ -1,4 +1,4 @@
-import { getDocumentDefaultStyle, type CssDeclaration } from "@/features/canvas";
+import { getDocumentDefaultStyle, printSelector, printStyleRule, ruleOrderKey, STYLE_BUCKET, type CssDeclaration } from "@/features/canvas";
 import type { ExportDocument, ExportElement } from "@/features/export/types/exportIr";
 import { exportBaseStylesheet } from "@/features/export/utils/exportBaseStylesheet";
 import { defaultStyleClassName, elementStyleClassName } from "@/features/export/utils/exportClassNames";
@@ -39,6 +39,11 @@ function collectTransitionSelectors(element: ExportElement, selectors: string[])
  * element's own authored rule in document order. Defaults precede element
  * rules at equal specificity, so authored styles always win — exactly as
  * the Canvas's inline styles win over its default classes.
+ * BC-17.3: the authored state, pseudo-element, part and role-group rules
+ * (the shared compiler) join the element rules in ONE order: by order key
+ * (bucket, then tier), then document order — the same global order the
+ * Canvas and Preview sheets use, so a role-group rule precedes its members'
+ * own rules and a :hover rule follows every base rule.
  * Last, a reduced-motion block for elements with an authored transition.
  */
 export function printExportStylesheet(document: ExportDocument): string {
@@ -54,10 +59,17 @@ export function printExportStylesheet(document: ExportDocument): string {
 
   const elementRules: string[] = [];
   collectElementRules(document.root, elementRules);
-  sections.push(...elementRules);
+  const baseKey = ruleOrderKey({ bucket: STYLE_BUCKET.base, tier: 1 });
+  const ordered = [
+    ...elementRules.map((text, index) => ({ key: baseKey, index, text })),
+    ...document.styleRules.map((styleRule, index) => ({ key: ruleOrderKey(styleRule), index: elementRules.length + index, text: printStyleRule(styleRule) })),
+  ];
+  ordered.sort((a, b) => a.key - b.key || a.index - b.index);
+  sections.push(...ordered.map((entry) => entry.text));
 
   const transitionSelectors: string[] = [];
   collectTransitionSelectors(document.root, transitionSelectors);
+  for (const styleRule of document.styleRules) if (styleRule.declarations.some(([property]) => property === "transition-duration")) transitionSelectors.push(printSelector(styleRule.selector));
   if (transitionSelectors.length > 0) sections.push(`@media (prefers-reduced-motion: reduce) {\n${rule(transitionSelectors.join(", "), REDUCED_MOTION_DECLARATIONS, "  ")}\n}`);
 
   return `${sections.join("\n\n")}\n`;

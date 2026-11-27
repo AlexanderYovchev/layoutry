@@ -13,8 +13,7 @@ import { RuntimeHiddenContext } from "@/features/canvas/components/document/prev
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
-import { resolveDialogElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
 import { resolveDialogAccessibleDescription, resolveDialogAccessibleName } from "@/features/canvas/utils/resolveDialogAccessibleName";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { cn, mergeRefs } from "@/lib/utils";
@@ -210,7 +209,7 @@ export function DialogElement({ node, parentId, parentLayoutMode, parentFlowDisp
 
   // The Design/Preview positioning split (and its live-verified rationale)
   // lives in resolveDialogElementStyle, shared with HTML/CSS export.
-  const recipe = resolveDialogElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, parentFlowDisplay);
 
   // Checkpoint 1.15.6.9.1 — see resolveDialogAccessibleName.ts's own top
   // comment for why this is derived at render time rather than stored.
@@ -230,8 +229,9 @@ export function DialogElement({ node, parentId, parentLayoutMode, parentFlowDisp
       aria-description={accessibleDescription}
       onClick={handleBackdropClick}
       onKeyDown={handleDialogKeyDown}
-      className={cn(documentDefaultClasses(recipe.defaults), isDragging && "opacity-40", node.className)}
-      style={recipe.style}
+      className={cn(nodeStyle.className, isDragging && "opacity-40", nodeStyle.authoredClassName)}
+      style={nodeStyle.style}
+      {...nodeStyle.overrideAttributes}
       {...listeners}
     >
       {children}

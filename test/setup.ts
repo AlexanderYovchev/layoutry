@@ -4,6 +4,8 @@ import { afterEach } from "vitest";
 
 afterEach(() => {
   cleanup();
+  // BC-17.3: the generated document sheet a test installed (test/documentStyles.ts).
+  if (typeof document !== "undefined") for (const element of document.querySelectorAll("style[data-test-document-styles]")) element.remove();
 });
 
 // jsdom does not implement the native <dialog> modal methods yet.

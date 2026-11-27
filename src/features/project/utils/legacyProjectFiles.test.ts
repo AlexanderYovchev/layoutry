@@ -283,7 +283,8 @@ describe("the first format 4.0 file (BC-17.2 fixture)", () => {
     });
   });
 
-  it("exports exactly what the same document exports without its styling-foundation data (none of it renders yet)", () => {
+  // BC-17.2 asserted the opposite ("none of it renders yet"); BC-17.3 is the checkpoint that renders it.
+  it("BC-17.3: its styling-foundation data now reaches the export (state rules, generated content, counters, outline), and only the stylesheet and generated classes change", () => {
     const result = parseProjectFile(
       fixture("project-4.0-styling-foundation.layoutry").toString("utf8"),
     );
@@ -315,10 +316,25 @@ describe("the first format 4.0 file (BC-17.2 fixture)", () => {
       ),
     );
     expect(JSON.stringify(plain)).not.toMatch(/styleRules|Logical"|counters/);
-    for (const mode of ["standalone", "separate"] as const)
-      expect(exportHtmlCss(result.project.document, { mode }).files).toEqual(
-        exportHtmlCss(plain, { mode }).files,
+    const styled = exportHtmlCss(result.project.document, { mode: "separate" }).files;
+    const unstyled = exportHtmlCss(plain, { mode: "separate" }).files;
+    const css = (files: typeof styled) =>
+      files.find((file) => file.path.endsWith(".css"))?.content ?? "";
+    expect(css(styled)).not.toBe(css(unstyled));
+    // The button's hover/focus-visible/disabled rules, the heading's counter
+    // content and the document counters, all printed by the shared compiler.
+    expect(css(styled)).toMatch(/:where\(:hover\)/);
+    expect(css(styled)).toContain("aria-disabled");
+    expect(css(styled)).toMatch(/content: .*counter\(/);
+    expect(css(styled)).toMatch(/counter-(reset|increment)/);
+    expect(css(styled)).not.toContain("data-ly-force");
+    // The markup is the same apart from the generated classes that state rules need.
+    const markup = (files: typeof styled) =>
+      (files.find((file) => file.path === "index.html")?.content ?? "").replace(
+        / class="[^"]*"/g,
+        "",
       );
+    expect(markup(styled)).toBe(markup(unstyled));
   });
 });
 

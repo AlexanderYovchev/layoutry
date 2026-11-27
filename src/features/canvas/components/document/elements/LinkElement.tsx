@@ -6,8 +6,7 @@ import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { usePreviewTriggerAria } from "@/features/canvas/hooks/usePreviewTriggerAria";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
-import { resolveTextElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
 import { accessibilityProps, isNavigableLink } from "@/features/editor/rules/accessibilityAttributes";
 import { getLinkHref } from "@/features/editor/types/link";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
@@ -38,7 +37,7 @@ export function LinkElement({ node, parentId, parentLayoutMode, parentFlowDispla
   const editable = useEditableText(node);
   const triggerAria = usePreviewTriggerAria(node);
   const isPreview = useEditorStore((state) => state.editorMode === "preview");
-  const recipe = resolveTextElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, parentFlowDisplay);
 
   return (
     <a
@@ -52,12 +51,13 @@ export function LinkElement({ node, parentId, parentLayoutMode, parentFlowDispla
       {...triggerAria}
       {...editable.editableProps}
       className={cn(
-        documentDefaultClasses(recipe.defaults),
+        nodeStyle.className,
         editable.isEditing && "outline-none",
         isDragging && "opacity-40",
-        node.className,
+        nodeStyle.authoredClassName,
       )}
-      style={recipe.style}
+      style={nodeStyle.style}
+      {...nodeStyle.overrideAttributes}
       {...(editable.isEditing ? undefined : listeners)}
     >
       {node.text}

@@ -2,6 +2,8 @@ import { render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { ProgressElement } from "./ProgressElement";
+import { installDocumentStyles } from "../../../../../../test/documentStyles";
+import type { EditorElementNode } from "@/features/editor/types/document";
 
 describe("ProgressElement (Checkpoint 1.15.6.12.4)", () => {
   it("renders a genuine <progress>, not a div/placeholder standing in for one", () => {
@@ -101,22 +103,24 @@ describe("ProgressElement (Checkpoint 1.15.6.12.4)", () => {
   });
 
   it("applies ordinary box CSS (opacity/filters) directly to the <progress> itself — no wrapper to intercept it", () => {
+    const node: EditorElementNode = {
+      id: "progress-1",
+      tag: "progress",
+      progressValue: 50,
+      progressMax: 100,
+      filters: { opacity: 50 },
+    };
     render(
       <ProgressElement
-        node={{
-          id: "progress-1",
-          tag: "progress",
-          progressValue: 50,
-          progressMax: 100,
-          filters: { opacity: 50 },
-        }}
+        node={node}
         parentId="page-1"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
+    installDocumentStyles(node);
     const progress = document.querySelector("progress") as HTMLProgressElement;
-    expect(progress.style.opacity).toBe("0.5");
+    expect(getComputedStyle(progress).opacity).toBe("0.5");
   });
 });
 
@@ -129,32 +133,36 @@ describe("ProgressElement — CSS Transition Foundation (Checkpoint 1.15.6.14.1)
   it("supports an ordinary CSS transition on the element itself, Preview-only, completely unrelated to progressValue", () => {
     const transition = { property: "opacity" as const, durationMs: 200, timingFunction: "ease" as const, delayMs: 0 };
     useEditorStore.setState({ editorMode: "preview" });
+    const node: EditorElementNode = { id: "progress-1", tag: "progress", progressValue: 50, progressMax: 100, transition };
     render(
       <ProgressElement
-        node={{ id: "progress-1", tag: "progress", progressValue: 50, progressMax: 100, transition }}
+        node={node}
         parentId="page-1"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
+    installDocumentStyles(node);
     const progress = document.querySelector("progress") as HTMLProgressElement;
-    expect(progress.style.transitionProperty).toBe("opacity");
+    expect(getComputedStyle(progress).transitionProperty).toBe("opacity");
     expect(progress.value).toBe(50);
   });
 });
 
 describe("ProgressElement — CSS Transform Foundation (Checkpoint 1.15.6.14.3)", () => {
   it("supports an ordinary CSS Transform on the element itself, completely unrelated to progressValue", () => {
+    const node: EditorElementNode = { id: "progress-1", tag: "progress", progressValue: 50, progressMax: 100, transform: { scale: 1.2 } };
     render(
       <ProgressElement
-        node={{ id: "progress-1", tag: "progress", progressValue: 50, progressMax: 100, transform: { scale: 1.2 } }}
+        node={node}
         parentId="page-1"
         parentLayoutMode="flow"
         parentFlowDisplay="block"
       />,
     );
+    installDocumentStyles(node);
     const progress = document.querySelector("progress") as HTMLProgressElement;
-    expect(progress.style.transform).toBe("scale(1.2)");
+    expect(getComputedStyle(progress).transform).toBe("scale(1.2)");
     expect(progress.value).toBe(50);
   });
 });

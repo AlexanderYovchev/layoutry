@@ -1,4 +1,4 @@
-import type { CssDeclaration, DocumentDefaultStyleId } from "@/features/canvas";
+import type { CssDeclaration, DocumentDefaultStyleId, StyleIrRule } from "@/features/canvas";
 import type { InteractionAction, InteractionTrigger } from "@/features/editor/types/interactions";
 import type { ExportBehaviors } from "@/features/export/types/exportBehavior";
 import type { ExportDiagnostic } from "@/features/export/types/exportDiagnostic";
@@ -37,6 +37,8 @@ export interface ExportElement {
   /** Authored class tokens, validated, appended after generated classes. */
   authoredClassNames: string[];
   children: ExportNode[];
+  /** BC-17.3: a state/part/role-group rule targets or names this element, so it carries its class even without declarations. */
+  ruleTarget?: boolean;
 }
 
 export interface ExportText {
@@ -74,6 +76,12 @@ export interface ExportDocument {
   root: ExportElement;
   /** Every default presentation used anywhere, in table order — the base rules a printer must emit. */
   defaultStyles: DocumentDefaultStyleId[];
+  /**
+   * BC-17.3: the authored state, pseudo-element, part and role-group rules
+   * (the shared compiler's IR), in document order; a printer emits them
+   * after the element rules, sorted by order key (canvas ruleOrderKey).
+   */
+  styleRules: StyleIrRule[];
   /** The authored click bindings, raw. */
   interactions: ExportInteraction[];
   /** What those bindings do at runtime — the input of every interaction runtime (EXPORT-1.3). */

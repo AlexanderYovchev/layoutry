@@ -1,0 +1,243 @@
+BC-17.3 — SHARED STYLESHEET COMPILER AND RENDERING PIPELINE
+Implementation Report
+Date: 2026-11-27
+Base: HEAD 85206c8 (BC-17.2). Uncommitted working tree.
+
+======================================================================
+1. WHAT CHANGED, IN ONE PARAGRAPH
+======================================================================
+
+Every authored and default CSS declaration of the user's document now
+goes through ONE pure compiler and reaches every surface as a generated
+stylesheet. Design and Preview no longer paint authored CSS as inline
+`style` or default presentations as Tailwind classes: each document
+element carries one generated class (`ly-n-<id>`, inner media element
+`ly-ni-<id>`) and its surface's <style> element holds the rules. Export
+uses the same compiler with its own document-order classes (`ly-node-N`).
+The only inline style left on a document element is the live gesture
+override of BC-17.1.3 Report 1 §8.11, present only while a drag, resize
+or gradient-stop drag is live.
+
+======================================================================
+2. PIPELINE
+======================================================================
+
+  document
+    → capability registry / inactive styling (computeInactiveStyling, BC-17.2)
+    → compileNodeStyle(node, ancestors, context, surface)        [pure]
+    → NodeStyleIR { rules[], diagnostics, counterRefs, … }
+    → printStyleRule / printSelector (validated, deterministic)  [pure]
+    → surface delivery:
+        Design/Preview: DocumentStyleCompiler (incremental cache)
+                        → StyleSheetHost (CSSOM insertRule/deleteRule)
+        Export:         buildExportDocument (base declarations while
+                        walking, rules in a second pass)
+                        → printExportStylesheet (one order-key sort)
+
+Files (src/features/canvas/styling/ unless noted):
+- styleIr.ts — StyleSurface, STYLE_BUCKET (defaults 0, base 1, ancestor 2,
+  hover 3, focus-within 4, focus 5, focus-visible 6, active 7,
+  open/expanded 8, selected/current 9, checked/indeterminate 10,
+  placeholder-shown/required/read-only 11, compound 12, …, disabled 14),
+  StyleSelector, StyleIrRule, NodeStyleIR, StyleDiagnostic.
+- stateSelectors.ts — the atom → selector table. Disabled is
+  `:is(:disabled, [aria-disabled="true"])`. Design: interaction atoms are
+  forced-only (`[data-ly-force~="hover"]`), document atoms match real OR
+  forced (`:is(real, forced)`). Preview/Export: real selectors only.
+- resolveNodeStyleRecipe.ts — the ONE tag → recipe dispatch (it replaced
+  the per-component and per-export-branch recipe choices; the recipes in
+  elementStyleRecipes.ts are unchanged).
+- groupDeclarations.ts — group → declarations: the existing physical
+  resolvers run on a synthetic node; foundation fields (outline, logical
+  margin/padding/inset/border/radius/size, direction, unicode-bidi,
+  writing-mode, text-orientation, counter-reset/increment/set); generated
+  content (strings via escapeCssString, glyphs, counter()/counters(),
+  `/ alt`).
+- compileNodeStyle.ts — defaults (Design/Preview, own `:where()` rule per
+  node), base rule (physical then logical), inner media rule, state /
+  pseudo-element / vendor-part / structural-chain / role-group / ancestor
+  rules; per-stage try/catch, with committed geometry kept on failure.
+- printStyleRules.ts — selector and declaration printing with validation
+  (class tokens /^ly-[A-Za-z0-9_-]+$/, no `{};<>\@` or comments, property
+  names checked, media queries checked); refuses rather than prints.
+- documentStyleCompiler.ts — the incremental cache (§6).
+- liveGestureOverride.ts — the §8.11 slice override (§7).
+- cssValueSafety.ts, serializeStyleObject.ts, cssEscape.ts — MOVED from
+  export/utils (validateExportCssValue.ts → cssValueSafety.ts) because
+  Design and Preview now validate with them too. Logical border colours
+  (border-block-start-color etc.) added to the colour-validated set.
+- canvas/utils/styleSheetHost.ts — the CSSOM host (§5).
+- canvas/hooks/useDocumentStyleSheet.ts, useNodeStyle.ts — Canvas wiring.
+- editor/types/liveGesture.ts, editor/stores/useEditorStore.ts — the
+  store's record of a live gesture.
+
+======================================================================
+3. CASCADE: ORDER KEYS, :where() EQUALIZATION, ROLE GROUPS
+======================================================================
+
+Order key = bucket × 2 + tier. Tier 0 = role-group rules (a component
+styling its members), tier 1 = an element's own rules, so a component's
+role rule always precedes the member's own rule of the same bucket.
+
+Specificity is equalized so source order decides:
+- defaults:         :where(.ly-n-X)                          (0,0,0)
+- base:             .ly-n-X                                  (0,1,0)
+- states:           .ly-n-X:where(:hover)                    (0,1,0)
+- ancestor:         .ly-n-X:where(.ly-n-A:hover *)           (0,1,0)
+- role group:       .ly-n-root > :where(:is(.m1, .m2))       (0,1,0)
+- structural chain: .ly-n-T > :where(thead) > :where(tr)     (0,1,0)
+- surface scope:    … :where([data-ly-sheet="<scope>"] *)    (+0)
+
+Every rule is printed in global order-key order (then node id, then the
+node's own order), on every surface. Vendor parts get one rule per vendor
+selector; track/fill parts add `appearance: none` on the element. Inactive
+rules (BC-17.2 capability registry) stay stored and are not printed.
+Uncurated compounds (e.g. hover+disabled) stay unprinted; curated ones
+print in the compound bucket. Physical declarations precede logical ones
+inside one rule. A Free child never prints logical insets or size (the
+documented editor limitation); its physical geometry always prints.
+
+Design motion gate: transitions are dropped on Design and kept on
+Preview/Export. Export adds every rule with a transition (including state
+rules) to its prefers-reduced-motion block.
+
+======================================================================
+4. CLASS IDENTITY AND SURFACE ISOLATION
+======================================================================
+
+- Design/Preview: `ly-n-<node id>`, inner media `ly-ni-<node id>`.
+- Export: unchanged `ly-node-N` (document order) and `ly-node-N-media`;
+  an element a state/part/role rule targets or names carries its class
+  even without own declarations (ExportElement.ruleTarget).
+- Authored classes with the reserved "ly-" prefix are filtered on the
+  Canvas (authoredClassTokens), as the export already refused them.
+- Each surface has its own scope token (data-ly-sheet) on the surface
+  wrapper and in every selector; Design rules can't reach Preview, other
+  surfaces or editor chrome. Editor chrome keeps Tailwind.
+
+======================================================================
+5. STYLESHEET HOST (CSSOM, STRATEGY B)
+======================================================================
+
+Strategy chosen by measurement (Report 2): CSSOM insertRule/deleteRule
+on one <style> element per surface. Each node owns a contiguous run per
+order key, sorted by node id, so the installed sheet is always byte-for-
+byte the canonical printed order (proven by randomized tests). Only the
+order keys whose text changed are rewritten (a geometry edit replaces one
+base rule: 1 delete + 1 insert). A rule the engine refuses (an unknown
+vendor selector, e.g. ::-moz-progress-bar in Chromium) is counted as
+rejected and not owned — what a browser does with text CSS.
+
+Two production defects were found by verification and fixed (Report 3):
+(a) the <style> injected into <head> was removed in ~1 of 4 production
+loads; (b) the document painted unstyled until hydration (~0.6 s).
+Final design: DocumentCanvas renders the <style> itself (React owns the
+element) with the first document's sheet server-rendered as its text, so
+the page is styled from first paint; the host then owns the rules through
+the CSSOM and React never changes the text. The scope token comes from
+useId (identical on server and client).
+
+======================================================================
+6. INCREMENTAL CACHE (DocumentStyleCompiler)
+======================================================================
+
+- An unchanged subtree (same node object and the same parent layout /
+  flow display / ancestor-path hash) is skipped.
+- Otherwise a node recompiles only if its own style inputs changed
+  (shallow comparison excluding non-style keys), strict object identity
+  for role-group roots, or its own key changed (ancestor rules depend on
+  the path; counter references on the counters epoch).
+- Counter definition changes, an empty cache or a different document
+  (another project root) force a full pass; removed subtrees are found
+  from each node's previous children.
+- A gesture that ends on the same document object (commit only clears
+  the gesture) forces one revisit of the tree, so the ex-live node is
+  recompiled from its final state (a real defect found by the hook test).
+- Randomized equivalence: 2 surfaces × 8 seeds × 40 random edits (with
+  Undo/Redo snapshot replacement) — incremental sheet == full rebuild
+  every step.
+
+======================================================================
+7. LIVE GESTURE OVERRIDE (Report 1 §8.11)
+======================================================================
+
+- Store: `liveGesture { snapshot, slices }` is recorded by the live
+  writes (resizeElement → "flow-size", setFreeChildGeometryLive and Free
+  container child geometries → "free-geometry", setElementBackgroundLive
+  → "background-image") and is valid only while `snapshot` is the open
+  transactionSnapshot (selectActiveLiveGesture). Commit, cancel, Preview
+  entry and replaceDocument clear it; a stale value is inert.
+- Sheet: while live, the compiler compiles the COMMITTED node from the
+  snapshot document, so pointer moves cause ZERO sheet mutations.
+- Element: paints only its live slice inline (free-geometry: left/top/
+  width/height; flow-size: width/height/flexShrink/marginLeft/marginTop/
+  maxWidth/maxHeight/overflow; background-image), derived each render
+  from the same recipe, marked data-ly-gesture-override.
+- Commit ordering: the sheet updates inside the store write (direct
+  subscription), BEFORE React re-renders and removes the override, so no
+  frame ever paints missing or old geometry.
+- Cancel: the live write is restored, the gesture ends, the sheet was
+  never touched; the override disappears.
+- Development assertion: after a gesture ends, any element still marked
+  data-ly-gesture-override is reported (console.error).
+
+======================================================================
+8. EXPORT INTEGRATION
+======================================================================
+
+- buildElement uses resolveNodeStyleRecipe (table cells/captions are
+  forced to block flow display, as the Canvas always did).
+- makeElement declarations = compileBaseDeclarations (the shared value
+  validation, url() export policy through checkedUrl, and the BC-17.2
+  foundation fields); inner media = validatedDeclarations.
+- A second pass compiles each node's rules (state, pseudo, parts, role
+  groups, ancestors) with the export classes; each rule is pre-printed
+  for safety (a refused rule is dropped with a diagnostic).
+- printExportStylesheet: base reset/page surface, shared default rules,
+  then element rules AND authored rules in one order-key sort (document
+  order inside a key), then reduced motion.
+- Style diagnostic codes "style-compile-failed" and
+  "style-target-not-rendered" added to ExportDiagnosticCode.
+
+======================================================================
+9. INLINE style= INVENTORY (REQUESTED: ACTUAL COUNT)
+======================================================================
+
+The architecture estimated 34 document sites. Actual before BC-17.3:
+41 style= sites in canvas/components:
+- 30 on document elements: 25 element roots + 5 inner media elements
+  (Audio, Image, Video, Iframe inner, VideoEmbedFrame player);
+- 11 in overlays (editor chrome: selection, hover, drop, guides, …).
+After BC-17.3:
+- 25 element-root sites, each passing ONLY the live gesture override
+  (undefined outside a gesture; SvgElement also keeps its editor-only
+  user-select: none);
+- 0 inner media sites (they now use ly-ni-<id>);
+- 11 overlay sites, unchanged (chrome).
+No authored or default document CSS is inline any more.
+
+======================================================================
+10. SCOPE KEPT OUT (AS INSTRUCTED)
+======================================================================
+
+No SVG scope expansion (svgDefs stays empty until BC-17.18). No Inspector
+UI for rules. No schema/format change (format 4 revision 0 unchanged).
+Keyframes are compiled nowhere yet (none can be authored before BC-17.11).
+Carry-forward notes unchanged: L-2 (document-wide SVG ids, 17.18),
+counter-aware CSS clipboard before 17.6, first real v4 revision needs
+migration + protected-save verification, Progress invalid max follows
+getProgressMax, component ancestor scope refined in 17.5. BC-13 stays
+open; BC-14 → 17.23.
+
+======================================================================
+11. BEHAVIOUR NOTES FOR QA
+======================================================================
+
+- Design values that fail validation are now dropped on the Canvas too
+  (previously React passed them inline and the browser ignored them; the
+  visible result is the same, but the value is now validated by the same
+  rules as export).
+- First load is styled from first paint (server-rendered sheet).
+- The Canvas DOM gained one <style data-ly-document-styles> element
+  before the page sheet; a document element's `class` attribute is now
+  `ly-n-<id>` plus authored classes (no Tailwind default classes).

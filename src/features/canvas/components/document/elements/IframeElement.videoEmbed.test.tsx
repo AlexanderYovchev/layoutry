@@ -5,12 +5,15 @@ import { createVideoEmbedNode } from "@/features/editor/factories/elementFactori
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { IframeElement } from "./IframeElement";
+import { installDocumentStyles } from "../../../../../../test/documentStyles";
 
 const initialState = useEditorStore.getState();
 const YT = "dQw4w9WgXcQ";
 
 function renderEmbed(node: EditorElementNode) {
-  return render(<IframeElement node={node} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />);
+  const result = render(<IframeElement node={node} parentId="page-root" parentLayoutMode="flow" parentFlowDisplay="block" />);
+  installDocumentStyles(node);
+  return result;
 }
 
 afterEach(() => {
@@ -66,7 +69,7 @@ describe("IframeElement — Video Embed placeholder (BC-08.2)", () => {
     const { container } = renderEmbed({ ...createVideoEmbedNode(), id: "iframe-w" });
     const wrapper = container.querySelector<HTMLElement>("[data-node-id='iframe-w']");
     expect(wrapper).not.toBeNull();
-    expect(wrapper?.style.aspectRatio).toBe("16 / 9");
+    expect(getComputedStyle(wrapper!).aspectRatio).toBe("16 / 9");
   });
 
   it("a generic Embed still renders its sandboxed iframe", () => {

@@ -1,0 +1,152 @@
+BC-17.3 — PERFORMANCE AND RENDERING PARITY
+Date: 2026-11-27
+Machine: Windows 10 Pro, single monitor, 100% scale, no admin.
+Build: production (`npm run build` + `npx next start -p 3000`), Chromium
+149 headless unless stated. Before = HEAD 85206c8; after = working tree.
+
+======================================================================
+1. STRATEGY MEASUREMENT (A/B/C) — e2e/perf/stylesheet-strategies.spec.ts
+======================================================================
+
+Fixture: 1,001 nodes, 2,001 rules. A = rewrite one text sheet;
+B = CSSOM insertRule/deleteRule on one sheet; C = one <style> per node.
+Median ms (Chromium shows median/p95 where measured):
+
+                      install   1-node edit   10-node edit   insert   delete   reparent
+  Chromium  A           4.0       12.3           75.7          15.0     16.4      2.1
+            B          23.3        0.8            1.2           2.2      2.5      2.7
+            C           7.8        0.7            5.3           1.7      1.7      1.1
+  Firefox   A          14         27            159
+            B          34         10             11
+            C          14         11             16
+  WebKit    A          11         32            167
+            B          38         11             12
+            C          17         12             20
+
+Decision: B. Edits — the per-interaction cost — are the fastest or tied
+in every engine, and B is the only strategy whose 10-node edit stays flat
+(A rewrites the whole sheet; C pays per-element style nodes and degrades
+on multi-node edits). B's higher one-off install cost is paid once per
+surface mount and is now also covered by the server-rendered first sheet.
+All three strategies cleaned up with no leftover <style>.
+
+======================================================================
+2. BEFORE / AFTER AT ~1,000 ELEMENTS — e2e/perf/stylesheet-pipeline.spec.ts
+======================================================================
+
+Fixture: one Free container (760×2600) with 999 Free children
+(e2e/support/perfFixtures.ts). Opt-in: LAYOUTRY_PERF=1, label per run.
+Two "after" runs are reported because single runs are noisy here.
+
+                                   before        after #1      after #2
+  Initial render, wall (5 ctx)
+    median / p95 (ms)              556 / 569     556 / 765     531 / 584
+    task median (ms)               448           481           453
+    style recalc median (ms)       27.1          10.7          10.3
+  Free drag, per pointer step
+    main-thread task median (ms)   64.2          65.2          63.1
+    script median (ms)             52.8          56.8          54.6
+    frame interval median / p95    16.7 / 66.6   16.7 / 83.3   16.7 / 66.7
+    sheet mutations while moving   0             0             0
+  Free resize, per pointer step
+    task median (ms)               54.8          57.3          57.8
+    frame interval median / p95    16.7 / 50     16.7 / 66.6   16.7 / 50.1
+    sheet mutations while moving   0             0             0
+  Undo/Redo of a committed drag
+    latency median / p95 (ms)      71 / 87.6     77.6 / 89.2   77.3 / 89.1
+
+Reading:
+- Interaction frame medians are unchanged (16.7 ms); p95 is within the
+  run-to-run noise (after #2 equals before).
+- Style recalculation on first render fell ~60% (27 → 10–11 ms): one
+  class per element and :where() rules are cheaper than the Tailwind
+  utility soup plus inline styles.
+- Costs, small and consistent: ~+3 ms per Free resize step (≈ +5%) and
+  ~+6 ms Undo/Redo median latency (the sheet sync of the replaced
+  document runs inside the store write).
+- Zero sheet mutations during every pointer move (5 of 5 drags and 5 of
+  5 resizes, both runs) — the §8.11 property holds at scale.
+
+jsdom (unit tests only, not production): with a real generated sheet,
+jsdom's getComputedStyle — called by Testing Library for every role
+query — walks the rules, so full-app jsdom tests run ~1.8–2× slower
+(EditorApp catalog test 4.2 s → 7.3 s; with sheet insertion disabled the
+time is back to HEAD's, so the compiler itself costs nothing measurable).
+Three heavy tests got larger time budgets (Report 3). Production Chromium
+shows no comparable cost (style recalc fell).
+
+======================================================================
+3. FRAME-BY-FRAME GESTURE TRACES — e2e/stylesheet-gesture-trace.spec.ts
+======================================================================
+
+A requestAnimationFrame sampler records, every frame, the element box,
+whether it paints the override, and the document-sheet mutation count.
+One pointer step per frame, so every engine traces every step.
+
+  trace                       engine    frames  live  mutations    mutations
+                                                      while live   total
+  Free drag, commit           Chromium    69     60       0            2
+                              Firefox     67     59       0            2
+                              WebKit      35     29       0            2
+  Free drag, Escape           Chromium    49     40       0            0
+                              Firefox     48     40       0            0
+                              WebKit      25     19       0            0
+  Free resize (se), commit    Chromium    75     65       0            2
+                              Firefox     65     56       0            2
+                              WebKit      30     24       0            2
+  Flow resize (e), commit     Chromium    57     46       0            4
+                              Firefox     52     43       0            4
+                              WebKit      25     19       0            4
+  Flow resize (e), Escape     Chromium    38     28       0            0
+                              Firefox     31     22       0            0
+                              WebKit      15      9       0            0
+  Gradient stop drag, commit  Chromium    39     33       0            2
+                              Firefox     39     33       0            2
+                              WebKit      20     15       0            2
+
+(WebKit frame interval median ≈ 120 ms on this machine: frame-starved,
+known since BC-03; Chromium/Firefox 16.7 ms.)
+
+Asserted in every engine:
+- zero sheet mutations while live;
+- the element follows the gesture every frame;
+- after commit, no frame returns to the start geometry; every frame
+  without the override paints one identical box (the committed geometry
+  from the sheet); the hand-off never moves back toward the start (the
+  final pointer move may land in the release frame — observed: last live
+  frame y=293, committed y=295, the final pointer position);
+- Escape: exact original box, override removed, sheet untouched;
+- commit cost: 2 mutations (one base rule replaced) — 4 for a Flow
+  resize, which also drops the paragraph's prose default.
+
+======================================================================
+4. RENDERING PARITY
+======================================================================
+
+Unit (jsdom): canvasExportParity.test.tsx rewritten for the new model —
+for every node of 7 visual fixtures and the 82-component catalog
+(272 elements): same tag, same attributes, same text, EMPTY inline style,
+generated class + exactly the exported authored classes, and the Preview
+sheet's effective declarations == the export's default presentations +
+own declarations (longhand by longhand). 8/8 pass.
+
+Browser (production build):
+                                       Chromium   Firefox    WebKit
+  export-visual-parity (8 fixtures:      8/8        8/8        8/8
+   computed style, geometry, pixels)
+  preview-export-parity (B5/B6/B7)       10/10      10/10      6/10 *
+  canvas-theme-isolation                 1/1        1/1        1/1
+  image-parity                           1/1        1/1        1/1
+  accessibility (axe)                    see †      see †      see †
+
+  * The 4 WebKit failures are media currentTime assertions (Preview AND
+    exported page alike): Playwright's Windows WebKit loads no media at
+    all — a platform limitation recorded since BC-02.
+  † axe: 6 failures in every engine on the editor-chrome Snap toggle
+    (text-accent on bg-accent/15, 4.08:1). Identical at HEAD 85206c8
+    (verified in a HEAD worktree); the axe specs exclude
+    [data-document-surface], so the generated sheet cannot affect them.
+
+Firefox: 3 export-visual-parity cases failed once under 4 parallel
+workers (the fixture had not loaded: the Canvas still showed the starter
+page) and all 8 passed serially and in the final run.

@@ -2,8 +2,7 @@
 
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
-import { resolvePageRootElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
 import type { DocumentElementProps } from "@/features/canvas/types/documentRenderer";
 
 /**
@@ -15,11 +14,12 @@ import type { DocumentElementProps } from "@/features/canvas/types/documentRende
  * remains a valid drop target though: it's the "primary page container"
  * default-insertion falls back to when no more specific target applies.
  */
-export function DocumentRootElement({ node, parentId, children }: DocumentElementProps) {
+export function DocumentRootElement({ node, parentId, parentLayoutMode, parentFlowDisplay, children }: DocumentElementProps) {
   const setNodeRef = useNodeDropRegistration(node);
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, parentFlowDisplay);
 
   return (
-    <div ref={setNodeRef} {...documentNodeAttributes(node, parentId)} className={documentDefaultClasses(resolvePageRootElementStyle().defaults)}>
+    <div ref={setNodeRef} {...documentNodeAttributes(node, parentId)} className={nodeStyle.className}>
       {children}
     </div>
   );

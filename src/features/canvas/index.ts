@@ -37,3 +37,10 @@ export {
   resolveDialogAccessibleDescription,
   resolveDialogAccessibleName,
 } from "@/features/canvas/utils/resolveDialogAccessibleName";
+// BC-17.3: the shared stylesheet compiler — pure, so the export uses the very same
+// recipe dispatch, value validation and rule compilation as the Canvas.
+export { compileBaseDeclarations, compileNodeStyle, validatedDeclarations, type CompileNodeStyleInput } from "@/features/canvas/styling/compileNodeStyle";
+export { resolveNodeStyleRecipe, hasInnerMediaElement, type NodeStyleRecipe } from "@/features/canvas/styling/resolveNodeStyleRecipe";
+export { printSelector, printStyleRule, ruleOrderKey } from "@/features/canvas/styling/printStyleRules";
+export { STYLE_BUCKET, type NodeStyleIR, type StyleDiagnostic, type StyleIrRule } from "@/features/canvas/styling/styleIr";
+export type { GroupDeclarationContext } from "@/features/canvas/styling/groupDeclarations";

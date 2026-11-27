@@ -9,8 +9,7 @@ import { useSvgShapeDrawingSession } from "@/features/canvas/hooks/useSvgShapeDr
 import { SvgVectorEditingOverlay } from "@/features/canvas/components/document/elements/SvgVectorEditingOverlay";
 import { SvgVectorObjectRenderer } from "@/features/canvas/components/document/elements/SvgVectorObjectRenderer";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
-import { resolveSvgElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
 import { cn, mergeRefs } from "@/lib/utils";
 import {
   SVG_CIRCLE_GEOMETRY,
@@ -86,7 +85,6 @@ export function SvgElement({ node, parentId, parentLayoutMode, parentFlowDisplay
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
 
-  const isPreview = useEditorStore((state) => state.editorMode === "preview");
   const svgEditingNodeId = useEditorStore((state) => state.svgEditingNodeId);
   const activeSvgTool = useEditorStore((state) => state.activeSvgTool);
   const selectedSvgObjectIds = useEditorStore((state) => state.selectedSvgObjectIds);
@@ -147,7 +145,7 @@ export function SvgElement({ node, parentId, parentLayoutMode, parentFlowDisplay
     [],
   );
 
-  const recipe = resolveSvgElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, parentFlowDisplay);
 
   const viewBox = resolveSvgViewBox(node);
   const useSceneRendering = isEditingThisSvg || hasSvgScene(node);
@@ -175,10 +173,11 @@ export function SvgElement({ node, parentId, parentLayoutMode, parentFlowDisplay
       {...documentNodeAttributes(node, parentId)}
       {...({ draggable: false } as Record<string, unknown>)}
       viewBox={formatSvgViewBox(viewBox)}
-      className={cn(documentDefaultClasses(recipe.defaults), isDragging && "opacity-40", node.className)}
+      className={cn(nodeStyle.className, isDragging && "opacity-40", nodeStyle.authoredClassName)}
       // userSelect: "none" is editor-only (it keeps drag-to-draw gestures
       // from selecting text) and deliberately not part of the shared recipe.
-      style={{ ...recipe.style, userSelect: "none" }}
+      style={{ ...nodeStyle.style, userSelect: "none" }}
+      {...nodeStyle.overrideAttributes}
       // Dragging the outer document node via dnd-kit and drawing/selecting
       // vector content inside it are mutually exclusive gestures — while
       // this SVG is being edited, the pointer belongs entirely to its own

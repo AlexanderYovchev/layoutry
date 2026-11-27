@@ -1,0 +1,183 @@
+BC-17.3 — TEST IMPACT AND VERIFICATION
+Date: 2026-11-27
+
+Policy: change-focused testing (test-impact map, targeted runs). This
+checkpoint replaces how EVERY document element is styled, so the impact
+map legitimately covers all suites that render or export a document; the
+full web Chromium e2e set was run for that reason. No test assertion was
+weakened; every changed expectation is listed with its reason.
+
+======================================================================
+1. TEST-IMPACT MAP
+======================================================================
+
+  Changed area                         Suites run
+  -----------------------------------  -----------------------------------
+  compiler / IR / printer / cache      canvas/styling (unit, randomized)
+  StyleSheetHost                       canvas/utils/styleSheetHost (unit,
+                                       randomized order equivalence)
+  Canvas hooks + 27 element components canvas/** (unit), all e2e that
+                                       render the Canvas (Chromium full)
+  store liveGesture                    editor/** (unit), inspector/**
+                                       (unit), gesture e2e + traces
+  export integration                   export/** (unit + parity), export
+                                       e2e, project/** (format fixtures)
+  SSR <style> / scope (useId)          full Chromium e2e, Firefox/WebKit
+                                       parity subset, Electron smoke
+  CSP comment (desktop)                desktop tsc, Electron security spec
+
+======================================================================
+2. NEW TESTS
+======================================================================
+
+- canvas/styling/compileNodeStyle.test.ts (16): defaults/base, determinism,
+  motion gate, unsafe values, url escaping, buckets + :where, curated
+  compounds, forced Design states, content/counters, physical→logical,
+  Free-child limitation, Pagination role group, inactive progress label,
+  vendor parts, printer safety, failure isolation.
+- canvas/styling/documentStyleCompiler.test.ts (20): 2 surfaces × 8 seeds
+  × 40 random edits incremental == full; only the edited node recompiles;
+  subtree removal and project switch; live gesture zero changes then
+  commit/cancel; NEW regression: a gesture ending on the SAME document
+  object still compiles the final geometry.
+- canvas/utils/styleSheetHost.test.ts (7): 5 seeds × 120 random per-key
+  replacements/insertions/removals == canonical printed order; only
+  changed order keys rewritten (2 mutations); refused rules counted.
+- canvas/hooks/useDocumentStyleSheet.test.tsx (6): one scoped sheet,
+  removed on unmount; Preview swap; zero mutations during a live drag;
+  commit ordering (inside the commit write the sheet already holds the
+  committed geometry while the override is still painted); exact cancel;
+  one ordinary edit = 2 mutations.
+- canvas/styling/cssValueSafety.test.ts (+4): logical border colours.
+- export/utils/exportStyleRules.test.ts (4): hover after every base rule
+  + class without own declarations; role group before members' rules +
+  member classes; state-rule transition in reduced motion; determinism.
+- e2e/stylesheet-gesture-trace.spec.ts (5): frame traces (Report 2 §3).
+- e2e/perf/stylesheet-pipeline.spec.ts, stylesheet-strategies.spec.ts:
+  opt-in measurements (LAYOUTRY_PERF=1), not part of normal runs.
+- Support: test/documentStyles.ts (installDocumentStyles: the REAL
+  compiler for a rendered node's subtree; generatedStyleOf: what Layoutry
+  declares for an element), e2e/support/declaredStyle.ts (the same in
+  the browser), e2e/support/perfFixtures.ts.
+
+======================================================================
+3. CHANGED TESTS AND WHY
+======================================================================
+
+Unit, ~150 assertions in 17 files (canvas element tests, resize matrix,
+DocumentNodeRenderer): they read inline `element.style`, which no longer
+holds authored CSS. Converted to:
+- getComputedStyle(element) after installing the real generated sheet —
+  stronger: it proves the rule actually applies;
+- generatedStyleOf(element) where the old assertion meant "Layoutry
+  declares nothing / declares X" (e.g. `.style.width === ""`), because
+  jsdom's computed style adds initial and UA values, and jsdom ranks a UA
+  rule above an author :where() rule (an origin bug), which would have
+  made default-vs-UA assertions tautological (`list-style-type: disc`)
+  or wrong (`display`);
+- Tailwind-class assertions (`toContain("max-w-prose")`, "h-40",
+  "list-disc", "underline", "inline-block", "flex") → the equivalent
+  declarations (65ch, 10rem, disc, underline, inline-block, flex).
+canvasExportParity.test.tsx: compares effective declarations (sheet vs
+export defaults + declarations), empty inline style, and the generated
+class (Report 2 §4). Catalog case: time budget 20 s (jsdom cascade).
+useEditorStore.persistence.test.ts: the store-field inventory now lists
+liveGesture as reset by replaceDocument.
+legacyProjectFiles.test.ts: the BC-17.2 test "exports exactly what the
+same document exports without its styling-foundation data (none of it
+renders yet)" had an expiring premise — BC-17.3 renders it. Replaced by:
+the CSS differs and contains the hover rule, aria-disabled mapping,
+counter content and counter-reset/increment, no data-ly-force, and the
+markup is identical apart from generated classes.
+EditorApp.test.tsx: two multi-round tests 15 s → 30 s (measured: 7.5 s /
+4.7 s alone; with sheet insertion disabled they return to HEAD's 4.2 s /
+2.4 s — jsdom's cascade, not the app).
+e2e, 6 specs (bc13-final-audit, free-insertion-snapping,
+free-interaction-lifecycle, bc05-final-regression,
+inspector-computed-typography, inspector-reset): read the STORED
+geometry/authored value through `el.style`; now through
+__lyDeclaredStyle(el) (generated rules + live override; `{ authored:
+true }` excludes default presentations, which is exactly what inline
+style held). Assertions unchanged.
+
+======================================================================
+4. DEFECTS FOUND BY VERIFICATION (ALL FIXED)
+======================================================================
+
+D1 Commit left the pre-gesture geometry in the sheet when the document
+   object did not change (the unchanged-subtree skip never revisited the
+   ex-live node). Found by the hook integration test. Fixed: a gesture
+   end forces one revisit; regression unit test added.
+D2 StyleSheetHost rewrote all of a node's rules for any change (4
+   mutations instead of 2). Fixed: per-order-key diff.
+D3 Within an order key the host kept arrival order (cascade-harmless,
+   but not the canonical order). Fixed: owners sorted by node id;
+   randomized test proves installed == printed.
+D4 Production: the <style> appended to <head> was missing in ~1 of 4
+   loads (framework head reconciliation during hydration) → unstyled
+   document. Fixed: DocumentCanvas renders the <style> (React owns it).
+D5 Production: the document painted unstyled until hydration (~0.6 s;
+   specs acting right after hydration saw 16px headings). Fixed: the
+   first document's sheet is server-rendered as the <style>'s text
+   (deterministic compiler, so hydration matches; no HTML escaping —
+   verified in the built HTML); scope from useId. 16/16 loads styled
+   from the first sample (was 18/24).
+D6 Four components (Progress, TableRow, TableSection, Option) had lost
+   their generated class in the mechanical conversion. Fixed; caught by
+   the Progress computed-style tests.
+
+======================================================================
+5. COMMANDS AND RESULTS (FINAL STATE)
+======================================================================
+
+  npx tsc --noEmit -p .                                   pass
+  npx tsc --noEmit -p desktop/tsconfig.json               pass
+  npx eslint <changed + new files>                        0 errors/warnings
+  npx prettier --write <new files + files clean at HEAD>  done
+  npx vitest run src/features/canvas src/features/export
+    src/features/editor src/features/project src/components
+                                                          316 files,
+                                                          5149/5149 pass
+  npx vitest run src/features/inspector                   1265/1269 *
+  npm run build; npx next start -p 3000 (production)
+  npx playwright test e2e/*.spec.ts --project=chromium    398 passed,
+                                                          7 failed †
+  Firefox (temporary engines config, 7 specs)             45/45
+  WebKit (--workers=1, same 7 specs)                      41/45 ‡
+  stylesheet-gesture-trace: Chromium ×3 repeats, Firefox, WebKit — all pass
+  unset ELECTRON_RUN_AS_NODE; npm run desktop:build
+  playwright -c playwright.desktop.config.ts launch, editor, export,
+    preview-parity, inspector-live-edit, security          21/22 §
+  LAYOUTRY_PERF=1 perf spec (after ×2)                    Report 2
+
+  * Inspector suite: 4 tests time out at 5 s per run under full parallel
+    load (7, 4, 4 in three runs); all pass alone (106/106 for the files
+    involved). HEAD shows the same flake at a lower rate (3 and 1 in two
+    runs, HEAD worktree). No inspector test renders the Canvas; the
+    likely cause is the larger import graph (the canvas public API now
+    re-exports the compiler). Listed as a risk.
+  † The 7: 6 axe color-contrast on the editor-chrome Snap toggle and
+    multi-selection-effective-values "hidden by CSS" (its Structure rows
+    are named by type, not displayName). IDENTICAL at HEAD 85206c8,
+    verified in a HEAD worktree (next dev --webpack, junction
+    node_modules). Pre-existing.
+  ‡ The 4: WebKit media playback (Playwright's Windows WebKit loads no
+    media). Platform, pre-existing.
+  § security "denies browser permission requests": microphone reports
+    NotFoundError (this machine has no microphone) instead of
+    NotAllowedError. Environmental.
+
+Not run (outside the impact map): packaged-app specs, soak/benchmark
+specs, Electron media/video specs, other src/features/* unit suites with
+no Canvas/export/store dependency.
+
+======================================================================
+6. CLEANUP
+======================================================================
+
+Temporary playwright.engines.tmp.config.ts deleted. Debug specs deleted.
+Two HEAD worktrees created for baselines and removed (junction removed
+first; main node_modules verified intact). A leftover, unregistered
+folder of the first worktree remains in the session scratchpad (outside
+the repository). Production server stopped. test-results/, out/,
+desktop-dist/ are git-ignored.

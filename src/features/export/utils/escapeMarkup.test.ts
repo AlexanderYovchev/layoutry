@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { escapeCssString, escapeHtmlAttribute, escapeHtmlText, stripNullCharacters } from "@/features/export/utils/escapeMarkup";
+import { escapeCssString } from "@/features/canvas/styling/cssEscape";
+import { escapeHtmlAttribute, escapeHtmlText, stripNullCharacters } from "@/features/export/utils/escapeMarkup";
 
 describe("escapeMarkup", () => {
   it("escapes text so markup cannot start", () => {

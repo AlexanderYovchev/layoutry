@@ -187,6 +187,7 @@ import { duplicateRootsInPlace, exceedsNavigationLinkLimit, existingSelectedIds,
 import { withUniqueHtmlIdsForCopies } from "@/features/editor/utils/uniqueHtmlIdsForCopies";
 import type { DropZone } from "@/features/editor/utils/resolveDropZone";
 import type { HistoryEntry } from "@/features/editor/types/history";
+import type { LiveGestureSlice } from "@/features/editor/types/liveGesture";
 import type { ElementDimensions, EditorElementNode } from "@/features/editor/types/document";
 import type { ChildResizePolicy, FreeLayoutGeometry } from "@/features/editor/types/layout";
 import type {
@@ -269,6 +270,17 @@ interface EditorState {
    * ends the merge automatically; a stale value here is inert.
    */
   historyMergeSnapshot: HistoryEntry | null;
+  /**
+   * BC-17.3 — the live geometry gesture (BC-17.1.3 Report 1 §8.11): which
+   * nodes the open transaction is writing live geometry (or a gradient's
+   * background layers) for, and which slice. The generated stylesheet keeps
+   * compiling those nodes' COMMITTED state from `snapshot` while each node
+   * paints its live slice inline. Valid only while `snapshot` is the SAME
+   * object as transactionSnapshot (selectActiveLiveGesture), so committing,
+   * cancelling, entering Preview or replacing the document ends it with no
+   * explicit cleanup; a stale value is inert. Never saved or exported.
+   */
+  liveGesture: LiveGestureState | null;
   /**
    * The one transient, non-modal editor message currently visible
    * (Checkpoint 1.15.3 — e.g. a blocked-by-style-protection notice). Never
@@ -905,6 +917,41 @@ interface EditorState {
   markDocumentPersisted: (document: EditorElementNode) => void;
 }
 
+/** BC-17.3: the live geometry gesture of the open transaction (see EditorState.liveGesture). */
+export interface LiveGestureState {
+  /** The transaction this gesture belongs to; its document holds the committed geometry. */
+  snapshot: HistoryEntry;
+  /** Node id → the slice the gesture writes live. */
+  slices: Readonly<Record<string, LiveGestureSlice>>;
+}
+
+/** The live gesture, only while its own transaction is the open one. */
+export function selectActiveLiveGesture(state: Pick<EditorState, "liveGesture" | "transactionSnapshot">): LiveGestureState | null {
+  const gesture = state.liveGesture;
+  return gesture !== null && state.transactionSnapshot !== null && gesture.snapshot === state.transactionSnapshot ? gesture : null;
+}
+
+/** The slice a node is painting live right now, or undefined. */
+export function selectLiveGestureSlice(state: Pick<EditorState, "liveGesture" | "transactionSnapshot">, nodeId: string): LiveGestureSlice | undefined {
+  return selectActiveLiveGesture(state)?.slices[nodeId];
+}
+
+/**
+ * Records that a live write inside the open transaction is a geometry
+ * gesture on these nodes. Outside a transaction (a one-shot write) there
+ * is nothing to record. Returns no change when every slice is already
+ * recorded, so per-frame writes don't churn the state.
+ */
+function recordLiveGesture(state: EditorState, entries: readonly (readonly [string, LiveGestureSlice])[]): Partial<EditorState> {
+  const snapshot = state.transactionSnapshot;
+  if (!snapshot || entries.length === 0) return {};
+  const current = selectActiveLiveGesture(state);
+  if (current && entries.every(([id, slice]) => current.slices[id] === slice)) return {};
+  const slices: Record<string, LiveGestureSlice> = { ...(current?.slices ?? {}) };
+  for (const [id, slice] of entries) slices[id] = slice;
+  return { liveGesture: { snapshot, slices } };
+}
+
 /** Whether the authored document differs from the last loaded/saved one. Ignores selection, Preview, panels and other session state. */
 export function selectHasUnsavedChanges(state: Pick<EditorState, "document" | "persistedDocument">): boolean {
   return state.document !== state.persistedDocument;
@@ -1374,6 +1421,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   future: [],
   transactionSnapshot: null,
   historyMergeSnapshot: null,
+  liveGesture: null,
   editorNotice: null,
   documentSessionId: 0,
   editorMode: DEFAULT_EDITOR_MODE,
@@ -1497,7 +1545,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   resizeElement: (nodeId, dimensions) =>
     set((state) => {
       if (getStyleProtection(state.document, nodeId).protected) return {};
-      return { document: resizeNode(state.document, nodeId, dimensions) };
+      return { document: resizeNode(state.document, nodeId, dimensions), ...recordLiveGesture(state, [[nodeId, "flow-size"]]) };
     }),
 
   beginResizeTransaction: () =>
@@ -1506,7 +1554,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   commitResizeTransaction: () =>
     set((state) => {
       if (!state.transactionSnapshot) return {};
-      return { past: [...state.past, state.transactionSnapshot], future: [], transactionSnapshot: null, historyMergeSnapshot: null };
+      return { past: [...state.past, state.transactionSnapshot], future: [], transactionSnapshot: null, historyMergeSnapshot: null, liveGesture: null };
     }),
 
   // Discards the in-progress transaction without recording it — used
@@ -1514,7 +1562,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   // caller is responsible for restoring state.document to the snapshot
   // itself before calling this, since cancellation needs to revert the
   // live document too, not just skip the history push.
-  cancelResizeTransaction: () => set({ transactionSnapshot: null, historyMergeSnapshot: null }),
+  cancelResizeTransaction: () => set({ transactionSnapshot: null, historyMergeSnapshot: null, liveGesture: null }),
 
   // Free-layout movement authors CSS position (section 30) — guarded the
   // same way every other one-shot style command is.
@@ -1525,7 +1573,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
     set((state) => {
       const protection = getStyleProtection(state.document, nodeId);
       if (protection.protected) return nextEditorNoticeState(state, describeStyleLockNotice([protection], false));
-      return { document: setFreeChildGeometryCommand(state.document, nodeId, geometry) };
+      return { document: setFreeChildGeometryCommand(state.document, nodeId, geometry), ...recordLiveGesture(state, [[nodeId, "free-geometry"]]) };
     }),
 
   restoreFreeLayoutsLive: (originals) =>
@@ -1663,6 +1711,10 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       if (protection.protected) return nextEditorNoticeState(state, describeStyleLockNotice([protection], false));
       return {
         document: applyFreeContainerChildGeometries(state.document, containerId, selfUpdate, childGeometries),
+        ...recordLiveGesture(state, [
+          ...(selfUpdate.freeLayout ? [[containerId, "free-geometry"] as const] : selfUpdate.dimensions ? [[containerId, "flow-size"] as const] : []),
+          ...Object.keys(childGeometries).map((id) => [id, "free-geometry"] as const),
+        ]),
       };
     }),
 
@@ -1768,7 +1820,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
     set((state) => {
       const protection = getStyleProtection(state.document, nodeId);
       if (protection.protected) return nextEditorNoticeState(state, describeStyleLockNotice([protection], false));
-      return { document: setBackgroundSettingsCommand(state.document, nodeId, background) };
+      return { document: setBackgroundSettingsCommand(state.document, nodeId, background), ...recordLiveGesture(state, [[nodeId, "background-image"]]) };
     }),
 
   setElementBorder: (nodeId, border) =>
@@ -2094,12 +2146,12 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
     set((state) => {
       if (!state.transactionSnapshot) return {};
       if (isMergingHistory(state) && isStructurallyEqual(state.document, state.transactionSnapshot.document)) {
-        return { document: state.transactionSnapshot.document, transactionSnapshot: null, historyMergeSnapshot: null };
+        return { document: state.transactionSnapshot.document, transactionSnapshot: null, historyMergeSnapshot: null, liveGesture: null };
       }
-      return { past: [...state.past, state.transactionSnapshot], future: [], transactionSnapshot: null, historyMergeSnapshot: null };
+      return { past: [...state.past, state.transactionSnapshot], future: [], transactionSnapshot: null, historyMergeSnapshot: null, liveGesture: null };
     }),
 
-  cancelTransaction: () => set({ transactionSnapshot: null, historyMergeSnapshot: null }),
+  cancelTransaction: () => set({ transactionSnapshot: null, historyMergeSnapshot: null, liveGesture: null }),
 
   mergeTransactionWrite: (write) => {
     mergedWriteDepth++;
@@ -2655,6 +2707,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       future: [],
       transactionSnapshot: null,
       historyMergeSnapshot: null,
+      liveGesture: null,
       editorNotice: null,
       editorMode: DEFAULT_EDITOR_MODE,
       runtimeVisibility: {},

@@ -4,8 +4,7 @@ import { useEditableText } from "@/features/canvas/hooks/useEditableText";
 import { useNodeDragSource } from "@/features/canvas/hooks/useNodeDragSource";
 import { useNodeDropRegistration } from "@/features/canvas/hooks/useNodeDropRegistration";
 import { documentNodeAttributes } from "@/features/canvas/utils/documentNodeAttributes";
-import { documentDefaultClasses } from "@/features/canvas/utils/documentDefaultStyles";
-import { resolveTextElementStyle } from "@/features/canvas/utils/elementStyleRecipes";
+import { useNodeStyle } from "@/features/canvas/hooks/useNodeStyle";
 import { resolveDerivedAccessibilityAttributes } from "@/features/editor/rules/accessibilityAttributes";
 import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import { PAGINATION_ROLE_LABELS } from "@/features/editor/types/pagination";
@@ -17,8 +16,7 @@ export function ParagraphElement({ node, parentId, parentLayoutMode, parentFlowD
   const dropRef = useNodeDropRegistration(node);
   const { setNodeRef: dragRef, listeners, isDragging } = useNodeDragSource(node, parentLayoutMode);
   const editable = useEditableText(node);
-  const isPreview = useEditorStore((state) => state.editorMode === "preview");
-  const recipe = resolveTextElementStyle(node, { parentLayoutMode, parentFlowDisplay, isPreview });
+  const nodeStyle = useNodeStyle(node, parentLayoutMode, parentFlowDisplay);
   // BC-09.4: a Pagination ellipsis is decorative (aria-hidden), as in the export.
   // The cheap label check first, so ordinary paragraphs never look up their parent.
   const ariaHidden = useEditorStore((state) => {
@@ -34,12 +32,13 @@ export function ParagraphElement({ node, parentId, parentLayoutMode, parentFlowD
       {...(ariaHidden ? { "aria-hidden": true } : undefined)}
       {...editable.editableProps}
       className={cn(
-        documentDefaultClasses(recipe.defaults),
+        nodeStyle.className,
         editable.isEditing && "outline-none",
         isDragging && "opacity-40",
-        node.className,
+        nodeStyle.authoredClassName,
       )}
-      style={recipe.style}
+      style={nodeStyle.style}
+      {...nodeStyle.overrideAttributes}
       {...(editable.isEditing ? undefined : listeners)}
     >
       {node.text}
