@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { gotoApp } from "./support/gotoApp";
 import { selectOnCanvas } from "./support/inspector";
 import { importDocument } from "./support/parityFixtures";
+import { exportHtmlCss } from "../src/features/export/utils/exportHtmlCss";
 import type { EditorElementNode } from "../src/features/editor/types/document";
 
 /*
@@ -459,4 +460,268 @@ test("gradient stop drag (background-image slice): zero sheet mutations while dr
   }
   expect(after[0].background).not.toBe(frames[0].background);
   expect(frames.at(-1)!.mutations).toBeGreaterThan(frames[0].mutations);
+});
+
+/* ------------------------------------------------------------------ *
+ * BC-17.3.1 QA-2 — cancellation traces for Free resize and gradient
+ * stops, with the history, persistence and export side of "exact".
+ * ------------------------------------------------------------------ */
+
+const status = (page: Page) => page.locator("[data-project-status]");
+
+async function blurAndPress(page: Page, keys: string) {
+  // Undo/Redo are deliberately ignored while focus is inside an input.
+  await page.evaluate(() =>
+    (document.activeElement as HTMLElement | null)?.blur(),
+  );
+  await page.keyboard.press(keys);
+}
+
+async function saveNewProject(page: Page) {
+  await page.evaluate(() =>
+    (document.activeElement as HTMLElement | null)?.blur(),
+  );
+  await page.keyboard.press("Control+s");
+  // An imported fixture may already be a named project (Ctrl+S saves at once) or need a name first.
+  const dialog = page.getByRole("dialog", { name: "Save Project" });
+  const saved = status(page).and(page.locator('[data-project-status="saved"]'));
+  await expect(dialog.or(saved)).toBeVisible();
+  if (await dialog.isVisible()) {
+    await dialog.getByRole("textbox", { name: "Project name" }).fill("QA-2");
+    await dialog.getByRole("button", { name: "Save" }).click();
+  }
+  await expect(status(page)).toHaveAttribute("data-project-status", "saved");
+}
+
+/** The project document as persisted in IndexedDB. */
+function savedDocument(page: Page): Promise<EditorElementNode> {
+  return page.evaluate(
+    () =>
+      new Promise<EditorElementNode>((resolve, reject) => {
+        const request = indexedDB.open("layoutry-projects");
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const all = database
+            .transaction("documents")
+            .objectStore("documents")
+            .getAll();
+          all.onsuccess = () => {
+            database.close();
+            resolve(JSON.parse(all.result[0].text).document);
+          };
+          all.onerror = () => reject(all.error);
+        };
+      }),
+  );
+}
+
+/** What Layoutry declares for a node right now (generated sheet, then the inline override), and whether it carries an override. */
+function declared(page: Page, id: string, properties: readonly string[]) {
+  return node(page, id).evaluate(
+    (element, names) => {
+      const sheet = document.querySelector<HTMLStyleElement>(
+        "style[data-ly-document-styles]",
+      )?.sheet;
+      const out: Record<string, string> = {};
+      for (const name of names) {
+        let value = "";
+        for (const rule of Array.from(sheet?.cssRules ?? []))
+          if (
+            rule instanceof CSSStyleRule &&
+            element.matches(rule.selectorText) &&
+            rule.style.getPropertyValue(name)
+          )
+            value = rule.style.getPropertyValue(name);
+        out[name] =
+          (element as HTMLElement).style.getPropertyValue(name) || value;
+      }
+      return {
+        values: out,
+        override: element.getAttribute("data-ly-gesture-override"),
+        inline: (element as HTMLElement).style.length,
+      };
+    },
+    [...properties],
+  );
+}
+
+/** The real exporter, run on the persisted document: its CSS. */
+async function exportedCss(page: Page): Promise<string> {
+  const result = exportHtmlCss(await savedDocument(page), {
+    mode: "separate",
+    title: "QA-2",
+  });
+  return result.files.find((file) => file.path.endsWith(".css"))?.content ?? "";
+}
+
+test("Free resize, Escape: exact geometry, zero sheet mutations, no override, no history entry, Redo kept, nothing persisted or exported", async ({
+  page,
+}, testInfo) => {
+  await node(page, "mover").click();
+  const original = await declared(page, "mover", [
+    "left",
+    "top",
+    "width",
+    "height",
+  ]);
+  // A committed move, then Undo: there is now something to Redo.
+  const start = (await node(page, "mover").boundingBox())!;
+  await page.mouse.move(start.x + 20, start.y + 20);
+  await page.mouse.down();
+  for (let n = 1; n <= 8; n += 1)
+    await step(page, start.x + 20 + n * 5, start.y + 20);
+  await page.mouse.up();
+  const moved = await declared(page, "mover", ["left"]);
+  expect(moved.values.left).not.toBe(original.values.left);
+  await blurAndPress(page, "Control+z");
+  await expect
+    .poll(async () => (await declared(page, "mover", ["left"])).values.left)
+    .toBe(original.values.left);
+  await saveNewProject(page);
+  const persistedBefore = await savedDocument(page);
+  const cssBefore = await exportedCss(page);
+
+  await node(page, "mover").click();
+  await expect(page.locator('[data-resize-handle="se"]')).toBeVisible();
+  const box = (await node(page, "mover").boundingBox())!;
+  const handle = (await page
+    .locator('[data-resize-handle="se"]')
+    .boundingBox())!;
+  await page.evaluate(() => window.__lyTrace.start("mover"));
+  await page.mouse.move(
+    handle.x + handle.width / 2,
+    handle.y + handle.height / 2,
+  );
+  await page.mouse.down();
+  for (let n = 1; n <= 15; n += 1)
+    await step(
+      page,
+      handle.x + handle.width / 2 + n * 4,
+      handle.y + handle.height / 2 + n * 3,
+    );
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await settle(page);
+  const frames = await page.evaluate(() => window.__lyTrace.stop());
+  save(`free-resize-cancel-${testInfo.project.name}`, { start: box, frames });
+
+  const live = frames.filter((frame) => frame.override !== null);
+  expect(live.length).toBeGreaterThan(5);
+  expect(live.at(-1)!.width - box.width).toBeGreaterThan(30);
+  // Zero sheet mutations for the whole gesture, cancel included.
+  expect(frames.every((frame) => frame.mutations === frames[0].mutations)).toBe(
+    true,
+  );
+  const last = frames.at(-1)!;
+  expect(last.override).toBeNull();
+  expect(
+    close(last.x, box.x) &&
+      close(last.y, box.y) &&
+      close(last.width, box.width) &&
+      close(last.height, box.height),
+  ).toBe(true);
+  // No stale styling: the declared geometry is the original one, with no inline value left.
+  const after = await declared(page, "mover", [
+    "left",
+    "top",
+    "width",
+    "height",
+  ]);
+  expect(after.values).toEqual(original.values);
+  expect(after.override).toBeNull();
+  expect(after.inline).toBe(0);
+  // Nothing changed: still saved; the persisted document and its export are untouched.
+  await expect(status(page)).toHaveAttribute("data-project-status", "saved");
+  expect(await savedDocument(page)).toEqual(persistedBefore);
+  expect(await exportedCss(page)).toBe(cssBefore);
+  // No history entry: Redo still brings back the earlier move, and one Undo returns to the original.
+  await blurAndPress(page, "Control+y");
+  await expect
+    .poll(async () => (await declared(page, "mover", ["left"])).values.left)
+    .toBe(moved.values.left);
+  await blurAndPress(page, "Control+z");
+  await expect
+    .poll(
+      async () =>
+        (await declared(page, "mover", ["left", "top", "width", "height"]))
+          .values,
+    )
+    .toEqual(original.values);
+});
+
+test("gradient stop drag, Escape: the exact background-image back, zero sheet mutations, no override, no history entry, Redo kept, nothing persisted or exported", async ({
+  page,
+}, testInfo) => {
+  await selectOnCanvas(page, "grad");
+  const header = page
+    .getByRole("button", { name: "Background", exact: true })
+    .first();
+  const section = page.locator(
+    `[aria-labelledby="${await header.getAttribute("id")}"]`,
+  );
+  await section.getByRole("button", { name: "Gradient", exact: true }).click();
+  const stop = page.locator('[aria-label^="Gradient stop:"]').last();
+  await expect(stop).toBeVisible();
+  const gradientImage = async () =>
+    (await declared(page, "grad", ["background-image"])).values[
+      "background-image"
+    ];
+  const original = await gradientImage();
+  expect(original).toContain("gradient(");
+
+  // A committed stop drag, then Undo: there is now something to Redo.
+  let box = (await stop.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  for (let n = 1; n <= 6; n += 1)
+    await step(page, box.x + box.width / 2 - n * 8, box.y + box.height / 2);
+  await page.mouse.up();
+  const committed = await gradientImage();
+  expect(committed).not.toBe(original);
+  await blurAndPress(page, "Control+z");
+  await expect.poll(gradientImage).toBe(original);
+  await saveNewProject(page);
+  const persistedBefore = await savedDocument(page);
+  const cssBefore = await exportedCss(page);
+
+  box = (await stop.boundingBox())!;
+  await page.evaluate(() => window.__lyTrace.start("grad"));
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  for (let n = 1; n <= 12; n += 1)
+    await step(page, box.x + box.width / 2 - n * 6, box.y + box.height / 2);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await settle(page);
+  const frames = await page.evaluate(() => window.__lyTrace.stop());
+  save(`gradient-stop-cancel-${testInfo.project.name}`, { original, frames });
+
+  const live = frames.filter((frame) => frame.override !== null);
+  expect(live.length).toBeGreaterThan(5);
+  expect(live.every((frame) => frame.override === "background-image")).toBe(
+    true,
+  );
+  // The value really moved live …
+  expect(new Set(live.map((frame) => frame.background)).size).toBeGreaterThan(
+    1,
+  );
+  // … the sheet was never written, and the actual background-image is back exactly.
+  expect(frames.every((frame) => frame.mutations === frames[0].mutations)).toBe(
+    true,
+  );
+  expect(frames.at(-1)!.override).toBeNull();
+  expect(frames.at(-1)!.background).toBe(frames[0].background);
+  const after = await declared(page, "grad", ["background-image"]);
+  expect(after.values["background-image"]).toBe(original);
+  expect(after.override).toBeNull();
+  expect(after.inline).toBe(0);
+  await expect(status(page)).toHaveAttribute("data-project-status", "saved");
+  expect(await savedDocument(page)).toEqual(persistedBefore);
+  expect(await exportedCss(page)).toBe(cssBefore);
+  // No history entry: Redo brings back the earlier committed drag; Undo returns to the original.
+  await blurAndPress(page, "Control+y");
+  await expect.poll(gradientImage).toBe(committed);
+  await blurAndPress(page, "Control+z");
+  await expect.poll(gradientImage).toBe(original);
 });

@@ -2,10 +2,12 @@ import type { CSSProperties } from "react";
 import { isNavigableLink, resolveAccessibilityAttributes, resolveDerivedAccessibilityAttributes } from "@/features/editor/rules/accessibilityAttributes";
 import {
   compileBaseDeclarations,
+  compileKeyframes,
   compileNodeStyle,
   DOCUMENT_DEFAULT_STYLE_IDS,
   hasInnerMediaElement,
   printStyleRule,
+  referencedKeyframes,
   resolveDialogAccessibleDescription,
   resolveDialogAccessibleName,
   resolveNodeStyleRecipe,
@@ -15,7 +17,6 @@ import {
   type ElementStyleContext,
   type NodeStyleRecipe,
   type StyleDiagnostic,
-  type StyleIrRule,
 } from "@/features/canvas";
 import { counterCssIdentifiers } from "@/features/editor/types/counters";
 import { canParentAcceptChild } from "@/features/editor/rules/insertionRules";
@@ -43,7 +44,7 @@ import type { EditorElementNode } from "@/features/editor/types/document";
 import type { ContainerLayoutMode } from "@/features/editor/types/layout";
 import type { FlowDisplayMode } from "@/features/editor/types/flowLayout";
 import type { ExportDiagnostic, ExportDiagnosticCode, ExportDiagnosticSeverity } from "@/features/export/types/exportDiagnostic";
-import type { ExportAsset, ExportAttribute, ExportDocument, ExportElement, ExportInteraction, ExportNode } from "@/features/export/types/exportIr";
+import type { ExportAsset, ExportAttribute, ExportDocument, ExportElement, ExportInteraction, ExportNode, ExportStyleRule } from "@/features/export/types/exportIr";
 import { buildExportBehaviors } from "@/features/export/utils/buildExportBehaviors";
 import { stripNullCharacters } from "@/features/export/utils/escapeMarkup";
 import { checkExportUrl, type ExportUrlContext } from "@/features/export/utils/exportUrlPolicy";
@@ -591,8 +592,8 @@ function buildNode(state: BuildState, node: EditorElementNode, placement: Placem
  * element a printed rule targets or names always carries its class. Rules
  * are returned in document order; the printer sorts them by order key.
  */
-function compileExportStyleRules(state: BuildState, document: EditorElementNode): StyleIrRule[] {
-  const rules: StyleIrRule[] = [];
+function compileExportStyleRules(state: BuildState, document: EditorElementNode): ExportStyleRule[] {
+  const rules: ExportStyleRule[] = [];
   const classFor = (nodeId: string) => {
     const element = state.elements.get(nodeId);
     if (!element) return undefined;
@@ -626,7 +627,7 @@ function compileExportStyleRules(state: BuildState, document: EditorElementNode)
           report(state, "warning", "invalid-css-value", `A style rule could not be printed safely, so it was not exported (${error instanceof Error ? error.message : String(error)}).`, node.id);
           continue;
         }
-        rules.push(rule);
+        rules.push({ sourceNodeId: node.id, rule });
         if (rule.selector.subject === ir.innerClass && inner) inner.ruleTarget = true;
         else element.ruleTarget = true;
       }
@@ -672,6 +673,7 @@ export function buildExportDocument(document: EditorElementNode, limits: Project
   };
   const root = buildNode(state, parsed.data, { parentLayoutMode: "flow", parentFlowDisplay: "block" });
   const styleRules = compileExportStyleRules(state, parsed.data);
+  const keyframes = compileKeyframes(parsed.data.styleAssets?.keyframes ?? [], referencedKeyframes(parsed.data), { parentLayoutMode: "flow", isPreview: true, counterIdentifiers: state.counterIdentifiers }, reportStyle(state));
   const behaviors = buildExportBehaviors(parsed.data, state.diagnostics);
   return {
     ok: true,
@@ -679,6 +681,7 @@ export function buildExportDocument(document: EditorElementNode, limits: Project
       root,
       defaultStyles: DOCUMENT_DEFAULT_STYLE_IDS.filter((id) => state.usedDefaults.has(id)),
       styleRules,
+      keyframes,
       interactions: state.interactions,
       behaviors,
       assets: state.assets,

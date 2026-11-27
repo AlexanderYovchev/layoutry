@@ -1,4 +1,4 @@
-import { getDocumentDefaultStyle, printSelector, printStyleRule, ruleOrderKey, STYLE_BUCKET, type CssDeclaration } from "@/features/canvas";
+import { getDocumentDefaultStyle, printKeyframes, printSelector, printStyleRule, ruleOrderKey, STYLE_BUCKET, type CssDeclaration } from "@/features/canvas";
 import type { ExportDocument, ExportElement } from "@/features/export/types/exportIr";
 import { exportBaseStylesheet } from "@/features/export/utils/exportBaseStylesheet";
 import { defaultStyleClassName, elementStyleClassName } from "@/features/export/utils/exportClassNames";
@@ -61,15 +61,22 @@ export function printExportStylesheet(document: ExportDocument): string {
   collectElementRules(document.root, elementRules);
   const baseKey = ruleOrderKey({ bucket: STYLE_BUCKET.base, tier: 1 });
   const ordered = [
-    ...elementRules.map((text, index) => ({ key: baseKey, index, text })),
-    ...document.styleRules.map((styleRule, index) => ({ key: ruleOrderKey(styleRule), index: elementRules.length + index, text: printStyleRule(styleRule) })),
+    ...elementRules.map((text, index) => ({ key: baseKey, owner: "", index, text })),
+    ...document.styleRules.map(({ sourceNodeId, rule: styleRule }, index) => ({ key: ruleOrderKey(styleRule), owner: sourceNodeId, index: elementRules.length + index, text: printStyleRule(styleRule) })),
   ];
-  ordered.sort((a, b) => a.key - b.key || a.index - b.index);
+  // Inside a role-group-tier key (odd keys are own rules), rules of
+  // different owners can reach the same element, so they follow the
+  // Canvas sheet's order: owner node id, then the owner's own order. Own
+  // rules (tier 1) only ever reach their owner, so document order is kept.
+  const byOwner = (a: { owner: string }, b: { owner: string }) => (a.owner < b.owner ? -1 : a.owner > b.owner ? 1 : 0);
+  ordered.sort((a, b) => a.key - b.key || (a.key % 2 === 0 ? byOwner(a, b) : 0) || a.index - b.index);
   sections.push(...ordered.map((entry) => entry.text));
+  // BC-17.3.1: each referenced keyframes definition once (none until BC-17.11 adds references).
+  sections.push(...document.keyframes.map((compiled) => printKeyframes(compiled)));
 
   const transitionSelectors: string[] = [];
   collectTransitionSelectors(document.root, transitionSelectors);
-  for (const styleRule of document.styleRules) if (styleRule.declarations.some(([property]) => property === "transition-duration")) transitionSelectors.push(printSelector(styleRule.selector));
+  for (const { rule: styleRule } of document.styleRules) if (styleRule.declarations.some(([property]) => property === "transition-duration")) transitionSelectors.push(printSelector(styleRule.selector));
   if (transitionSelectors.length > 0) sections.push(`@media (prefers-reduced-motion: reduce) {\n${rule(transitionSelectors.join(", "), REDUCED_MOTION_DECLARATIONS, "  ")}\n}`);
 
   return `${sections.join("\n\n")}\n`;

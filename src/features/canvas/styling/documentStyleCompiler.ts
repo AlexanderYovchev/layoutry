@@ -1,6 +1,15 @@
-import { compileNodeStyle } from "@/features/canvas/styling/compileNodeStyle";
+import { compileKeyframes } from "@/features/canvas/styling/compileKeyframes";
+import {
+  compileNodeStyle,
+  counterRefsOf,
+} from "@/features/canvas/styling/compileNodeStyle";
+import {
+  keyframeRefsOf,
+  keyframesCssIdentifiers,
+} from "@/features/canvas/styling/keyframes";
 import { hasInnerMediaElement } from "@/features/canvas/styling/resolveNodeStyleRecipe";
 import {
+  printKeyframes,
   printStyleRule,
   ruleOrderKey,
 } from "@/features/canvas/styling/printStyleRules";
@@ -68,8 +77,14 @@ export function documentInnerClass(nodeId: string): string {
 }
 
 /** Fields that never affect a node's own CSS (content, behaviour, children). */
+/** The owner of the document-level keyframes chunk; never a node id (node ids are [A-Za-z0-9_-]). */
+export const KEYFRAMES_OWNER = "@keyframes";
+
 const NON_STYLE_KEYS: ReadonlySet<string> = new Set([
   "children",
+  // BC-17.3.1 QA-3: document assets reach compilation only through the
+  // counter identifiers, which each dependant's own key tracks exactly.
+  "styleAssets",
   "text",
   "displayName",
   "svgKind",
@@ -184,7 +199,12 @@ export class DocumentStyleCompiler {
   private entries = new Map<string, Entry>();
   private counterSource: unknown = null;
   private counterIdentifiers: ReadonlyMap<string, string> = new Map();
-  private countersEpoch = 0;
+  // BC-17.3.1 QA-4: keyframes definitions (document assets) and the one document-level chunk of the referenced ones.
+  private keyframesSource: unknown = null;
+  private keyframesIdentifiers: ReadonlyMap<string, string> = new Map();
+  private keyframesReferenced = "";
+  private keyframesCompiledFrom: unknown = null;
+  private keyframesChunk: NodeChunks | null = null;
   private rootId: string | null = null;
   /** The nodes compiled from their committed state in the previous update (a live gesture). */
   private lastLiveIds: ReadonlySet<string> = new Set();
@@ -212,15 +232,51 @@ export class DocumentStyleCompiler {
       for (const id of this.entries.keys()) change.changed.set(id, null);
       this.entries.clear();
       this.rootId = document.id;
+      if (this.keyframesChunk) change.changed.set(KEYFRAMES_OWNER, null);
+      this.keyframesChunk = null;
+      this.keyframesReferenced = "";
+      this.keyframesCompiledFrom = null;
     }
-    // Counter identifiers are document-wide: a change re-checks every node (rare: only definition edits).
     let forceAll = this.entries.size === 0;
+    // BC-17.3.1 QA-3: counter identifiers are document-wide, but only the
+    // nodes that reference a counter whose identifier changed depend on a
+    // definition edit. Each such node's own key holds the identifiers it
+    // uses, so exactly those recompile; the tree is walked only when at least
+    // one cached node depends on a changed counter (else nothing to redo).
     const counters = document.styleAssets?.counters;
     if (counters !== this.counterSource) {
       this.counterSource = counters;
+      const previous = this.counterIdentifiers;
       this.counterIdentifiers = counterCssIdentifiers(counters ?? []);
-      this.countersEpoch += 1;
-      forceAll = true;
+      const changedIds = new Set<string>();
+      for (const id of new Set([
+        ...previous.keys(),
+        ...this.counterIdentifiers.keys(),
+      ]))
+        if (previous.get(id) !== this.counterIdentifiers.get(id))
+          changedIds.add(id);
+      if (changedIds.size > 0)
+        for (const entry of this.entries.values())
+          if (entry.ir.counterRefs.some((id) => changedIds.has(id)))
+            forceAll = true;
+    }
+    // Keyframes, the same way: a referencing node depends only on the identifier it names.
+    const keyframes = document.styleAssets?.keyframes;
+    if (keyframes !== this.keyframesSource) {
+      this.keyframesSource = keyframes;
+      const previous = this.keyframesIdentifiers;
+      this.keyframesIdentifiers = keyframesCssIdentifiers(keyframes ?? []);
+      const changedIds = new Set<string>();
+      for (const id of new Set([
+        ...previous.keys(),
+        ...this.keyframesIdentifiers.keys(),
+      ]))
+        if (previous.get(id) !== this.keyframesIdentifiers.get(id))
+          changedIds.add(id);
+      if (changedIds.size > 0)
+        for (const entry of this.entries.values())
+          if (entry.ir.keyframeRefs.some((id) => changedIds.has(id)))
+            forceAll = true;
     }
     // A node that just left the live set was cached from its COMMITTED
     // state although its source node is the live one; a gesture commit
@@ -338,6 +394,7 @@ export class DocumentStyleCompiler {
       for (const child of entry.childIds) remove(child);
     };
     for (const id of removalCandidates) remove(id);
+    this.updateKeyframesChunk(document, change);
     this.lastStats = stats;
     return change;
   }
@@ -350,19 +407,62 @@ export class DocumentStyleCompiler {
   ): string {
     let key = `${parentLayoutMode}|${parentFlowDisplay}`;
     if (hasAncestorRules(node)) key += `|p${parentPath}`;
-    const refersToCounters =
-      node.counters !== undefined ||
-      (node.styleRules ?? []).some(
-        (rule) =>
-          rule.groups.counters !== undefined || rule.content?.kind === "parts",
-      );
-    if (refersToCounters) key += `|c${this.countersEpoch}`;
+    // The identifiers of exactly the counters this node references (its counter dependencies).
+    const refs = counterRefsOf(node);
+    if (refs.length > 0)
+      key += `|c${refs.map((id) => `${id}=${this.counterIdentifiers.get(id) ?? ""}`).join(",")}`;
+    const keyframeRefs = keyframeRefsOf(node);
+    if (keyframeRefs.length > 0)
+      key += `|k${keyframeRefs.map((id) => `${id}=${this.keyframesIdentifiers.get(id) ?? ""}`).join(",")}`;
     return key;
   }
 
   /** Every node's current chunks (id → order key → CSS). */
   chunks(): ReadonlyMap<string, NodeChunks> {
-    return new Map([...this.entries].map(([id, entry]) => [id, entry.chunks]));
+    const chunks = new Map(
+      [...this.entries].map(([id, entry]) => [id, entry.chunks]),
+    );
+    if (this.keyframesChunk) chunks.set(KEYFRAMES_OWNER, this.keyframesChunk);
+    return chunks;
+  }
+
+  /**
+   * BC-17.3.1 QA-4: the document-level keyframes chunk — every definition a
+   * cached node references, compiled and printed once each (in definition
+   * order), owned by KEYFRAMES_OWNER at order key 0 (@keyframes take no part
+   * in the cascade). Rebuilt only when the referenced set or the definitions
+   * change; empty until BC-17.11 adds references.
+   */
+  private updateKeyframesChunk(
+    document: EditorElementNode,
+    change: StyleSheetChange,
+  ) {
+    const referenced = new Set<string>();
+    for (const entry of this.entries.values())
+      for (const id of entry.ir.keyframeRefs) referenced.add(id);
+    const definitions = document.styleAssets?.keyframes ?? [];
+    const referencedKey = [...referenced].sort().join(",");
+    // The store is immutable: the same definitions array and the same referenced ids give the same chunk.
+    if (
+      referencedKey === this.keyframesReferenced &&
+      (referenced.size === 0 || definitions === this.keyframesCompiledFrom)
+    )
+      return;
+    this.keyframesReferenced = referencedKey;
+    this.keyframesCompiledFrom = definitions;
+    const texts =
+      referenced.size === 0
+        ? []
+        : compileKeyframes(definitions, [...referenced], {
+            parentLayoutMode: "flow",
+            isPreview: this.surface !== "design",
+            counterIdentifiers: this.counterIdentifiers,
+          }).map((compiled) => printKeyframes(compiled));
+    const next: NodeChunks | null =
+      texts.length > 0 ? new Map([[0, texts]]) : null;
+    if (next === null && this.keyframesChunk === null) return;
+    this.keyframesChunk = next;
+    change.changed.set(KEYFRAMES_OWNER, next);
   }
 
   /** The current IR of a node (tests, diagnostics). */

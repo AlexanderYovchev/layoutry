@@ -504,6 +504,16 @@ interface EditorState {
   setElementBackground: (nodeId: string, background: BackgroundSettings | undefined) => void;
   /** Per-frame background write during a live drag session (Checkpoint 4.3.1 — gradient stop dragging) — no history push; wrap in begin/commitTransaction, same convention setFreeChildGeometryLive already established. */
   setElementBackgroundLive: (nodeId: string, background: BackgroundSettings | undefined) => void;
+  /**
+   * BC-17.3.1: rolls back an uncommitted live background gesture (a
+   * gradient-stop drag cancelled with Escape or a cancelled pointer) —
+   * every node the open gesture wrote a background-image slice for gets its
+   * background from the transaction snapshot back; nothing else changes.
+   * Like restoreFreeLayoutsLive, an exact rollback reuses the snapshot's
+   * document object, so nothing reads as unsaved. Call cancelTransaction
+   * after it.
+   */
+  restoreLiveBackgrounds: () => void;
   setElementBorder: (nodeId: string, border: BorderSettings | undefined) => void;
   setElementBorderRadius: (nodeId: string, borderRadius: BorderRadiusSettings | undefined) => void;
   /** This node's own Advanced Container Shape preset (Checkpoint 1.15.4) — see resolveShapeStyle. `"none"` clears it back to a plain rectangle (see setElementShape's own doc comment); never mutates the independently-stored `borderRadius` field. */
@@ -1821,6 +1831,20 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
       const protection = getStyleProtection(state.document, nodeId);
       if (protection.protected) return nextEditorNoticeState(state, describeStyleLockNotice([protection], false));
       return { document: setBackgroundSettingsCommand(state.document, nodeId, background), ...recordLiveGesture(state, [[nodeId, "background-image"]]) };
+    }),
+
+  restoreLiveBackgrounds: () =>
+    set((state) => {
+      const gesture = selectActiveLiveGesture(state);
+      const open = state.transactionSnapshot;
+      if (!gesture || !open) return {};
+      let document = state.document;
+      for (const [nodeId, slice] of Object.entries(gesture.slices)) {
+        if (slice !== "background-image" || !findNodeById(document, nodeId)) continue;
+        document = setBackgroundSettingsCommand(document, nodeId, findNodeById(open.document, nodeId)?.background);
+      }
+      if (isStructurallyEqual(document, open.document)) document = open.document;
+      return document === state.document ? {} : { document };
     }),
 
   setElementBorder: (nodeId, border) =>

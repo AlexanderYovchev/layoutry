@@ -77,7 +77,11 @@ const RESERVED_COUNTER_IDENTIFIERS: ReadonlySet<string> = new Set([
   "list-item",
 ]);
 
-function slug(name: string): string {
+/** An asset name as a CSS identifier fragment in [a-z0-9-] (counters here; keyframes in canvas/styling/keyframes.ts, BC-17.3.1). */
+export function assetIdentifierSlug(
+  name: string,
+  fallback = "counter",
+): string {
   const ascii = name
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
@@ -85,7 +89,7 @@ function slug(name: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 40);
-  return ascii.length > 0 ? ascii : "counter";
+  return ascii.length > 0 ? ascii : fallback;
 }
 
 /**
@@ -100,7 +104,7 @@ export function counterCssIdentifiers(
   const used = new Set<string>(RESERVED_COUNTER_IDENTIFIERS);
   const identifiers = new Map<string, string>();
   for (const definition of definitions) {
-    const base = `c-${slug(definition.name)}`;
+    const base = `c-${assetIdentifierSlug(definition.name)}`;
     let candidate = base;
     for (let suffix = 2; used.has(candidate); suffix += 1)
       candidate = `${base}-${suffix}`;

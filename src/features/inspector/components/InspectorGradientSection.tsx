@@ -71,6 +71,7 @@ export function InspectorGradientSection({ node }: InspectorGradientSectionProps
   const beginTransaction = useEditorStore((state) => state.beginTransaction);
   const commitTransaction = useEditorStore((state) => state.commitTransaction);
   const cancelTransaction = useEditorStore((state) => state.cancelTransaction);
+  const restoreLiveBackgrounds = useEditorStore((state) => state.restoreLiveBackgrounds);
 
   const background = getBackgroundSettings(node);
   const gradient = background.gradient;
@@ -164,6 +165,12 @@ export function InspectorGradientSection({ node }: InspectorGradientSectionProps
     else cancelTransaction();
   }
 
+  // BC-17.3.1: an abandoned stop drag puts every live-written background back exactly, with no history entry.
+  function handleDragCancel() {
+    restoreLiveBackgrounds();
+    cancelTransaction();
+  }
+
   function handleAddStop() {
     if (!gradient || gradient.stops.length >= MAX_GRADIENT_STOPS) return;
     const position = computeNewStopPosition(gradient.stops);
@@ -251,6 +258,7 @@ export function InspectorGradientSection({ node }: InspectorGradientSectionProps
         onDragStart={beginTransaction}
         onDragMove={handleDragMove}
         onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
         onAdjustPosition={handleAdjustStopPosition}
       />
 

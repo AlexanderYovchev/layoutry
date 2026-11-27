@@ -1,4 +1,4 @@
-import type { CssDeclaration, DocumentDefaultStyleId, StyleIrRule } from "@/features/canvas";
+import type { CompiledKeyframes, CssDeclaration, DocumentDefaultStyleId, StyleIrRule } from "@/features/canvas";
 import type { InteractionAction, InteractionTrigger } from "@/features/editor/types/interactions";
 import type { ExportBehaviors } from "@/features/export/types/exportBehavior";
 import type { ExportDiagnostic } from "@/features/export/types/exportDiagnostic";
@@ -72,6 +72,12 @@ export interface ExportAsset {
   kind: ExportAssetKind;
 }
 
+/** One compiled style rule and the editor node that owns it. */
+export interface ExportStyleRule {
+  sourceNodeId: string;
+  rule: StyleIrRule;
+}
+
 export interface ExportDocument {
   root: ExportElement;
   /** Every default presentation used anywhere, in table order — the base rules a printer must emit. */
@@ -79,9 +85,13 @@ export interface ExportDocument {
   /**
    * BC-17.3: the authored state, pseudo-element, part and role-group rules
    * (the shared compiler's IR), in document order; a printer emits them
-   * after the element rules, sorted by order key (canvas ruleOrderKey).
+   * after the element rules, sorted by order key (canvas ruleOrderKey) and,
+   * inside a role-group-tier key, by owner node id — the order the Canvas
+   * sheet uses (BC-17.3.1 QA-1).
    */
-  styleRules: StyleIrRule[];
+  styleRules: ExportStyleRule[];
+  /** BC-17.3.1: the keyframes definitions the document references, compiled once each (empty until BC-17.11 adds references). */
+  keyframes: CompiledKeyframes[];
   /** The authored click bindings, raw. */
   interactions: ExportInteraction[];
   /** What those bindings do at runtime — the input of every interaction runtime (EXPORT-1.3). */

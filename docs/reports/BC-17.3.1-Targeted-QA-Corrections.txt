@@ -1,0 +1,302 @@
+BC-17.3.1 — TARGETED STYLESHEET PIPELINE QA CORRECTIONS
+Date: 2026-11-27
+Recommendation: READY FOR BC-17.3 FINAL QA
+
+======================================================================
+1. STARTING GIT STATE
+======================================================================
+
+Branch main, HEAD 16340f8 (BC-17.3, committed by the owner as 8c42467 and
+16340f8 over 85206c8 BC-17.2). Working tree clean at the start. Nothing
+committed or pushed by this checkpoint.
+
+======================================================================
+2. RESOLUTION SUMMARY
+======================================================================
+
+  Item  Finding                                   Kind                 Status
+  ----  ----------------------------------------  -------------------  -------
+  QA-1  Structural-chain rules (table.cell,       CONFIRMED DEFECT     FIXED
+        group.first, list.first, …) shared the
+        element tier with the target's own rules:
+        Design and Export could pick different
+        winners; and the container's rule beat
+        the element's own styling.
+  QA-2  Free resize Escape: correct.              MISSING VERIFICATION ADDED
+        Gradient-stop drag had no cancellation:   CONFIRMED DEFECT     FIXED
+        Escape left the gesture/transaction open.
+  QA-3  A counter rename recompiled every         IMPRECISION          FIXED
+        counter-referencing node (also ones using
+        other counters) and the root.
+  QA-4  Keyframe dependency foundation owed by    MISSING FOUNDATION   IMPLEMENTED
+        BC-17.3 was absent (refs always empty,     (boundary below)
+        no identifiers, printer, chunk or cache
+        dependency).
+  QA-5  Inspector loaded the export engine,       CONFIRMED            FIXED
+        compiler and export UI through one import  (import cost)
+        (320 → 251 modules). Remaining timeouts
+        are pre-existing and environmental.        PRE-EXISTING         DOCUMENTED
+
+======================================================================
+3. QA-1 — CROSS-SURFACE CASCADE ORDERING
+======================================================================
+
+Analysis. All generated rules have equal specificity, so order decides.
+Inside one order key, Design/Preview order owners by node id, Export by
+document order. Overlaps of DIFFERENT owners on one element under one key:
+- role groups (tier 0) vs the member's own rules (tier 1): different keys
+  — already safe;
+- structural chains were tier 1 — the SAME key as the target element's own
+  rules (e.g. a container's group.first vs its first child's base
+  background, a table's table.cell vs a cell's background): order then
+  differed between surfaces;
+- two different tier-0 owners on one element: not reachable with the
+  current targets (role groups and group.first/list.first reach direct
+  children only; table chains have no competing ancestor owner), but not
+  guaranteed for later targets.
+
+Fixtures (src/features/export/utils/crossSurfaceCascadeOrder.test.tsx):
+the Preview Canvas (real components + real compiled sheet) and the
+exported page (real printer, real HTML) in jsdom; each element's winning
+declaration compared, with ids chosen so id order ≠ document order:
+  1 container group.first + first child's own background (owner first)
+  2 the same with ids reversed (owner sorts after its child)
+  3 table.cell vs a cell's own background, and an untouched cell
+  4 Pagination role group + the root's list.first + a member's own background
+Before the fix: 3 of 4 failed — fixture 1 rendered BLUE in Preview and RED
+in Export (a real cross-surface discrepancy); 2–3 agreed but let the
+container's structural rule beat the element's own styling, contrary to
+the role-group contract (fixture 4, a role group, already passed).
+
+Fix:
+- compileNodeStyle.ts: structural chains take tier 0 (they are an owner
+  styling its descendants, exactly like role groups), so the target's own
+  rules of the same bucket always come later and win, on every surface.
+- Export printing: inside a tier-0 key, rules of different owners follow
+  the Canvas order (owner node id, then the owner's own order); tier-1
+  keys keep document order (own rules only ever reach their owner). The
+  export IR records each rule's owner (ExportStyleRule { sourceNodeId,
+  rule }). Class identity and the stylesheet host are unchanged.
+After: 4/4 pass; existing parity (unit 8/8, Chromium export-visual-parity
+and preview-export-parity) pass.
+
+======================================================================
+4. QA-2 — GESTURE CANCELLATION (FREE RESIZE, GRADIENT STOP)
+======================================================================
+
+Added to e2e/stylesheet-gesture-trace.spec.ts (existing tracer reused):
+"Free resize, Escape …" and "gradient stop drag, Escape …". Each test
+first makes a committed edit and undoes it (so Redo is available), saves
+the project, then performs the traced gesture and presses Escape. Checks:
+- exact original geometry / background-image (the ACTUAL computed
+  background-image per frame and the declared value after);
+- zero document-sheet mutations for the whole gesture, cancel included;
+- override removed, no inline style left, declared value == original;
+- project status stays "saved" (document identity == persisted);
+- IndexedDB document unchanged; the real exporter's CSS unchanged;
+- no history entry: Redo still restores the earlier edit; one Undo
+  returns to the original.
+
+Results before any fix: Free resize Escape PASSED every check (missing
+verification only). Gradient stop Escape FAILED: after Escape and release
+the stop still painted the live override — the drag and its transaction
+were left open (the stop track handled only pointer-up; Escape and
+pointercancel were not handled; cancelTransaction never restored the live
+value). Confirmed defect.
+
+Fix:
+- useEditorStore.restoreLiveBackgrounds(): rolls back every node the open
+  live gesture wrote a background-image slice for (multi-selection
+  fan-out included) from the transaction snapshot; an exact rollback
+  reuses the snapshot's document object (nothing reads as unsaved), like
+  restoreFreeLayoutsLive; other edits made meanwhile are kept.
+- InspectorGradientStopTrack: Escape (captured, only while dragging),
+  pointercancel, lost pointer capture and unmount mid-drag call
+  onDragCancel; the release after a cancel does nothing.
+- InspectorGradientSection: onDragCancel = restoreLiveBackgrounds() +
+  cancelTransaction().
+
+Traces (after the fix):
+  trace                      engine    frames live  mutations   live bg    restored  override
+                                                    live/total  values               at end
+  Free resize, Escape        Chromium    61    50    0 / 0         —       exact     none
+                             Firefox     46    36    0 / 0         —       exact     none
+                             WebKit      20    14    0 / 0         —       exact     none
+  Gradient stop, Escape      Chromium    51    42    0 / 0         12      exact     none
+                             Firefox     32    26    0 / 0         12      exact     none
+                             WebKit      17    12    0 / 0         12      exact     none
+All history / persistence / export checks pass in all three engines. The
+gradient commit trace and inspector-final-regression (gradient live edit)
+still pass.
+
+======================================================================
+5. QA-3 — COUNTER DEPENDENCY INVALIDATION
+======================================================================
+
+Document: 200 unrelated paragraphs; a section resetting counter X; two
+headings incrementing X with ::before content counter(X); one element
+incrementing counter Y. Edit: rename X (its CSS identifier changes; Y's
+does not) — as a store edit does: new root, every element keeps identity.
+
+                                   before fix   after fix
+  traversal (nodes visited)           205          205
+  cache lookups                       205          205
+  nodes recompiled                      5            3
+  nodes whose rules changed             3            3
+  stylesheet mutations                 10           10
+(5 before = the 3 dependants + the root, whose object changed only through
+styleAssets, + the Y-only element.) Adding a definition nothing references:
+before 5 recompiled; after 0 recompiled, and only the root plus one lookup
+per direct child (203), no subtree descended.
+
+Fix (documentStyleCompiler.ts): a node's own key holds the identifiers of
+exactly the counters it references (was a global epoch); styleAssets is a
+non-style input of the root; a definitions change walks the tree only when
+a cached node references a counter whose identifier changed. Identifier
+resolution is unchanged and deterministic. Randomized incremental == full
+(2 surfaces × 8 seeds × 40 edits, counter renames included) still passes;
+new counterInvalidation.test.ts asserts the numbers above, the collision-
+suffix shift case and full-rebuild equality.
+
+======================================================================
+6. QA-4 — KEYFRAME DEPENDENCY FOUNDATION
+======================================================================
+
+Required by BC-17.3 (Corrected Architecture §8.2 "keyframes emitted once
+per referenced id", §8.4 "dependency index … keyframe dependencies";
+Roadmap BC-17.3 item 2). Status at start: absent (keyframeRefs always [],
+no identifiers, no printer, no chunk, no cache dependency).
+
+Implemented (foundation only):
+- keyframes.ts: keyframeRefsOf(node) — the single reference-discovery
+  point (returns [] until BC-17.11); referencedKeyframes(document);
+  keyframesCssIdentifiers — k-<slug>, collision suffixes, deterministic,
+  clear of CSS keywords and the editor's own fade-in/fade-in-up.
+- compileKeyframes.ts: referenced definitions only, once each, in
+  definition order, stops by offset, values through the shared validation.
+- printStyleRules.printKeyframes: validated @keyframes printing.
+- Compiler: IR keyframeRefs filled; a node's key holds the identifiers it
+  references; definition changes invalidate only dependants; one
+  document-level chunk (owner "@keyframes", never a node id) rebuilt only
+  when the referenced set or the definitions change; installed by the
+  CSSOM host. Export: ExportDocument.keyframes, printed once each.
+Deferred to BC-17.11: the animation group and every field referencing a
+definition (animation-name and the other longhands), keyframe authoring,
+animation playback and Design playback, reduced-motion animation rules,
+the Motion Inspector, keyframe clipboard transfer and dedupe.
+Evidence: keyframes.test.ts (no factory node references keyframes today;
+identifiers; compile/print safety; definitions edits recompile nothing and
+change no export). keyframeDependencies.test.ts stubs keyframeRefsOf only
+and exercises the real path: once-per-id emission, rename → exactly the 2
+dependants recompile and the chunk is rewritten, stop edit → chunk only,
+reference removal → chunk removed, incremental == full, host install.
+
+======================================================================
+7. QA-5 — INSPECTOR IMPORT OVERHEAD
+======================================================================
+
+Inspector modules import nothing from @/features/canvas. The heavy path
+was InspectorPaginationSection → `checkExportUrl` from @/features/export
+(the export index) → exportHtmlCss → printExportStylesheet →
+@/features/canvas index (compiler) and → the export UI components.
+Static import closure of InspectorContent: 320 modules (11 compiler, 4
+export engine, 4 export UI) → 251 after importing the pure
+export/utils/exportUrlPolicy directly (documented deep import, the same
+precedent as buildExportDocument's project import). Importing
+InspectorContent in a test: ~3.3 s → ~2.7 s test time, transform ~2.5 s →
+~2.1 s. New guard: inspectorImportBoundary.test.ts.
+
+Remaining timeouts — comparative evidence (full Inspector suite, 5 s
+default timeout, this machine, same conditions):
+  pre-BC-17.3 (85206c8 worktree):    3, 1, 3, 1, 3 failures per run
+  BC-17.3 before this fix:           7, 4, 4
+  BC-17.3.1 (fix applied):           7, 3, 2, 2, 2
+Every failure is a 5 s timeout in heavy userEvent tests (Section CSS
+menu, Pagination section) or its follow-on; run alone they pass, and
+their durations are equal before and after BC-17.3 (slowest five
+1202–5553 ms vs 1219–5628 ms; import 9.8 s → 7.1 s). Conclusion:
+pre-existing, environmental; no longer elevated after the fix. No
+timeout was raised.
+
+======================================================================
+8. PRODUCTION FILES MODIFIED / CREATED
+======================================================================
+
+Modified: canvas/styling/compileNodeStyle.ts (chain tier 0; keyframeRefs;
+counterRefsOf/plain/validatedFoundation exported),
+canvas/styling/documentStyleCompiler.ts (counter and keyframe
+dependencies, keyframes chunk, styleAssets non-style),
+canvas/styling/printStyleRules.ts (printKeyframes), canvas/index.ts,
+editor/stores/useEditorStore.ts (restoreLiveBackgrounds),
+editor/types/counters.ts (assetIdentifierSlug exported),
+export/types/exportIr.ts (ExportStyleRule, keyframes),
+export/utils/buildExportDocument.ts, export/utils/printExportStylesheet.ts,
+inspector/components/InspectorGradientStopTrack.tsx,
+inspector/components/InspectorGradientSection.tsx,
+inspector/components/InspectorPaginationSection.tsx.
+Created: canvas/styling/keyframes.ts, canvas/styling/compileKeyframes.ts.
+No project-format change.
+
+======================================================================
+9. TESTS ADDED OR MODIFIED
+======================================================================
+
+Added: export/utils/crossSurfaceCascadeOrder.test.tsx (4),
+canvas/styling/counterInvalidation.test.ts (4), canvas/styling/
+keyframes.test.ts (5), canvas/styling/keyframeDependencies.test.ts (5),
+editor/stores/useEditorStore.liveBackgrounds.test.ts (4),
+inspector/inspectorImportBoundary.test.ts (1); e2e: 2 cancellation traces.
+Modified: InspectorGradientStopTrack.test.tsx (new required prop; +3 cancel
+tests). No assertion weakened.
+
+======================================================================
+10. COMMANDS AND RESULTS
+======================================================================
+
+  npx tsc --noEmit -p .                                     pass
+  npx eslint <changed and new files>                        clean
+  npx prettier --write <new files + files clean at HEAD>    done
+  npx vitest run (QA-1 fixtures before fix)                 3/4 failed (evidence)
+  npx vitest run (QA-3 measurement before fix)              5 recompiled (evidence)
+  npx vitest run src/features/canvas/styling src/features/canvas/hooks
+    src/features/canvas/utils src/features/export src/features/editor/stores
+    legacyProjectFiles + gradient/pagination/boundary Inspector tests
+                                                            124 files, 1671/1671
+  npx vitest run src/features/inspector (×5 + 3 at 85206c8) see §7
+  npm run build; npx next start -p 3000
+  playwright (Chromium) QA-2 traces before fix              Free resize pass,
+                                                            gradient FAILED
+  playwright (temporary 3-engine config) QA-2 traces + gradient commit
+    Chromium, Firefox, WebKit (--workers=1)                 9/9
+  playwright (Chromium) export-visual-parity, preview-export-parity,
+    stylesheet-gesture-trace, inspector-final-regression,
+    pagination-management (after all changes)               38/38
+  playwright Firefox / WebKit QA-2 cancel traces (after all) 2/2, 2/2
+Not run (per directive): full core unit run, full Chromium e2e, Electron.
+
+======================================================================
+11. REMAINING LIMITATIONS
+======================================================================
+
+- Two different tier-0 owners on one element are not reachable with
+  today's targets; should a later target allow it, both surfaces order
+  them by owner id (consistent, but not semantically "closer wins").
+- Keyframes: references, authoring and playback arrive in BC-17.11; the
+  dependency path is verified with a stubbed discovery function.
+- Inspector suite: pre-existing 5 s timeout flakes under parallel load.
+- Unchanged out of scope: Snap toggle contrast, Structure naming spec,
+  Windows WebKit media, Electron microphone, BC-13 closure, BC-14, SVG.
+
+======================================================================
+12. READINESS FOR BC-17.4
+======================================================================
+
+All five QA items are resolved: three confirmed defects fixed with
+failing-then-passing evidence (QA-1, QA-2 gradient, QA-3 imprecision),
+the missing keyframe foundation implemented within the BC-17.3 boundary,
+the Inspector import overhead removed with comparative evidence. BC-17.4
+can start once QA accepts.
+
+RECOMMENDATION: READY FOR BC-17.3 FINAL QA
+
+Not committed. Not pushed. BC-17.4 not started.

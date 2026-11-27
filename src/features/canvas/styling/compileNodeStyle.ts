@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { keyframeRefsOf } from "@/features/canvas/styling/keyframes";
 import { escapeCssString } from "@/features/canvas/styling/cssEscape";
 import { validateCssDeclarationValue } from "@/features/canvas/styling/cssValueSafety";
 import {
@@ -150,13 +151,13 @@ export function validatedDeclarations(
   return declarations;
 }
 
-function plain(
+export function plain(
   declarations: readonly GeneratedDeclaration[],
 ): CssDeclaration[] {
   return declarations.map(([property, value]) => [property, value]);
 }
 
-function validatedFoundation(
+export function validatedFoundation(
   nodeId: string,
   declarations: readonly GeneratedDeclaration[],
   report: (diagnostic: StyleDiagnostic) => void,
@@ -302,7 +303,10 @@ function targetSelectors(
       pseudoElement === null ? { tier: 1 } : { pseudoElement, tier: 1 },
     );
   const chain = STRUCTURAL_CHAINS[target];
-  if (chain) return [{ chain, tier: 1 }];
+  // BC-17.3.1 QA-1: a structural rule is the owner styling its DESCENDANTS,
+  // like a role group, so it takes the role-group tier: the target's own
+  // rules of the same bucket always come later and win, on every surface.
+  if (chain) return [{ chain, tier: 0 }];
   if (styleTargetKind(target) === "role-group") {
     if (!isPaginationNode(node))
       return "it needs its component, which is not available yet";
@@ -498,7 +502,7 @@ function compileRules(
 }
 
 /** Every document counter the node's styling references (its invalidation dependencies). */
-function counterRefsOf(node: EditorElementNode): string[] {
+export function counterRefsOf(node: EditorElementNode): string[] {
   const ids = new Set<string>();
   const add = (refs: ReturnType<typeof counterOperationRefs>) => {
     for (const ref of refs) if (ref.kind === "document") ids.add(ref.id);
@@ -642,7 +646,7 @@ export function compileNodeStyle(input: CompileNodeStyleInput): NodeStyleIR {
     nodeClass: input.nodeClass,
     ...(input.innerClass ? { innerClass: input.innerClass } : {}),
     rules,
-    keyframeRefs: [],
+    keyframeRefs: keyframeRefsOf(node),
     counterRefs: counterRefsOf(node),
     svgDefs: [],
     diagnostics,

@@ -34,6 +34,7 @@ describe("InspectorGradientStopTrack", () => {
         onDragStart={vi.fn()}
         onDragMove={vi.fn()}
         onDragEnd={vi.fn()}
+        onDragCancel={vi.fn()}
         onAdjustPosition={vi.fn()}
       />,
     );
@@ -51,6 +52,7 @@ describe("InspectorGradientStopTrack", () => {
         onDragStart={vi.fn()}
         onDragMove={vi.fn()}
         onDragEnd={vi.fn()}
+        onDragCancel={vi.fn()}
         onAdjustPosition={vi.fn()}
       />,
     );
@@ -70,6 +72,7 @@ describe("InspectorGradientStopTrack", () => {
         onDragStart={onDragStart}
         onDragMove={vi.fn()}
         onDragEnd={vi.fn()}
+        onDragCancel={vi.fn()}
         onAdjustPosition={vi.fn()}
       />,
     );
@@ -89,6 +92,7 @@ describe("InspectorGradientStopTrack", () => {
         onDragStart={vi.fn()}
         onDragMove={onDragMove}
         onDragEnd={vi.fn()}
+        onDragCancel={vi.fn()}
         onAdjustPosition={vi.fn()}
       />,
     );
@@ -115,6 +119,7 @@ describe("InspectorGradientStopTrack", () => {
         onDragStart={vi.fn()}
         onDragMove={vi.fn()}
         onDragEnd={onDragEnd}
+        onDragCancel={vi.fn()}
         onAdjustPosition={vi.fn()}
       />,
     );
@@ -141,6 +146,7 @@ describe("InspectorGradientStopTrack", () => {
         onDragStart={vi.fn()}
         onDragMove={vi.fn()}
         onDragEnd={vi.fn()}
+        onDragCancel={vi.fn()}
         onAdjustPosition={onAdjustPosition}
       />,
     );
@@ -163,6 +169,7 @@ describe("InspectorGradientStopTrack", () => {
         onDragStart={vi.fn()}
         onDragMove={vi.fn()}
         onDragEnd={vi.fn()}
+        onDragCancel={vi.fn()}
         onAdjustPosition={onAdjustPosition}
       />,
     );
@@ -190,6 +197,7 @@ describe("InspectorGradientStopTrack", () => {
         onDragStart={onDragStart}
         onDragMove={vi.fn()}
         onDragEnd={vi.fn()}
+        onDragCancel={vi.fn()}
         onAdjustPosition={vi.fn()}
       />,
     );
@@ -199,5 +207,54 @@ describe("InspectorGradientStopTrack", () => {
     }
     fireEvent.pointerDown(screen.getByRole("button", { name: "Gradient stop: #000000 at 0%" }), { pointerId: 1 });
     expect(onDragStart).not.toHaveBeenCalled();
+  });
+});
+
+describe("InspectorGradientStopTrack — abandoned drags (BC-17.3.1)", () => {
+  function renderTrack() {
+    const handlers = { onDragStart: vi.fn(), onDragMove: vi.fn(), onDragEnd: vi.fn(), onDragCancel: vi.fn() };
+    const view = render(<InspectorGradientStopTrack stops={STOPS} selectedStopId={null} onSelectStop={vi.fn()} onAdjustPosition={vi.fn()} {...handlers} />);
+    return { ...handlers, view, marker: screen.getByRole("button", { name: "Gradient stop: #000000 at 0%" }) };
+  }
+
+  it("Escape mid-drag cancels instead of committing; the release after it does nothing", () => {
+    const { marker, onDragEnd, onDragCancel, onDragMove } = renderTrack();
+    fireEvent.pointerDown(marker, { pointerId: 1, clientX: 0 });
+    fireEvent.pointerMove(marker, { pointerId: 1, clientX: 60 });
+    const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    window.dispatchEvent(escape);
+    expect(onDragCancel).toHaveBeenCalledTimes(1);
+    // Captured for the drag only: no editor shortcut sees it.
+    expect(escape.defaultPrevented).toBe(true);
+    fireEvent.pointerMove(marker, { pointerId: 1, clientX: 120 });
+    fireEvent.pointerUp(marker, { pointerId: 1 });
+    expect(onDragMove).toHaveBeenCalledTimes(1);
+    expect(onDragEnd).not.toHaveBeenCalled();
+  });
+
+  it("a cancelled pointer or lost capture cancels, and Escape after a finished drag is not intercepted", () => {
+    const { marker, onDragEnd, onDragCancel } = renderTrack();
+    fireEvent.pointerDown(marker, { pointerId: 1, clientX: 0 });
+    fireEvent.pointerCancel(marker, { pointerId: 1 });
+    expect(onDragCancel).toHaveBeenCalledTimes(1);
+    fireEvent.pointerDown(marker, { pointerId: 2, clientX: 0 });
+    fireEvent.lostPointerCapture(marker, { pointerId: 2 });
+    expect(onDragCancel).toHaveBeenCalledTimes(2);
+    fireEvent.pointerDown(marker, { pointerId: 3, clientX: 0 });
+    fireEvent.pointerMove(marker, { pointerId: 3, clientX: 40 });
+    fireEvent.pointerUp(marker, { pointerId: 3 });
+    expect(onDragEnd).toHaveBeenCalledWith(true);
+    const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    window.dispatchEvent(escape);
+    expect(escape.defaultPrevented).toBe(false);
+    expect(onDragCancel).toHaveBeenCalledTimes(2);
+  });
+
+  it("unmounting mid-drag cancels the drag rather than leaving it open", () => {
+    const { marker, onDragCancel, onDragEnd, view } = renderTrack();
+    fireEvent.pointerDown(marker, { pointerId: 1, clientX: 0 });
+    view.unmount();
+    expect(onDragCancel).toHaveBeenCalledTimes(1);
+    expect(onDragEnd).not.toHaveBeenCalled();
   });
 });

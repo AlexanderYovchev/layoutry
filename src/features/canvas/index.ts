@@ -41,6 +41,8 @@ export {
 // recipe dispatch, value validation and rule compilation as the Canvas.
 export { compileBaseDeclarations, compileNodeStyle, validatedDeclarations, type CompileNodeStyleInput } from "@/features/canvas/styling/compileNodeStyle";
 export { resolveNodeStyleRecipe, hasInnerMediaElement, type NodeStyleRecipe } from "@/features/canvas/styling/resolveNodeStyleRecipe";
-export { printSelector, printStyleRule, ruleOrderKey } from "@/features/canvas/styling/printStyleRules";
+export { printKeyframes, printSelector, printStyleRule, ruleOrderKey } from "@/features/canvas/styling/printStyleRules";
+export { compileKeyframes, type CompiledKeyframes } from "@/features/canvas/styling/compileKeyframes";
+export { referencedKeyframes } from "@/features/canvas/styling/keyframes";
 export { STYLE_BUCKET, type NodeStyleIR, type StyleDiagnostic, type StyleIrRule } from "@/features/canvas/styling/styleIr";
 export type { GroupDeclarationContext } from "@/features/canvas/styling/groupDeclarations";

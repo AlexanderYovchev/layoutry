@@ -128,3 +128,26 @@ export function printOrderedSheet(
   );
   return entries.map((entry) => entry.text).join("\n");
 }
+
+/**
+ * BC-17.3.1 QA-4: one @keyframes block per compiled (referenced) definition.
+ * The name must be a generated k- identifier and every offset a percentage
+ * in 0–100; anything else is refused, like every other printed fragment.
+ */
+export function printKeyframes(keyframes: {
+  name: string;
+  stops: readonly { offset: number; declarations: readonly CssDeclaration[] }[];
+}): string {
+  if (!/^k-[a-z0-9-]+$/.test(keyframes.name))
+    throw new StylePrintError(
+      `Refusing to print the keyframes name "${keyframes.name}".`,
+    );
+  const stops = keyframes.stops.map((stop) => {
+    if (!Number.isFinite(stop.offset) || stop.offset < 0 || stop.offset > 100)
+      throw new StylePrintError(
+        `Refusing to print the keyframe offset "${stop.offset}".`,
+      );
+    return `  ${stop.offset}% {\n${printDeclarations(stop.declarations, "  ")}\n  }`;
+  });
+  return `@keyframes ${keyframes.name} {\n${stops.join("\n")}\n}`;
+}

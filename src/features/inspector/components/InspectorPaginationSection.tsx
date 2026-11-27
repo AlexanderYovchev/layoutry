@@ -11,7 +11,10 @@ import { useEditorStore } from "@/features/editor/stores/useEditorStore";
 import type { EditorElementNode } from "@/features/editor/types/document";
 import { isValidLinkHref } from "@/features/editor/types/link";
 import { getPaginationParts, type PaginationControlRole } from "@/features/editor/types/pagination";
-import { checkExportUrl } from "@/features/export";
+// Deep import by necessity (BC-17.3.1 QA-5): the export feature's index.ts also
+// loads the whole export engine, the shared stylesheet compiler and the export
+// UI; the Inspector needs only this pure URL policy (one type-only import).
+import { checkExportUrl } from "@/features/export/utils/exportUrlPolicy";
 import { InspectorBooleanToggle } from "@/features/inspector/components/InspectorBooleanToggle";
 import { InspectorSection } from "@/features/inspector/components/InspectorSection";
 import { formatPaginationSummary, PAGINATION_CONTROL_LABELS, PAGINATION_COPY } from "@/features/inspector/utils/paginationCopy";
